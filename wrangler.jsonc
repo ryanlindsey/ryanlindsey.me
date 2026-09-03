@@ -1,0 +1,66 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "ryanlindsey-me",
+  "account_id": "1b764d090899bf1ee61a8d1e87c10710",
+  "compatibility_date": "2026-09-02",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+
+  "assets": { "binding": "ASSETS", "directory": "./dist/client" },
+
+  "workers_dev": false,
+  "preview_urls": true,
+  "routes": [{ "pattern": "ryanlindsey.me", "custom_domain": true }],
+  "observability": { "enabled": true },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ryanlindsey-me-db",
+      "database_id": "3e7e8dfd-7926-4309-80ec-b583529394d3",
+    },
+  ],
+
+  "kv_namespaces": [
+    { "binding": "KV_CONFIG", "id": "aa1dd780da1e49eb8cf2dbf8ac9cf2b9" },
+    { "binding": "KV_CACHE", "id": "c0a1106f9c9944979cd228070be21b53" },
+  ],
+
+  "r2_buckets": [
+    { "binding": "R2_ASSETS", "bucket_name": "ryanlindsey-me-assets" },
+    { "binding": "R2_PRIVATE", "bucket_name": "ryanlindsey-me-private" },
+  ],
+
+  "queues": {
+    "producers": [{ "binding": "EVENTS", "queue": "ryanlindsey-me-events" }],
+  },
+
+  "analytics_engine_datasets": [{ "binding": "AE", "dataset": "ryanlindsey_me_events" }],
+
+  "ai": { "binding": "AI" },
+  "browser": { "binding": "BROWSER" },
+
+  // No `destination_address`: this binding may send to any address verified on
+  // Email Routing, and the owner's private address must not appear in a public repo.
+  "send_email": [{ "name": "EMAIL" }],
+
+  "ratelimits": [
+    { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } },
+  ],
+
+  "services": [{ "binding": "MCP", "service": "ryanlindsey-me-mcp" }],
+
+  "secrets_store_secrets": [
+    {
+      "binding": "RLME_TOKEN_SIGNING_KEY",
+      "store_id": "3b06d2a92de642d999509352cfd3ebed",
+      "secret_name": "RLME_TOKEN_SIGNING_KEY",
+    },
+    {
+      "binding": "RLME_TURNSTILE_SECRET_KEY",
+      "store_id": "3b06d2a92de642d999509352cfd3ebed",
+      "secret_name": "RLME_TURNSTILE_SECRET_KEY",
+    },
+  ],
+
+  "vars": { "RLME_AI_GATEWAY_ID": "ryanlindsey-me" },
+}
