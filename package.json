@@ -1,0 +1,39 @@
+{
+  "name": "ryanlindsey-me",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "check": "astro check",
+    "typegen": "wrangler types",
+    "lint": "prettier --check .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "deploy": "astro build && wrangler deploy",
+    "deploy:mcp": "wrangler deploy --config workers/mcp/wrangler.jsonc"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "14.2.6",
+    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "agents": "0.22.0",
+    "astro": "7.2.10",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "@tailwindcss/typography": "0.5.20",
+    "@tailwindcss/vite": "4.3.3",
+    "prettier": "3.9.6",
+    "prettier-plugin-astro": "0.14.1",
+    "tailwindcss": "4.3.3",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11",
+    "wrangler": "4.128.0"
+  }
+}
