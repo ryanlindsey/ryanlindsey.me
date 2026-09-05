@@ -1,0 +1,38 @@
+---
+import type { ReadingTime } from '../lib/reading-time';
+
+interface Props {
+  publishedAt: Date;
+  updatedAt?: Date;
+  pillar: string;
+  readingTime: ReadingTime;
+}
+
+const { publishedAt, updatedAt, pillar, readingTime } = Astro.props;
+
+const PILLAR_LABELS: Record<string, string> = {
+  'agentic-engineering': 'Agentic engineering',
+  'org-scaling': 'Org scaling',
+  'building-in-the-open': 'Building in the open',
+};
+
+const iso = (date: Date) => date.toISOString().slice(0, 10);
+---
+
+<p class="flex flex-wrap items-baseline gap-x-3 font-mono text-micro uppercase text-ink-muted">
+  <time datetime={publishedAt.toISOString()}>{iso(publishedAt)}</time>
+  <span aria-hidden="true">&middot;</span>
+  <span>{PILLAR_LABELS[pillar] ?? pillar}</span>
+  <span aria-hidden="true">&middot;</span>
+  <span data-testid="reading-time">{readingTime.text}</span>
+  {
+    updatedAt && (
+      <>
+        <span aria-hidden="true">&middot;</span>
+        <span>
+          Updated <time datetime={updatedAt.toISOString()}>{iso(updatedAt)}</time>
+        </span>
+      </>
+    )
+  }
+</p>

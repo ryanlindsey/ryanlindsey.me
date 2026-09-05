@@ -103,3 +103,36 @@ test('keeps drafts out of the writing index but reachable by URL', async () => {
   expect(index).toContain('data-testid="writing-empty"');
   expect((await server.fetch('/writing/type-specimen')).status).toBe(200);
 });
+
+test('renders a table of contents matching the article headings', async () => {
+  const page = await html('/writing/type-specimen');
+  expect(page).toMatch(/<nav[^>]*aria-label="Table of contents"/);
+  // Every TOC target must resolve to a real element id on the same page.
+  const targets = [...page.matchAll(/data-toc-link="([^"]+)"/g)].map((m) => m[1]);
+  expect(targets.length).toBeGreaterThanOrEqual(4);
+  for (const slug of targets) {
+    expect(page, `TOC points at #${slug} but no element has that id`).toContain(`id="${slug}"`);
+  }
+});
+
+test('keeps TOC labels free of the anchor glyph', async () => {
+  // Regression guard: if the heading anchor ever gains text content, Astro
+  // folds it into `headings[].text` and every TOC label picks up a stray "#".
+  const page = await html('/writing/type-specimen');
+  const labels = [...page.matchAll(/data-toc-link="[^"]+"[^>]*>\s*([^<]+?)\s*</g)].map((m) => m[1]);
+  expect(labels.length).toBeGreaterThan(0);
+  for (const label of labels) expect(label).not.toContain('#');
+});
+
+test('shows reading time on an article', async () => {
+  const page = await html('/writing/type-specimen');
+  expect(page).toContain('data-testid="reading-time"');
+  expect(page).toMatch(/\d+ min read/);
+});
+
+test('omits series navigation for a one-post series', async () => {
+  // type-specimen is the only post in its series, so the nav must not render.
+  // A "Part 1 of 1" block is noise, and this is the cheap guard against it.
+  const page = await html('/writing/type-specimen');
+  expect(page).not.toContain('data-series-nav');
+});

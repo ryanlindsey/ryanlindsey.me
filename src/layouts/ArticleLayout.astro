@@ -1,0 +1,51 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import Shell from './Shell.astro';
+import ArticleMeta from '../components/ArticleMeta.astro';
+import TableOfContents from '../components/TableOfContents.astro';
+import SeriesNav from '../components/SeriesNav.astro';
+import { buildToc, type Heading } from '../lib/toc';
+import { readingTimeFor } from '../lib/reading-time';
+
+interface Props {
+  post: CollectionEntry<'posts'>;
+  headings: Heading[];
+  siblings: CollectionEntry<'posts'>[];
+}
+
+const { post, headings, siblings } = Astro.props;
+const toc = buildToc(headings);
+const readingTime = readingTimeFor(post.body);
+---
+
+<Shell title={`${post.data.title} — Ryan Lindsey`} description={post.data.description}>
+  <article class="mx-auto max-w-5xl px-6 py-16">
+    <header class="max-w-3xl">
+      <h1 class="font-display text-title text-ink">{post.data.title}</h1>
+      <p class="mt-6 text-ink-muted">{post.data.description}</p>
+      <div class="mt-6 border-t border-rule pt-4">
+        <ArticleMeta
+          publishedAt={post.data.publishedAt}
+          updatedAt={post.data.updatedAt}
+          pillar={post.data.pillar}
+          readingTime={readingTime}
+        />
+      </div>
+    </header>
+
+    <!-- The TOC is a sibling rail on wide screens and stacks above the prose on
+         narrow ones. It sticks rather than scrolls so it survives long posts. -->
+    <div class="mt-16 gap-12 lg:grid lg:grid-cols-[1fr_14rem]">
+      <div class="prose-rl prose lg:order-1">
+        <slot />
+      </div>
+      <aside class="mb-12 lg:order-2 lg:mb-0">
+        <div class="lg:sticky lg:top-8">
+          <TableOfContents toc={toc} />
+        </div>
+      </aside>
+    </div>
+
+    <SeriesNav current={post} siblings={siblings} />
+  </article>
+</Shell>

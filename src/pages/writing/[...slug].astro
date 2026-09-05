@@ -1,24 +1,22 @@
 ---
 import { getCollection, render } from 'astro:content';
-import Shell from '../../layouts/Shell.astro';
+import ArticleLayout from '../../layouts/ArticleLayout.astro';
 import type { GetStaticPaths } from 'astro';
 
 export const getStaticPaths = (async () => {
-  // Drafts get a route but never an index entry, so work in progress is
-  // shareable by URL while staying out of the site's own navigation.
   const posts = await getCollection('posts');
-  return posts.map((post) => ({ params: { slug: post.id }, props: { post } }));
+  // Siblings ride along as props so SeriesNav does not re-query the collection
+  // once per rendered page.
+  return posts.map((post) => ({
+    params: { slug: post.id },
+    props: { post, siblings: posts },
+  }));
 }) satisfies GetStaticPaths;
 
-const { post } = Astro.props;
-const { Content } = await render(post);
+const { post, siblings } = Astro.props;
+const { Content, headings } = await render(post);
 ---
 
-<Shell title={post.data.title} description={post.data.description}>
-  <article class="mx-auto max-w-5xl px-6 py-16">
-    <h1 class="max-w-3xl font-display text-title text-ink">{post.data.title}</h1>
-    <div class="prose-rl prose mt-12">
-      <Content />
-    </div>
-  </article>
-</Shell>
+<ArticleLayout post={post} headings={headings} siblings={siblings}>
+  <Content />
+</ArticleLayout>
