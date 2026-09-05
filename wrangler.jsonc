@@ -5,7 +5,11 @@
   "compatibility_date": "2026-09-02",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 
-  "assets": { "binding": "ASSETS", "directory": "./dist/client" },
+  // Day 1 ships zero on-demand routes, so Astro emits no server bundle and this
+  // Worker is assets-only. An assets-only Worker cannot carry an `ASSETS`
+  // binding -- there is no Worker code to read it. The binding comes back with
+  // `main` when the first `prerender = false` route lands.
+  "assets": { "directory": "./dist/client" },
 
   "workers_dev": false,
   "preview_urls": true,
@@ -36,8 +40,11 @@
 
   "analytics_engine_datasets": [{ "binding": "AE", "dataset": "ryanlindsey_me_events" }],
 
-  "ai": { "binding": "AI" },
-  "browser": { "binding": "BROWSER" },
+  // No "ai" or "browser" bindings yet. Both are remote-only: Wrangler starts a
+  // remote proxy session for them even under the local test harness, which needs
+  // account credentials and so breaks the credential-free CI rule. This Worker
+  // ships assets-only on day 1, so neither binding has any code to read it.
+  // They come back with the routes that use them.
 
   // No `destination_address`: this binding may send to any address verified on
   // Email Routing, and the owner's private address must not appear in a public repo.
