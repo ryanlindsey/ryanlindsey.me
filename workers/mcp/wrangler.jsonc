@@ -8,7 +8,26 @@
 
   "workers_dev": false,
   "routes": [{ "pattern": "mcp.ryanlindsey.me", "custom_domain": true }],
-  "observability": { "enabled": true },
+  // Spelled out rather than the bare `"enabled": true` shorthand. While automatic
+  // tracing is in early beta the top-level flag turns on logs *only*; traces need
+  // their own `enabled` and will not follow it until a future compatibility date
+  // (Cloudflare's traces doc, verified 2026-09-05). `persist` is already the
+  // default -- it is explicit because dashboard retention is billed separately
+  // from ingestion, so paying for it should be a decision, not an inherited default.
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true,
+      "persist": true,
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "persist": true,
+    },
+  },
 
   "d1_databases": [
     {
