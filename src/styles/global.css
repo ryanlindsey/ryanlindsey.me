@@ -206,8 +206,8 @@
     --rl-accent: #000000;
   }
 
-  header,
-  footer,
+  [data-site-header],
+  [data-site-footer],
   nav,
   [data-theme-toggle],
   .heading-anchor {

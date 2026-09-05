@@ -83,7 +83,7 @@ test('carries no candidacy language on any public surface', async () => {
   // work" is added -- it's LinkedIn's own badge text and the single most
   // canonical public candidacy signal.
   const BANNED = [
-    /\bhir(e|ed|ing)\b/i,
+    /\bhir(e|es|ed|ing)\b/i,
     /\bcandidates?\b/i,
     /\brecruit(er|ers|ing|ment)?\b/i,
     /\bjob[-\s]?search(es|ing)?\b/i,
