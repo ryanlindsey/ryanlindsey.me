@@ -1,5 +1,6 @@
 ---
 import type { ReadingTime } from '../lib/reading-time';
+import { PILLAR_LABELS } from '../lib/pillars';
 
 interface Props {
   publishedAt: Date;
@@ -9,12 +10,6 @@ interface Props {
 }
 
 const { publishedAt, updatedAt, pillar, readingTime } = Astro.props;
-
-const PILLAR_LABELS: Record<string, string> = {
-  'agentic-engineering': 'Agentic engineering',
-  'org-scaling': 'Org scaling',
-  'building-in-the-open': 'Building in the open',
-};
 
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 ---

@@ -93,7 +93,7 @@
     font-family: var(--font-sans);
     font-optical-sizing: auto;
     scroll-behavior: smooth;
-    /* Anchor targets must clear the sticky header. */
+    /* Keeps anchor targets off the viewport edge (there is no sticky header to clear). */
     scroll-padding-top: 5rem;
   }
 
@@ -194,10 +194,19 @@
  * backgrounds off by default, so everything must survive on white -- which is
  * why the light palette is forced rather than inherited from the visitor's
  * theme.
+ *
+ * The selector list below exists to out-specify tokens.css's no-JS dark
+ * block, not merely to cover both themes. `:root:not([data-theme='light'])`
+ * is (0,2,0) because :not() takes its argument's specificity, which beats a
+ * bare `:root` or `[data-theme='dark']` at (0,1,0) regardless of source order
+ * -- media queries add no specificity of their own. Drop the :not() selector
+ * and a dark-OS visitor with JS disabled prints the dark palette on top of
+ * Chrome's backgrounds-off default: near-white ink on white paper.
  */
 @media print {
   :root,
-  [data-theme='dark'] {
+  :root:not([data-theme='light']),
+  :root[data-theme='dark'] {
     --rl-bg: #ffffff;
     --rl-surface: #ffffff;
     --rl-ink: #000000;

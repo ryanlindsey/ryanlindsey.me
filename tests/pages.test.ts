@@ -31,7 +31,7 @@ test('sets the theme before first paint', async () => {
   expect(head).toContain('prefers-color-scheme');
   expect(head).toContain('data-theme');
   // A bundled module script would carry a src= instead of a body.
-  expect(head).not.toMatch(/<script[^>]+src=[^>]*rl-theme/);
+  expect(head).not.toMatch(/<script[^>]+\bsrc=/);
 });
 
 test('does not hardcode a theme on the html element', async () => {
@@ -50,11 +50,10 @@ test('exposes an accessible theme toggle', async () => {
 test('provides a skip link as the first focusable element', async () => {
   const page = await html('/');
   const body = page.slice(page.indexOf('<body'));
-  const firstAnchor = body.indexOf('<a ');
-  const mainStart = body.indexOf('<main');
-  expect(firstAnchor).toBeGreaterThan(-1);
-  expect(firstAnchor).toBeLessThan(mainStart);
-  expect(body).toContain('href="#main"');
+  // Identity and position, not just "some <a> precedes <main>" -- the header
+  // wordmark is also an <a> that precedes <main>, so that weaker check would
+  // stay green even if the skip link moved inside <main>.
+  expect(body.indexOf('href="#main"')).toBeLessThan(body.indexOf('<header'));
   expect(body).toContain('id="main"');
 });
 
@@ -63,6 +62,10 @@ test('renders header and footer landmarks', async () => {
   expect(page).toContain('<header');
   expect(page).toContain('<footer');
   expect(page).toMatch(/<nav[^>]*aria-label="Primary"/);
+  // The print CSS hides site chrome by these attributes (tests/print.test.ts
+  // checks the CSS side); assert they actually land on the rendered markup.
+  expect(page).toContain('data-site-header');
+  expect(page).toContain('data-site-footer');
 });
 
 test('keeps the holding page marker and stays unindexed', async () => {

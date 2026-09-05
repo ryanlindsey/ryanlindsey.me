@@ -23,6 +23,9 @@ export function headingAnchors() {
       filter: ['h2', 'h3', 'h4'],
       visit(node, ctx) {
         // One slugger per document keeps duplicate headings unique (-1, -2, ...).
+        // Verified, not assumed: Sätteri's create-processor.js builds a fresh
+        // `astroData` per `process()` call and threads that same reference
+        // through as `data.astro`, so `ctx.data` here is per-document.
         const slugger = (ctx.data.__rlSlugger ??= new GithubSlugger());
         const existing = node.properties?.id;
         const slug = typeof existing === 'string' ? existing : slugger.slug(ctx.textContent(node));

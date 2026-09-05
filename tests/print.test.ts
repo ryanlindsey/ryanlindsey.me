@@ -46,8 +46,30 @@ function chromeHidingSelectors(block: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Pull the selector list of the rule that overrides the --rl-* palette --
+ * identified by `--rl-bg: #ffffff`, the print-only forced-light value -- as
+ * an array of trimmed, comma-split selector tokens. Same technique as
+ * chromeHidingSelectors above, anchored on a different declaration.
+ */
+function paletteOverrideSelectors(block: string): string[] {
+  const ruleStart = block.indexOf('--rl-bg: #ffffff');
+  expect(
+    ruleStart,
+    'no "--rl-bg: #ffffff" palette override found in the print block',
+  ).toBeGreaterThan(-1);
+  const openBrace = block.lastIndexOf('{', ruleStart);
+  const selectorStart = block.lastIndexOf('}', openBrace) + 1;
+  return block
+    .slice(selectorStart, openBrace)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 const printBlock = extractMediaPrintBlock(css);
 const chromeSelectors = chromeHidingSelectors(printBlock);
+const paletteSelectors = paletteOverrideSelectors(printBlock);
 
 describe('print rules', () => {
   test('hides site chrome via data attributes', () => {
@@ -68,5 +90,16 @@ describe('print rules', () => {
     // would report success while still failing to catch a reverted selector.
     expect(chromeSelectors).not.toContain('header');
     expect(chromeSelectors).not.toContain('footer');
+  });
+
+  test('out-specifies the no-JS dark block so the light palette always wins', () => {
+    // tokens.css declares the no-JS dark palette under
+    // `:root:not([data-theme='light'])`, which is (0,2,0) because :not()
+    // takes its argument's specificity -- higher than a bare `:root` or
+    // `[data-theme='dark']` at (0,1,0), and media queries add no specificity
+    // of their own. Without a matching (0,2,0) selector here, that block
+    // wins the cascade regardless of source order, and a dark-OS visitor
+    // with JS disabled prints the dark palette on white paper.
+    expect(paletteSelectors).toContain(":root:not([data-theme='light'])");
   });
 });

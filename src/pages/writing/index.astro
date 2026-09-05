@@ -1,16 +1,11 @@
 ---
 import { getCollection } from 'astro:content';
 import Shell from '../../layouts/Shell.astro';
+import { PILLAR_LABELS } from '../../lib/pillars';
 
 const posts = (await getCollection('posts', ({ data }) => !data.draft)).sort(
   (a, b) => b.data.publishedAt.getTime() - a.data.publishedAt.getTime(),
 );
-
-const PILLAR_LABELS: Record<string, string> = {
-  'agentic-engineering': 'Agentic engineering',
-  'org-scaling': 'Org scaling',
-  'building-in-the-open': 'Building in the open',
-};
 ---
 
 <Shell
@@ -38,7 +33,7 @@ const PILLAR_LABELS: Record<string, string> = {
                     {post.data.publishedAt.toISOString().slice(0, 10)}
                   </time>
                   {' · '}
-                  {PILLAR_LABELS[post.data.pillar]}
+                  {PILLAR_LABELS[post.data.pillar] ?? post.data.pillar}
                 </span>
                 <h2 class="mt-2 font-display text-heading text-ink group-hover:text-accent">
                   {post.data.title}
