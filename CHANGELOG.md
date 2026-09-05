@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.0.0...ryanlindsey-me-v1.1.0) (2026-09-05)
+
+
+### Features
+
+* **design:** add the design system, site shell, and article template ([#10](https://github.com/ryanlindsey/ryanlindsey.me/issues/10)) ([edaa0d2](https://github.com/ryanlindsey/ryanlindsey.me/commit/edaa0d21e91c21edb3c876e15195c297f92a3c98))
+* **mcp:** enable Workers logs and traces on the MCP Worker ([#12](https://github.com/ryanlindsey/ryanlindsey.me/issues/12)) ([853111d](https://github.com/ryanlindsey/ryanlindsey.me/commit/853111dd36a6900da3267a97013d8e95384ad9cf))
+
 ## 1.0.0 (2026-09-05)
 
 
