@@ -1,0 +1,8 @@
+dist/
+.astro/
+.wrangler/
+node_modules/
+worker-configuration.d.ts
+package-lock.json
+.dev.vars*
+.env*

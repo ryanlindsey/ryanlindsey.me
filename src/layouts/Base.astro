@@ -1,0 +1,27 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = 'Engineering leadership and agentic systems.' } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content={description} />
+    <!-- Removed at launch (day 7). The holding page should not be indexed. -->
+    <meta name="robots" content="noindex" />
+    <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+    <title>{title}</title>
+  </head>
+  <body class="min-h-dvh bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
+    <slot />
+  </body>
+</html>
