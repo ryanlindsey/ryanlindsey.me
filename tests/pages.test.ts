@@ -80,3 +80,26 @@ test('carries no candidacy language on any public surface', async () => {
     expect(page, `public surface must not contain "${banned}"`).not.toContain(banned);
   }
 });
+
+test('renders an MDX article with Expressive Code frames', async () => {
+  const page = await html('/writing/type-specimen');
+  expect(page).toContain('class="expressive-code');
+  expect(page).toContain('frame has-title');
+  expect(page).toContain('frame is-terminal');
+  expect(page).toContain('data-language="js"');
+  // The copy button is what `data-code` belongs to; two code blocks minimum.
+  expect((page.match(/data-code=/g) ?? []).length).toBeGreaterThanOrEqual(2);
+});
+
+test('gives headings stable ids and empty anchors', async () => {
+  const page = await html('/writing/type-specimen');
+  expect(page).toContain('id="code-frames"');
+  expect(page).toMatch(/<a class="heading-anchor" href="#code-frames"[^>]*><\/a>/);
+});
+
+test('keeps drafts out of the writing index but reachable by URL', async () => {
+  const index = await html('/writing');
+  expect(index).not.toContain('/writing/type-specimen');
+  expect(index).toContain('data-testid="writing-empty"');
+  expect((await server.fetch('/writing/type-specimen')).status).toBe(200);
+});

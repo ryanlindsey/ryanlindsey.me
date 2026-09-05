@@ -1,0 +1,54 @@
+---
+import { getCollection } from 'astro:content';
+import Shell from '../../layouts/Shell.astro';
+
+const posts = (await getCollection('posts', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.publishedAt.getTime() - a.data.publishedAt.getTime(),
+);
+
+const PILLAR_LABELS: Record<string, string> = {
+  'agentic-engineering': 'Agentic engineering',
+  'org-scaling': 'Org scaling',
+  'building-in-the-open': 'Building in the open',
+};
+---
+
+<Shell
+  title="Writing — Ryan Lindsey"
+  description="Essays on agentic engineering and scaling organizations."
+>
+  <div class="mx-auto max-w-5xl px-6 py-16">
+    <p class="mb-6 border-t border-accent pt-3 font-mono text-micro uppercase text-accent">
+      Writing
+    </p>
+    <h1 class="max-w-3xl font-display text-title text-ink">Agentic engineering, in practice.</h1>
+
+    {
+      posts.length === 0 ? (
+        <p class="mt-16 font-mono text-micro uppercase text-ink-muted" data-testid="writing-empty">
+          First pieces land this week.
+        </p>
+      ) : (
+        <ul class="mt-16 border-t border-rule">
+          {posts.map((post) => (
+            <li class="border-b border-rule">
+              <a href={`/writing/${post.id}`} class="group block py-6">
+                <span class="font-mono text-micro uppercase text-ink-muted">
+                  <time datetime={post.data.publishedAt.toISOString()}>
+                    {post.data.publishedAt.toISOString().slice(0, 10)}
+                  </time>
+                  {' · '}
+                  {PILLAR_LABELS[post.data.pillar]}
+                </span>
+                <h2 class="mt-2 font-display text-heading text-ink group-hover:text-accent">
+                  {post.data.title}
+                </h2>
+                <p class="mt-2 max-w-2xl text-ink-muted">{post.data.description}</p>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )
+    }
+  </div>
+</Shell>
