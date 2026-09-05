@@ -6,3 +6,11 @@ worker-configuration.d.ts
 package-lock.json
 .dev.vars*
 .env*
+
+# Written by release-please, not by hand. Its changelog uses `*` bullets and double blank
+# lines between sections; Prettier rewrites both. Since release PRs run checks.yml (that is
+# what the GitHub App token in release.yml buys), leaving these unignored means every release
+# PR opens with a red `prettier --check`. Reformatting them is no fix either — release-please
+# rewrites the file on the next release and the check goes red again.
+CHANGELOG.md
+.release-please-manifest.json
