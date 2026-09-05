@@ -14,14 +14,40 @@ const { title, description = 'Engineering leadership and agentic systems.' } = A
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="light dark" />
     <meta name="description" content={description} />
-    <!-- Removed at launch (day 7). The holding page should not be indexed. -->
+    <!-- Removed at launch (day 7). Nothing here should be indexed before then. -->
     <meta name="robots" content="noindex" />
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
     <title>{title}</title>
+
+    <!--
+      Blocking and inline on purpose. Anything deferred paints the wrong theme
+      first. `is:inline` keeps Astro from bundling it into a module script,
+      which would defer it. Kept small enough that the parser cost is noise.
+    -->
+    <script is:inline>
+      (() => {
+        try {
+          const stored = localStorage.getItem('rl-theme');
+          const theme =
+            stored === 'light' || stored === 'dark'
+              ? stored
+              : matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light';
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch {
+          // Private mode can throw on localStorage access. Fall back to the
+          // media query alone rather than leaving the page unthemed.
+          document.documentElement.setAttribute(
+            'data-theme',
+            matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+          );
+        }
+      })();
+    </script>
   </head>
-  <body class="min-h-dvh bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
+  <body>
     <slot />
   </body>
 </html>
