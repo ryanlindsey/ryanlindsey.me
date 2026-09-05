@@ -15,7 +15,7 @@ export function readingTimeFor(body: string | undefined): ReadingTime {
   const stats = getReadingTime(body ?? '');
   return {
     text: stats.text,
-    minutes: Math.max(1, Math.round(stats.minutes)),
+    minutes: Math.max(1, Math.ceil(stats.minutes)),
     words: stats.words,
   };
 }

@@ -34,16 +34,19 @@ const readingTime = readingTimeFor(post.body);
     </header>
 
     <!-- The TOC is a sibling rail on wide screens and stacks above the prose on
-         narrow ones. It sticks rather than scrolls so it survives long posts. -->
+         narrow ones. The aside comes first in the DOM so narrow viewports -- where
+         the grid and `order` are both inactive -- get the TOC before the body, and
+         so it precedes the article in tab order. At `lg` the grid turns on and
+         `order` puts the prose left, the rail right. -->
     <div class="mt-16 gap-12 lg:grid lg:grid-cols-[1fr_14rem]">
-      <div class="prose-rl prose lg:order-1">
-        <slot />
-      </div>
       <aside class="mb-12 lg:order-2 lg:mb-0">
         <div class="lg:sticky lg:top-8">
           <TableOfContents toc={toc} />
         </div>
       </aside>
+      <div class="prose-rl prose lg:order-1">
+        <slot />
+      </div>
     </div>
 
     <SeriesNav current={post} siblings={siblings} />
