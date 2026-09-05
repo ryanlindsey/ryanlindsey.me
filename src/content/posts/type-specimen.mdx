@@ -1,0 +1,66 @@
+---
+title: Type Specimen
+description: Every block the article template supports, on one page.
+publishedAt: 2026-09-04
+pillar: building-in-the-open
+series:
+  name: Building in the open
+  order: 1
+draft: true
+---
+
+This page exists to exercise the article template. It is not published: it is a
+proof sheet for the design system, and it renders every block type an article
+can contain so regressions surface here before they reach a real post.
+
+## Prose and emphasis
+
+Body text sets in Inter at a measure of 68 characters. It carries **bold**,
+_italic_, `inline code`, and [a link](https://example.com) — each of which has
+to hold up against the accent without competing with it.
+
+> A blockquote takes a pink rule on its leading edge. Flat, square, no glow.
+
+## Code frames
+
+A titled frame, with one line marked:
+
+```js title="src/lib/example.js" {2}
+const client = createClient();
+const result = await client.query('select 1');
+export default result;
+```
+
+A terminal frame:
+
+```bash frame="terminal"
+npx wrangler deploy --config workers/mcp/wrangler.jsonc
+```
+
+A diff:
+
+```diff lang="json"
+  {
+    "name": "ryanlindsey-me",
+-   "compatibility_date": "2026-01-01"
++   "compatibility_date": "2026-08-31"
+  }
+```
+
+### A third-level heading
+
+Nested headings prove the TOC renders more than one depth.
+
+## Lists and tables
+
+1. Ordered items take accent counters.
+2. Unordered items take accent bullets.
+
+| Column   | Meaning                 |
+| -------- | ----------------------- |
+| `ok`     | The green semantic ramp |
+| `accent` | The pink signature      |
+
+## Closing
+
+The last section, so scroll-spy has somewhere to land.

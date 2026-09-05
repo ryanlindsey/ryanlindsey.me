@@ -1,0 +1,101 @@
+---
+import type { TocNode } from '../lib/toc';
+
+interface Props {
+  toc: TocNode[];
+}
+
+const { toc } = Astro.props;
+
+const flatten = (nodes: TocNode[]): TocNode[] =>
+  nodes.flatMap((node) => [node, ...flatten(node.children)]);
+const count = flatten(toc).length;
+---
+
+{
+  count > 0 && (
+    <nav aria-label="Table of contents" data-toc class="font-mono text-micro uppercase">
+      <p class="border-t border-accent pt-3 text-accent">Contents</p>
+      <ul class="mt-4 space-y-2">
+        {toc.map((node) => (
+          <li>
+            <a
+              href={`#${node.slug}`}
+              data-toc-link={node.slug}
+              class="block text-ink-muted transition-colors hover:text-accent aria-[current=true]:text-accent"
+            >
+              {node.text}
+            </a>
+            {node.children.length > 0 && (
+              <ul class="mt-2 space-y-2 border-l border-rule pl-3">
+                {node.children.map((child) => (
+                  <li>
+                    <a
+                      href={`#${child.slug}`}
+                      data-toc-link={child.slug}
+                      class="block text-ink-muted transition-colors hover:text-accent aria-[current=true]:text-accent"
+                    >
+                      {child.text}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
+}
+
+<script>
+  const links = new Map<string, HTMLAnchorElement>();
+  for (const link of document.querySelectorAll<HTMLAnchorElement>('[data-toc-link]')) {
+    const slug = link.dataset.tocLink;
+    if (slug) links.set(slug, link);
+  }
+
+  if (links.size > 0) {
+    const headings = [...links.keys()]
+      .map((slug) => document.getElementById(slug))
+      .filter((el): el is HTMLElement => el !== null);
+
+    let active = '';
+    const setActive = (slug: string) => {
+      if (slug === active) return;
+      links.get(active)?.removeAttribute('aria-current');
+      links.get(slug)?.setAttribute('aria-current', 'true');
+      active = slug;
+    };
+
+    // The band is the top quarter of the viewport: a heading is "current" once
+    // it reaches the top, and stays current until the next one arrives. A
+    // symmetric margin makes the highlight flicker between two headings while
+    // a short section sits fully on screen.
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && entry.target.id) {
+            setActive(entry.target.id);
+          }
+        }
+      },
+      { rootMargin: '0px 0px -75% 0px', threshold: 0 },
+    );
+
+    for (const heading of headings) observer.observe(heading);
+
+    // Scrolled to the very bottom, no heading may be inside the band, so the
+    // last section would never light up. Pin it.
+    addEventListener(
+      'scroll',
+      () => {
+        if (innerHeight + scrollY >= document.body.offsetHeight - 2) {
+          const last = headings.at(-1);
+          if (last?.id) setActive(last.id);
+        }
+      },
+      { passive: true },
+    );
+  }
+</script>

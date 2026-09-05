@@ -1,0 +1,42 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import { seriesNavFor } from '../lib/series';
+
+interface Props {
+  current: CollectionEntry<'posts'>;
+  siblings: CollectionEntry<'posts'>[];
+}
+
+const { current, siblings } = Astro.props;
+const nav = seriesNavFor(current, siblings);
+---
+
+{
+  nav && (
+    <nav aria-label="Series" data-series-nav class="mt-16 border-t border-rule pt-6">
+      <p class="font-mono text-micro uppercase text-ink-muted">
+        Part {nav.position} of {nav.total} in <span class="text-accent">{nav.name}</span>
+      </p>
+      <div class="mt-4 flex flex-wrap justify-between gap-4">
+        {nav.previous ? (
+          <a
+            href={`/writing/${nav.previous.id}`}
+            class="font-display text-subheading text-ink hover:text-accent"
+          >
+            &larr; {nav.previous.data.title}
+          </a>
+        ) : (
+          <span />
+        )}
+        {nav.next && (
+          <a
+            href={`/writing/${nav.next.id}`}
+            class="text-right font-display text-subheading text-ink hover:text-accent"
+          >
+            {nav.next.data.title} &rarr;
+          </a>
+        )}
+      </div>
+    </nav>
+  )
+}

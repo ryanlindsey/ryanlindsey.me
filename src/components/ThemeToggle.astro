@@ -1,0 +1,66 @@
+---
+// Three states, cycling system -> light -> dark -> system. "System" is a real
+// state rather than an implicit default, so a visitor can always get back to
+// following their OS without clearing site data.
+---
+
+<button
+  type="button"
+  data-theme-toggle
+  aria-label="Theme: follow system"
+  class="border border-rule px-2 py-1 font-mono text-micro uppercase text-ink-muted transition-colors hover:border-accent hover:text-accent"
+>
+  <span data-theme-label>sys</span>
+</button>
+
+<script>
+  const LABELS = { system: 'sys', light: 'lgt', dark: 'drk' } as const;
+  const ORDER = ['system', 'light', 'dark'] as const;
+  type Mode = (typeof ORDER)[number];
+
+  const prefersDark = () => matchMedia('(prefers-color-scheme: dark)').matches;
+
+  const read = (): Mode => {
+    try {
+      const stored = localStorage.getItem('rl-theme');
+      return stored === 'light' || stored === 'dark' ? stored : 'system';
+    } catch {
+      return 'system';
+    }
+  };
+
+  const apply = (mode: Mode) => {
+    const resolved = mode === 'system' ? (prefersDark() ? 'dark' : 'light') : mode;
+    document.documentElement.setAttribute('data-theme', resolved);
+    try {
+      if (mode === 'system') localStorage.removeItem('rl-theme');
+      else localStorage.setItem('rl-theme', mode);
+    } catch {
+      // Storage unavailable: the choice still applies for this page view.
+    }
+  };
+
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-theme-toggle]')) {
+    const label = button.querySelector('[data-theme-label]');
+    const paint = (mode: Mode) => {
+      if (label) label.textContent = LABELS[mode];
+      button.setAttribute(
+        'aria-label',
+        mode === 'system' ? 'Theme: follow system' : `Theme: ${mode}`,
+      );
+    };
+
+    paint(read());
+
+    button.addEventListener('click', () => {
+      const next = ORDER[(ORDER.indexOf(read()) + 1) % ORDER.length];
+      apply(next);
+      paint(next);
+    });
+  }
+
+  // While following the system, track it live rather than until next reload.
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (read() === 'system') apply('system');
+  });
+</script>

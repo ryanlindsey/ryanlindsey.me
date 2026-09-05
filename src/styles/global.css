@@ -1,2 +1,245 @@
+/*
+ * Fonts first: CSS @import must precede every other rule. Fontsource ships
+ * unicode-range-split faces, so a latin-only visitor downloads 122.6 KB total.
+ *   - Inter's `opsz` file carries BOTH the optical-size and weight axes.
+ *   - IBM Plex Mono is not variable, so weights are imported individually.
+ *     400 is body code; 600 is the only other weight the design uses.
+ */
+@import '@fontsource-variable/inter/opsz.css';
+@import '@fontsource-variable/space-grotesk/wght.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-600.css';
 @import 'tailwindcss';
+@import './tokens.css';
+
 @plugin "@tailwindcss/typography";
+
+/*
+ * The head script always writes an explicit data-theme, so `dark:` keys off the
+ * attribute rather than the media query. :where() keeps specificity at zero so
+ * dark utilities never outrank an unrelated later rule.
+ */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/*
+ * `inline` is load-bearing. It makes Tailwind emit `var(--rl-ink)` inside the
+ * utility instead of baking today's hex, which is what lets one data-theme flip
+ * re-theme the site with no duplicate classes and no rebuild.
+ */
+@theme inline {
+  --color-bg: var(--rl-bg);
+  --color-surface: var(--rl-surface);
+  --color-surface-raised: var(--rl-surface-raised);
+  --color-ink: var(--rl-ink);
+  --color-ink-muted: var(--rl-ink-muted);
+  --color-rule: var(--rl-rule);
+  --color-accent: var(--rl-accent);
+  --color-accent-ground: var(--rl-accent-ground);
+  --color-accent-on: var(--rl-accent-on);
+  --color-ok: var(--rl-ok);
+  --color-warn: var(--rl-warn);
+  --color-danger: var(--rl-danger);
+
+  --font-display: 'Space Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /*
+   * A deliberately short scale. New wave lives on the jump between very large
+   * and very small with little in between, so there is no gentle middle.
+   */
+  --text-display: 4.5rem;
+  --text-display--line-height: 0.92;
+  --text-display--letter-spacing: -0.035em;
+  --text-display--font-weight: 600;
+
+  --text-title: 2.75rem;
+  --text-title--line-height: 1;
+  --text-title--letter-spacing: -0.03em;
+  --text-title--font-weight: 600;
+
+  --text-heading: 1.5rem;
+  --text-heading--line-height: 1.2;
+  --text-heading--letter-spacing: -0.02em;
+  --text-heading--font-weight: 600;
+
+  --text-subheading: 1.125rem;
+  --text-subheading--line-height: 1.35;
+  --text-subheading--letter-spacing: -0.01em;
+  --text-subheading--font-weight: 600;
+
+  --text-body: 1.0625rem;
+  --text-body--line-height: 1.65;
+
+  --text-small: 0.875rem;
+  --text-small--line-height: 1.5;
+
+  --text-micro: 0.75rem;
+  --text-micro--line-height: 1.4;
+  --text-micro--letter-spacing: 0.06em;
+}
+
+/*
+ * Motion budget (05 §4): three signature moments, and every one of them is a
+ * cut rather than a fade. 80ms is below the threshold where a transition reads
+ * as easing, which is the point.
+ */
+@theme {
+  --rl-cut: 80ms;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    font-optical-sizing: auto;
+    scroll-behavior: smooth;
+    /* Keeps anchor targets off the viewport edge (there is no sticky header to clear). */
+    scroll-padding-top: 5rem;
+  }
+
+  body {
+    background-color: var(--rl-bg);
+    color: var(--rl-ink);
+    font-size: var(--text-body);
+    line-height: 1.65;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+
+  /* Flat, square, unmistakable. No glow, no offset shadow. */
+  :focus-visible {
+    outline: 2px solid var(--rl-accent);
+    outline-offset: 2px;
+    border-radius: 0;
+  }
+
+  ::selection {
+    background-color: var(--rl-accent-ground);
+    color: var(--rl-accent-on);
+  }
+
+  /* Numbers line up in the resume, /ops, and every metadata run. */
+  time,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /*
+   * The anchor element is empty by construction (see src/lib/heading-anchors.mjs)
+   * so that heading text stays clean for the TOC. The glyph is drawn here.
+   */
+  .heading-anchor::after {
+    content: '#';
+    color: var(--rl-accent);
+    font-family: var(--font-mono);
+    margin-left: 0.4em;
+    opacity: 0;
+    transition: opacity var(--rl-cut) linear;
+  }
+
+  h2:hover > .heading-anchor::after,
+  h3:hover > .heading-anchor::after,
+  h4:hover > .heading-anchor::after,
+  .heading-anchor:focus-visible::after {
+    opacity: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/*
+ * Article prose. Tailwind Typography's defaults are recognisably Tailwind, so
+ * every colour and rule it draws is remapped onto the token layer (05 §1).
+ */
+@utility prose-rl {
+  --tw-prose-body: var(--rl-ink);
+  --tw-prose-headings: var(--rl-ink);
+  --tw-prose-lead: var(--rl-ink-muted);
+  --tw-prose-links: var(--rl-accent);
+  --tw-prose-bold: var(--rl-ink);
+  --tw-prose-counters: var(--rl-ink-muted);
+  --tw-prose-bullets: var(--rl-accent);
+  --tw-prose-hr: var(--rl-rule);
+  --tw-prose-quotes: var(--rl-ink);
+  --tw-prose-quote-borders: var(--rl-accent);
+  --tw-prose-captions: var(--rl-ink-muted);
+  --tw-prose-code: var(--rl-ink);
+  --tw-prose-th-borders: var(--rl-rule);
+  --tw-prose-td-borders: var(--rl-rule);
+  max-width: 68ch;
+}
+
+/*
+ * Print, and the Browser-Rendering PDF job day 3 adds. 02 §1 requires the PDF
+ * to be ATS-safe: single column, real text, no layout tables. Chrome prints
+ * backgrounds off by default, so everything must survive on white -- which is
+ * why the light palette is forced rather than inherited from the visitor's
+ * theme.
+ *
+ * The selector list below exists to out-specify tokens.css's no-JS dark
+ * block, not merely to cover both themes. `:root:not([data-theme='light'])`
+ * is (0,2,0) because :not() takes its argument's specificity, which beats a
+ * bare `:root` or `[data-theme='dark']` at (0,1,0) regardless of source order
+ * -- media queries add no specificity of their own. Drop the :not() selector
+ * and a dark-OS visitor with JS disabled prints the dark palette on top of
+ * Chrome's backgrounds-off default: near-white ink on white paper.
+ */
+@media print {
+  :root,
+  :root:not([data-theme='light']),
+  :root[data-theme='dark'] {
+    --rl-bg: #ffffff;
+    --rl-surface: #ffffff;
+    --rl-ink: #000000;
+    --rl-ink-muted: #333333;
+    --rl-rule: #999999;
+    --rl-accent: #000000;
+  }
+
+  [data-site-header],
+  [data-site-footer],
+  nav,
+  [data-theme-toggle],
+  .heading-anchor {
+    display: none !important;
+  }
+
+  main {
+    padding: 0;
+  }
+
+  a[href^='http']::after {
+    content: ' (' attr(href) ')';
+    font-size: 0.75em;
+    word-break: break-all;
+  }
+
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+
+  section {
+    break-inside: avoid;
+  }
+}

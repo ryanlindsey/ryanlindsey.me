@@ -1,0 +1,38 @@
+---
+import Shell from '../layouts/Shell.astro';
+
+// Day 3 replaces this with src/content/resume/*.yaml as the single source of
+// truth, generating HTML, Markdown, JSON, and a Browser-Rendering PDF from it
+// (02 §1). The shape here is the shape that data will fill.
+const SECTIONS = [
+  { id: 'experience', title: 'Experience' },
+  { id: 'selected-work', title: 'Selected work' },
+  { id: 'education', title: 'Education' },
+] as const;
+---
+
+<Shell title="Resume — Ryan Lindsey" description="Engineering leadership and agentic systems.">
+  <div class="mx-auto max-w-3xl px-6 py-16" data-testid="resume">
+    <p class="mb-6 border-t border-accent pt-3 font-mono text-micro uppercase text-accent">
+      Resume
+    </p>
+    <h1 class="font-display text-title text-ink">Ryan Lindsey</h1>
+    <p class="mt-6 text-ink-muted">
+      Engineering leader shipping production agents, MCP infrastructure, and the governance that
+      makes them safe.
+    </p>
+
+    {
+      SECTIONS.map((section) => (
+        <section class="mt-16" aria-labelledby={section.id}>
+          <h2 id={section.id} class="border-b border-rule pb-3 font-display text-heading text-ink">
+            {section.title}
+          </h2>
+          <p class="mt-4 font-mono text-micro uppercase text-ink-muted">
+            Populated from structured resume data on day 3.
+          </p>
+        </section>
+      ))
+    }
+  </div>
+</Shell>
