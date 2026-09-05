@@ -11,8 +11,12 @@ function createServer() {
   // `instructions` belongs to ServerOptions (the second argument), not to the
   // Implementation identity. Passing it here is also what puts it at the top
   // level of the initialize result, where the spec and clients look for it.
+  // The `x-release-please-version` marker is load-bearing: release-please's `generic` updater
+  // rewrites the semver on any line carrying it, which is what keeps the version this server
+  // advertises over MCP in step with package.json. Moving the version off this line, or letting
+  // a formatter split it across lines, silently strands it at whatever it says today.
   const server = new McpServer(
-    { name: 'ryanlindsey-me', version: '0.1.0' },
+    { name: 'ryanlindsey-me', version: '0.0.0' }, // x-release-please-version
     { instructions: INSTRUCTIONS },
   );
 
