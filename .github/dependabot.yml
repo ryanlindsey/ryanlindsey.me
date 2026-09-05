@@ -10,6 +10,13 @@ updates:
     groups:
       all:
         patterns: ['*']
+    ignore:
+      # @astrojs/check declares peer typescript '^5.0.0 || ^6.0.0', so a major bump
+      # fails `npm ci` with ERESOLVE before any check runs. Because every npm update
+      # is grouped into one PR above, leaving this unignored blocks *all* npm updates,
+      # not just this one. Drop this entry once @astrojs/check supports TypeScript 7.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
     directory: /
     schedule:
