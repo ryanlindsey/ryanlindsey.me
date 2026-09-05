@@ -60,4 +60,18 @@ describe('seriesNavFor', () => {
     expect(result?.previous?.id).toBe('a');
     expect(result?.next).toBeUndefined();
   });
+
+  test('orders neighbours by declared series.order, not by array position', () => {
+    // Siblings arrive out of order here (c, a, b with orders 3, 1, 2) so that
+    // a passing suite actually exercises the .sort() call rather than relying
+    // on the input already being sorted, as every other test in this file
+    // does incidentally.
+    const c = post('c', { series: series(3) });
+    const a = post('a', { series: series(1) });
+    const b = post('b', { series: series(2) });
+    const result = seriesNavFor(b, [c, a, b]);
+    expect(result).toMatchObject({ position: 2, total: 3 });
+    expect(result?.previous?.id).toBe('a');
+    expect(result?.next?.id).toBe('c');
+  });
 });

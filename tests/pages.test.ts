@@ -75,9 +75,26 @@ test('keeps the holding page marker and stays unindexed', async () => {
 
 test('carries no candidacy language on any public surface', async () => {
   // 09 §2 is a hard rule and the cheapest place to enforce it is every render.
-  const page = (await html('/')).toLowerCase();
-  for (const banned of ['hire', 'candidate', 'job search', 'recruiter', 'looking for']) {
-    expect(page, `public surface must not contain "${banned}"`).not.toContain(banned);
+  // Word-boundary, inflection-aware patterns: naive substrings ("hire", bare
+  // "candidate") both miss real leaks ("candidates", "recruitment") and catch
+  // false positives ("Yorkshire", "Cheshire", "Hampshire" all contain "hire").
+  // "looking for" is dropped -- too generic ("looking for the source?") and a
+  // check that cries wolf gets weakened by whoever trips it next. "open to
+  // work" is added -- it's LinkedIn's own badge text and the single most
+  // canonical public candidacy signal.
+  const BANNED = [
+    /\bhir(e|ed|ing)\b/i,
+    /\bcandidates?\b/i,
+    /\brecruit(er|ers|ing|ment)?\b/i,
+    /\bjob[-\s]?search(es|ing)?\b/i,
+    /\bactively looking\b/i,
+    /\bopen to (work|opportunities|offers)\b/i,
+  ];
+  for (const route of ['/', '/writing', '/writing/type-specimen', '/resume']) {
+    const page = await html(route);
+    for (const pattern of BANNED) {
+      expect(page, `${route} must not match ${pattern}`).not.toMatch(pattern);
+    }
   }
 });
 
@@ -135,4 +152,22 @@ test('omits series navigation for a one-post series', async () => {
   // A "Part 1 of 1" block is noise, and this is the cheap guard against it.
   const page = await html('/writing/type-specimen');
   expect(page).not.toContain('data-series-nav');
+});
+
+test('serves a resume page with a section structure', async () => {
+  const page = await html('/resume');
+  expect(page).toContain('<h1');
+  expect(page).toContain('data-testid="resume"');
+  for (const section of ['Experience', 'Selected work', 'Education']) {
+    expect(page).toContain(section);
+  }
+});
+
+test('does not link resume formats that do not exist yet', async () => {
+  // Day 3 creates /resume.md, /resume.json and /resume.pdf. Linking them from
+  // the skeleton would ship three 404s for a week.
+  const page = await html('/resume');
+  for (const dead of ['/resume.md', '/resume.json', '/resume.pdf']) {
+    expect(page, `${dead} does not exist until day 3`).not.toContain(`href="${dead}"`);
+  }
 });

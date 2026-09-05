@@ -187,3 +187,50 @@
   --tw-prose-td-borders: var(--rl-rule);
   max-width: 68ch;
 }
+
+/*
+ * Print, and the Browser-Rendering PDF job day 3 adds. 02 §1 requires the PDF
+ * to be ATS-safe: single column, real text, no layout tables. Chrome prints
+ * backgrounds off by default, so everything must survive on white -- which is
+ * why the light palette is forced rather than inherited from the visitor's
+ * theme.
+ */
+@media print {
+  :root,
+  [data-theme='dark'] {
+    --rl-bg: #ffffff;
+    --rl-surface: #ffffff;
+    --rl-ink: #000000;
+    --rl-ink-muted: #333333;
+    --rl-rule: #999999;
+    --rl-accent: #000000;
+  }
+
+  header,
+  footer,
+  nav,
+  [data-theme-toggle],
+  .heading-anchor {
+    display: none !important;
+  }
+
+  main {
+    padding: 0;
+  }
+
+  a[href^='http']::after {
+    content: ' (' attr(href) ')';
+    font-size: 0.75em;
+    word-break: break-all;
+  }
+
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+
+  section {
+    break-inside: avoid;
+  }
+}
