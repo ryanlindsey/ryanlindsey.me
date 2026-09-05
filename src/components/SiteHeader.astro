@@ -1,0 +1,36 @@
+---
+import ThemeToggle from './ThemeToggle.astro';
+
+const path = Astro.url.pathname;
+
+// /work, /about, /ops and /ai-policy arrive on days 3-6. Nav grows with them.
+const links = [
+  { href: '/writing', label: 'Writing' },
+  { href: '/resume', label: 'Resume' },
+];
+
+const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`);
+---
+
+<header class="border-b border-rule">
+  <div class="mx-auto flex max-w-5xl items-baseline justify-between gap-6 px-6 py-5">
+    <a href="/" class="font-display text-subheading tracking-tight text-ink hover:text-accent"
+      >Ryan Lindsey</a
+    >
+
+    <nav aria-label="Primary" class="flex items-baseline gap-6">
+      {
+        links.map((link) => (
+          <a
+            href={link.href}
+            aria-current={isCurrent(link.href) ? 'page' : undefined}
+            class="font-mono text-micro uppercase text-ink-muted hover:text-accent aria-[current=page]:text-accent"
+          >
+            {link.label}
+          </a>
+        ))
+      }
+      <ThemeToggle />
+    </nav>
+  </div>
+</header>

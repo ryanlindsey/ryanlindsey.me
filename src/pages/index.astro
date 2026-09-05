@@ -1,17 +1,26 @@
 ---
-import Base from '../layouts/Base.astro';
-import ThemeToggle from '../components/ThemeToggle.astro';
+import Shell from '../layouts/Shell.astro';
 ---
 
-<Base title="Ryan Lindsey">
-  <main class="mx-auto flex min-h-dvh max-w-2xl flex-col justify-center gap-4 px-6">
-    <h1 class="text-3xl font-semibold tracking-tight">Ryan Lindsey</h1>
-    <p class="text-neutral-600 dark:text-neutral-400">
-      Engineering leadership and agentic systems. This site is being built in the open.
+<Shell title="Ryan Lindsey">
+  <section class="mx-auto max-w-5xl px-6 py-24">
+    <!-- The signature move: a hairline rule and a mono eyebrow above very
+         large display type. Flat, square, no glow. -->
+    <p class="mb-6 border-t border-accent pt-3 font-mono text-micro uppercase text-accent">
+      Engineering leadership &middot; agentic systems
     </p>
-    <p class="font-mono text-sm text-neutral-500" data-testid="holding-page">
-      ryanlindsey.me — under construction
+
+    <h1 class="max-w-3xl font-display text-display text-ink">
+      I re-engineer how organizations work with agentic AI.
+    </h1>
+
+    <p class="mt-8 max-w-xl text-ink-muted">
+      Production agents, MCP infrastructure, and the governance that makes them safe. This site is
+      being built in the open.
     </p>
-    <ThemeToggle />
-  </main>
-</Base>
+
+    <p class="mt-16 font-mono text-micro uppercase text-ink-muted" data-testid="holding-page">
+      ryanlindsey.me &mdash; under construction
+    </p>
+  </section>
+</Shell>

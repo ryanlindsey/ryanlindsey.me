@@ -46,3 +46,37 @@ test('exposes an accessible theme toggle', async () => {
   expect(page).toContain('data-theme-toggle');
   expect(page).toMatch(/aria-label="[^"]*[Tt]heme[^"]*"/);
 });
+
+test('provides a skip link as the first focusable element', async () => {
+  const page = await html('/');
+  const body = page.slice(page.indexOf('<body'));
+  const firstAnchor = body.indexOf('<a ');
+  const mainStart = body.indexOf('<main');
+  expect(firstAnchor).toBeGreaterThan(-1);
+  expect(firstAnchor).toBeLessThan(mainStart);
+  expect(body).toContain('href="#main"');
+  expect(body).toContain('id="main"');
+});
+
+test('renders header and footer landmarks', async () => {
+  const page = await html('/');
+  expect(page).toContain('<header');
+  expect(page).toContain('<footer');
+  expect(page).toMatch(/<nav[^>]*aria-label="Primary"/);
+});
+
+test('keeps the holding page marker and stays unindexed', async () => {
+  const page = await html('/');
+  expect(page).toContain('data-testid="holding-page"');
+  expect(page).toContain('<title>Ryan Lindsey</title>');
+  expect(page).toContain('name="robots"');
+  expect(page).toContain('noindex');
+});
+
+test('carries no candidacy language on any public surface', async () => {
+  // 09 §2 is a hard rule and the cheapest place to enforce it is every render.
+  const page = (await html('/')).toLowerCase();
+  for (const banned of ['hire', 'candidate', 'job search', 'recruiter', 'looking for']) {
+    expect(page, `public surface must not contain "${banned}"`).not.toContain(banned);
+  }
+});

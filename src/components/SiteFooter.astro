@@ -1,0 +1,15 @@
+---
+// The agent courtesies (llms.txt, markdown variants, the MCP endpoint) land on
+// days 3 and 4. Linking them before they exist would ship dead links, so the
+// footer states the colophon now and grows then.
+const year = new Date().getFullYear();
+---
+
+<footer class="mt-24 border-t border-rule">
+  <div
+    class="mx-auto flex max-w-5xl flex-wrap items-baseline justify-between gap-4 px-6 py-8 font-mono text-micro uppercase text-ink-muted"
+  >
+    <span>&copy; {year} Ryan Lindsey</span>
+    <span>Built on Cloudflare Workers &middot; Astro</span>
+  </div>
+</footer>
