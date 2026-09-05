@@ -1,0 +1,75 @@
+/*
+ * Design tokens — 1980s new wave / Swiss punk.
+ *
+ * Flat bright color as signal; never glow, never gradient. Pink is the single
+ * signature accent (links, focus, rules, marks). Green is the success/live ramp
+ * and is never used as a brand color, so a green badge is never ambiguous next
+ * to a green link.
+ *
+ * Nothing else in this repo declares a color. Components consume the Tailwind
+ * namespaces that global.css maps these onto, never these names directly and
+ * never a literal hex.
+ *
+ * Every text token clears WCAG AA against its own background; tests/tokens.test.ts
+ * recomputes those ratios on every run and is the source of truth for the values.
+ */
+
+:root {
+  color-scheme: light;
+
+  --rl-bg: #fafaf9;
+  --rl-surface: #ffffff;
+  --rl-surface-raised: #f4f4f2;
+  --rl-ink: #0a0a0b;
+  --rl-ink-muted: #52525b;
+  --rl-rule: #d4d4d8;
+  --rl-accent: #d6007a;
+  --rl-accent-ground: #ff2d95;
+  --rl-accent-on: #0a0a0b;
+  --rl-ok: #007a3d;
+  --rl-warn: #8a5a00;
+  --rl-danger: #b3261e;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --rl-bg: #0a0a0b;
+  --rl-surface: #131315;
+  --rl-surface-raised: #1c1c1f;
+  --rl-ink: #fafaf9;
+  --rl-ink-muted: #a1a1aa;
+  --rl-rule: #27272a;
+  --rl-accent: #ff2d95;
+  --rl-accent-ground: #ff2d95;
+  --rl-accent-on: #0a0a0b;
+  --rl-ok: #00ff66;
+  --rl-warn: #ffc53d;
+  --rl-danger: #ff6b6b;
+}
+
+/*
+ * The no-JS path. The head script always writes an explicit `data-theme`, so
+ * this block only serves visitors with JavaScript disabled -- who still get a
+ * correct dark mode. Guarded with :not([data-theme='light']) so an explicit
+ * light choice always wins. Kept byte-identical to the block above by
+ * tests/tokens.test.ts.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --rl-bg: #0a0a0b;
+    --rl-surface: #131315;
+    --rl-surface-raised: #1c1c1f;
+    --rl-ink: #fafaf9;
+    --rl-ink-muted: #a1a1aa;
+    --rl-rule: #27272a;
+    --rl-accent: #ff2d95;
+    --rl-accent-ground: #ff2d95;
+    --rl-accent-on: #0a0a0b;
+    --rl-ok: #00ff66;
+    --rl-warn: #ffc53d;
+    --rl-danger: #ff6b6b;
+  }
+}

@@ -3,7 +3,7 @@
   "include": [".astro/types.d.ts", "**/*", "worker-configuration.d.ts"],
   "exclude": ["dist"],
   "compilerOptions": {
-    "types": ["astro/client"],
+    "types": ["astro/client", "node"],
     "strictNullChecks": true,
     "allowJs": true
   }
