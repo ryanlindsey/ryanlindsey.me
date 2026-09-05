@@ -24,3 +24,14 @@ npx wrangler dev
 ```
 
 Deploys run on Workers Builds from `main`; there is no deploy step in CI.
+
+## Releases
+
+[release-please](https://github.com/googleapis/release-please) watches `main` and keeps a release
+PR open with the next version and its changelog. Merging that PR tags the release and publishes it.
+
+PRs are squash-merged, so **the PR title is the commit subject release-please reads**. A title
+without a recognised `type(scope): summary` prefix is silently skipped — no version bump, no
+changelog entry. `feat` is a minor bump, `fix` and `perf` are patches, `type!:` or a
+`BREAKING CHANGE:` footer is a major. The full set of types lives in
+`release-please-config.json` under `changelog-sections`.

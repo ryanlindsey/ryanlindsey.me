@@ -1,0 +1,42 @@
+name: release
+
+on:
+  push: { branches: [main] }
+
+# The job authenticates as the ryanlindsey-bot GitHub App rather than as the workflow's own token,
+# so GITHUB_TOKEN is left with nothing granted and nothing asks for anything back. The app token
+# also matters for CI: pull requests opened by GITHUB_TOKEN do not trigger other workflows, so a
+# release PR raised that way would never run checks.yml and would merge unverified.
+#
+# ryanlindsey-bot must be installed on this repo with repository permissions Contents: write,
+# Pull requests: write and Issues: write. Issues is the non-obvious one: release-please creates
+# and applies its own `autorelease:` labels, which is label writing on an issue rather than on a
+# pull request. A missing app permission fails the same way a missing job permission does — at
+# run time, not at review time.
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # `client-id`, not `app-id`: v3 of the action deprecates the numeric App ID in favour of the
+      # app's Client ID, and warns on every run that still passes it. They are different values on
+      # the same settings page and neither is secret, but a swap between them fails at mint time.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ secrets.BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+
+      # v5 over armature's v4: the only breaking change in v5.0.0 was the action runtime moving to
+      # node24, which matches this repo's `engines` and checks.yml. Inputs are unchanged.
+      - uses: googleapis/release-please-action@v5
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

@@ -1,4 +1,10 @@
 version: 2
+
+# `commit-message.prefix` is load-bearing, not cosmetic. PRs here are squash-merged, so the PR
+# title becomes the commit subject release-please parses on `main`, and Dependabot writes that
+# title. Left to its own devices Dependabot infers `build(deps):` from the repo's history, which
+# release-please reads as type `build` — see `deps` / `deps-dev` in release-please-config.json's
+# changelog-sections for where these land instead.
 updates:
   - package-ecosystem: npm
     directory: /
@@ -7,6 +13,9 @@ updates:
       day: saturday
       time: '10:00'
       timezone: America/Los_Angeles
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
     groups:
       all:
         patterns: ['*']
@@ -24,6 +33,10 @@ updates:
       day: saturday
       time: '10:00'
       timezone: America/Los_Angeles
+    # No `prefix-development`: the github-actions ecosystem has no dev/prod split, so every
+    # action bump is a plain dependency.
+    commit-message:
+      prefix: deps
   # workers/mcp carries its own manifest so Workers Builds can use it as a root
   # directory. Its dependency pins are duplicated from the root package.json and
   # will drift without their own update schedule.
@@ -34,6 +47,9 @@ updates:
       day: saturday
       time: '10:00'
       timezone: America/Los_Angeles
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
     groups:
       all:
         patterns: ['*']
