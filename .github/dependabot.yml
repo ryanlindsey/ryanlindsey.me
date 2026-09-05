@@ -17,3 +17,16 @@ updates:
       day: saturday
       time: '10:00'
       timezone: America/Los_Angeles
+  # workers/mcp carries its own manifest so Workers Builds can use it as a root
+  # directory. Its dependency pins are duplicated from the root package.json and
+  # will drift without their own update schedule.
+  - package-ecosystem: npm
+    directory: /workers/mcp
+    schedule:
+      interval: weekly
+      day: saturday
+      time: '10:00'
+      timezone: America/Los_Angeles
+    groups:
+      all:
+        patterns: ['*']
