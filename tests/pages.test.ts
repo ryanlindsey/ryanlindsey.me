@@ -52,8 +52,13 @@ test('provides a skip link as the first focusable element', async () => {
   const body = page.slice(page.indexOf('<body'));
   // Identity and position, not just "some <a> precedes <main>" -- the header
   // wordmark is also an <a> that precedes <main>, so that weaker check would
-  // stay green even if the skip link moved inside <main>.
-  expect(body.indexOf('href="#main"')).toBeLessThan(body.indexOf('<header'));
+  // stay green even if the skip link moved inside <main>. Existence is
+  // asserted separately from position: indexOf returns -1 on a miss, and
+  // -1 < headerIndex is true, so a position-only check would stay green even
+  // if the skip link were removed entirely.
+  const skipLink = body.indexOf('href="#main"');
+  expect(skipLink).toBeGreaterThan(-1);
+  expect(skipLink).toBeLessThan(body.indexOf('<header'));
   expect(body).toContain('id="main"');
 });
 
