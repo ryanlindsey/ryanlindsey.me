@@ -1,0 +1,28 @@
+---
+// 02 §1's format bar: "Prefer JSON? Markdown? You're my kind of reader."
+// /resume.md, /resume.json and /resume.pdf do not exist until Tasks 3 and 5,
+// so this ships behind SHOW_FORMAT_BAR = false -- flipped to true in Task 5
+// Step 6 once all three resolve. tests/pages.test.ts asserts /resume links
+// none of them today; that stays true as long as this constant stays false.
+const SHOW_FORMAT_BAR = false;
+---
+
+{
+  SHOW_FORMAT_BAR && (
+    <p
+      data-format-bar
+      class="mt-6 flex flex-wrap items-baseline gap-x-4 gap-y-2 border border-rule px-4 py-3 font-mono text-micro uppercase text-ink-muted"
+    >
+      <span>Prefer JSON? Markdown? You're my kind of reader.</span>
+      <a href="/resume.md" class="text-accent hover:underline">
+        Markdown
+      </a>
+      <a href="/resume.json" class="text-accent hover:underline">
+        JSON
+      </a>
+      <a href="/resume.pdf" class="text-accent hover:underline">
+        PDF
+      </a>
+    </p>
+  )
+}

@@ -219,7 +219,9 @@
   [data-site-footer],
   nav,
   [data-theme-toggle],
-  .heading-anchor {
+  .heading-anchor,
+  [data-format-bar],
+  [data-gap-notice] {
     display: none !important;
   }
 

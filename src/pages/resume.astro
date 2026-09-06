@@ -1,38 +1,164 @@
 ---
 import Shell from '../layouts/Shell.astro';
+import ResumeFormats from '../components/ResumeFormats.astro';
+import { getResume } from '../lib/resume-collection';
+import { formatDateRange, resumeGaps, type ResumeWorkEntry } from '../lib/resume';
 
-// Day 3 replaces this with src/content/resume/*.yaml as the single source of
-// truth, generating HTML, Markdown, JSON, and a Browser-Rendering PDF from it
-// (02 §1). The shape here is the shape that data will fill.
-const SECTIONS = [
-  { id: 'experience', title: 'Experience' },
-  { id: 'selected-work', title: 'Selected work' },
-  { id: 'education', title: 'Education' },
-] as const;
+// Day 3 (02 §1): render from the single validated résumé source instead of
+// the day-2 hardcoded skeleton. getResume() reads the `resume` content
+// collection and throws ResumeCollectionError unless it contains exactly one
+// entry -- this page is what exercises that guard for real (see
+// src/lib/resume-collection.ts and tests/pages.test.ts's drift-guard test).
+const resume = await getResume();
+const gaps = resumeGaps(resume);
+// A production page announcing what content it is missing is a worse
+// artifact than one that is simply shorter -- the gap notice is a dev-only
+// working aid for the content track.
+const showGapNotice = import.meta.env.DEV && gaps.length > 0;
+
+interface WorkGroup {
+  name: string;
+  location?: string;
+  roles: ResumeWorkEntry[];
+}
+
+// Consecutive `work` entries sharing a `name` render under one company
+// heading. Four separate Weedmaps rows would read as four jobs at four
+// companies; one Weedmaps block with four titles reads as the decade of
+// promotions that actually happened.
+const workGroups: WorkGroup[] = [];
+for (const entry of resume.work) {
+  const current = workGroups[workGroups.length - 1];
+  if (current && current.name === entry.name) {
+    current.roles.push(entry);
+  } else {
+    workGroups.push({ name: entry.name, location: entry.location, roles: [entry] });
+  }
+}
 ---
 
-<Shell title="Resume — Ryan Lindsey" description="Engineering leadership and agentic systems.">
+<Shell title={`Resume — ${resume.basics.name}`} description={resume.basics.summary}>
   <div class="mx-auto max-w-3xl px-6 py-16" data-testid="resume">
+    {
+      showGapNotice && (
+        <div
+          data-gap-notice
+          class="mb-10 border border-warn px-4 py-3 font-mono text-small text-warn"
+        >
+          <p class="text-micro uppercase tracking-wide">Dev only — résumé gaps</p>
+          <ul class="mt-2 list-disc space-y-1 pl-5">
+            {gaps.map((gap) => (
+              <li>{gap}</li>
+            ))}
+          </ul>
+        </div>
+      )
+    }
+
     <p class="mb-6 border-t border-accent pt-3 font-mono text-micro uppercase text-accent">
       Resume
     </p>
-    <h1 class="font-display text-title text-ink">Ryan Lindsey</h1>
-    <p class="mt-6 text-ink-muted">
-      Engineering leader shipping production agents, MCP infrastructure, and the governance that
-      makes them safe.
-    </p>
+    <h1 class="font-display text-title text-ink">{resume.basics.name}</h1>
+    <p class="mt-2 font-mono text-micro uppercase text-ink-muted">{resume.basics.label}</p>
+    <p class="mt-6 text-ink-muted">{resume.basics.summary}</p>
 
-    {
-      SECTIONS.map((section) => (
-        <section class="mt-16" aria-labelledby={section.id}>
-          <h2 id={section.id} class="border-b border-rule pb-3 font-display text-heading text-ink">
-            {section.title}
-          </h2>
-          <p class="mt-4 font-mono text-micro uppercase text-ink-muted">
-            Populated from structured resume data on day 3.
-          </p>
-        </section>
-      ))
-    }
+    <ResumeFormats />
+
+    <section class="mt-16" aria-labelledby="experience">
+      <h2 id="experience" class="border-b border-rule pb-3 font-display text-heading text-ink">
+        Experience
+      </h2>
+      <div class="mt-8 space-y-10">
+        {
+          workGroups.map((group) => (
+            <div>
+              <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <h3 class="font-display text-subheading text-ink">{group.name}</h3>
+                {group.location && (
+                  <p class="font-mono text-micro uppercase text-ink-muted">{group.location}</p>
+                )}
+              </div>
+              <div class="mt-4 space-y-6 border-l border-rule pl-4">
+                {group.roles.map((role) => (
+                  <div>
+                    <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                      <p class="font-semibold text-ink">{role.position}</p>
+                      <p class="font-mono text-micro text-ink-muted" data-numeric>
+                        {formatDateRange(role.startDate, role.endDate)}
+                      </p>
+                    </div>
+                    {role.highlights.length > 0 && (
+                      <ul class="mt-2 list-disc space-y-1 pl-5 text-ink-muted">
+                        {role.highlights.map((highlight) => (
+                          <li>{highlight}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))
+        }
+      </div>
+    </section>
+
+    <section class="mt-16" aria-labelledby="education">
+      <h2 id="education" class="border-b border-rule pb-3 font-display text-heading text-ink">
+        Education
+      </h2>
+      {
+        resume.education.length > 0 && (
+          <div class="mt-8 space-y-6">
+            {resume.education.map((entry) => (
+              <div>
+                <p class="font-semibold text-ink">{entry.institution}</p>
+                {(entry.studyType || entry.area) && (
+                  <p class="text-ink-muted">
+                    {[entry.studyType, entry.area].filter(Boolean).join(', ')}
+                  </p>
+                )}
+                {entry.startDate && (
+                  <p class="font-mono text-micro text-ink-muted" data-numeric>
+                    {formatDateRange(entry.startDate, entry.endDate)}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      }
+    </section>
+
+    <section class="mt-16" aria-labelledby="skills">
+      <h2 id="skills" class="border-b border-rule pb-3 font-display text-heading text-ink">
+        Skills
+      </h2>
+      {
+        resume.skills.length > 0 && (
+          <ul class="mt-8 space-y-2">
+            {resume.skills.map((skill) => (
+              <li>
+                <span class="font-semibold text-ink">{skill.name}:</span>{' '}
+                <span class="text-ink-muted">{skill.keywords.join(', ')}</span>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    </section>
   </div>
+
+  <script>
+    // /resume?print is what Task 5's Browser-Rendering job navigates to for
+    // the PDF. This page is static (prerendered), so the query string never
+    // reaches Astro.url server-side -- the print search param can only be
+    // read client-side. Deferred/non-blocking is fine: Task 5 waits for this
+    // attribute to appear before printing rather than assuming it is present
+    // on first paint.
+    const root = document.querySelector<HTMLElement>('[data-testid="resume"]');
+    if (root && new URLSearchParams(window.location.search).has('print')) {
+      root.setAttribute('data-print-mode', '');
+    }
+  </script>
 </Shell>

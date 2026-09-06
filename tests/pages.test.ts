@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
+import { formatDateRange } from '../src/lib/resume';
 
 // Both Workers are listed for the same reason as tests/site.smoke.test.ts: the
 // site's `MCP` service binding names the MCP Worker, and workerd refuses to
@@ -173,8 +175,57 @@ test('serves a resume page with a section structure', async () => {
   const page = await html('/resume');
   expect(page).toContain('<h1');
   expect(page).toContain('data-testid="resume"');
-  for (const section of ['Experience', 'Selected work', 'Education']) {
+  // Day 3 replaces day 2's placeholder SECTIONS (Experience / Selected work /
+  // Education) with the shape the résumé data model actually has: Experience,
+  // Education and Skills (task-2-brief.md Step 1). "Selected work" was never
+  // a field on the résumé -- it was the day-2 skeleton's own invention.
+  for (const section of ['Experience', 'Education', 'Skills']) {
     expect(page).toContain(section);
+  }
+});
+
+test('renders every company name and date range from the real résumé data', async () => {
+  // tests/resume.test.ts's resumeFixture hand-duplicates the YAML for its
+  // pure-function unit tests and can silently drift from the real file --
+  // see progress.md's Task 1 entry. This test closes that gap at the HTTP
+  // level: it reads the *actual* content-collection YAML directly (not a
+  // second hand-typed fixture) and asserts every company name and every
+  // date range it lists actually renders on /resume. formatDateRange is the
+  // same pure function the page itself calls, so the expected string can
+  // never drift from what the page produces from the same inputs.
+  //
+  // This also exercises getResume()'s exactly-one-entry guard (untested
+  // since Task 1): /resume is a static, prerendered page, so if that guard
+  // ever threw, `npm test`'s `astro build` step -- which runs before this
+  // file even starts -- would fail outright, before any test could run.
+  const yamlPath = new URL('../src/content/resume/ryan-lindsey.yaml', import.meta.url);
+  const yaml = readFileSync(yamlPath, 'utf8');
+  const workBlock = yaml.slice(yaml.indexOf('\nwork:'), yaml.indexOf('\neducation:'));
+  const entries = workBlock
+    .split(/\n {2}- name: /)
+    .slice(1)
+    .map((chunk) => {
+      const name = chunk.slice(0, chunk.indexOf('\n'));
+      const startDate = chunk.match(/startDate: (\d{4}-\d{2})/)?.[1];
+      const endDate = chunk.match(/endDate: (\d{4}-\d{2})/)?.[1];
+      if (!startDate) throw new Error(`no startDate found in the work entry for ${name}`);
+      return { name, startDate, endDate };
+    });
+  expect(entries.length).toBeGreaterThan(0);
+
+  // The page HTML-escapes text nodes (Y&R Brands / Wunderman renders as
+  // "Y&amp;R..."), so the raw YAML string must be escaped the same way
+  // before comparison -- not decoded, since decoding the whole page risks
+  // masking a real escaping bug elsewhere.
+  const htmlEscape = (value: string) => value.replaceAll('&', '&amp;');
+
+  const page = await html('/resume');
+  for (const name of new Set(entries.map((entry) => entry.name))) {
+    expect(page, `${name} should appear on /resume`).toContain(htmlEscape(name));
+  }
+  for (const entry of entries) {
+    const range = formatDateRange(entry.startDate, entry.endDate);
+    expect(page, `${range} (${entry.name}) should appear on /resume`).toContain(htmlEscape(range));
   }
 });
 
