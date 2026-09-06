@@ -31,8 +31,13 @@ export const RESUME_PDF_MANIFEST_KEY = 'resume-pdf:manifest';
 export const RESUME_PDF_LOCK_KEY = 'resume-pdf:lock';
 
 /**
- * KV's minimum accepted TTL is 60s. It also bounds how long a crashed render
- * can block the next attempt, so it is deliberately not longer than that.
+ * The lock is deleted on success and left to expire on failure, so this doubles
+ * as the cooldown after a crashed render -- see regenerateResumePdf().
+ *
+ * 60s is also KV's minimum accepted TTL, so it is the shortest cooldown
+ * available. That is the right end of the range to sit at: it is long enough to
+ * collapse a burst of retries into one render, and short enough that a
+ * transient Browser Run failure does not leave the PDF unrepairable for long.
  */
 const RENDER_LOCK_TTL_SECONDS = 60;
 
@@ -181,6 +186,10 @@ export function rendererFor(env: ResumePdfEnv): ResumePdfRenderer {
  * of one per request; it is not a correctness guarantee, and it does not need
  * to be -- concurrent renders write the same content-addressed key with the
  * same bytes.
+ *
+ * There is no matching release function on purpose: regenerateResumePdf deletes
+ * the key on the success path only, so a failed render keeps the lock until its
+ * TTL expires.
  */
 async function acquireRenderLock(env: Pick<ResumePdfEnv, 'KV_CACHE'>): Promise<boolean> {
   if ((await env.KV_CACHE.get(RESUME_PDF_LOCK_KEY)) !== null) return false;
@@ -210,6 +219,16 @@ export interface RegenerateOptions {
  * Step 2 is what keeps browser-hours near zero. A cron that renders
  * unconditionally is the expensive mistake this shape exists to avoid: at one
  * scheduled run a day, the steady state is a single KV read.
+ *
+ * THE LOCK IS RELEASED ONLY ON SUCCESS. A render that throws leaves it in
+ * place to expire on its own, which turns RENDER_LOCK_TTL_SECONDS into a
+ * cooldown. This is deliberate and it is the only backoff in the design.
+ * Without it, the failure mode is the expensive one: if `[data-resume-ready]`
+ * never appears -- a JS regression on /resume, a font that never settles, a
+ * Browser Run hiccup -- `waitForSelector` throws after 30s, and with a stale
+ * manifest every single request to /resume.pdf would then schedule its own
+ * fresh render in waitUntil. That is close to one browser session per request
+ * on a route now linked from /resume, so reachable by crawlers.
  */
 export async function regenerateResumePdf(
   env: ResumePdfEnv,
@@ -226,34 +245,33 @@ export async function regenerateResumePdf(
     return { status: 'locked', manifest };
   }
 
-  try {
-    const render = options.render ?? rendererFor(env);
-    const bytes = await render(resumePrintUrl(env));
-    const key = resumePdfKey(currentHash);
-    const object = await env.R2_ASSETS.put(key, bytes, {
-      httpMetadata: {
-        contentType: 'application/pdf',
-        cacheControl: 'public, max-age=300',
-        contentDisposition: 'inline; filename="ryan-lindsey-resume.pdf"',
-      },
-    });
-    if (object === null) {
-      throw new Error(`R2 put of ${key} did not return an object`);
-    }
-    // Written last, and only after the bytes are durable: the manifest flip is
-    // the commit. Content-addressed keys make that atomic by construction --
-    // a half-finished run leaves an orphan object nothing points at, never a
-    // manifest pointing at bytes that are not there.
-    const next: ResumePdfManifest = {
-      hash: currentHash,
-      key,
-      etag: object.httpEtag,
-      builtAt: new Date().toISOString(),
-      size: bytes.byteLength,
-    };
-    await env.KV_CACHE.put(RESUME_PDF_MANIFEST_KEY, JSON.stringify(next));
-    return { status: 'rendered', manifest: next };
-  } finally {
-    await env.KV_CACHE.delete(RESUME_PDF_LOCK_KEY);
+  const render = options.render ?? rendererFor(env);
+  const bytes = await render(resumePrintUrl(env));
+  const key = resumePdfKey(currentHash);
+  const object = await env.R2_ASSETS.put(key, bytes, {
+    httpMetadata: {
+      contentType: 'application/pdf',
+      cacheControl: 'public, max-age=300',
+      contentDisposition: 'inline; filename="ryan-lindsey-resume.pdf"',
+    },
+  });
+  if (object === null) {
+    throw new Error(`R2 put of ${key} did not return an object`);
   }
+  // Written last, and only after the bytes are durable: the manifest flip is
+  // the commit. Content-addressed keys make that atomic by construction --
+  // a half-finished run leaves an orphan object nothing points at, never a
+  // manifest pointing at bytes that are not there.
+  const next: ResumePdfManifest = {
+    hash: currentHash,
+    key,
+    etag: object.httpEtag,
+    builtAt: new Date().toISOString(),
+    size: bytes.byteLength,
+  };
+  await env.KV_CACHE.put(RESUME_PDF_MANIFEST_KEY, JSON.stringify(next));
+  // No `finally`. Reaching this line is what proves the render worked; every
+  // other exit leaves the lock to expire. See the note above.
+  await env.KV_CACHE.delete(RESUME_PDF_LOCK_KEY);
+  return { status: 'rendered', manifest: next };
 }

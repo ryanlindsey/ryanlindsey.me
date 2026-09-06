@@ -37,6 +37,8 @@ const DEFAULT_PDF = toArrayBuffer(
 let pdf: ArrayBuffer = DEFAULT_PDF;
 let lastRenderUrl: string | null = null;
 let renderCount = 0;
+let failRenders = false;
+let renderDelayMs = 0;
 
 export default class MockBrowser extends WorkerEntrypoint {
   /** Seeds the bytes the next /render returns. */
@@ -45,11 +47,31 @@ export default class MockBrowser extends WorkerEntrypoint {
   }
 
   /**
-   * The URL the site Worker last asked to render. Tests assert on this to
-   * prove the render URL comes from the SITE_ORIGIN var and not from
-   * `request.url` -- `--infer-origin-from-routes` defaults to true, so
-   * `request.url` reads as the production hostname even locally, and deriving
-   * the render target from it would make local dev render production.
+   * Makes /render answer 500, which src/lib/resume-pdf.ts's stub renderer turns
+   * into a throw. Stands in for the real failure this design has to survive:
+   * `waitForSelector('[data-resume-ready]')` timing out after 30s because a JS
+   * regression, an unsettled font or a Browser Run hiccup means the page never
+   * signals ready.
+   */
+  setFailRenders(fail: boolean): void {
+    failRenders = fail;
+  }
+
+  /**
+   * Holds /render open for `ms` before answering. Exists so a test can observe
+   * the site Worker's response BEFORE the render it scheduled has finished --
+   * which is the only way to prove `ctx.waitUntil()` rather than `await`, and
+   * so the only way to prove a visitor is never blocked on a render.
+   */
+  setRenderDelayMs(ms: number): void {
+    renderDelayMs = ms;
+  }
+
+  /**
+   * The URL the site Worker last asked to render. Tests assert on this to prove
+   * the render URL comes from the SITE_ORIGIN var rather than from
+   * `request.url` -- which is the thing that would break under `wrangler dev`
+   * and in production, where `--infer-origin-from-routes` defaults to true.
    */
   lastRenderUrl(): string | null {
     return lastRenderUrl;
@@ -65,6 +87,8 @@ export default class MockBrowser extends WorkerEntrypoint {
     pdf = DEFAULT_PDF;
     lastRenderUrl = null;
     renderCount = 0;
+    failRenders = false;
+    renderDelayMs = 0;
   }
 
   override async fetch(request: Request): Promise<Response> {
@@ -74,6 +98,12 @@ export default class MockBrowser extends WorkerEntrypoint {
     }
     lastRenderUrl = url.searchParams.get('url');
     renderCount += 1;
+    if (renderDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, renderDelayMs));
+    }
+    if (failRenders) {
+      return new Response('mock-browser was told to fail this render\n', { status: 500 });
+    }
     return new Response(pdf, {
       headers: { 'content-type': 'application/pdf' },
     });

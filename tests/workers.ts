@@ -8,10 +8,17 @@
  *
  * SITE_ORIGIN is what the Browser Run job navigates to, and it is a var rather
  * than something derived from `request.url` because
- * `--infer-origin-from-routes` defaults to true: with the custom-domain route
- * in wrangler.jsonc, `request.url` inside the Worker reads as
- * https://ryanlindsey.me/... even here. Overriding it to a sentinel is what
- * makes tests/resume-pdf.test.ts able to tell the two apart.
+ * `--infer-origin-from-routes` defaults to true: under `wrangler dev` and in
+ * production, the custom-domain route in wrangler.jsonc makes `request.url`
+ * inside the Worker read as https://ryanlindsey.me/... A render URL derived
+ * from it would make local dev silently render production.
+ *
+ * NOT here, though: `createTestHarness` sets `inferOriginFromRoutes: false`
+ * (wrangler-dist/cli.js), so under this harness `request.url` is the loopback
+ * address. So these tests cannot reproduce the production hazard -- what
+ * overriding SITE_ORIGIN to a sentinel buys is that the assertion in
+ * tests/resume-pdf.test.ts still catches a swap to `request.url`, because the
+ * loopback host is not this sentinel either.
  */
 export const TEST_SITE_ORIGIN = 'http://resume-pdf.test';
 

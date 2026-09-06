@@ -1,10 +1,15 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
 
-  // TEST-ONLY. This Worker is never deployed: no account_id, no routes, and no
-  // deploy script references it. It exists so tests/resume-pdf.test.ts can run
-  // the /resume.pdf render path with zero Cloudflare credentials and without
-  // downloading Chrome.
+  // TEST-ONLY. This Worker is never deployed: no account_id, no routes, no
+  // workers.dev subdomain, and no deploy script references it. It exists so
+  // tests/resume-pdf.test.ts can run the /resume.pdf render path with zero
+  // Cloudflare credentials and without downloading Chrome.
+  //
+  // `workers_dev: false` is the mechanism, not just the convention: without it
+  // a stray `wrangler deploy --config workers/mock-browser/wrangler.jsonc`
+  // would publish a test double to a public workers.dev subdomain. The absence
+  // of routes would not have stopped that.
   //
   // Miniflare does ship a real Browser Run plugin, so `puppeteer.launch()`
   // genuinely works locally -- but its first run downloads 150-200 MB of
@@ -18,4 +23,5 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-02",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
 }

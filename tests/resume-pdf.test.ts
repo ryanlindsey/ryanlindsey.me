@@ -132,14 +132,30 @@ test('answers 304 when the request already has the stored etag', async () => {
 test('serves stale bytes immediately and regenerates behind the response', async () => {
   await seedManifest('stalehash', '%PDF-1.7 stale');
   await mock.setPdf(encoder.encode('%PDF-1.7 regenerated'));
+  // The render is held open so the response can be observed BEFORE it lands.
+  // Without this the test passes whether the route uses `ctx.waitUntil()` or a
+  // bare `await`: the response body comes from the manifest read before either,
+  // and the poll below returns on its first tick because regeneration has
+  // already finished. The delay is what makes "the visitor is not blocked" an
+  // assertion instead of a description.
+  const RENDER_DELAY_MS = 750;
+  await mock.setRenderDelayMs(RENDER_DELAY_MS);
 
+  const startedAt = Date.now();
   const response = await server.fetch('/resume.pdf');
+  const elapsedMs = Date.now() - startedAt;
 
   // The visitor gets bytes now. A résumé one edit out of date beats a visitor
   // held open for the length of a browser render.
   expect(response.status).toBe(200);
   expect(response.headers.get('x-resume-pdf-state')).toBe('stale');
   expect(await response.text()).toBe('%PDF-1.7 stale');
+
+  // Both halves of "never block a visitor on a render", checked before the
+  // regeneration is allowed to finish: the response beat the render, and the
+  // commit point had not moved when it arrived.
+  expect(elapsedMs).toBeLessThan(RENDER_DELAY_MS);
+  expect((await readManifest())?.hash).toBe('stalehash');
 
   const manifest = await waitFor(async () => {
     const current = await readManifest();
@@ -176,9 +192,13 @@ test('renders inline on a cold miss and drives the URL from SITE_ORIGIN', async 
   );
   expect(response.headers.get('etag')).toMatch(/^"[^"]+"$/);
 
-  // The whole reason SITE_ORIGIN is a var. `request.url` inside this Worker
-  // reads as the production hostname because of --infer-origin-from-routes, so
-  // a render URL derived from it would point at production even here.
+  // The whole reason SITE_ORIGIN is a var: under `wrangler dev` and in
+  // production, --infer-origin-from-routes makes `request.url` read as
+  // https://ryanlindsey.me/..., so a render URL derived from it would point
+  // local dev at production. This harness cannot reproduce that -- it sets
+  // inferOriginFromRoutes: false, so `request.url` here is the loopback
+  // address -- but the loopback host is not this sentinel either, so the
+  // assertion still fails if anyone swaps the var for `request.url`.
   expect(await mock.lastRenderUrl()).toBe(`${TEST_SITE_ORIGIN}/resume?print`);
 
   const manifest = await readManifest();
@@ -214,6 +234,29 @@ test('declines to render a cold miss while another render holds the lock', async
   expect(response.headers.get('retry-after')).toBe('10');
   expect(response.headers.get('x-resume-pdf-state')).toBe('locked');
   expect(await mock.renderCount()).toBe(0);
+});
+
+test('keeps the lock after a failed render, so the TTL becomes a cooldown', async () => {
+  // The only backoff in the design, and the one path that costs money if it is
+  // missing. A render that throws -- waitForSelector timing out because
+  // [data-resume-ready] never appears is the realistic case -- must NOT release
+  // the lock, or a stale manifest turns every subsequent request into its own
+  // browser session. Releasing in a `finally` would look tidier and would be
+  // exactly this bug.
+  await mock.setFailRenders(true);
+
+  const response = await server.fetch('/resume.pdf');
+  expect(response.status).toBe(500);
+  expect(await mock.renderCount()).toBe(1);
+  expect(await env.KV_CACHE.get(RESUME_PDF_LOCK_KEY)).not.toBeNull();
+
+  // And the cooldown is real: the next request is refused rather than starting
+  // a second browser, even though the first one failed.
+  await mock.setFailRenders(false);
+  const second = await server.fetch('/resume.pdf');
+  expect(second.status).toBe(503);
+  expect(second.headers.get('x-resume-pdf-state')).toBe('locked');
+  expect(await mock.renderCount()).toBe(1);
 });
 
 test('refuses requests stamped by Browser Run', async () => {
