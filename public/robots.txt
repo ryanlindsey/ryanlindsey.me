@@ -1,0 +1,198 @@
+# robots.txt for https://ryanlindsey.me
+#
+# This site wants to be read by agents: crawled, cited, and answered from,
+# by name. This file says so explicitly rather than leaving every crawler
+# operator to guess from silence. See /llms.txt for a curated, agent-facing
+# index of what is on this site, and the MCP server at
+# https://mcp.ryanlindsey.me/mcp for programmatic access (a tool endpoint,
+# not a page -- fetching the bare host 404s). Neither is a robots.txt
+# directive; no standard formalises either one here, so these are comments,
+# not machine-readable instructions.
+#
+# robots.txt is per-origin (RFC 9309 §2.3). This file has no effect on
+# mcp.ryanlindsey.me, which is a separate origin and will carry its own
+# robots.txt when day 4's MCP work ships.
+#
+# ---------------------------------------------------------------------------
+# READ THIS BEFORE ADDING A Disallow
+# ---------------------------------------------------------------------------
+# RFC 9309 §2.2.1: a named `User-agent` group does NOT inherit anything
+# from the `*` group below. A crawler matches exactly one group -- the
+# most specific one whose token names it -- and ignores every other group
+# in this file completely. Every operator named further down (ClaudeBot,
+# GPTBot, and the rest) has its own group for exactly this reason: welcoming
+# it by name.
+#
+# The consequence: today, `Allow: /` is the only directive in this file, so
+# there is nothing to leak. The day someone adds `Disallow: /some-private-path`
+# under `*` and reasonably assumes that covers every crawler, it will not --
+# every named agent below will keep fetching that path, because its own
+# group never mentions the restriction. If a path needs to be off-limits to
+# everyone, add the same Disallow to every group in this file, or better,
+# enforce it at the edge/WAF layer, which does not have this gap.
+#
+# This is also why the Content-Signal line (see below) is repeated in every
+# group instead of stated once under `*`: the same non-inheritance rule
+# applies to it, and a training-data reservation that silently didn't cover
+# the training crawlers it names would defeat its own point.
+#
+# ---------------------------------------------------------------------------
+# WHAT Content-Signal IS, AND IS NOT
+# ---------------------------------------------------------------------------
+# `Content-Signal` is a Cloudflare-authored addition to robots.txt, live
+# since 2025-09-24, sitting inside a `User-agent` group alongside `Allow`.
+# It is NOT part of RFC 9309, has no IETF standing (Cloudflare's own bid to
+# standardise it, draft-romm-aipref-contentsignals, expired unadopted in
+# April 2026), and Google is on record dismissing it: John Mueller has
+# called it bloat that "has no effects whatsoever for any crawler or llm."
+# The rival IETF vocabulary (aipref) is a separate, pre-consensus effort;
+# its own working-group draft states in its own text that it does not yet
+# reflect consensus, so this file does not ship that vocabulary either.
+#
+# Given all that: this line does NOT control crawling or fetching. `Allow`
+# does that, and every group below sets it to `/` for every agent named
+# here. `Content-Signal` is a machine-readable statement of intent that no
+# crawler is obliged to honour:
+#
+#   search=yes     may be indexed and cited in search results and
+#                  AI-assisted answers
+#   ai-input=yes   may be used for retrieval/grounding at query time, e.g.
+#                  answering a question about a specific page
+#   ai-train=no    a reservation of rights against using this content to
+#                  train or fine-tune models -- legally, this line is an
+#                  EU Article 4(3) (Directive 2019/790) rights reservation,
+#                  not a technical control, and nothing here can stop a
+#                  crawler that trains on it anyway
+#   use=reference  Cloudflare's own default since 2026-07-01, spelled out
+#                  here rather than left to inherit silently
+#
+# `search` and `ai-input` are about being found, read, and cited right now.
+# `ai-train` is a separate question about becoming training data later --
+# different stakes, and deliberately not conflated here.
+#
+# ---------------------------------------------------------------------------
+# WHY THIS FILE IS PERMISSIVE WHILE THE SITE IS noindex
+# ---------------------------------------------------------------------------
+# Every page here currently carries <meta name="robots" content="noindex">
+# (src/layouts/Base.astro, removed at launch). This file stays wide open
+# anyway (`Allow: /` everywhere), and that combination is deliberate, not a
+# contradiction to "fix" by adding a Disallow before launch.
+#
+# Crawling and indexing are different levers. `Disallow` stops a crawler
+# from fetching a page at all, which stops it from ever seeing that page's
+# `noindex` tag -- the well-known trap where blocking a page in robots.txt
+# is exactly how it ends up indexed anyway (a crawler with no other signal
+# can still index a disallowed URL from a link pointing at it elsewhere).
+# Permissive robots.txt plus `noindex` means crawlers fetch the page, read
+# the tag, and correctly decline to index it. Leave this as it is until day
+# 7 removes the `noindex` tag; do not add a Disallow in the meantime.
+#
+# No `Sitemap:` line: there is no sitemap yet (`@astrojs/sitemap` is not
+# installed, and there is nothing worth indexing while the site is noindex
+# sitewide). A Sitemap line pointing at a 404 would be worse than having
+# none. Day 7 adds both together.
+
+User-agent: *
+Content-Signal: search=yes, ai-input=yes, ai-train=no, use=reference
+Allow: /
+
+# ---------------------------------------------------------------------------
+# NAMED AGENTS -- welcomed explicitly, for legibility
+# ---------------------------------------------------------------------------
+# Every group below repeats Content-Signal and Allow rather than relying on
+# `*` above -- see "READ THIS BEFORE ADDING A Disallow".
+#
+# Some of these tokens are documented BY THEIR OWN OPERATOR as fetching a
+# page at a live user's request rather than crawling, and as potentially
+# ignoring robots.txt for exactly that reason: ChatGPT-User (OpenAI),
+# Perplexity-User (Perplexity), and meta-externalfetcher (Meta) all carry
+# this caveat in their own vendor docs. Their `Allow` entries below are
+# written for legibility and honesty about this site's intent, not because
+# they are enforceable -- nothing in this file can make a crawler that
+# ignores robots.txt start honouring it.
+
+# Anthropic -- support.claude.com/en/articles/8896518. All three tokens,
+# including Claude-User, are documented as honouring robots.txt -- Anthropic
+# is the one major vendor whose user-triggered fetcher does.
+User-agent: ClaudeBot
+User-agent: Claude-User
+User-agent: Claude-SearchBot
+Content-Signal: search=yes, ai-input=yes, ai-train=no, use=reference
+Allow: /
+
+# OpenAI -- developers.openai.com/api/docs/bots. ChatGPT-User is
+# user-triggered; see the caveat above.
+User-agent: GPTBot
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+Content-Signal: search=yes, ai-input=yes, ai-train=no, use=reference
+Allow: /
+
+# Google -- developers.google.com/search/docs/crawling-indexing. Google-Extended
+# is a usage-gate token, not a crawler: it makes no HTTP requests of its
+# own, and only governs whether content Googlebot already fetched may train
+# Gemini/Vertex AI models. It has no effect on Search, Discover, or Images.
+User-agent: Google-Extended
+Content-Signal: search=yes, ai-input=yes, ai-train=no, use=reference
+Allow: /
+
+# Perplexity -- docs.perplexity.ai/guides/bots. Perplexity-User is
+# user-triggered; see the caveat above. Separately, Cloudflare has reported
+# Perplexity fetching pages past a declared block using an undeclared,
+# browser-spoofing user agent -- a real evasion claim, disputed by
+# Perplexity, and unresolved as of this writing. Nothing expressed in a
+# robots.txt file can address that; it would need edge/WAF enforcement.
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+Content-Signal: search=yes, ai-input=yes, ai-train=no, use=reference
+Allow: /
+
+# Common Crawl -- commoncrawl.org/ccbot. Honours robots.txt and publishes
+# its IP ranges. A change here only affects future monthly crawls; snapshots
+# already published are unaffected.
+User-agent: CCBot
+Content-Signal: search=yes, ai-input=yes, ai-train=no, use=reference
+Allow: /
+
+# Meta -- developers.facebook.com/docs/sharing/webmasters/web-crawlers.
+# meta-externalfetcher is user-triggered; see the caveat above.
+User-agent: meta-externalagent
+User-agent: meta-webindexer
+User-agent: meta-externalads
+User-agent: meta-externalfetcher
+Content-Signal: search=yes, ai-input=yes, ai-train=no, use=reference
+Allow: /
+
+# Amazon -- developer.amazon.com/amazonbot.
+User-agent: Amazonbot
+Content-Signal: search=yes, ai-input=yes, ai-train=no, use=reference
+Allow: /
+
+# Apple -- support.apple.com/en-us/119829. Applebot-Extended is a
+# usage-gate token like Google-Extended: it does not crawl on its own, and
+# only governs training use of content Applebot already fetched. It has no
+# effect on Siri, Spotlight, or Safari search features.
+User-agent: Applebot
+User-agent: Applebot-Extended
+Content-Signal: search=yes, ai-input=yes, ai-train=no, use=reference
+Allow: /
+
+# Mistral -- MistralAI-User is user-triggered (Le Chat / API tool use) and,
+# unlike most other vendors' user-triggered tokens, is reported to honour
+# robots.txt rather than carrying the ignores-it-by-design caveat above.
+User-agent: MistralAI-User
+Content-Signal: search=yes, ai-input=yes, ai-train=no, use=reference
+Allow: /
+
+# Not listed here, deliberately -- a named group for any of these would
+# cost upkeep and control nothing:
+#   Bytespider (ByteDance) -- no vendor documentation exists at all, and
+#     third-party reports consistently find it reads robots.txt, then
+#     crawls disallowed paths anyway.
+#   xAI / Grok             -- no official token, no vendor documentation,
+#     no published IP ranges; reported to present as an ordinary browser.
+#   DeepSeek               -- publishes no crawler token at all; its
+#     fetches reportedly look like ordinary browser traffic by design.
+#   Cohere, You.com, Timpi -- tokens for these exist only in third-party
+#     crawler directories; no operator publishes its own robots.txt
+#     documentation for any of the three.

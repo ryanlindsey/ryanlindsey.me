@@ -599,6 +599,104 @@ test('footer links /llms.txt and the MCP endpoint, and never links /llms-full.tx
   );
 });
 
+// Day 3 Task 12 (02 §3 / research appendix B5): public/robots.txt is a
+// hand-authored static file, not a prerendered endpoint, so these tests
+// read the file over HTTP the same way every other route in this file is
+// checked, rather than reading the source from disk.
+
+test('robots.txt emits and allows every named crawler group, not just the wildcard', async () => {
+  const response = await server.fetch('/robots.txt');
+  expect(response.status).toBe(200);
+  const body = await response.text();
+
+  // Group the file the way RFC 9309 groups it: one or more consecutive
+  // `User-agent:` lines share the directives that follow, up to the next
+  // `User-agent:` line or end of file. Comments and blank lines are
+  // stripped first -- they carry no grouping meaning of their own.
+  const lines = body
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#'));
+
+  const groups: { agents: string[]; directives: string[] }[] = [];
+  for (const line of lines) {
+    const agentMatch = line.match(/^User-agent:\s*(.+)$/i);
+    if (agentMatch) {
+      const current = groups[groups.length - 1];
+      // Still collecting agent tokens for the same group (no directive seen
+      // yet since the last User-agent line) vs. starting a new group.
+      if (current && current.directives.length === 0) {
+        current.agents.push(agentMatch[1]);
+      } else {
+        groups.push({ agents: [agentMatch[1]], directives: [] });
+      }
+    } else if (groups.length > 0) {
+      groups[groups.length - 1].directives.push(line);
+    }
+  }
+
+  const wildcard = groups.find((group) => group.agents.includes('*'));
+  expect(wildcard, 'a `*` group must exist').toBeDefined();
+  expect(wildcard!.directives).toContain('Allow: /');
+
+  // This is the RFC 9309 §2.2.1 point of the whole task: a named group does
+  // not inherit `*`'s Allow, so each one must carry its own or that agent
+  // is not actually welcomed by this file.
+  const namedGroups = groups.filter((group) => !group.agents.includes('*'));
+  expect(namedGroups.length).toBeGreaterThan(0);
+  for (const group of namedGroups) {
+    expect(group.directives, `${group.agents.join(', ')} should carry its own Allow: /`).toContain(
+      'Allow: /',
+    );
+  }
+});
+
+test('robots.txt carries the owner-decided Content-Signal reservation, points at /llms.txt and the MCP endpoint, and ships no Sitemap line', async () => {
+  const body = await (await server.fetch('/robots.txt')).text();
+  // Owner's decision, 2026-09-06: search/ai-input readable and citable now,
+  // ai-train reserved -- see the file's own comment for why these are not
+  // the same lever.
+  expect(body).toContain('Content-Signal: search=yes, ai-input=yes, ai-train=no, use=reference');
+  expect(body).toContain('/llms.txt');
+  // Fix round 1 (task-9-report.md, applies here too): the endpoint is `/mcp`
+  // on that domain, not the bare origin -- the bare origin 404s.
+  expect(body).toContain('https://mcp.ryanlindsey.me/mcp');
+  // No sitemap exists yet (`@astrojs/sitemap` is not installed, and the site
+  // is noindex sitewide) -- day 7 adds both together.
+  expect(body).not.toMatch(/^Sitemap:/m);
+});
+
+test('robots.txt documents the group-inheritance trap, the enforceability caveat, and the noindex/permissive-crawl reasoning in the file itself, not only in the plan', async () => {
+  // A robots.txt whose warnings live in a planning doc nobody reads has not
+  // done its job (task-12-brief.md's own words) -- so these assert against
+  // the shipped file's actual text, not against this repo's docs.
+  const body = await (await server.fetch('/robots.txt')).text();
+  // Comments in this file wrap across multiple `#`-prefixed lines for
+  // readability, the way prose does everywhere else in this repo. Join them
+  // back into flowing text before matching a phrase that spans a line break
+  // -- the same way a human reader (or the person adding a Disallow this
+  // note is aimed at) would read them.
+  const prose = body.replace(/\n#\s*/g, ' ');
+
+  // 1. RFC 9309 §2.2.1: a named group does not inherit from `*`, so a future
+  // Disallow added under `*` would silently exempt every named agent below.
+  expect(prose).toContain('RFC 9309');
+  expect(prose).toMatch(/does NOT inherit/);
+  expect(prose).toMatch(/reasonably assumes that covers every crawler, it will not/);
+
+  // 2. Enforceability: the Allow entries for user-triggered fetchers are
+  // written for legibility, not because robots.txt can compel them.
+  expect(prose).toMatch(/not because (it is|they are) enforceable/i);
+
+  // 3. The noindex interaction: permissive robots.txt + sitewide noindex is
+  // deliberate, and Disallow would be the wrong fix (it would stop a
+  // crawler from ever fetching the page far enough to see the noindex tag).
+  expect(prose).toContain('noindex');
+  expect(prose).toMatch(
+    /stops a crawler from fetching a page at all, which stops it from ever seeing/,
+  );
+});
+
 // Day 3 Task 11 (02 §3): /rss.xml (RSS 2.0, via @astrojs/rss) and
 // /feed.json (JSON Feed 1.1, hand-built -- @astrojs/rss is RSS-only).
 // task-11-brief.md's own warning: both real .mdx files are still
