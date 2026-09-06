@@ -1,0 +1,84 @@
+# Source of truth for every rendered résumé format (HTML, Markdown, JSON, PDF
+# -- 02 §1). One commit here is meant to update all of them atomically, so
+# nothing in this file should exist only for one format's benefit.
+#
+# Every structural fact below (company, title, dates, location) is verified
+# from the 2026-09-05 role inventory. `highlights` is deliberately [] for all
+# eight roles and `education` is deliberately [] -- see docs/plan 02 §1 and
+# the day-3 build plan's Task 1: this is content-track work, not a gap to be
+# helpfully filled in here.
+basics:
+  name: Ryan Lindsey
+  # No verified positioning headline exists yet, so this is the current
+  # role's title (below), not an invented tagline.
+  label: Senior Engineering Manager
+  summary: >-
+    Agentic engineering is making engineers dramatically faster. I build the
+    instruments that let the organization around them keep pace.
+  email: hello@ryanlindsey.me
+  url: https://ryanlindsey.me
+  location:
+    city: Laguna Niguel
+    region: CA
+    countryCode: US
+  # phone and profiles omitted: no verified value exists, and a résumé is the
+  # wrong place to guess one. resumeGaps() reports both.
+
+work:
+  - name: Weedmaps
+    position: Senior Engineering Manager
+    location: Irvine, CA
+    startDate: 2021-02
+    highlights: []
+  - name: Weedmaps
+    position: Engineering Manager
+    location: Irvine, CA
+    startDate: 2017-09
+    endDate: 2021-02
+    highlights: []
+  - name: Weedmaps
+    position: Manager, Front End Engineering
+    location: Irvine, CA
+    startDate: 2016-05
+    endDate: 2017-09
+    highlights: []
+  - name: Weedmaps
+    position: Sr. Front End Engineer
+    location: Irvine, CA
+    startDate: 2016-03
+    endDate: 2016-05
+    highlights: []
+  - name: RED Digital Cinema
+    position: Sr. Front End Developer
+    location: Irvine, CA
+    startDate: 2011-10
+    endDate: 2016-02
+    highlights: []
+  - name: Innocean Worldwide
+    position: Sr. Front End Developer
+    location: Huntington Beach, CA
+    startDate: 2011-02
+    endDate: 2011-10
+    highlights: []
+  - name: Y&R Brands / Wunderman
+    position: Front End Developer
+    location: Irvine, CA
+    startDate: 2007-06
+    endDate: 2011-02
+    highlights: []
+  - name: Freelance
+    position: Web design & development
+    location: Orange County, CA
+    startDate: 2001-01
+    endDate: 2007-06
+    highlights: []
+
+# No education section on the LinkedIn profile; the interview record lists it
+# as an open question. resumeGaps() reports this too.
+education: []
+
+skills: []
+
+meta:
+  version: 0.1.0
+  lastModified: '2026-09-06'
