@@ -24,6 +24,10 @@
 /** Every node this file emits carries this, verbatim, per schema.org convention. */
 export const SCHEMA_CONTEXT = 'https://schema.org';
 
+// No `email` field, by construction (`basics.email` exists and is used
+// elsewhere -- resume.json, resume.md -- but publishing it in a document
+// meant to be crawled and reused verbatim is a different, and worse,
+// exposure than putting it on the résumé pages a human reads directly).
 export interface PersonNode {
   '@context': typeof SCHEMA_CONTEXT;
   '@type': 'Person';

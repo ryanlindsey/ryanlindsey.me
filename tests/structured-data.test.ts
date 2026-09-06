@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, test, beforeAll, afterAll } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { SITE_HARNESS_WORKERS } from './workers';
@@ -33,6 +34,28 @@ import {
 // only checking that *a* script tag exists, and the type-membership checks
 // use exact set equality (not `toContain`) so an extra or missing node is a
 // failure, not a pass.
+
+// `resume.basics.name` (site's own display name), read from the real YAML
+// rather than hand-typed as a second literal -- the same reasoning
+// tests/pages.test.ts's own `resumeYamlPath` reads give. Fix round 1: an
+// earlier version of this file hardcoded `'Ryan Lindsey'` here AND
+// src/pages/writing/[...slug].astro's breadcrumb independently hardcoded
+// the same literal for its home-entry label -- two copies agreeing with
+// each other is not a test, it is the same value written twice, and it
+// would not have caught the breadcrumb silently going stale if
+// `basics.name` ever changed. Reading the real file here means this
+// assertion is checking the breadcrumb against the actual canonical value,
+// not against a second hand-typed copy of it.
+const resumeYaml = readFileSync(
+  new URL('../src/content/resume/ryan-lindsey.yaml', import.meta.url),
+  'utf8',
+);
+const basicsBlock = resumeYaml.slice(
+  resumeYaml.indexOf('\nbasics:'),
+  resumeYaml.indexOf('\nwork:'),
+);
+const basicsName = basicsBlock.match(/\n {2}name: (.+)\n/)?.[1];
+if (!basicsName) throw new Error("no 'basics.name' found in the résumé YAML");
 
 // --- 1. Pure builder tests ------------------------------------------------
 
@@ -261,11 +284,7 @@ test('a post carries Person, BlogPosting and BreadcrumbList, matching the real c
 
   const breadcrumb = blocks.find(isBreadcrumbList);
   expect(breadcrumb).toBeDefined();
-  expect(breadcrumb!.itemListElement.map((item) => item.name)).toEqual([
-    'Ryan Lindsey',
-    'Writing',
-    h1,
-  ]);
+  expect(breadcrumb!.itemListElement.map((item) => item.name)).toEqual([basicsName, 'Writing', h1]);
   await expectEveryUrlToResolve(breadcrumb, '/writing/type-specimen BreadcrumbList');
 });
 

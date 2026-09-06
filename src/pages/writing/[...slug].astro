@@ -40,7 +40,7 @@ const structuredData = [
     author,
   }),
   buildBreadcrumbList([
-    { name: 'Ryan Lindsey', url: new URL('/', Astro.site).href },
+    { name: resume.basics.name, url: new URL('/', Astro.site).href },
     { name: 'Writing', url: new URL('/writing', Astro.site).href },
     { name: post.data.title, url: canonicalUrlFor(post) },
   ]),
