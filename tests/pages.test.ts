@@ -5,6 +5,7 @@ import type { CollectionEntry } from 'astro:content';
 import { SITE_HARNESS_WORKERS } from './workers';
 import { formatDateRange } from '../src/lib/resume';
 import { buildLlmsTxt, buildLlmsFullTxt, type LlmsLink } from '../src/lib/llms-index';
+import { buildRssFeed, buildJsonFeed, type JsonFeed } from '../src/lib/feeds';
 
 // See ./workers.ts for why the site Worker is booted from the build output and
 // why the MCP Worker is always listed with it.
@@ -175,6 +176,13 @@ test('carries no candidacy language on any public surface', async () => {
     // reason every other aggregation surface above is.
     '/llms.txt',
     '/llms-full.txt',
+    // Day 3 Task 11: /rss.xml and /feed.json are aggregation surfaces too --
+    // once the content track publishes something, its full content (not
+    // just a description) lands in both. Listed here for the same reason
+    // /llms-full.txt is: today's build makes this vacuously true (both are
+    // empty), but the check stays true the moment content ships.
+    '/rss.xml',
+    '/feed.json',
   ]) {
     const page = await html(route);
     for (const pattern of BANNED) {
@@ -589,4 +597,105 @@ test('footer links /llms.txt and the MCP endpoint, and never links /llms-full.tx
   expect(page, 'no page should link /llms-full.txt from its footer').not.toContain(
     '/llms-full.txt',
   );
+});
+
+// Day 3 Task 11 (02 §3): /rss.xml (RSS 2.0, via @astrojs/rss) and
+// /feed.json (JSON Feed 1.1, hand-built -- @astrojs/rss is RSS-only).
+// task-11-brief.md's own warning: both real .mdx files are still
+// draft: true, so today's actual build output is a channel/document with
+// ZERO items, and it is explicit that a test asserting only that emptiness
+// would be exactly the trap this codebase has already shipped eight times
+// (most recently a breadcrumb test that hardcoded the same literal as the
+// bug it was meant to catch). So every "today's real state is empty"
+// assertion below is paired with a fixture-based assertion against the
+// exported generator functions (src/lib/feeds.ts), proving each generator
+// actually produces a populated result with the entry's FULL content --
+// not its one-line description -- and not just nothing.
+
+test("/rss.xml is a well-formed, empty RSS 2.0 channel while nothing is published (today's real state)", async () => {
+  const response = await server.fetch('/rss.xml');
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toMatch(/^application\/rss\+xml\b/);
+  const xml = await response.text();
+  // Well-formed: a real XML declaration, an open channel with the site's own
+  // title/link, and a properly closed document -- not just "the body is
+  // non-empty" (which a truncated or malformed response would also satisfy).
+  expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
+  expect(xml).toContain('<rss version="2.0"');
+  expect(xml).toContain('<title>Ryan Lindsey</title>');
+  expect(xml).toContain('<link>https://ryanlindsey.me/</link>');
+  expect(xml.endsWith('</channel></rss>')).toBe(true);
+  // Zero items, not a malformed or missing channel: no <item> element at all.
+  expect(xml).not.toContain('<item>');
+});
+
+test('buildRssFeed emits a published fixture entry with its full content, not just its description (proves the generator works, not just that it currently produces nothing)', async () => {
+  const xml = await buildRssFeed([publishedPostFixture()], {
+    title: 'Ryan Lindsey',
+    description: 'A test summary.',
+    site: 'https://ryanlindsey.me',
+  });
+  expect(xml).toContain('<title>Fixture Post</title>');
+  expect(xml).toContain('<link>https://ryanlindsey.me/writing/fixture-post/</link>');
+  // The one-line excerpt is still present in <description>...
+  expect(xml).toContain(
+    '<description>A fixture post used only to prove /llms-full.txt concatenates.</description>',
+  );
+  // ...but the FULL document -- frontmatter and body -- lives separately in
+  // <content:encoded>, which is what 02 §3's "full-content, not summaries"
+  // rule is actually asking for.
+  expect(xml).toContain('<content:encoded>');
+  expect(xml).toContain('title: &quot;Fixture Post&quot;');
+  expect(xml).toContain('Fixture body text.');
+});
+
+test("/feed.json is a well-formed, empty JSON Feed 1.1 document while nothing is published (today's real state)", async () => {
+  const response = await server.fetch('/feed.json');
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toMatch(/^application\/feed\+json\b/);
+  const feed = (await response.json()) as JsonFeed;
+  expect(feed.version).toBe('https://jsonfeed.org/version/1.1');
+  expect(feed.title).toBe('Ryan Lindsey');
+  expect(feed.home_page_url).toBe('https://ryanlindsey.me/');
+  expect(feed.feed_url).toBe('https://ryanlindsey.me/feed.json');
+  // A well-formed feed with zero items, not a malformed document: the
+  // `items` key is present and is an empty array, not omitted or null.
+  expect(Array.isArray(feed.items)).toBe(true);
+  expect(feed.items).toHaveLength(0);
+});
+
+test('buildJsonFeed emits a published fixture entry with its full content, not just its description (proves the generator works, not just that it currently produces nothing)', () => {
+  const feed = buildJsonFeed([publishedPostFixture()], {
+    title: 'Ryan Lindsey',
+    description: 'A test summary.',
+    homePageUrl: 'https://ryanlindsey.me/',
+    feedUrl: 'https://ryanlindsey.me/feed.json',
+  });
+  expect(feed.items).toHaveLength(1);
+  const [item] = feed.items;
+  expect(item.id).toBe('https://ryanlindsey.me/writing/fixture-post/');
+  expect(item.url).toBe('https://ryanlindsey.me/writing/fixture-post/');
+  expect(item.title).toBe('Fixture Post');
+  expect(item.summary).toBe('A fixture post used only to prove /llms-full.txt concatenates.');
+  // The FULL document -- frontmatter and body -- lives in content_text, and
+  // it must actually differ from the one-line summary, not just duplicate it.
+  expect(item.content_text).toContain('title: "Fixture Post"');
+  expect(item.content_text).toContain('Fixture body text.');
+  expect(item.content_text).not.toBe(item.summary);
+});
+
+test('serves RSS and JSON Feed autodiscovery link tags sitewide, and both feeds resolve', async () => {
+  const page = await html('/');
+  const head = page.slice(0, page.indexOf('</head>'));
+  expect(head).toContain(
+    '<link rel="alternate" type="application/rss+xml" title="Ryan Lindsey" href="/rss.xml">',
+  );
+  expect(head).toContain(
+    '<link rel="alternate" type="application/feed+json" title="Ryan Lindsey" href="/feed.json">',
+  );
+  // A page and its advertised feed should agree on where the feed lives --
+  // same reasoning as the .md rel="alternate" test above.
+  for (const feedPath of ['/rss.xml', '/feed.json']) {
+    expect((await server.fetch(feedPath)).status, `${feedPath} should resolve`).toBe(200);
+  }
 });
