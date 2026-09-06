@@ -1,10 +1,11 @@
 ---
 // 02 §1's format bar: "Prefer JSON? Markdown? You're my kind of reader."
-// /resume.md, /resume.json and /resume.pdf do not exist until Tasks 3 and 5,
-// so this ships behind SHOW_FORMAT_BAR = false -- flipped to true in Task 5
-// Step 6 once all three resolve. tests/pages.test.ts asserts /resume links
-// none of them today; that stays true as long as this constant stays false.
-const SHOW_FORMAT_BAR = false;
+// Shipped dark on day 2 because /resume.md, /resume.json and /resume.pdf did
+// not exist yet. Task 3 created the first two and Task 5 the third, so all
+// three now resolve and the bar is on. tests/pages.test.ts asserts both that
+// /resume links all three AND that each target answers -- linked and
+// resolving are two different claims.
+const SHOW_FORMAT_BAR = true;
 ---
 
 {

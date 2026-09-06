@@ -5,11 +5,15 @@
   "compatibility_date": "2026-09-02",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 
-  // Day 1 ships zero on-demand routes, so Astro emits no server bundle and this
-  // Worker is assets-only. An assets-only Worker cannot carry an `ASSETS`
-  // binding -- there is no Worker code to read it. The binding comes back with
-  // `main` when the first `prerender = false` route lands.
-  "assets": { "directory": "./dist/client" },
+  // Day 3 Task 5 closes the day-1 open loop. /resume.pdf is the first route with
+  // `export const prerender = false`, so Astro's build output flips from "static"
+  // to "server", the adapter stops passing `main: undefined` to its Vite plugin,
+  // and a real Worker bundle is emitted. `main` and the `ASSETS` binding are both
+  // meaningful again -- and `main` is what carries `scheduled()`: without a server
+  // bundle the cron handler runs under `astro dev` and is silently absent from the
+  // deployed Worker.
+  "main": "./src/worker.ts",
+  "assets": { "directory": "./dist/client", "binding": "ASSETS" },
 
   "workers_dev": false,
   "preview_urls": true,
@@ -40,11 +44,22 @@
 
   "analytics_engine_datasets": [{ "binding": "AE", "dataset": "ryanlindsey_me_events" }],
 
-  // No "ai" or "browser" bindings yet. Both are remote-only: Wrangler starts a
-  // remote proxy session for them even under the local test harness, which needs
-  // account credentials and so breaks the credential-free CI rule. This Worker
-  // ships assets-only on day 1, so neither binding has any code to read it.
-  // They come back with the routes that use them.
+  // Browser Run, for /resume.pdf. Measured 2026-09-06 against the installed
+  // miniflare (5.20260831.0-alpha): its bundle carries a real browser-rendering
+  // plugin that downloads Chrome-for-Testing and launches it locally, and ZERO
+  // references to `quickAction`. So `puppeteer.launch(env.BROWSER)` works here
+  // with no Cloudflare credentials, and this binding is NOT remote-only -- the
+  // day-1 comment that claimed it was has been deleted rather than moved.
+  // Object, not array: the schema is `{ binding, remote? }` with
+  // additionalProperties: false, and it is not inherited by named environments.
+  "browser": { "binding": "BROWSER" },
+
+  // 05:17 UTC daily. The handler is a no-op unless the résumé source hash has
+  // moved (see src/lib/resume-pdf.ts), so the steady-state cost is one KV read.
+  "triggers": { "crons": ["17 5 * * *"] },
+
+  // No "ai" binding yet: nothing calls Workers AI, and the day-1 spike found the
+  // gateway blocked on credits. It comes back on day 4 with the code that uses it.
 
   // No `destination_address`: this binding may send to any address verified on
   // Email Routing, and the owner's private address must not appear in a public repo.
@@ -69,5 +84,15 @@
     },
   ],
 
-  "vars": { "RLME_AI_GATEWAY_ID": "ryanlindsey-me" },
+  // SITE_ORIGIN is what the Browser Run job navigates to. It is deliberately a
+  // var rather than something derived from `request.url`: Wrangler's
+  // `--infer-origin-from-routes` defaults to true, so with the custom-domain
+  // route above, `request.url` reads as https://ryanlindsey.me/... even under
+  // local dev -- deriving the render URL from it would make local dev silently
+  // render production. The test harness overrides it (tests/workers.ts); under
+  // `astro dev`, override it in .dev.vars rather than editing this value.
+  "vars": {
+    "RLME_AI_GATEWAY_ID": "ryanlindsey-me",
+    "SITE_ORIGIN": "https://ryanlindsey.me",
+  },
 }

@@ -1,13 +1,13 @@
 import { readdirSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
+import { SITE_HARNESS_WORKERS } from './workers';
 import { CASE_STUDY_SECTIONS } from '../src/lib/case-study-shape';
 
-// Both Workers are listed for the same reason as tests/site.smoke.test.ts: the
-// site's `MCP` service binding names the MCP Worker, and workerd refuses to
-// start a Worker whose service binding names an undefined service.
+// See ./workers.ts for why the site Worker is booted from the build output and
+// why the MCP Worker is always listed with it.
 const server = createTestHarness({
-  workers: [{ configPath: './wrangler.jsonc' }, { configPath: './workers/mcp/wrangler.jsonc' }],
+  workers: SITE_HARNESS_WORKERS,
 });
 
 beforeAll(async () => {

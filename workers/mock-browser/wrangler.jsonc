@@ -1,0 +1,21 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+
+  // TEST-ONLY. This Worker is never deployed: no account_id, no routes, and no
+  // deploy script references it. It exists so tests/resume-pdf.test.ts can run
+  // the /resume.pdf render path with zero Cloudflare credentials and without
+  // downloading Chrome.
+  //
+  // Miniflare does ship a real Browser Run plugin, so `puppeteer.launch()`
+  // genuinely works locally -- but its first run downloads 150-200 MB of
+  // Chrome-for-Testing, which has no place on a required CI path. The suite
+  // therefore points the site Worker's BROWSER binding at this Worker with
+  // `bindingOverrides`, which also means the real binding cannot be reached by
+  // accident even if the renderer seam were misconfigured.
+  //
+  // The name is what `bindingOverrides: { BROWSER: "mock-browser" }` resolves.
+  "name": "mock-browser",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+}

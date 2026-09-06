@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
+import { SITE_HARNESS_WORKERS } from './workers';
 import {
   formatDateRange,
   groupWorkByCompany,
@@ -281,7 +282,7 @@ describe('resumeGaps', () => {
 // atomically" claim. Without this test, that claim is just a comment.
 describe('/resume.json and /resume.md over HTTP', () => {
   const server = createTestHarness({
-    workers: [{ configPath: './wrangler.jsonc' }, { configPath: './workers/mcp/wrangler.jsonc' }],
+    workers: SITE_HARNESS_WORKERS,
   });
 
   beforeAll(async () => {

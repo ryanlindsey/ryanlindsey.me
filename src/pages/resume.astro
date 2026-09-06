@@ -151,5 +151,21 @@ const workGroups = groupWorkByCompany(resume.work);
     if (root && new URLSearchParams(window.location.search).has('print')) {
       root.setAttribute('data-print-mode', '');
     }
+
+    // Day 3 Task 5: the readiness signal Browser Run waits on before calling
+    // page.pdf(). document.fonts.ready is the only deterministic "this page is
+    // actually painted in its real typefaces" event -- networkidle0 and
+    // waitForFonts are both heuristics that can fire while the fallback face
+    // is still on screen, which is the documented top cause of a PDF that
+    // renders but looks wrong.
+    //
+    // Set with setAttribute rather than `dataset.resumeReady`, per the day-2
+    // ruling: a data-* contract has to stay greppable at every write site, and
+    // `dataset.resumeReady` does not contain the string the selector uses.
+    // The attribute is on <html>, not on the résumé container, because it is a
+    // statement about the document rather than about the résumé.
+    document.fonts.ready.then(() => {
+      document.documentElement.setAttribute('data-resume-ready', '1');
+    });
   </script>
 </Shell>

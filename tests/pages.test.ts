@@ -1,13 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
+import { SITE_HARNESS_WORKERS } from './workers';
 import { formatDateRange } from '../src/lib/resume';
 
-// Both Workers are listed for the same reason as tests/site.smoke.test.ts: the
-// site's `MCP` service binding names the MCP Worker, and workerd refuses to
-// start a Worker whose service binding names an undefined service.
+// See ./workers.ts for why the site Worker is booted from the build output and
+// why the MCP Worker is always listed with it.
 const server = createTestHarness({
-  workers: [{ configPath: './wrangler.jsonc' }, { configPath: './workers/mcp/wrangler.jsonc' }],
+  workers: SITE_HARNESS_WORKERS,
 });
 
 beforeAll(async () => {
@@ -266,11 +266,21 @@ test('renders every company name and date range from the real résumé data', as
   }
 });
 
-test('does not link resume formats that do not exist yet', async () => {
-  // Day 3 creates /resume.md, /resume.json and /resume.pdf. Linking them from
-  // the skeleton would ship three 404s for a week.
+test('links every resume format, and every link resolves', async () => {
+  // Day 2 wrote this assertion inverted -- "/resume links NONE of these" -- on
+  // purpose, so the format bar could not be linked before the routes existed.
+  // Task 3 created /resume.md and /resume.json, Task 5 created /resume.pdf, so
+  // it flips here rather than being deleted.
+  //
+  // Both halves are kept because they are different claims. "The page links
+  // three URLs" says nothing about whether they answer, and "three URLs answer"
+  // says nothing about whether a reader can find them. A format bar the page
+  // stopped rendering, and a link to a route that 404s, are both failures this
+  // one test should catch.
   const page = await html('/resume');
-  for (const dead of ['/resume.md', '/resume.json', '/resume.pdf']) {
-    expect(page, `${dead} does not exist until day 3`).not.toContain(`href="${dead}"`);
+  for (const format of ['/resume.md', '/resume.json', '/resume.pdf']) {
+    expect(page, `/resume should link ${format}`).toContain(`href="${format}"`);
+    const response = await server.fetch(format);
+    expect(response.status, `${format} should resolve`).toBe(200);
   }
 });
