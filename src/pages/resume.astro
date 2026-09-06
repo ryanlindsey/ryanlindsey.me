@@ -103,12 +103,16 @@ for (const entry of resume.work) {
       </div>
     </section>
 
-    <section class="mt-16" aria-labelledby="education">
-      <h2 id="education" class="border-b border-rule pb-3 font-display text-heading text-ink">
-        Education
-      </h2>
-      {
-        resume.education.length > 0 && (
+    {
+      // No empty scaffolding on any surface, HTML included (fix round 1):
+      // an empty array means the whole section -- heading included -- is
+      // omitted, not just its contents. Comes back on its own once the
+      // content track populates `education`.
+      resume.education.length > 0 && (
+        <section class="mt-16" aria-labelledby="education">
+          <h2 id="education" class="border-b border-rule pb-3 font-display text-heading text-ink">
+            Education
+          </h2>
           <div class="mt-8 space-y-6">
             {resume.education.map((entry) => (
               <div>
@@ -126,16 +130,18 @@ for (const entry of resume.work) {
               </div>
             ))}
           </div>
-        )
-      }
-    </section>
+        </section>
+      )
+    }
 
-    <section class="mt-16" aria-labelledby="skills">
-      <h2 id="skills" class="border-b border-rule pb-3 font-display text-heading text-ink">
-        Skills
-      </h2>
-      {
-        resume.skills.length > 0 && (
+    {
+      // Same rule as Education above: comes back on its own once `skills`
+      // is populated.
+      resume.skills.length > 0 && (
+        <section class="mt-16" aria-labelledby="skills">
+          <h2 id="skills" class="border-b border-rule pb-3 font-display text-heading text-ink">
+            Skills
+          </h2>
           <ul class="mt-8 space-y-2">
             {resume.skills.map((skill) => (
               <li>
@@ -144,9 +150,9 @@ for (const entry of resume.work) {
               </li>
             ))}
           </ul>
-        )
-      }
-    </section>
+        </section>
+      )
+    }
   </div>
 
   <script>

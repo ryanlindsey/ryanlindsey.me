@@ -18,6 +18,26 @@ afterAll(async () => {
   await server.close();
 });
 
+const resumeYamlPath = new URL('../src/content/resume/ryan-lindsey.yaml', import.meta.url);
+
+/**
+ * Whether a top-level résumé YAML array (`education`, `skills`, ...) is
+ * empty, read from the real file rather than hand-typed -- so callers stay
+ * true after the content track fills one in. Handles both the inline
+ * `key: []` form the file uses today and a future block-style `key:\n  -
+ * ...` list.
+ */
+const yamlArrayIsEmpty = (source: string, key: string): boolean => {
+  const match = source.match(new RegExp(`\\n${key}:([^\\n]*)\\n`));
+  if (!match) throw new Error(`no top-level '${key}:' key found in the résumé YAML`);
+  const inline = match[1].trim();
+  if (inline === '[]') return true;
+  if (inline !== '') return false; // some other inline scalar/array: treat as populated
+  const afterKey = source.slice(match.index! + match[0].length);
+  const nextContentLine = afterKey.split('\n').find((line) => line.trim() !== '');
+  return !(nextContentLine && /^ {2}- /.test(nextContentLine));
+};
+
 const html = async (path: string) => {
   const response = await server.fetch(path);
   expect(response.status, `${path} should be 200`).toBe(200);
@@ -179,8 +199,26 @@ test('serves a resume page with a section structure', async () => {
   // Education) with the shape the résumé data model actually has: Experience,
   // Education and Skills (task-2-brief.md Step 1). "Selected work" was never
   // a field on the résumé -- it was the day-2 skeleton's own invention.
-  for (const section of ['Experience', 'Education', 'Skills']) {
-    expect(page).toContain(section);
+  //
+  // Experience always has data (the résumé always has a work history), so
+  // its heading always renders. Education and Skills follow the "no empty
+  // scaffolding on any surface" rule (fix round 1): a section -- heading
+  // included -- is omitted entirely while its array is empty, and comes
+  // back automatically once the content track populates it. Read from the
+  // real YAML rather than hardcoded, so this assertion keeps telling the
+  // truth after that happens instead of silently asserting today's shape
+  // forever.
+  expect(page).toContain('Experience');
+  const yaml = readFileSync(resumeYamlPath, 'utf8');
+  for (const [key, heading] of [
+    ['education', 'Education'],
+    ['skills', 'Skills'],
+  ] as const) {
+    if (yamlArrayIsEmpty(yaml, key)) {
+      expect(page, `${heading} should not render while ${key} is empty`).not.toContain(heading);
+    } else {
+      expect(page, `${heading} should render now that ${key} has data`).toContain(heading);
+    }
   }
 });
 
@@ -198,8 +236,7 @@ test('renders every company name and date range from the real résumé data', as
   // since Task 1): /resume is a static, prerendered page, so if that guard
   // ever threw, `npm test`'s `astro build` step -- which runs before this
   // file even starts -- would fail outright, before any test could run.
-  const yamlPath = new URL('../src/content/resume/ryan-lindsey.yaml', import.meta.url);
-  const yaml = readFileSync(yamlPath, 'utf8');
+  const yaml = readFileSync(resumeYamlPath, 'utf8');
   const workBlock = yaml.slice(yaml.indexOf('\nwork:'), yaml.indexOf('\neducation:'));
   const entries = workBlock
     .split(/\n {2}- name: /)
