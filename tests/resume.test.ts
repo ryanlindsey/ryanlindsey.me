@@ -1,6 +1,8 @@
-import { describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { createTestHarness } from 'wrangler';
 import {
   formatDateRange,
+  groupWorkByCompany,
   resumeGaps,
   unresolvedArtifactSlugs,
   workHistoryIssues,
@@ -149,6 +151,51 @@ describe('workHistoryIssues', () => {
   });
 });
 
+describe('groupWorkByCompany', () => {
+  test('collapses the real eight-entry work history into five company groups', () => {
+    const groups = groupWorkByCompany(resumeFixture.work);
+    expect(groups.map((group) => group.name)).toEqual([
+      'Weedmaps',
+      'RED Digital Cinema',
+      'Innocean Worldwide',
+      'Y&R Brands / Wunderman',
+      'Freelance',
+    ]);
+    // The four consecutive Weedmaps stints collapse into one block of four
+    // roles; every other company held exactly one role in this data.
+    expect(groups[0].roles).toHaveLength(4);
+    expect(groups.slice(1).every((group) => group.roles.length === 1)).toBe(true);
+  });
+
+  test('only collapses consecutive entries at the same company', () => {
+    // A, B, A must stay THREE groups, not collapse the two A entries
+    // together -- that would misrepresent a return to a former employer as
+    // one continuous stint.
+    const work = [
+      workEntry({ name: 'A', position: 'Later role at A', startDate: '2022-01' }),
+      workEntry({ name: 'B', position: 'Role at B', startDate: '2021-01', endDate: '2022-01' }),
+      workEntry({
+        name: 'A',
+        position: 'Earlier role at A',
+        startDate: '2020-01',
+        endDate: '2021-01',
+      }),
+    ];
+    const groups = groupWorkByCompany(work);
+    expect(groups.map((group) => group.name)).toEqual(['A', 'B', 'A']);
+    expect(groups.every((group) => group.roles.length === 1)).toBe(true);
+  });
+
+  test('wraps a single entry in its own group', () => {
+    const entry = workEntry({ name: 'A', position: 'Role', startDate: '2020-01' });
+    expect(groupWorkByCompany([entry])).toEqual([{ name: 'A', roles: [entry] }]);
+  });
+
+  test('returns an empty array for an empty work history', () => {
+    expect(groupWorkByCompany([])).toEqual([]);
+  });
+});
+
 describe('unresolvedArtifactSlugs', () => {
   test('resolves when every x_artifacts slug matches a known case study', () => {
     const work = [
@@ -217,5 +264,122 @@ describe('resumeGaps', () => {
   // reporting the gap at all.
   test.fails('the résumé has no content-track gaps left', () => {
     expect(resumeGaps(resumeFixture)).toEqual([]);
+  });
+});
+
+// Day 3 Task 3: /resume.json and /resume.md, exercised over HTTP the same
+// way tests/pages.test.ts exercises /resume. This has to be HTTP-level, not
+// a plain import, for the same reason this file's header gives for
+// getResume() itself: both routes call getResume(), which resolves
+// astro:content only inside Astro's own build pipeline.
+//
+// /resume.json is the most direct machine-readable exposure of getResume()'s
+// own output available over HTTP (only x_ keys stripped, $schema added), so
+// its parsed body stands in below for "derive the expected set from
+// getResume()" -- checking that /resume.md and /resume both agree with it is
+// the mechanical version of 02 §1's "one commit updates every format
+// atomically" claim. Without this test, that claim is just a comment.
+describe('/resume.json and /resume.md over HTTP', () => {
+  const server = createTestHarness({
+    workers: [{ configPath: './wrangler.jsonc' }, { configPath: './workers/mcp/wrangler.jsonc' }],
+  });
+
+  beforeAll(async () => {
+    await server.listen();
+  });
+
+  afterAll(async () => {
+    await server.close();
+  });
+
+  const fetchOk = async (path: string) => {
+    const response = await server.fetch(path);
+    expect(response.status, `${path} should be 200`).toBe(200);
+    return response;
+  };
+
+  const hasXPrefixedKey = (value: unknown): boolean => {
+    if (Array.isArray(value)) return value.some(hasXPrefixedKey);
+    if (value !== null && typeof value === 'object') {
+      return Object.entries(value as Record<string, unknown>).some(
+        ([key, entryValue]) => key.startsWith('x_') || hasXPrefixedKey(entryValue),
+      );
+    }
+    return false;
+  };
+
+  test('/resume.json parses, carries $schema first, and has no x_-prefixed key at any depth', async () => {
+    const response = await fetchOk('/resume.json');
+    expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8');
+
+    const raw = await response.text();
+    // $schema first is checked on the raw text -- JSON.parse would discard
+    // the key-order information this assertion depends on.
+    expect(raw.trimStart().startsWith('{\n  "$schema"')).toBe(true);
+
+    const parsed: unknown = JSON.parse(raw);
+    expect((parsed as { $schema?: unknown }).$schema).toBe(
+      'https://raw.githubusercontent.com/jsonresume/resume-schema/v1.0.0/schema.json',
+    );
+    expect(hasXPrefixedKey(parsed)).toBe(false);
+  });
+
+  // An h2 ("## ", two hashes and a space -- not a "### " company subheading,
+  // which IS a section's content, not evidence of its absence) with no
+  // non-blank line before either the next h2 or the end of the document. A
+  // single combined regex for this over-matched: `$` in multiline mode is
+  // zero-width before EVERY newline, including a blank line's own, so
+  // `\s*(?:##|$)` after a heading matched the blank line separating
+  // "## Experience" from its own "### Weedmaps" content. Walking lines
+  // avoids that trap.
+  const hasEmptyH2Section = (markdown: string): boolean => {
+    const lines = markdown.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i].startsWith('## ')) continue;
+      let next = i + 1;
+      while (next < lines.length && lines[next].trim() === '') next++;
+      if (next >= lines.length || lines[next].startsWith('## ')) return true;
+    }
+    return false;
+  };
+
+  test('/resume.md serves as markdown with no empty bullets and no empty ## sections', async () => {
+    const response = await fetchOk('/resume.md');
+    expect(response.headers.get('content-type')).toBe('text/markdown; charset=utf-8');
+
+    const markdown = await response.text();
+    // A bullet with nothing after the dash (the literal "- \n" or "-\n" the
+    // brief calls out).
+    expect(markdown).not.toMatch(/^- *$/m);
+    expect(hasEmptyH2Section(markdown)).toBe(false);
+    // Deterministic today: education and skills are both [] in the real
+    // data, so both headings must be absent entirely, not present-but-empty.
+    expect(markdown).not.toContain('## Education');
+    expect(markdown).not.toContain('## Skills');
+  });
+
+  test('/resume.json, /resume.md and /resume name the same companies and date ranges', async () => {
+    const jsonResume = (await (await fetchOk('/resume.json')).json()) as Resume;
+    const companies = [...new Set(jsonResume.work.map((entry) => entry.name))];
+    const dateRanges = jsonResume.work.map((entry) =>
+      formatDateRange(entry.startDate, entry.endDate),
+    );
+    expect(companies.length).toBeGreaterThan(0);
+
+    const markdown = await (await fetchOk('/resume.md')).text();
+    // The HTML page escapes text nodes (Y&R Brands / Wunderman renders as
+    // "Y&amp;R..."), so the raw value must be escaped the same way before
+    // comparison -- see tests/pages.test.ts's identical htmlEscape helper.
+    const htmlEscape = (value: string) => value.replaceAll('&', '&amp;');
+    const html = await (await fetchOk('/resume')).text();
+
+    for (const name of companies) {
+      expect(markdown, `${name} should appear on /resume.md`).toContain(name);
+      expect(html, `${name} should appear on /resume`).toContain(htmlEscape(name));
+    }
+    for (const range of dateRanges) {
+      expect(markdown, `${range} should appear on /resume.md`).toContain(range);
+      expect(html, `${range} should appear on /resume`).toContain(htmlEscape(range));
+    }
   });
 });

@@ -1,0 +1,14 @@
+# Day 3 Task 3: Astro's static build writes only a prerendered endpoint's
+# Response BODY to disk (astro build discards the headers set in
+# src/pages/resume.json.ts / resume.md.ts) -- the Content-Type actually
+# served comes from Cloudflare's asset-server mime lookup by file extension
+# instead. `.md` already resolves to `text/markdown; charset=utf-8` by
+# default, but `.json` resolves to `application/json` with no charset, which
+# does not match 02 §1's "JSON Resume verbatim" requirement. This rule makes
+# the deployed response match the endpoint's own declared header exactly,
+# for both formats, so neither depends on the mime table's current defaults.
+/resume.json
+  Content-Type: application/json; charset=utf-8
+
+/resume.md
+  Content-Type: text/markdown; charset=utf-8

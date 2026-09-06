@@ -127,6 +127,40 @@ export function workHistoryIssues(work: readonly ResumeWorkEntry[]): string[] {
 }
 
 /**
+ * One block per company, carrying every role held there. Consecutive `work`
+ * entries sharing a `name` collapse into one block -- four separate
+ * Weedmaps rows would read as four jobs at four companies; one Weedmaps
+ * block with four titles reads as the decade of promotions that actually
+ * happened. Grouping is consecutive-only: two stints at the same company
+ * split by another employer stay two separate blocks, which is the correct
+ * shape for a résumé.
+ *
+ * Extracted here (day 3 Task 3) from where it used to live inline in
+ * `src/pages/resume.astro` so `/resume` and `/resume.md` share one grouping
+ * implementation instead of two that agree today and can silently drift --
+ * the same lesson day 2's inline `SeriesNav` bug already taught this repo
+ * once (see `src/lib/series.ts`).
+ */
+export interface WorkGroup {
+  name: string;
+  location?: string;
+  roles: ResumeWorkEntry[];
+}
+
+export function groupWorkByCompany(work: readonly ResumeWorkEntry[]): WorkGroup[] {
+  const groups: WorkGroup[] = [];
+  for (const entry of work) {
+    const current = groups[groups.length - 1];
+    if (current && current.name === entry.name) {
+      current.roles.push(entry);
+    } else {
+      groups.push({ name: entry.name, location: entry.location, roles: [entry] });
+    }
+  }
+  return groups;
+}
+
+/**
  * `x_artifacts` slugs that do not match any of the given case-study slugs --
  * this is what stops the résumé linking to a case study that was never
  * published. `[]` means every artifact link resolves. The caller supplies

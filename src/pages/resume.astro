@@ -2,7 +2,7 @@
 import Shell from '../layouts/Shell.astro';
 import ResumeFormats from '../components/ResumeFormats.astro';
 import { getResume } from '../lib/resume-collection';
-import { formatDateRange, resumeGaps, type ResumeWorkEntry } from '../lib/resume';
+import { formatDateRange, resumeGaps, groupWorkByCompany } from '../lib/resume';
 
 // Day 3 (02 §1): render from the single validated résumé source instead of
 // the day-2 hardcoded skeleton. getResume() reads the `resume` content
@@ -16,25 +16,10 @@ const gaps = resumeGaps(resume);
 // working aid for the content track.
 const showGapNotice = import.meta.env.DEV && gaps.length > 0;
 
-interface WorkGroup {
-  name: string;
-  location?: string;
-  roles: ResumeWorkEntry[];
-}
-
 // Consecutive `work` entries sharing a `name` render under one company
-// heading. Four separate Weedmaps rows would read as four jobs at four
-// companies; one Weedmaps block with four titles reads as the decade of
-// promotions that actually happened.
-const workGroups: WorkGroup[] = [];
-for (const entry of resume.work) {
-  const current = workGroups[workGroups.length - 1];
-  if (current && current.name === entry.name) {
-    current.roles.push(entry);
-  } else {
-    workGroups.push({ name: entry.name, location: entry.location, roles: [entry] });
-  }
-}
+// heading. groupWorkByCompany lives in src/lib/resume.ts (day 3 Task 3) so
+// /resume.md groups identically by construction instead of by agreement.
+const workGroups = groupWorkByCompany(resume.work);
 ---
 
 <Shell title={`Resume — ${resume.basics.name}`} description={resume.basics.summary}>
