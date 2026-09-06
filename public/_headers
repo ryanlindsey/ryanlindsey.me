@@ -57,3 +57,22 @@
 
 /work/*/
   X-Markdown-Variant: /work/:splat.md
+
+# Day 3 Task 9 (research appendix B2.6): the industry split observed live
+# across Anthropic, OpenAI, Cloudflare, Vercel and Perplexity is that the
+# llms.txt LAYER gets browser-friendly `text/plain` while `.md` PAGES get
+# semantically correct `text/markdown` -- this site's own /resume.md and
+# /writing|work/*.md rules above are the latter; these two are the former.
+# text/plain also means /llms-full.txt (which can grow arbitrarily large as
+# content is added) reliably renders in a browser tab rather than prompting
+# a download the way text/markdown sometimes does (B2.6's honest caveat).
+# Same reason these need an explicit rule at all: Astro's static build
+# discards a prerendered endpoint's own Content-Type header (see
+# src/pages/llms.txt.ts and llms-full.txt.ts), so without this, the served
+# type would fall back to whatever Cloudflare's default `.txt` mime mapping
+# happens to be today.
+/llms.txt
+  Content-Type: text/plain; charset=utf-8
+
+/llms-full.txt
+  Content-Type: text/plain; charset=utf-8

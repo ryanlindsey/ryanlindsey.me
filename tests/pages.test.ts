@@ -1,8 +1,10 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
+import type { CollectionEntry } from 'astro:content';
 import { SITE_HARNESS_WORKERS } from './workers';
 import { formatDateRange } from '../src/lib/resume';
+import { buildLlmsTxt, buildLlmsFullTxt, type LlmsLink } from '../src/lib/llms-index';
 
 // See ./workers.ts for why the site Worker is booted from the build output and
 // why the MCP Worker is always listed with it.
@@ -166,6 +168,13 @@ test('carries no candidacy language on any public surface', async () => {
     '/work',
     '/work/shape-specimen',
     '/resume',
+    // Day 3 Task 9: the single highest-risk leak surface on this site is
+    // /llms-full.txt (task-9-brief.md's own words) -- it concatenates every
+    // published document into one response, so anything that leaks
+    // anywhere leaks there. /llms.txt is listed alongside it for the same
+    // reason every other aggregation surface above is.
+    '/llms.txt',
+    '/llms-full.txt',
   ]) {
     const page = await html(route);
     for (const pattern of BANNED) {
@@ -439,4 +448,131 @@ test('index pages carry no X-Markdown-Variant header', async () => {
       `${path} should not advertise a markdown variant`,
     ).toBeNull();
   }
+});
+
+// Day 3 Task 9 (02 §3 / research appendix B1): `/llms.txt` and
+// `/llms-full.txt`. Both real .mdx files are `draft: true` right now (see
+// CONTENT_ENTRIES above), so today's actual build output has nothing to put
+// in the Writing/Case studies sections of `/llms.txt`, and nothing at all
+// in `/llms-full.txt`. task-9-brief.md is explicit that a test asserting
+// only that emptiness would be exactly the trap this codebase has already
+// shipped six times -- a test that passes because there is nothing to test
+// (a deleted `.sort()`, a `stripXKeys` test with nothing to strip, Task 5's
+// stale-serve test, Task 6's stripping branch, Task 7's Content-Type
+// assertion, Task 8's unreachable negotiation code). So every "today's real
+// state is empty" assertion below is paired with a fixture-based assertion,
+// against the exported generator functions directly (src/lib/llms-index.ts),
+// proving the generator actually produces a populated, correctly-shaped
+// result and not just nothing.
+
+test("/llms.txt omits the Writing and Case studies sections while nothing is published (today's real state)", async () => {
+  const page = await html('/llms.txt');
+  expect(page).toContain('# Ryan Lindsey');
+  expect(page).toMatch(/^> \S/m);
+  expect(page).not.toContain('## Writing');
+  expect(page).not.toContain('## Case studies');
+  // The two sections that never depend on published content still render --
+  // their absence would mean the whole generator broke, not that the
+  // omission rule is working.
+  expect(page).toContain('## Resume');
+  expect(page).toContain('## MCP');
+});
+
+test('/llms.txt links the résumé in all four formats and the MCP endpoint, and serves text/plain', async () => {
+  const response = await server.fetch('/llms.txt');
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toMatch(/^text\/plain\b/);
+  const page = await response.text();
+  for (const format of ['/resume.md', '/resume.json', '/resume.pdf', '/resume']) {
+    expect(page, `/llms.txt should link ${format}`).toContain(`(https://ryanlindsey.me${format})`);
+  }
+  expect(page, '/llms.txt should link the MCP endpoint').toContain('(https://mcp.ryanlindsey.me)');
+});
+
+test('buildLlmsTxt omits a heading entirely when its link list is empty', () => {
+  // The pure-function version of the "today's real state" assertion above --
+  // proves the omission rule itself, independent of what is actually
+  // published right now.
+  const text = buildLlmsTxt({
+    summary: 'A test summary.',
+    resume: [],
+    mcp: [],
+    posts: [],
+    caseStudies: [],
+  });
+  expect(text).toBe('# Ryan Lindsey\n\n> A test summary.\n');
+  expect(text).not.toContain('##');
+});
+
+test('buildLlmsTxt lists a published entry with its .md URL and one-line description (proves the generator works, not just that it currently produces nothing)', () => {
+  const fixturePost: LlmsLink = {
+    title: 'Fixture Post',
+    url: 'https://ryanlindsey.me/writing/fixture-post.md',
+    description: 'A fixture post used only to prove the generator works.',
+  };
+  const text = buildLlmsTxt({
+    summary: 'A test summary.',
+    resume: [
+      { title: 'Resume (Markdown)', url: 'https://ryanlindsey.me/resume.md', description: 'x' },
+    ],
+    mcp: [{ title: 'MCP server', url: 'https://mcp.ryanlindsey.me', description: 'x' }],
+    posts: [fixturePost],
+    caseStudies: [],
+  });
+  expect(text).toContain('## Writing');
+  expect(text).toContain(
+    '- [Fixture Post](https://ryanlindsey.me/writing/fixture-post.md): A fixture post used only to prove the generator works.',
+  );
+  // Case studies is still empty in this fixture -- its heading must not
+  // appear just because Writing's did.
+  expect(text).not.toContain('## Case studies');
+});
+
+test("/llms-full.txt is empty while nothing is published (today's real state)", async () => {
+  const response = await server.fetch('/llms-full.txt');
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toMatch(/^text\/plain\b/);
+  const body = await response.text();
+  expect(body).toBe('');
+});
+
+/**
+ * A minimal published `CollectionEntry<'posts'>` fixture, shaped exactly
+ * like tests/markdown-export.test.ts's own `post` fixture -- this repo's
+ * established pattern for exercising toMarkdown()-adjacent code without a
+ * real (draft) content file standing in the way.
+ */
+const publishedPostFixture = (): CollectionEntry<'posts'> =>
+  ({
+    id: 'fixture-post',
+    collection: 'posts',
+    body: 'Fixture body text.',
+    data: {
+      title: 'Fixture Post',
+      description: 'A fixture post used only to prove /llms-full.txt concatenates.',
+      publishedAt: new Date('2026-09-01T00:00:00Z'),
+      pillar: 'agentic-engineering',
+      draft: false,
+    },
+  }) as unknown as CollectionEntry<'posts'>;
+
+test('buildLlmsFullTxt concatenates a published fixture entry, preceded by its canonical URL (proves the generator works, not just that it currently produces nothing)', () => {
+  const text = buildLlmsFullTxt([publishedPostFixture()]);
+  expect(text.startsWith('https://ryanlindsey.me/writing/fixture-post/\n\n')).toBe(true);
+  expect(text).toContain('title: "Fixture Post"');
+  expect(text).toContain('Fixture body text.');
+});
+
+test('footer links /llms.txt and the MCP endpoint, and never links /llms-full.txt', async () => {
+  const page = await html('/');
+  const footer = page.slice(page.indexOf('<footer'));
+  expect(footer, 'footer should link /llms.txt').toContain('href="/llms.txt"');
+  expect(footer, 'footer should link the MCP endpoint').toContain(
+    'href="https://mcp.ryanlindsey.me"',
+  );
+  // /llms-full.txt is the bulk-ingestion corpus; /llms.txt points at it, so
+  // the footer must not link it a second time (task-9-brief.md Step 3).
+  expect(page, 'no page should link /llms-full.txt from its footer').not.toContain(
+    '/llms-full.txt',
+  );
 });

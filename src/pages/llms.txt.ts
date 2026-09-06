@@ -1,0 +1,106 @@
+import { getCollection } from 'astro:content';
+import type { APIRoute } from 'astro';
+import { getResume } from '../lib/resume-collection';
+import { SITE_ORIGIN } from '../lib/markdown-export';
+import { buildLlmsTxt, markdownLinkFor, byPublishedDesc, type LlmsLink } from '../lib/llms-index';
+
+// Day 3 Task 9 (02 §3 / research appendix B1): the curated agent index, in
+// llms.txt v2 (2026-08-10) shape -- NOT v1. v2 is what defines the exact
+// section order (H1, then a blockquote summary, then H2 "file list"
+// sections of `- [title](url): description` links) that src/lib/llms-index.ts's
+// `buildLlmsTxt` implements, and it is also what gives the links below
+// their shape: v2 folds .md-URL discoverability into the spec itself, which
+// is why every Writing/Case studies link points at a page's `.md` form
+// (Task 6/7's exporter and routes), never its HTML sibling. v2 also strips
+// the old `Optional` section of its mechanical meaning (research appendix
+// B1.4) -- this file has no such section, on purpose.
+//
+// This route is deliberately thin: `astro:content` is a real (not
+// type-only) import here, which is exactly why the generator logic itself
+// lives in src/lib/llms-index.ts instead -- a plain `vitest run` process
+// cannot resolve `astro:content` (see that file's module doc), and this
+// route's own dotted filename (`llms.txt.ts`) makes it importable from a
+// test at all only by accident of Vite's resolver; keeping this file free
+// of anything a test needs to call directly sidesteps the question.
+//
+// Prerendered: a pure function of the same content collections
+// /writing and /work's own indexes already read, so it builds once, at the
+// same time they do.
+export const prerender = true;
+
+/**
+ * `mcp.ryanlindsey.me` is a different origin from `SITE_ORIGIN`
+ * (src/lib/markdown-export.ts), so it is its own literal rather than
+ * derived -- workers/mcp/wrangler.jsonc's own `routes` entry is the other
+ * place this hostname is declared.
+ */
+const MCP_ENDPOINT = 'https://mcp.ryanlindsey.me';
+
+/**
+ * The résumé in all four formats (02 §1 / task-9-brief.md Step 1) --
+ * unlike the Writing/Case studies sections, every one of these formats gets
+ * its own link, HTML included, because this section IS the format manifest,
+ * not a pointer to the single most LLM-friendly representation of one
+ * document.
+ */
+const RESUME_LINKS: LlmsLink[] = [
+  {
+    title: 'Resume (Markdown)',
+    url: `${SITE_ORIGIN}/resume.md`,
+    description: 'Portable markdown résumé -- the cleanest format for a model to read.',
+  },
+  {
+    title: 'Resume (JSON)',
+    url: `${SITE_ORIGIN}/resume.json`,
+    description: 'JSON Resume schema, machine-readable.',
+  },
+  {
+    title: 'Resume (PDF)',
+    url: `${SITE_ORIGIN}/resume.pdf`,
+    description: 'Print-formatted résumé.',
+  },
+  {
+    title: 'Resume (HTML)',
+    url: `${SITE_ORIGIN}/resume`,
+    description: 'The résumé as a web page.',
+  },
+];
+
+const MCP_LINKS: LlmsLink[] = [
+  {
+    title: 'MCP server',
+    url: MCP_ENDPOINT,
+    description: 'Model Context Protocol server exposing get_contact and other portfolio tools.',
+  },
+];
+
+export const GET: APIRoute = async () => {
+  // Aggregation surface (task-9-brief.md's "draft rule"): only published
+  // entries reach this file, matching src/pages/writing/index.astro and
+  // src/pages/work/index.astro's own `!data.draft` filter exactly. The
+  // detail routes and their `.md` siblings are the other tier -- they serve
+  // drafts too, deliberately (see src/pages/writing/[...slug].md.ts).
+  const [resume, posts, caseStudies] = await Promise.all([
+    getResume(),
+    getCollection('posts', ({ data }) => !data.draft),
+    getCollection('caseStudies', ({ data }) => !data.draft),
+  ]);
+
+  const body = buildLlmsTxt({
+    // Reused from the résumé's own reviewed summary rather than hand-written
+    // here a second time -- one source of truth, same reasoning
+    // content.config.ts gives for the résumé data model as a whole.
+    summary: resume.basics.summary,
+    resume: RESUME_LINKS,
+    mcp: MCP_LINKS,
+    posts: posts.sort(byPublishedDesc).map(markdownLinkFor),
+    caseStudies: caseStudies.sort(byPublishedDesc).map(markdownLinkFor),
+  });
+
+  // The Content-Type set here does not survive Astro's static build --
+  // Astro discards a prerendered endpoint's Response headers and writes
+  // only the body (same as /resume.md, /resume.json and Task 7's `.md`
+  // routes). public/_headers is what actually makes the deployed response
+  // serve `text/plain`. Kept for fidelity under `astro dev` regardless.
+  return new Response(body, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+};
