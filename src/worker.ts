@@ -40,7 +40,12 @@ import { regenerateResumePdf } from './lib/resume-pdf';
 // never appeared on the response for `/writing/<slug>`, `/work/<slug>` or
 // `/resume` without it): this code is unreachable dead weight unless
 // wrangler.jsonc's `run_worker_first` names these routes. See that file's
-// comment for which ones and why.
+// comment for which ones and why -- including the negative `!.../*.md`
+// patterns that keep the already-suffixed `.md` sibling assets OFF this
+// path (fix round 1): `markdownAssetPathFor` below rejects them on sight
+// (they already carry their own extension), so routing them through the
+// Worker at all would have been a pure-cost detour to the same asset
+// `handle()`'s fallback would otherwise serve directly.
 
 const NEGOTIABLE_METHODS = new Set(['GET', 'HEAD']);
 
@@ -161,43 +166,70 @@ function prefersMarkdown(acceptHeader: string | null): boolean {
 }
 
 /**
- * Serves the negotiated markdown variant of `request`, or `null` if this
- * request is not one to negotiate (wrong method, not a content route, or
- * `Accept` does not genuinely prefer markdown) -- in which case the caller
- * falls through to `handle()` exactly as before this task.
+ * Clones `response` with `Accept` appended to its `Vary` header (`append`,
+ * not `set` -- a response can legitimately vary on more than one header
+ * already, and this must add to that list, never replace it). A fresh
+ * `Response`/`Headers` pair is built rather than mutating `response.headers`
+ * in place, because a `Response` returned by a `fetch()` call (as both call
+ * sites below hand this) is not guaranteed mutable.
+ */
+function withVaryAccept(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.append('Vary', 'Accept');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+/**
+ * Fetches `markdownPath` through the `ASSETS` binding and returns it with
+ * `Vary: Accept` appended, or `null` if the asset does not exist (`ok` is
+ * false) -- in which case the caller falls through to `handle()` exactly as
+ * if negotiation had not run.
  *
  * `Vary: Accept` is mandatory on the response this returns: without it,
  * Cloudflare's cache could key a markdown body under a URL a browser then
  * requests with `Accept: text/html`, and serve raw markdown as if it were
  * the page.
  */
-async function negotiateMarkdown(request: Request, env: Env): Promise<Response | null> {
-  if (!NEGOTIABLE_METHODS.has(request.method)) return null;
-
-  const url = new URL(request.url);
-  const markdownPath = markdownAssetPathFor(url.pathname);
-  if (!markdownPath || !prefersMarkdown(request.headers.get('Accept'))) return null;
-
-  const assetResponse = await env.ASSETS.fetch(new URL(markdownPath, url).toString(), {
+async function serveMarkdownAsset(
+  env: Env,
+  markdownPath: string,
+  request: Request,
+): Promise<Response | null> {
+  const assetResponse = await env.ASSETS.fetch(new URL(markdownPath, request.url).toString(), {
     method: request.method,
     headers: request.headers,
   });
   if (!assetResponse.ok) return null;
-
-  const headers = new Headers(assetResponse.headers);
-  headers.append('Vary', 'Accept');
-  return new Response(assetResponse.body, {
-    status: assetResponse.status,
-    statusText: assetResponse.statusText,
-    headers,
-  });
+  return withVaryAccept(assetResponse);
 }
 
 export default {
   fetch: async (request, env, ctx) => {
-    const negotiated = await negotiateMarkdown(request, env);
-    if (negotiated) return negotiated;
-    return handle(request, env, ctx);
+    // `markdownPath` is non-null exactly on a content route being fetched
+    // with a negotiable method -- i.e. exactly the requests this module has
+    // an opinion about. It is computed once and used twice below: to decide
+    // whether to attempt serving markdown, AND (fix round 1, "Vary: Accept
+    // asymmetry") to decide whether the HTML `handle()` fallback on that
+    // same route needs `Vary: Accept` too. Without it, a shared cache could
+    // key an HTML response under a URL a markdown-preferring client later
+    // requests, and serve cached HTML in place of ever reaching this code
+    // again -- the same class of stale-representation bug the markdown
+    // side's `Vary` header guards against, just in the other direction.
+    const markdownPath = NEGOTIABLE_METHODS.has(request.method)
+      ? markdownAssetPathFor(new URL(request.url).pathname)
+      : null;
+
+    if (markdownPath && prefersMarkdown(request.headers.get('Accept'))) {
+      const negotiated = await serveMarkdownAsset(env, markdownPath, request);
+      if (negotiated) return negotiated;
+    }
+
+    const response = await handle(request, env, ctx);
+    return markdownPath ? withVaryAccept(response) : response;
   },
 
   /**

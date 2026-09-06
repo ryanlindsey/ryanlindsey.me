@@ -18,21 +18,39 @@
   // Worker and NEVER reaches src/worker.ts's `fetch` at all -- confirmed
   // empirically (a debug header set unconditionally at the top of `fetch`
   // never appeared on a response for any of these paths without this
-  // setting). Every one of Task 7's `.md`-variant HTML siblings is exactly
-  // such a static asset, so `Accept`-based negotiation would otherwise be
-  // dead code for the one thing it exists to intercept. Scoped to the
-  // content routes only (not `true`/global) so every other static asset --
-  // `/_astro/*`, favicon, `robots.txt` (Task 12), `/resume.json`/`.md`/`.pdf`
-  // -- keeps the fast, Worker-free asset-serving path. `*` matches across
-  // path segments (Cloudflare's own docs example has `/api/*` needing
+  // setting). Every one of Task 7's HTML content pages is exactly such a
+  // static asset, so `Accept`-based negotiation would otherwise be dead code
+  // for the one thing it exists to intercept.
+  //
+  // Scoped to the content routes only (not `true`/global), so every other
+  // static asset -- `/_astro/*`, favicon, `robots.txt` (Task 12) -- keeps
+  // the fast, Worker-free asset-serving path. `*` matches across path
+  // segments (Cloudflare's own docs example has `/api/*` needing
   // `!/api/docs/*` to exclude a nested path), so `/writing/*` alone would
-  // cover both `/writing/foo` and `/writing/foo/`; the bare, no-slug forms
+  // cover both `/writing/foo` and `/writing/foo/` -- but ALSO
+  // `/writing/foo.md` itself: an already-suffixed request `markdownAssetPathFor`
+  // rejects on sight (fix round 1), so routing it through the Worker bought
+  // nothing but an extra hop before falling to the same asset it would have
+  // been served directly anyway. The two `!.../*.md` negative patterns below
+  // carve that back out -- negative patterns win regardless of list order
+  // (Cloudflare's docs) -- which is also why `/resume.json`/`.md`/`.pdf`
+  // never needed one: there is no `/resume/*` positive pattern to catch
+  // them in the first place. The bare, no-slug forms (`/writing`, `/work`)
   // are listed explicitly rather than relied on, since neither takes a
   // markdown variant anyway and there is no reason to guess.
   "assets": {
     "directory": "./dist/client",
     "binding": "ASSETS",
-    "run_worker_first": ["/resume", "/resume/", "/writing", "/writing/*", "/work", "/work/*"],
+    "run_worker_first": [
+      "/resume",
+      "/resume/",
+      "/writing",
+      "/writing/*",
+      "!/writing/*.md",
+      "/work",
+      "/work/*",
+      "!/work/*.md",
+    ],
   },
 
   "workers_dev": false,

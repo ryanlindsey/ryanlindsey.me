@@ -3,12 +3,14 @@ import { createTestHarness } from 'wrangler';
 import { SITE_HARNESS_WORKERS } from './workers';
 
 // Day 3 Task 8 (02 §3): `Accept: text/markdown` content negotiation, on top
-// of Task 7's `.md`-suffix routes. See src/worker.ts's `negotiateMarkdown`
-// and wrangler.jsonc's `assets.run_worker_first` -- both are load-bearing
-// here, and the latter is why this suite boots the site from the ADAPTER'S
-// BUILD OUTPUT (./workers.ts's SITE_WORKER, `dist/server/wrangler.json`)
-// rather than any hand-rolled config: that is the only config the deployed
-// Worker actually ships, `run_worker_first` included.
+// of Task 7's `.md`-suffix routes. See src/worker.ts's `fetch`/
+// `serveMarkdownAsset`/`withVaryAccept` and wrangler.jsonc's
+// `assets.run_worker_first` -- both are load-bearing here, and the latter is
+// why this suite boots the site from the ADAPTER'S BUILD OUTPUT
+// (./workers.ts's SITE_WORKER, `dist/server/wrangler.json`) rather than any
+// hand-rolled config: that is the only config the deployed Worker actually
+// ships, `run_worker_first` (negative `!.../*.md` patterns included)
+// included.
 //
 // See ./workers.ts for why the site Worker is booted from the build output
 // and why the MCP Worker is always listed with it.
@@ -62,12 +64,21 @@ for (const route of CONTENT_ROUTES) {
     await expect(negotiated.text()).resolves.toBe(await direct.text());
   });
 
-  test(`${route}: Accept: text/html returns HTML, unVaried`, async () => {
+  test(`${route}: Accept: text/html returns HTML, itself Varied on Accept`, async () => {
     const response = await fetchWith(route, 'text/html');
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toMatch(/^text\/html\b/);
     const body = await response.text();
     expect(body).toContain('<!DOCTYPE html>');
+    // Fix round 1 ("Vary: Accept asymmetry"): a content route's HTML
+    // fallback is reached through the same negotiation-aware `fetch` as its
+    // markdown sibling, so it must carry `Vary: Accept` too -- otherwise a
+    // shared cache could serve this cached HTML to a later request whose
+    // Accept header would have gotten it markdown.
+    expect(
+      response.headers.get('vary'),
+      `${route}'s HTML fallback must also carry Vary: Accept, symmetrically with its markdown sibling`,
+    ).toBe('Accept');
   });
 
   // THE critical guard (task-8-brief.md, top instructions): `Accept: */*` is
@@ -77,22 +88,24 @@ for (const route of CONTENT_ROUTES) {
   // this file that check for text/markdown above would go red immediately
   // -- see task-8-report.md's "removing the branch" verification for the
   // observed failure.
-  test(`${route}: Accept: */* returns HTML, not markdown`, async () => {
+  test(`${route}: Accept: */* returns HTML, not markdown, still Varied`, async () => {
     const response = await fetchWith(route, '*/*');
     expect(response.status).toBe(200);
     expect(
       response.headers.get('content-type'),
       `${route} with Accept: */* must stay text/html -- */* is not a markdown request`,
     ).toMatch(/^text\/html\b/);
+    expect(response.headers.get('vary')).toBe('Accept');
   });
 
-  test(`${route}: a missing Accept header returns HTML, same as */*`, async () => {
+  test(`${route}: a missing Accept header returns HTML, same as */*, still Varied`, async () => {
     const response = await fetchWith(route);
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toMatch(/^text\/html\b/);
+    expect(response.headers.get('vary')).toBe('Accept');
   });
 
-  test(`${route}: text/html outweighing text/markdown by q-value returns HTML`, async () => {
+  test(`${route}: text/html outweighing text/markdown by q-value returns HTML, still Varied`, async () => {
     // Respecting q-values, not just presence: text/markdown appears in the
     // header, but at a lower weight than text/html, so text/html must win.
     const response = await fetchWith(route, 'text/markdown;q=0.1, text/html;q=0.9');
@@ -101,6 +114,7 @@ for (const route of CONTENT_ROUTES) {
       response.headers.get('content-type'),
       `${route}: text/html;q=0.9 should outweigh text/markdown;q=0.1`,
     ).toMatch(/^text\/html\b/);
+    expect(response.headers.get('vary')).toBe('Accept');
   });
 }
 
@@ -154,11 +168,31 @@ test('a non-content path (/resume.pdf) is unaffected by Accept: text/markdown', 
   expect(withMarkdownAccept.headers.get('vary'), '/resume.pdf is never negotiated').toBeNull();
 });
 
-test('an already-suffixed request (/writing/<slug>.md) ignores Accept entirely', async () => {
+test('an already-suffixed request (/writing/<slug>.md or /work/<slug>.md) ignores Accept entirely', async () => {
   // A URL that already names its own format is not up for negotiation: an
   // HTML-preferring Accept header must not turn /writing/type-specimen.md
-  // into anything other than the markdown it names.
-  const response = await fetchWith('/writing/type-specimen.md', 'text/html');
-  expect(response.status).toBe(200);
-  expect(response.headers.get('content-type')).toMatch(/^text\/markdown\b/);
+  // (or its /work sibling) into anything other than the markdown it names,
+  // and it must never pick up a Vary header this layer adds only for actual
+  // content routes -- markdownAssetPathFor returns null for both, so
+  // neither the negotiated-markdown nor the Vary-on-fallback branch ever
+  // fires for them.
+  //
+  // What this test CANNOT observe (fix round 1): whether the request took
+  // an unnecessary hop through this Worker before falling to `handle()`'s
+  // asset fallback. wrangler.jsonc's `!/writing/*.md` and `!/work/*.md`
+  // negative `run_worker_first` patterns are what avoid that hop, and they
+  // are invisible to a black-box HTTP response -- status, headers and body
+  // are identical whether the Worker was invoked or not. That was verified
+  // with an instrumented probe instead (task-8-report.md's fix-round-1
+  // entry): a debug header set unconditionally in `fetch` appeared on these
+  // two paths before the negative patterns were added, and disappeared
+  // after, while the assertions below stayed green throughout.
+  for (const path of ['/writing/type-specimen.md', '/work/shape-specimen.md']) {
+    const response = await fetchWith(path, 'text/html');
+    expect(response.status, `${path} should be 200`).toBe(200);
+    expect(response.headers.get('content-type'), `${path} should stay markdown`).toMatch(
+      /^text\/markdown\b/,
+    );
+    expect(response.headers.get('vary'), `${path} is not a negotiated route`).toBeNull();
+  }
 });
