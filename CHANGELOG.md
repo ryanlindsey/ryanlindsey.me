@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.1.1...ryanlindsey-me-v1.2.0) (2026-09-06)
+
+
+### Features
+
+* **work:** add the /work case-study route and enforce the 02 §4 shape ([#16](https://github.com/ryanlindsey/ryanlindsey.me/issues/16)) ([72e283e](https://github.com/ryanlindsey/ryanlindsey.me/commit/72e283e025218fd5ca8e997a4255565967901976))
+
 ## [1.1.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.1.0...ryanlindsey-me-v1.1.1) (2026-09-06)
 
 
