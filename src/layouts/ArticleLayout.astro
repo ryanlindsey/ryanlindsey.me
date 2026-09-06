@@ -21,14 +21,19 @@ interface Props {
   // through as-is; readingTimeFor already treats undefined as empty.
   body: string | undefined;
   headings: Heading[];
+  // Root-relative URL of this article's `.md` variant (Task 7). Threaded
+  // straight through to Base.astro's `markdownHref` prop -- see that file
+  // for why this stays an explicit prop rather than something inferred here.
+  markdownHref?: string;
 }
 
-const { title, description, publishedAt, updatedAt, kicker, body, headings } = Astro.props;
+const { title, description, publishedAt, updatedAt, kicker, body, headings, markdownHref } =
+  Astro.props;
 const toc = buildToc(headings);
 const readingTime = readingTimeFor(body);
 ---
 
-<Shell title={`${title} — Ryan Lindsey`} description={description}>
+<Shell title={`${title} — Ryan Lindsey`} description={description} markdownHref={markdownHref}>
   <article class="mx-auto max-w-5xl px-6 py-16">
     <header class="max-w-3xl">
       <h1 class="font-display text-title text-ink">{title}</h1>

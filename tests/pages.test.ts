@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { SITE_HARNESS_WORKERS } from './workers';
@@ -19,6 +19,45 @@ afterAll(async () => {
 });
 
 const resumeYamlPath = new URL('../src/content/resume/ryan-lindsey.yaml', import.meta.url);
+
+/**
+ * `{ section: 'writing' | 'work', slug, draft }` for every real content
+ * entry, read straight from the `.mdx` source files rather than through
+ * `astro:content` -- this test file already reads the résumé YAML source
+ * directly for the same reason (see the résumé tests below): the assertion
+ * should stay true as the content track adds entries, without importing an
+ * Astro-flavoured module into a plain Vitest run.
+ *
+ * `draft` mirrors content.config.ts's own default (`z.boolean().default(false)`)
+ * when the frontmatter omits the key entirely, and only reads the key out of
+ * the frontmatter block itself (the text before the closing `---`) so a
+ * `draft:` appearing in prose in the body could never be mistaken for it.
+ */
+function readContentEntries(
+  section: 'writing' | 'work',
+  dir: URL,
+): { section: 'writing' | 'work'; slug: string; draft: boolean }[] {
+  return readdirSync(dir)
+    .filter((name) => name.endsWith('.mdx'))
+    .map((name) => {
+      const source = readFileSync(new URL(name, dir), 'utf8');
+      const frontmatterEnd = source.indexOf('\n---', 3);
+      if (frontmatterEnd === -1) {
+        throw new Error(`${name}: no closing frontmatter fence found`);
+      }
+      const frontmatter = source.slice(0, frontmatterEnd);
+      return {
+        section,
+        slug: name.replace(/\.mdx$/, ''),
+        draft: /\ndraft:\s*true\b/.test(frontmatter),
+      };
+    });
+}
+
+const CONTENT_ENTRIES = [
+  ...readContentEntries('writing', new URL('../src/content/posts/', import.meta.url)),
+  ...readContentEntries('work', new URL('../src/content/caseStudies/', import.meta.url)),
+];
 
 /**
  * Whether a top-level résumé YAML array (`education`, `skills`, ...) is
@@ -282,5 +321,66 @@ test('links every resume format, and every link resolves', async () => {
     expect(page, `/resume should link ${format}`).toContain(`href="${format}"`);
     const response = await server.fetch(format);
     expect(response.status, `${format} should resolve`).toBe(200);
+  }
+});
+
+test('every writing and work entry has a resolving .md variant, drafts included', async () => {
+  // Day 3 Task 7 (02 §3): `/writing/<slug>.md` and `/work/<slug>.md` mirror
+  // their HTML sibling's getStaticPaths exactly -- src/pages/writing/[...slug].astro
+  // and .../work/[...slug].astro both serve every entry, published or not
+  // ("Drafts get a route but never an index entry, so work in progress is
+  // shareable by URL without entering the site's navigation" -- that file's
+  // own comment). A `.md` variant that hid a draft its HTML route serves
+  // would break the format parity this plan exists to guarantee, so this
+  // asserts on EVERY entry in CONTENT_ENTRIES, not just the published ones.
+  expect(CONTENT_ENTRIES.length).toBeGreaterThan(0);
+  // At least one specimen must currently be a draft, or this test would stay
+  // green even if a future change silently dropped draft entries from
+  // getStaticPaths -- the parity guarantee is only actually exercised while
+  // that is true.
+  expect(
+    CONTENT_ENTRIES.some((entry) => entry.draft),
+    'expected at least one draft content entry to exercise the drafts-get-a-.md-variant guarantee',
+  ).toBe(true);
+
+  for (const entry of CONTENT_ENTRIES) {
+    const markdownHref = `/${entry.section}/${entry.slug}.md`;
+    const response = await server.fetch(markdownHref);
+    expect(response.status, `${markdownHref} should resolve (draft: ${entry.draft})`).toBe(200);
+    // Verified over the real HTTP response, not the endpoint's source: Astro's
+    // static build discards a prerendered endpoint's Response headers, so the
+    // Content-Type actually served comes from public/_headers (or Cloudflare's
+    // asset mime table), not from the `headers` object in [...slug].md.ts.
+    expect(
+      response.headers.get('content-type'),
+      `${markdownHref} should serve text/markdown over HTTP, not text/plain`,
+    ).toMatch(/^text\/markdown\b/);
+  }
+});
+
+test('every writing and work HTML page links its .md variant, and both link tags resolve', async () => {
+  // Base.astro's `markdownHref` prop (threaded through Shell.astro and
+  // ArticleLayout.astro) adds both link relations. Asserting only that the
+  // tags exist would let them rot into a lie if the route were ever renamed
+  // or removed -- so each href is also fetched and required to resolve.
+  for (const entry of CONTENT_ENTRIES) {
+    const markdownHref = `/${entry.section}/${entry.slug}.md`;
+    const htmlPath = `/${entry.section}/${entry.slug}`;
+    const page = await html(htmlPath);
+    const head = page.slice(0, page.indexOf('</head>'));
+
+    expect(head, `${htmlPath} should carry rel="alternate" pointing at ${markdownHref}`).toContain(
+      `<link rel="alternate" type="text/markdown" href="${markdownHref}">`,
+    );
+    expect(
+      head,
+      `${htmlPath} should carry rel="describedby" pointing at ${markdownHref}`,
+    ).toContain(`<link rel="describedby" type="text/markdown" href="${markdownHref}">`);
+
+    const markdownResponse = await server.fetch(markdownHref);
+    expect(
+      markdownResponse.status,
+      `${htmlPath}'s markdown link (${markdownHref}) should actually resolve`,
+    ).toBe(200);
   }
 });

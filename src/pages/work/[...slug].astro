@@ -28,6 +28,7 @@ const { Content, headings } = await render(study);
   kicker="Case study"
   body={study.body}
   headings={headings}
+  markdownHref={`/work/${study.id}.md`}
 >
   <Content />
 </ArticleLayout>

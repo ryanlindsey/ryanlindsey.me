@@ -4,9 +4,22 @@ import '../styles/global.css';
 interface Props {
   title: string;
   description?: string;
+  // Root-relative URL of this page's markdown variant (e.g. `/writing/foo.md`),
+  // e.g. from Task 6's toMarkdown() by way of a `.md.ts` sibling route (Task 7).
+  // An explicit prop rather than inferring one from Astro.url.pathname: that
+  // would couple this base layout to route structure, and a route added later
+  // with no `.md` variant would silently emit a link to a file that 404s.
+  // Task 10 gets its own `structuredData?: object` prop rather than folding
+  // both into one page-descriptor object -- two small orthogonal optional
+  // props beat a polymorphic one invented before either consumer exists.
+  markdownHref?: string;
 }
 
-const { title, description = 'Engineering leadership and agentic systems.' } = Astro.props;
+const {
+  title,
+  description = 'Engineering leadership and agentic systems.',
+  markdownHref,
+} = Astro.props;
 ---
 
 <!doctype html>
@@ -18,6 +31,16 @@ const { title, description = 'Engineering leadership and agentic systems.' } = A
     <!-- Removed at launch (day 7). Nothing here should be indexed before then. -->
     <meta name="robots" content="noindex" />
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+    {
+      markdownHref && (
+        <>
+          {/* rel="alternate" has pre-existing adoption (OpenAI's Codex CLI follows
+             it); rel="describedby" is llms.txt v2's addition -- costs nothing. */}
+          <link rel="alternate" type="text/markdown" href={markdownHref} />
+          <link rel="describedby" type="text/markdown" href={markdownHref} />
+        </>
+      )
+    }
     <title>{title}</title>
 
     <!--

@@ -12,3 +12,36 @@
 
 /resume.md
   Content-Type: text/markdown; charset=utf-8
+
+# Day 3 Task 7 (02 §3): the `.md` variant of every /writing and /work detail
+# page (src/pages/writing/[...slug].md.ts, src/pages/work/[...slug].md.ts),
+# same reasoning as /resume.md above -- the endpoint's own Content-Type
+# header does not survive the static build, and this rule ships the
+# explicit charset rather than trusting the mime table's current default.
+# Wildcarded (not one line per slug) so a route added later needs no
+# _headers edit: `*` greedily matches the rest of the path, `:splat` below
+# reuses exactly what it captured.
+/writing/*.md
+  Content-Type: text/markdown; charset=utf-8
+
+/work/*.md
+  Content-Type: text/markdown; charset=utf-8
+
+# The HTML detail pages advertise their `.md` sibling via X-Markdown-Variant
+# (Base.astro's `markdownHref` prop carries the same URL into the <link>
+# tags -- this header and those tags must never disagree). Verified over
+# real HTTP (task-7-brief.md): an extensionless request like /writing/foo
+# 307-redirects to /writing/foo/ before Cloudflare serves the asset, so this
+# targets the trailing-slash form the page is actually served from -- a rule
+# keyed on the extensionless path would only ever land on a 307 response
+# nothing reads. The trailing `/` after the splat also keeps this rule from
+# ever matching a `*.md` request (which has no trailing slash) or the bare
+# `/writing/` index (too short to satisfy both the prefix and the trailing
+# slash), so it never collides with the Content-Type rules above -- Cloudflare
+# joins repeated header names with a comma rather than letting one rule win,
+# so overlap here would corrupt rather than override.
+/writing/*/
+  X-Markdown-Variant: /writing/:splat.md
+
+/work/*/
+  X-Markdown-Variant: /work/:splat.md

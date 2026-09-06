@@ -29,6 +29,7 @@ const { Content, headings } = await render(post);
   kicker={PILLAR_LABELS[post.data.pillar] ?? post.data.pillar}
   body={post.body}
   headings={headings}
+  markdownHref={`/writing/${post.id}.md`}
 >
   <Content />
   <SeriesNav slot="footer" current={post} siblings={siblings} />
