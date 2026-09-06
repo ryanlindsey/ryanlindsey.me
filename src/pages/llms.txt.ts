@@ -78,7 +78,18 @@ const MCP_LINKS: LlmsLink[] = [
   {
     title: 'MCP server',
     url: MCP_ENDPOINT,
-    description: 'Model Context Protocol server exposing get_contact and other portfolio tools.',
+    // Fix round 2 (task-9-report.md): the previous wording ("...and other
+    // portfolio tools") overclaimed. Verified live against the deployed
+    // server's own `tools/list` (matches `workers/mcp/src/index.ts`'s single
+    // `registerTool` call): exactly one tool exists today, `get_contact`.
+    // `/llms.txt` is a machine-facing index an agent acts on directly -- a
+    // tool it cannot find after being told to expect it is worse for this
+    // file's credibility than a terse, accurate line. No date promised here
+    // (the day-4 plan is this repo's own scheduling, not a fact this public
+    // file should assert); this description is expected to change again
+    // when the tool set actually grows, which is exactly why no test below
+    // pins its exact wording.
+    description: 'Model Context Protocol server. One tool today: get_contact.',
   },
 ];
 
