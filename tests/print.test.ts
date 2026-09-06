@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 
 const css = readFileSync(new URL('../src/styles/global.css', import.meta.url), 'utf8');
+// The --rl-* palette override lives in tokens.css (tokens.css is the only
+// file in the repo that declares a colour) -- global.css's own `@media
+// print` block now only hides site chrome and adjusts layout.
+const tokensCss = readFileSync(new URL('../src/styles/tokens.css', import.meta.url), 'utf8');
 
 /**
  * Extract the full `@media print { ... }` block from the CSS source, brace
@@ -68,8 +72,9 @@ function paletteOverrideSelectors(block: string): string[] {
 }
 
 const printBlock = extractMediaPrintBlock(css);
+const tokensPrintBlock = extractMediaPrintBlock(tokensCss);
 const chromeSelectors = chromeHidingSelectors(printBlock);
-const paletteSelectors = paletteOverrideSelectors(printBlock);
+const paletteSelectors = paletteOverrideSelectors(tokensPrintBlock);
 
 describe('print rules', () => {
   test('hides site chrome via data attributes', () => {

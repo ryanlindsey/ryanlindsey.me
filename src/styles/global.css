@@ -190,31 +190,14 @@
 
 /*
  * Print, and the Browser-Rendering PDF job day 3 adds. 02 §1 requires the PDF
- * to be ATS-safe: single column, real text, no layout tables. Chrome prints
- * backgrounds off by default, so everything must survive on white -- which is
- * why the light palette is forced rather than inherited from the visitor's
- * theme.
- *
- * The selector list below exists to out-specify tokens.css's no-JS dark
- * block, not merely to cover both themes. `:root:not([data-theme='light'])`
- * is (0,2,0) because :not() takes its argument's specificity, which beats a
- * bare `:root` or `[data-theme='dark']` at (0,1,0) regardless of source order
- * -- media queries add no specificity of their own. Drop the :not() selector
- * and a dark-OS visitor with JS disabled prints the dark palette on top of
- * Chrome's backgrounds-off default: near-white ink on white paper.
+ * to be ATS-safe: single column, real text, no layout tables. The forced
+ * light palette itself -- and the specificity that makes it win over a
+ * dark-OS, no-JS visitor -- is declared in tokens.css alongside the other
+ * theme blocks, since tokens.css is the only file in the repo that declares
+ * a colour. This block only hides site chrome and adjusts layout for the
+ * printed page.
  */
 @media print {
-  :root,
-  :root:not([data-theme='light']),
-  :root[data-theme='dark'] {
-    --rl-bg: #ffffff;
-    --rl-surface: #ffffff;
-    --rl-ink: #000000;
-    --rl-ink-muted: #333333;
-    --rl-rule: #999999;
-    --rl-accent: #000000;
-  }
-
   [data-site-header],
   [data-site-footer],
   nav,

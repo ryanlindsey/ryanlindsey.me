@@ -2,6 +2,11 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 
 const css = readFileSync(new URL('../src/styles/tokens.css', import.meta.url), 'utf8');
+// Source, not build output: lightningcss sits between the two and would put
+// an optimizer between this assertion and the thing it's asserting (see the
+// day-2 `[data-theme='dark']` gate that got its quotes stripped by build and
+// could never pass).
+const globalCss = readFileSync(new URL('../src/styles/global.css', import.meta.url), 'utf8');
 
 /**
  * Pull the `--rl-*` declarations out of one CSS block, located by a pattern
@@ -82,5 +87,14 @@ describe('theme parity', () => {
   // every normal session, so it is asserted mechanically instead.
   test('the no-JS dark block matches the [data-theme] dark block exactly', () => {
     expect(noJsDark).toEqual(dark);
+  });
+});
+
+describe('colour ownership', () => {
+  // Invariant: tokens.css is the only file in the repo that declares a
+  // colour. Everywhere else -- including global.css's print block -- must
+  // consume a --rl-* custom property rather than hardcoding a hex literal.
+  test('global.css contains no hex colour literal', () => {
+    expect(globalCss).not.toMatch(/#[0-9a-f]{3,8}\b/i);
   });
 });
