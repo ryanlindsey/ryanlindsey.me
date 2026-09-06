@@ -33,8 +33,16 @@ export const prerender = true;
  * (src/lib/markdown-export.ts), so it is its own literal rather than
  * derived -- workers/mcp/wrangler.jsonc's own `routes` entry is the other
  * place this hostname is declared.
+ *
+ * Fix round 1 (task-9-report.md): the bare origin 404s. The custom domain
+ * is only the host; `workers/mcp/src/index.ts`'s
+ * `createMcpHandler(createServer, { route: '/mcp' })` mounts the actual
+ * JSON-RPC endpoint at `/mcp` (confirmed live: POST /mcp with an
+ * `initialize` body succeeds; GET /mcp answers 405, which is expected for
+ * an endpoint that only speaks JSON-RPC POST; GET / is a genuine 404). The
+ * path is part of the endpoint, not incidental to it.
  */
-const MCP_ENDPOINT = 'https://mcp.ryanlindsey.me';
+const MCP_ENDPOINT = 'https://mcp.ryanlindsey.me/mcp';
 
 /**
  * The résumé in all four formats (02 §1 / task-9-brief.md Step 1) --

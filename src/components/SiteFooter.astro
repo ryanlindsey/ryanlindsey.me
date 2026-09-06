@@ -7,6 +7,13 @@
 // courtesy to a human visitor scanning the colophon. The `.md` variant
 // routes (Task 7) have no single URL to link -- they are discoverable
 // page-by-page via each HTML page's own <link rel="alternate">.
+//
+// Fix round 1 (task-9-report.md): the MCP link is `/mcp` on that domain, not
+// the bare origin -- the custom domain is only the host,
+// `workers/mcp/src/index.ts`'s `createMcpHandler(..., { route: '/mcp' })`
+// mounts the actual JSON-RPC endpoint at that path, and the bare origin
+// 404s. Verified live: POST https://mcp.ryanlindsey.me/mcp with an
+// `initialize` body succeeds.
 const year = new Date().getFullYear();
 ---
 
@@ -17,7 +24,7 @@ const year = new Date().getFullYear();
     <span>&copy; {year} Ryan Lindsey</span>
     <nav aria-label="Agent resources" class="flex items-baseline gap-4">
       <a href="/llms.txt" class="hover:text-accent">llms.txt</a>
-      <a href="https://mcp.ryanlindsey.me" class="hover:text-accent">MCP</a>
+      <a href="https://mcp.ryanlindsey.me/mcp" class="hover:text-accent">MCP</a>
     </nav>
     <span>Built on Cloudflare Workers &middot; Astro</span>
   </div>

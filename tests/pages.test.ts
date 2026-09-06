@@ -382,9 +382,18 @@ test('every writing and work entry has a resolving .md variant, drafts included'
 
 test('every writing and work HTML page links its .md variant, and both link tags resolve', async () => {
   // Base.astro's `markdownHref` prop (threaded through Shell.astro and
-  // ArticleLayout.astro) adds both link relations. Asserting only that the
-  // tags exist would let them rot into a lie if the route were ever renamed
-  // or removed -- so each href is also fetched and required to resolve.
+  // ArticleLayout.astro) adds `rel="alternate"`. Asserting only that the
+  // tag exists would let it rot into a lie if the route were ever renamed
+  // or removed -- so its href is also fetched and required to resolve.
+  //
+  // Fix round 1 (task-9-report.md): `rel="describedby"` does NOT point at
+  // `markdownHref` -- that was Task 7's mistake. Per llms.txt v2 (research
+  // appendix B1.2/B2.2), `describedby` points at the llms.txt file that
+  // COVERS the page, not at the page's own markdown twin (that's what
+  // `alternate` is for). This site has one, root-level, unscoped
+  // `/llms.txt` (Task 9), so every page's `describedby` points at that same
+  // URL, with no `type` attribute -- matching the spec's own header-form
+  // example verbatim (`</docs/llms.txt>; rel="describedby"`, no `type`).
   for (const entry of CONTENT_ENTRIES) {
     const markdownHref = `/${entry.section}/${entry.slug}.md`;
     const htmlPath = `/${entry.section}/${entry.slug}`;
@@ -398,10 +407,9 @@ test('every writing and work HTML page links its .md variant, and both link tags
     expect(head, `${htmlPath} should carry rel="alternate" pointing at ${markdownHref}`).toContain(
       `<link rel="alternate" type="text/markdown" href="${markdownHref}">`,
     );
-    expect(
-      head,
-      `${htmlPath} should carry rel="describedby" pointing at ${markdownHref}`,
-    ).toContain(`<link rel="describedby" type="text/markdown" href="${markdownHref}">`);
+    expect(head, `${htmlPath} should carry rel="describedby" pointing at /llms.txt`).toContain(
+      '<link rel="describedby" href="/llms.txt">',
+    );
 
     // 02 §3's `X-Markdown-Variant` response header (fix round 1: previously
     // unasserted anywhere). This is the header form of the same claim the
@@ -486,7 +494,11 @@ test('/llms.txt links the résumé in all four formats and the MCP endpoint, and
   for (const format of ['/resume.md', '/resume.json', '/resume.pdf', '/resume']) {
     expect(page, `/llms.txt should link ${format}`).toContain(`(https://ryanlindsey.me${format})`);
   }
-  expect(page, '/llms.txt should link the MCP endpoint').toContain('(https://mcp.ryanlindsey.me)');
+  // Fix round 1 (task-9-report.md): the endpoint is `/mcp` on that domain,
+  // not the bare origin -- the bare origin 404s.
+  expect(page, '/llms.txt should link the MCP endpoint').toContain(
+    '(https://mcp.ryanlindsey.me/mcp)',
+  );
 });
 
 test('buildLlmsTxt omits a heading entirely when its link list is empty', () => {
@@ -567,8 +579,10 @@ test('footer links /llms.txt and the MCP endpoint, and never links /llms-full.tx
   const page = await html('/');
   const footer = page.slice(page.indexOf('<footer'));
   expect(footer, 'footer should link /llms.txt').toContain('href="/llms.txt"');
+  // Fix round 1 (task-9-report.md): the endpoint is `/mcp` on that domain,
+  // not the bare origin -- the bare origin 404s.
   expect(footer, 'footer should link the MCP endpoint').toContain(
-    'href="https://mcp.ryanlindsey.me"',
+    'href="https://mcp.ryanlindsey.me/mcp"',
   );
   // /llms-full.txt is the bulk-ingestion corpus; /llms.txt points at it, so
   // the footer must not link it a second time (task-9-brief.md Step 3).
