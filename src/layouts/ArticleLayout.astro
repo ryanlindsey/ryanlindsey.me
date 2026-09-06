@@ -1,33 +1,43 @@
 ---
-import type { CollectionEntry } from 'astro:content';
 import Shell from './Shell.astro';
 import ArticleMeta from '../components/ArticleMeta.astro';
 import TableOfContents from '../components/TableOfContents.astro';
-import SeriesNav from '../components/SeriesNav.astro';
 import { buildToc, type Heading } from '../lib/toc';
 import { readingTimeFor } from '../lib/reading-time';
 
+// Primitives rather than a CollectionEntry. This template serves `posts` and
+// `caseStudies`, which share a presentation but not a schema: a case study has
+// no pillar and no series, a post has both. Typing the layout to one collection
+// is what blocked /work, and passing fields keeps the template from knowing
+// which collection it is rendering. Collection-specific furniture (SeriesNav)
+// arrives through the `footer` slot from the route that owns it.
 interface Props {
-  post: CollectionEntry<'posts'>;
+  title: string;
+  description: string;
+  publishedAt: Date;
+  updatedAt?: Date;
+  kicker: string;
+  // `entry.body` is optional on a Content Layer entry, so it is threaded
+  // through as-is; readingTimeFor already treats undefined as empty.
+  body: string | undefined;
   headings: Heading[];
-  siblings: CollectionEntry<'posts'>[];
 }
 
-const { post, headings, siblings } = Astro.props;
+const { title, description, publishedAt, updatedAt, kicker, body, headings } = Astro.props;
 const toc = buildToc(headings);
-const readingTime = readingTimeFor(post.body);
+const readingTime = readingTimeFor(body);
 ---
 
-<Shell title={`${post.data.title} — Ryan Lindsey`} description={post.data.description}>
+<Shell title={`${title} — Ryan Lindsey`} description={description}>
   <article class="mx-auto max-w-5xl px-6 py-16">
     <header class="max-w-3xl">
-      <h1 class="font-display text-title text-ink">{post.data.title}</h1>
-      <p class="mt-6 text-ink-muted">{post.data.description}</p>
+      <h1 class="font-display text-title text-ink">{title}</h1>
+      <p class="mt-6 text-ink-muted">{description}</p>
       <div class="mt-6 border-t border-rule pt-4">
         <ArticleMeta
-          publishedAt={post.data.publishedAt}
-          updatedAt={post.data.updatedAt}
-          pillar={post.data.pillar}
+          publishedAt={publishedAt}
+          updatedAt={updatedAt}
+          kicker={kicker}
           readingTime={readingTime}
         />
       </div>
@@ -49,6 +59,6 @@ const readingTime = readingTimeFor(post.body);
       </div>
     </div>
 
-    <SeriesNav current={post} siblings={siblings} />
+    <slot name="footer" />
   </article>
 </Shell>

@@ -1,0 +1,54 @@
+---
+title: Case study shape specimen
+description: A rendering fixture for the fixed case-study shape. Not a case study, and not about any real work; it exercises the six sections, the table of contents, and the article furniture.
+publishedAt: 2026-09-06
+draft: true
+---
+
+This page is a fixture, not a case study. It exists so the `/work` template can be built and
+tested before real case studies land, and so that the six sections below are enforced by something
+other than a plan document.
+
+02 §4 fixes the shape. `src/lib/case-study-shape.ts` holds the list, and
+`tests/case-studies.test.ts` asserts that every file in this collection renders exactly these six
+second-level headings in exactly this order. Add a case study missing one and the build fails.
+Reorder them and the build fails. That is the point: a shape written down in a plan is a
+convention, and a shape asserted against the rendered page is a contract.
+
+## Context
+
+What the situation was, and what made it worth changing. Scope belongs here, stated plainly rather
+than implied: how many people, whose problem it was, and whether it was a local irritation or
+something the whole organization was living with.
+
+## Constraint
+
+What the solution had to satisfy, written before the solution appears. A constraint section that
+reads like a list of the features that were built is a solution section wearing a disguise. These
+should be the things that ruled options out.
+
+## Intervention
+
+What was actually built or changed, described at the level a reader could disagree with. Not the
+architecture yet, and not the results. The decision.
+
+## Mechanism
+
+How it actually worked. 02 §4 calls this the section where engineering credibility lives, which
+means it is the one that carries specifics: the load-bearing choice, the thing that would have
+broken without it, and enough detail that a skeptical reader can check the reasoning.
+
+```ts
+// Real excerpts belong here, in the site's Expressive Code frames.
+export const CASE_STUDY_SECTIONS = ['Context', 'Constraint', 'Intervention'] as const;
+```
+
+## Outcome
+
+Numbers. Measured ones, with the measurement named, and the honest footnote where a figure covers
+less than it appears to.
+
+## What I'd do differently
+
+The section that decides whether the rest is believable. Something that is still open, or a
+decision that turned out wrong, described in enough detail that it is clearly a real one.
