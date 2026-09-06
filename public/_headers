@@ -1,3 +1,13 @@
+# IMPORTANT for whoever edits this file next (confirmed against Cloudflare's
+# own docs, fix round 1 of Day 3 Task 7): when a request matches more than one
+# rule below, and two matching rules set the SAME header name, Cloudflare does
+# NOT let the more specific rule win -- it joins both values with a comma.
+# "Add a more specific rule to override this" is the wrong instinct here and
+# will corrupt the header instead of replacing it. If two rules must set the
+# same header for overlapping paths, make the path patterns mutually
+# exclusive instead (see the /writing/*.md vs /writing/*/ split below for a
+# worked example).
+#
 # Day 3 Task 3: Astro's static build writes only a prerendered endpoint's
 # Response BODY to disk (astro build discards the headers set in
 # src/pages/resume.json.ts / resume.md.ts) -- the Content-Type actually
@@ -30,16 +40,18 @@
 # The HTML detail pages advertise their `.md` sibling via X-Markdown-Variant
 # (Base.astro's `markdownHref` prop carries the same URL into the <link>
 # tags -- this header and those tags must never disagree). Verified over
-# real HTTP (task-7-brief.md): an extensionless request like /writing/foo
+# real HTTP (task-7-report.md): an extensionless request like /writing/foo
 # 307-redirects to /writing/foo/ before Cloudflare serves the asset, so this
 # targets the trailing-slash form the page is actually served from -- a rule
 # keyed on the extensionless path would only ever land on a 307 response
 # nothing reads. The trailing `/` after the splat also keeps this rule from
 # ever matching a `*.md` request (which has no trailing slash) or the bare
 # `/writing/` index (too short to satisfy both the prefix and the trailing
-# slash), so it never collides with the Content-Type rules above -- Cloudflare
-# joins repeated header names with a comma rather than letting one rule win,
-# so overlap here would corrupt rather than override.
+# slash) -- see the file-header note above for why that exclusivity, not a
+# more-specific override, is what keeps this from colliding with the
+# Content-Type rules above. tests/pages.test.ts's "index pages carry no
+# X-Markdown-Variant header" and the .md-response-has-no-header assertion in
+# the test above it are the mutation-tested guards for this.
 /writing/*/
   X-Markdown-Variant: /writing/:splat.md
 

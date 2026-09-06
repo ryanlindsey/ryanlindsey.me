@@ -351,6 +351,19 @@ test('every writing and work entry has a resolving .md variant, drafts included'
     // static build discards a prerendered endpoint's Response headers, so the
     // Content-Type actually served comes from public/_headers (or Cloudflare's
     // asset mime table), not from the `headers` object in [...slug].md.ts.
+    //
+    // NOTE (fix round 1): this assertion is a statement of the *contract*,
+    // not a guard against public/_headers losing its `/writing/*.md` and
+    // `/work/*.md` rules -- a reviewer deleted those rules, rebuilt, and this
+    // still passed, because Cloudflare's default asset-MIME lookup already
+    // maps `.md` to exactly `text/markdown; charset=utf-8` (the same fact
+    // this file's own `/resume.md` rule's comment documents). Those two rules
+    // are defensive -- they stop the served type from silently drifting if
+    // that default table ever changes -- not currently load-bearing. The
+    // rule that IS load-bearing today is `/resume.json`'s: `.json` has no
+    // default charset, which is why tests/resume.test.ts's
+    // "/resume.json parses..." test asserts `application/json; charset=utf-8`
+    // exactly and fails the moment that rule is removed.
     expect(
       response.headers.get('content-type'),
       `${markdownHref} should serve text/markdown over HTTP, not text/plain`,
@@ -366,7 +379,11 @@ test('every writing and work HTML page links its .md variant, and both link tags
   for (const entry of CONTENT_ENTRIES) {
     const markdownHref = `/${entry.section}/${entry.slug}.md`;
     const htmlPath = `/${entry.section}/${entry.slug}`;
-    const page = await html(htmlPath);
+    // Fetched directly (not through the html() helper) so the Response
+    // object -- and its headers -- stay in scope below.
+    const htmlResponse = await server.fetch(htmlPath);
+    expect(htmlResponse.status, `${htmlPath} should be 200`).toBe(200);
+    const page = await htmlResponse.text();
     const head = page.slice(0, page.indexOf('</head>'));
 
     expect(head, `${htmlPath} should carry rel="alternate" pointing at ${markdownHref}`).toContain(
@@ -377,10 +394,49 @@ test('every writing and work HTML page links its .md variant, and both link tags
       `${htmlPath} should carry rel="describedby" pointing at ${markdownHref}`,
     ).toContain(`<link rel="describedby" type="text/markdown" href="${markdownHref}">`);
 
+    // 02 §3's `X-Markdown-Variant` response header (fix round 1: previously
+    // unasserted anywhere). This is the header form of the same claim the
+    // <link> tags make in the body, so it is checked for the exact value
+    // (not just presence) -- a typo in public/_headers's `:splat` pattern, or
+    // the rule matching the wrong entry, would otherwise ship silently.
+    expect(
+      htmlResponse.headers.get('x-markdown-variant'),
+      `${htmlPath} should carry X-Markdown-Variant: ${markdownHref}`,
+    ).toBe(markdownHref);
+
     const markdownResponse = await server.fetch(markdownHref);
     expect(
       markdownResponse.status,
       `${htmlPath}'s markdown link (${markdownHref}) should actually resolve`,
     ).toBe(200);
+    // The .md file does not need to advertise its own variant. This also
+    // guards the OTHER direction of the public/_headers rule design: the
+    // `/writing/*/ ` (X-Markdown-Variant) and `/writing/*.md` (Content-Type)
+    // rules are written to never both match the same request, because
+    // Cloudflare joins repeated header names across matching rules with a
+    // comma rather than letting the more specific rule win -- if the two
+    // rules ever overlapped, this assertion would catch the header leaking
+    // onto the .md response (usually with a corrupted, comma-joined or
+    // double-.md value).
+    expect(
+      markdownResponse.headers.get('x-markdown-variant'),
+      `${markdownHref} itself should not carry X-Markdown-Variant`,
+    ).toBeNull();
+  }
+});
+
+test('index pages carry no X-Markdown-Variant header', async () => {
+  // The aggregation surfaces (02 §3's other tier) have no markdown variant of
+  // their own -- this is the negative space the two rules above must not
+  // spill into. `/writing`/`/work` redirect to their trailing-slash form the
+  // same way a detail page does (verified over HTTP, task-7-report.md), so
+  // both forms are checked.
+  for (const path of ['/writing', '/writing/', '/work', '/work/']) {
+    const response = await server.fetch(path);
+    expect(response.status, `${path} should be 200`).toBe(200);
+    expect(
+      response.headers.get('x-markdown-variant'),
+      `${path} should not advertise a markdown variant`,
+    ).toBeNull();
   }
 });
