@@ -45,5 +45,12 @@
     "typescript": "6.0.3",
     "vitest": "4.1.11",
     "wrangler": "4.128.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "esbuild@0.28.1": true,
+    "workerd@1.20260831.1": true,
+    "core-js-pure": false,
+    "fsevents": false
   }
 }
