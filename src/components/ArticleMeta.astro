@@ -1,15 +1,19 @@
 ---
 import type { ReadingTime } from '../lib/reading-time';
-import { PILLAR_LABELS } from '../lib/pillars';
 
 interface Props {
   publishedAt: Date;
   updatedAt?: Date;
-  pillar: string;
+  // An already-resolved label, not a pillar key. This component serves posts
+  // (whose kicker is a pillar label) and case studies (whose kicker is
+  // "Case study" -- 02 §2's pillars are declared for posts only). Resolving in
+  // the caller keeps the pillar taxonomy out of a component that no longer
+  // belongs to one collection.
+  kicker: string;
   readingTime: ReadingTime;
 }
 
-const { publishedAt, updatedAt, pillar, readingTime } = Astro.props;
+const { publishedAt, updatedAt, kicker, readingTime } = Astro.props;
 
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 ---
@@ -17,7 +21,7 @@ const iso = (date: Date) => date.toISOString().slice(0, 10);
 <p class="flex flex-wrap items-baseline gap-x-3 font-mono text-micro uppercase text-ink-muted">
   <time datetime={publishedAt.toISOString()}>{iso(publishedAt)}</time>
   <span aria-hidden="true">&middot;</span>
-  <span>{PILLAR_LABELS[pillar] ?? pillar}</span>
+  <span data-testid="article-kicker">{kicker}</span>
   <span aria-hidden="true">&middot;</span>
   <span data-testid="reading-time">{readingTime.text}</span>
   {

@@ -1,6 +1,8 @@
 ---
 import { getCollection, render } from 'astro:content';
 import ArticleLayout from '../../layouts/ArticleLayout.astro';
+import SeriesNav from '../../components/SeriesNav.astro';
+import { PILLAR_LABELS } from '../../lib/pillars';
 import type { GetStaticPaths } from 'astro';
 
 // Drafts get a route but never an index entry, so work in progress is
@@ -19,6 +21,15 @@ const { post, siblings } = Astro.props;
 const { Content, headings } = await render(post);
 ---
 
-<ArticleLayout post={post} headings={headings} siblings={siblings}>
+<ArticleLayout
+  title={post.data.title}
+  description={post.data.description}
+  publishedAt={post.data.publishedAt}
+  updatedAt={post.data.updatedAt}
+  kicker={PILLAR_LABELS[post.data.pillar] ?? post.data.pillar}
+  body={post.body}
+  headings={headings}
+>
   <Content />
+  <SeriesNav slot="footer" current={post} siblings={siblings} />
 </ArticleLayout>

@@ -1,0 +1,33 @@
+---
+import { getCollection, render } from 'astro:content';
+import ArticleLayout from '../../layouts/ArticleLayout.astro';
+import type { GetStaticPaths } from 'astro';
+
+// 05 §3 puts case studies at /work + /work/<slug>. Same draft convention as
+// /writing: every entry gets a route, only published ones reach the index, so a
+// piece under review is shareable by URL without entering the navigation.
+export const getStaticPaths = (async () => {
+  const caseStudies = await getCollection('caseStudies');
+  return caseStudies.map((study) => ({
+    params: { slug: study.id },
+    props: { study },
+  }));
+}) satisfies GetStaticPaths;
+
+const { study } = Astro.props;
+const { Content, headings } = await render(study);
+---
+
+<!-- No series slot: 02 §2's series belong to posts. A case study that needed
+     one would be a post. -->
+<ArticleLayout
+  title={study.data.title}
+  description={study.data.description}
+  publishedAt={study.data.publishedAt}
+  updatedAt={study.data.updatedAt}
+  kicker="Case study"
+  body={study.body}
+  headings={headings}
+>
+  <Content />
+</ArticleLayout>

@@ -98,7 +98,14 @@ test('carries no candidacy language on any public surface', async () => {
     /\bactively looking\b/i,
     /\bopen to (work|opportunities|offers)\b/i,
   ];
-  for (const route of ['/', '/writing', '/writing/type-specimen', '/resume']) {
+  for (const route of [
+    '/',
+    '/writing',
+    '/writing/type-specimen',
+    '/work',
+    '/work/shape-specimen',
+    '/resume',
+  ]) {
     const page = await html(route);
     for (const pattern of BANNED) {
       expect(page, `${route} must not match ${pattern}`).not.toMatch(pattern);
