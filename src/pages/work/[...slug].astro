@@ -1,6 +1,9 @@
 ---
 import { getCollection, render } from 'astro:content';
 import ArticleLayout from '../../layouts/ArticleLayout.astro';
+import { getResume } from '../../lib/resume-collection';
+import { canonicalUrlFor } from '../../lib/markdown-export';
+import { buildTechArticle } from '../../lib/structured-data';
 import type { GetStaticPaths } from 'astro';
 
 // 05 §3 puts case studies at /work + /work/<slug>. Same draft convention as
@@ -16,6 +19,21 @@ export const getStaticPaths = (async () => {
 
 const { study } = Astro.props;
 const { Content, headings } = await render(study);
+
+// Task 10 (02 §3): TechArticle. No BreadcrumbList here -- task-10-brief.md
+// scopes that to posts only; this is the brief's own asymmetry, not an
+// oversight. Built here rather than in ArticleLayout for the same reason
+// writing/[...slug].astro builds its own structured data: this route
+// already knows its collection.
+const resume = await getResume();
+const structuredData = buildTechArticle({
+  headline: study.data.title,
+  description: study.data.description,
+  url: canonicalUrlFor(study),
+  datePublished: study.data.publishedAt,
+  dateModified: study.data.updatedAt,
+  author: { name: resume.basics.name, url: new URL('/', Astro.site).href },
+});
 ---
 
 <!-- No series slot: 02 §2's series belong to posts. A case study that needed
@@ -29,6 +47,7 @@ const { Content, headings } = await render(study);
   body={study.body}
   headings={headings}
   markdownHref={`/work/${study.id}.md`}
+  structuredData={structuredData}
 >
   <Content />
 </ArticleLayout>

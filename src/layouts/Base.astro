@@ -1,5 +1,7 @@
 ---
 import '../styles/global.css';
+import { getResume } from '../lib/resume-collection';
+import { buildPerson, stringifyJsonLd } from '../lib/structured-data';
 
 interface Props {
   title: string;
@@ -9,17 +11,50 @@ interface Props {
   // An explicit prop rather than inferring one from Astro.url.pathname: that
   // would couple this base layout to route structure, and a route added later
   // with no `.md` variant would silently emit a link to a file that 404s.
-  // Task 10 gets its own `structuredData?: object` prop rather than folding
-  // both into one page-descriptor object -- two small orthogonal optional
-  // props beat a polymorphic one invented before either consumer exists.
   markdownHref?: string;
+  // Task 10 (02 §3): this page's own JSON-LD node(s) -- BlogPosting plus
+  // BreadcrumbList for a post, TechArticle for a case study -- threaded
+  // through Shell/ArticleLayout the same way `markdownHref` is. A separate
+  // prop rather than folding both into one page-descriptor object -- two
+  // small orthogonal optional props beat a polymorphic one invented before
+  // either consumer exists. `Person` is deliberately NOT part of this prop:
+  // see below.
+  structuredData?: object;
 }
 
 const {
   title,
   description = 'Engineering leadership and agentic systems.',
   markdownHref,
+  structuredData,
 } = Astro.props;
+
+// Person, sitewide (task-10-brief.md), built here rather than passed in by
+// every page: it is the same node everywhere, sourced from the one
+// validated résumé record every other format already reads (resume.astro,
+// /resume.md, /resume.json, /resume.pdf, /llms.txt) -- one more call site
+// to that reader, not a new data path. `sameAs` (research appendix B3.1's
+// entity-disambiguation payload) comes from `basics.profiles`, which is
+// empty in today's real résumé data (resumeGaps() already reports that gap
+// on /resume); buildPerson() omits the field entirely until the content
+// track fills it in, with no change needed here.
+const resume = await getResume();
+const person = buildPerson({
+  name: resume.basics.name,
+  url: new URL('/', Astro.site).href,
+  jobTitle: resume.basics.label,
+  sameAs: resume.basics.profiles.map((profile) => profile.url),
+});
+
+// A bare object from a page (TechArticle) becomes a one-element array; an
+// already-array page value (a post's [BlogPosting, BreadcrumbList]) passes
+// through unchanged. Person always leads, so it is present even on pages
+// (the home page, /resume, the index pages) that pass no `structuredData`
+// of their own.
+const jsonLdNodes = [
+  person,
+  ...(structuredData ? (Array.isArray(structuredData) ? structuredData : [structuredData]) : []),
+];
 ---
 
 <!doctype html>
@@ -53,6 +88,20 @@ const {
           <link rel="describedby" href="/llms.txt" />
         </>
       )
+    }
+    {
+      // One <script> per node rather than one script wrapping an array or an
+      // `@graph`: task-10-brief.md asks for four standalone types (Person,
+      // BlogPosting, BreadcrumbList, TechArticle), not the cross-node `@id`
+      // linking research appendix B3.1 sketches for a larger site -- that
+      // shape was not asked for here and nothing consumes it yet.
+      // `set:html` (not text interpolation) is required: Astro's default
+      // text interpolation HTML-escapes its input, which would corrupt the
+      // embedded JSON; `stringifyJsonLd` already neutralises the one
+      // injection risk (a field value containing a literal `</script>`).
+      jsonLdNodes.map((node) => (
+        <script type="application/ld+json" is:inline set:html={stringifyJsonLd(node)} />
+      ))
     }
     <title>{title}</title>
 
