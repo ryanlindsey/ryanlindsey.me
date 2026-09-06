@@ -140,6 +140,28 @@ describe('toMarkdown', () => {
     const entry = post({ id: 'p', title: 'Title: With a Colon' });
     expect(toMarkdown(entry)).toContain('title: "Title: With a Colon"');
   });
+
+  test('escapes an embedded double quote', () => {
+    const entry = post({ id: 'p', title: 'A "Quoted" Title' });
+    expect(toMarkdown(entry)).toContain('title: "A \\"Quoted\\" Title"');
+  });
+
+  test('quotes a title starting with # so it cannot read as a YAML comment', () => {
+    const entry = post({ id: 'p', title: '#1 in the series' });
+    expect(toMarkdown(entry)).toContain('title: "#1 in the series"');
+  });
+
+  test('escapes an embedded newline instead of leaving a raw one for a parser to fold to a space', () => {
+    // A real YAML parser line-folds a raw newline inside a double-quoted flow
+    // scalar to a space -- that is the spec's behaviour, not a parser bug --
+    // so a raw newline here would silently and irreversibly merge two lines
+    // the next time this frontmatter is read back.
+    const entry = post({ id: 'p', title: 'Line one\nLine two' });
+    const rendered = toMarkdown(entry);
+    expect(rendered).toContain('title: "Line one\\nLine two"');
+    const [frontmatterBlock] = rendered.split('\n---\n');
+    expect(frontmatterBlock).not.toMatch(/title: "[^"]*\n[^"]*"/);
+  });
 });
 
 // The component-stripping fixture. Neither src/content specimen uses a
@@ -162,7 +184,7 @@ Ordinary prose survives untouched, including \`inline code\`.
 
 <Aside>An allowlisted note that should survive, unwrapped.</Aside>
 
-<RelatedPosts slugs={['a', 'b']} />
+<RelatedPosts slugs="a,b" />
 
 <Callout type="warning">This entire block, including this sentence, should disappear.</Callout>
 
@@ -232,6 +254,52 @@ describe('stripNonPortableMdx (component and import stripping)', () => {
       rendered.split("import Aside from '../../components/Aside.astro';").length - 1;
     expect(occurrences).toBe(1);
     expect(rendered).toContain("```jsx\nimport Aside from '../../components/Aside.astro';");
+  });
+});
+
+// Fix round 1 (post-review): three adversarial inputs reproduced against the
+// round-1 regexes produced silent corruption rather than a build failure --
+// same-tag nesting, an attribute value containing a bare `>`, and an inline
+// (single-backtick) code span that was not exempted the way triple-backtick
+// fences already were. All three are exercised here against the actual
+// exported functions, not a standalone copy of the regexes.
+describe('fix round 1: the stripper fails loudly instead of shipping corruption', () => {
+  test('same-tag nesting throws instead of leaving a literal unstripped tag in the output', () => {
+    // Round 1 produced "outer <Aside>inner end</Aside>" here -- a literal,
+    // unstripped `<Aside>` fragment shipped as if it were clean markdown.
+    const input = '<Aside>outer <Aside>inner</Aside> end</Aside>';
+    expect(() => stripNonPortableMdx(input)).toThrow(/component tag survived/);
+  });
+
+  test('an attribute expression containing a bare > throws instead of shipping a garbage fragment', () => {
+    // Round 1 produced `" 5}>Important note."` here: the `<Aside level={x`
+    // prefix was silently swallowed as if it were the tag's own opening
+    // bracket, against this module's OWN allowlisted component. Excluding
+    // `{` from the attribute scan means the tag now fails to match at all --
+    // it survives untouched in the input to the guard, which then throws.
+    const input = '<Aside level={x > 5}>Important note.</Aside>';
+    expect(() => stripNonPortableMdx(input)).toThrow(/component tag survived/);
+  });
+
+  test('a leftover tag anywhere in an otherwise-clean document still throws, not just in isolation', () => {
+    const input =
+      'Clean prose before.\n\n<Broken prop={a > b}>never stripped</Broken>\n\nClean prose after.';
+    expect(() => stripNonPortableMdx(input)).toThrow(/component tag survived/);
+  });
+
+  test('an inline single-backtick code span mentioning a component is exempted, not corrupted', () => {
+    // The undisclosed round-1 bug: only triple-backtick fences were exempt.
+    // Round 1 turned this into "For example, `` renders a callout." --
+    // deleting the entire code span's content. Post 1 on this site's plan is
+    // a build log about this repository, which will very naturally use
+    // inline backticks around a component name -- this is not hypothetical.
+    const input = 'For example, `<Aside type="note" />` renders a callout.';
+    expect(stripNonPortableMdx(input)).toBe(input);
+  });
+
+  test('toMarkdown propagates the throw rather than swallowing it', () => {
+    const entry = post({ id: 'p', body: '<Aside level={x > 5}>Important note.</Aside>' });
+    expect(() => toMarkdown(entry)).toThrow(/component tag survived/);
   });
 });
 
