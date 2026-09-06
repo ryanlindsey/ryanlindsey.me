@@ -17,10 +17,188 @@ import { regenerateResumePdf } from './lib/resume-pdf';
  * deployed Worker. src/pages/resume.pdf.ts is the route that keeps that from
  * happening; it is on-demand by nature rather than a contrivance.
  *
- * Tasks 8 and 12 add their handlers here.
+ * Tasks 8 and 15 add their handlers here.
  */
+
+// --- Day 3 Task 8 (02 §3): `Accept: text/markdown` content negotiation ----
+//
+// 02 §3 requires markdown at `<path>.md` (Task 7) AND via `Accept:
+// text/markdown` negotiation on the extensionless path. This is why
+// negotiation lives here rather than as a static rule: `public/_headers`
+// cannot branch on a request header, only on a path.
+//
+// Reuse, not re-derivation: this reads the SAME prerendered `.md` asset
+// Task 7's routes already wrote to `dist/client` through the `ASSETS`
+// binding, rather than calling `toMarkdown()`/`renderResumeMarkdown()` again
+// at request time. One rendering path, one output, no per-request cost.
+//
+// LOAD-BEARING CONFIG, not just code: every page this negotiates for is a
+// prerendered static asset, and wrangler.jsonc's `assets.run_worker_first`
+// defaults to false -- meaning a request matching one of those assets is
+// served by the Asset Worker and never reaches this `fetch` at all. Verified
+// empirically (a debug header set unconditionally at the top of `fetch`
+// never appeared on the response for `/writing/<slug>`, `/work/<slug>` or
+// `/resume` without it): this code is unreachable dead weight unless
+// wrangler.jsonc's `run_worker_first` names these routes. See that file's
+// comment for which ones and why.
+
+const NEGOTIABLE_METHODS = new Set(['GET', 'HEAD']);
+
+/**
+ * Maps an incoming request pathname to the `.md` asset that mirrors it, or
+ * `null` when the path is not one of the content routes with a markdown
+ * variant.
+ *
+ * Content routes: `/resume`, `/writing/<slug>`, `/work/<slug>` -- exactly
+ * the set src/pages/resume.md.ts, src/pages/writing/[...slug].md.ts and
+ * src/pages/work/[...slug].md.ts prerender (drafts included: negotiation
+ * mirrors the detail routes, and only the aggregation surfaces filter
+ * drafts). The aggregation pages themselves (`/writing`, `/work`) have no
+ * variant and are excluded by the regex requiring a non-empty slug after
+ * the section.
+ *
+ * A path that already carries its own extension (`/resume.pdf`,
+ * `/writing/foo.md`, `/resume.json`, ...) is asking for one specific
+ * representation via the URL itself, checked and excluded before anything
+ * else -- it must never be re-negotiated onto a different one.
+ *
+ * The trailing slash is stripped before mapping. An extensionless request
+ * like `/writing/foo` 307-redirects to `/writing/foo/` before Cloudflare
+ * would ever serve an asset for it (confirmed over real HTTP in
+ * task-7-report.md), so a real request reaches this function in either
+ * form. Naively appending `.md` to the slashed form would produce the
+ * nonexistent `/writing/foo/.md`; stripping first makes both forms resolve
+ * to the same, correct `/writing/foo.md`.
+ */
+function markdownAssetPathFor(pathname: string): string | null {
+  const trimmed = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+  if (/\.[^/]+$/.test(trimmed)) return null;
+  if (trimmed === '/resume') return '/resume.md';
+  const match = /^\/(writing|work)\/(.+)$/.exec(trimmed);
+  return match ? `/${match[1]}/${match[2]}.md` : null;
+}
+
+interface MediaRange {
+  type: string;
+  subtype: string;
+  q: number;
+}
+
+/**
+ * Parses an `Accept` header into its media ranges. Only `q` is read out of
+ * each range's parameters -- every other parameter (`charset`, a vendor
+ * suffix, ...) is irrelevant to the text/markdown-vs-text/html decision this
+ * module exists to make.
+ */
+function parseAccept(header: string): MediaRange[] {
+  return header
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .map((part) => {
+      const [mediaType = '', ...params] = part.split(';').map((piece) => piece.trim());
+      const [type = '*', subtype = '*'] = mediaType.toLowerCase().split('/');
+      let q = 1;
+      for (const param of params) {
+        const [key, value] = param.split('=').map((piece) => piece.trim());
+        if (key === 'q' && value !== undefined) {
+          const parsed = Number.parseFloat(value);
+          if (!Number.isNaN(parsed)) q = parsed;
+        }
+      }
+      return { type, subtype, q };
+    });
+}
+
+/**
+ * The `q` value a set of parsed media ranges assigns to `type/subtype`, by
+ * RFC 9110's specificity rule: an exact match outranks a `type/*` range,
+ * which outranks the full wildcard range (`*` type, `*` subtype). A range
+ * that does not apply at all yields `0` -- "not acceptable", the same as an
+ * explicit `;q=0`.
+ */
+function acceptQuality(ranges: MediaRange[], type: string, subtype: string): number {
+  let bestSpecificity = -1;
+  let bestQ = 0;
+  for (const range of ranges) {
+    let specificity: number;
+    if (range.type === type && range.subtype === subtype) specificity = 2;
+    else if (range.type === type && range.subtype === '*') specificity = 1;
+    else if (range.type === '*' && range.subtype === '*') specificity = 0;
+    else continue;
+    if (specificity > bestSpecificity) {
+      bestSpecificity = specificity;
+      bestQ = range.q;
+    }
+  }
+  return bestQ;
+}
+
+/**
+ * Whether `acceptHeader` prefers `text/markdown` over `text/html` --
+ * strictly, not merely "acceptable". A bare wildcard `Accept` value (curl's
+ * default, and most HTTP libraries' and crawlers') matches both types at
+ * the same wildcard specificity and therefore the same `q`, so the
+ * comparison below is never strictly greater and this correctly returns
+ * `false`: HTML stays the default representation for the overwhelmingly
+ * common case of a client that did not ask for anything in particular.
+ * Getting this backwards would flip the site's default representation for
+ * most non-browser clients.
+ *
+ * Any other tie (e.g. `text/markdown;q=0.5, text/html;q=0.5`), and the case
+ * where `text/html` outweighs `text/markdown` (e.g.
+ * `text/markdown;q=0.1, text/html;q=0.9`), resolve to `false` the same way:
+ * markdown must be genuinely preferred, not merely tied or trailing, before
+ * the default flips. A missing/empty header is treated the same as a bare
+ * wildcard.
+ */
+function prefersMarkdown(acceptHeader: string | null): boolean {
+  if (!acceptHeader) return false;
+  const ranges = parseAccept(acceptHeader);
+  const markdownQ = acceptQuality(ranges, 'text', 'markdown');
+  const htmlQ = acceptQuality(ranges, 'text', 'html');
+  return markdownQ > htmlQ;
+}
+
+/**
+ * Serves the negotiated markdown variant of `request`, or `null` if this
+ * request is not one to negotiate (wrong method, not a content route, or
+ * `Accept` does not genuinely prefer markdown) -- in which case the caller
+ * falls through to `handle()` exactly as before this task.
+ *
+ * `Vary: Accept` is mandatory on the response this returns: without it,
+ * Cloudflare's cache could key a markdown body under a URL a browser then
+ * requests with `Accept: text/html`, and serve raw markdown as if it were
+ * the page.
+ */
+async function negotiateMarkdown(request: Request, env: Env): Promise<Response | null> {
+  if (!NEGOTIABLE_METHODS.has(request.method)) return null;
+
+  const url = new URL(request.url);
+  const markdownPath = markdownAssetPathFor(url.pathname);
+  if (!markdownPath || !prefersMarkdown(request.headers.get('Accept'))) return null;
+
+  const assetResponse = await env.ASSETS.fetch(new URL(markdownPath, url).toString(), {
+    method: request.method,
+    headers: request.headers,
+  });
+  if (!assetResponse.ok) return null;
+
+  const headers = new Headers(assetResponse.headers);
+  headers.append('Vary', 'Accept');
+  return new Response(assetResponse.body, {
+    status: assetResponse.status,
+    statusText: assetResponse.statusText,
+    headers,
+  });
+}
+
 export default {
-  fetch: (request, env, ctx) => handle(request, env, ctx),
+  fetch: async (request, env, ctx) => {
+    const negotiated = await negotiateMarkdown(request, env);
+    if (negotiated) return negotiated;
+    return handle(request, env, ctx);
+  },
 
   /**
    * Daily résumé-PDF refresh (see `triggers.crons` in wrangler.jsonc).

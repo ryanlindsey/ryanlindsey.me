@@ -13,7 +13,27 @@
   // bundle the cron handler runs under `astro dev` and is silently absent from the
   // deployed Worker.
   "main": "./src/worker.ts",
-  "assets": { "directory": "./dist/client", "binding": "ASSETS" },
+  // Day 3 Task 8 (02 §3): `run_worker_first` defaults to false, meaning a
+  // request that matches a static asset is served straight from the Asset
+  // Worker and NEVER reaches src/worker.ts's `fetch` at all -- confirmed
+  // empirically (a debug header set unconditionally at the top of `fetch`
+  // never appeared on a response for any of these paths without this
+  // setting). Every one of Task 7's `.md`-variant HTML siblings is exactly
+  // such a static asset, so `Accept`-based negotiation would otherwise be
+  // dead code for the one thing it exists to intercept. Scoped to the
+  // content routes only (not `true`/global) so every other static asset --
+  // `/_astro/*`, favicon, `robots.txt` (Task 12), `/resume.json`/`.md`/`.pdf`
+  // -- keeps the fast, Worker-free asset-serving path. `*` matches across
+  // path segments (Cloudflare's own docs example has `/api/*` needing
+  // `!/api/docs/*` to exclude a nested path), so `/writing/*` alone would
+  // cover both `/writing/foo` and `/writing/foo/`; the bare, no-slug forms
+  // are listed explicitly rather than relied on, since neither takes a
+  // markdown variant anyway and there is no reason to guess.
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "run_worker_first": ["/resume", "/resume/", "/writing", "/writing/*", "/work", "/work/*"],
+  },
 
   "workers_dev": false,
   "preview_urls": true,
