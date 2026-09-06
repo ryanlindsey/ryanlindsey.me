@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.1.0...ryanlindsey-me-v1.1.1) (2026-09-06)
+
+
+### Build System
+
+* record reviewed npm install-script approvals ([#14](https://github.com/ryanlindsey/ryanlindsey.me/issues/14)) ([59b5825](https://github.com/ryanlindsey/ryanlindsey.me/commit/59b5825bf85697770586c9d0094fe275c9fd2eba))
+
 ## [1.1.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.0.0...ryanlindsey-me-v1.1.0) (2026-09-05)
 
 
