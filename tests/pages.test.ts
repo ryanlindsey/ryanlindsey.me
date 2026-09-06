@@ -649,6 +649,50 @@ test('buildRssFeed emits a published fixture entry with its full content, not ju
   expect(xml).toContain('Fixture body text.');
 });
 
+// Task 11 fix round 1: a deliberate future gate, not a check on today's
+// code. src/lib/feeds.ts's rssItemFor puts raw toMarkdown() output in
+// <content:encoded>, which conventionally carries HTML -- a real feed
+// reader would render literal "##"/"**"/fenced code rather than formatted
+// prose. That is harmless today only because /rss.xml has zero items (both
+// real content entries are drafts); this test passes for exactly that
+// reason and is meant to start FAILING the moment it stops being true,
+// mirroring tests/resume.test.ts's test.fails completeness gate but in the
+// opposite direction -- green until content ships, then red -- so the
+// choice src/lib/feeds.ts's comment names (render MDX to real HTML for
+// <content:encoded>, or keep markdown and say so honestly in the feed's
+// own <description>) cannot be silently forgotten once it actually
+// matters.
+test('TRIPWIRE: a published RSS item must not ship raw markdown in <content:encoded> (forces a real decision the moment this goes red -- see src/lib/feeds.ts)', async () => {
+  const xml = await (await server.fetch('/rss.xml')).text();
+  const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
+  // No loop body runs while items is empty -- that IS this test passing
+  // today, not a weaker check standing in for a real one.
+  for (const [, itemXml] of items) {
+    const contentMatch = itemXml.match(/<content:encoded>([\s\S]*?)<\/content:encoded>/);
+    expect(contentMatch, 'a published item should still carry <content:encoded>').not.toBeNull();
+    // Undo the entities fast-xml-parser's XMLBuilder actually emits for
+    // this content (verified against the populated-fixture test above) so
+    // these patterns match the real markdown text, not its escaped form.
+    const decoded = contentMatch![1]
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"');
+    expect(
+      decoded,
+      '<content:encoded> looks like an unrendered markdown heading -- see src/lib/feeds.ts',
+    ).not.toMatch(/^#{1,6} /m);
+    expect(
+      decoded,
+      '<content:encoded> looks like an unrendered markdown link -- see src/lib/feeds.ts',
+    ).not.toMatch(/\]\(/);
+    expect(
+      decoded,
+      '<content:encoded> looks like an unrendered fenced code block -- see src/lib/feeds.ts',
+    ).not.toMatch(/^```/m);
+  }
+});
+
 test("/feed.json is a well-formed, empty JSON Feed 1.1 document while nothing is published (today's real state)", async () => {
   const response = await server.fetch('/feed.json');
   expect(response.status).toBe(200);

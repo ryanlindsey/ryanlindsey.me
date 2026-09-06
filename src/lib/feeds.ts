@@ -49,9 +49,30 @@ function sortedEntries(entries: ExportableEntry[]): ExportableEntry[] {
  * document via `toMarkdown()` -- 02 §3's "full-content, not summaries" rule
  * is about which field holds the whole article, not a ban on also having a
  * short excerpt. `@astrojs/rss` maps `content` to the `<content:encoded>`
- * element (RSS's own full-content extension), so a reader that only shows
- * `<description>` still gets an honest excerpt rather than the entire
- * document crammed into the summary slot.
+ * element (RSS's own full-content extension).
+ *
+ * KNOWN LIMITATION, not a claim of correctness (Task 11 fix round 1):
+ * `<content:encoded>` conventionally carries HTML, and feed readers render
+ * it as HTML. What lands there here is raw markdown, not rendered HTML --
+ * a real subscriber would see literal `##` headings, `**bold**` and
+ * unformatted fenced code, not formatted prose. This is DIFFERENT from
+ * `jsonFeedItemFor`'s `content_text` below, which IS the textually correct
+ * field for markdown in JSON Feed 1.1 (its own spec's distinction between
+ * `content_text` and `content_html`) -- RSS 2.0 has no equivalent "this is
+ * plain text, not HTML" field to move it to.
+ *
+ * Left as-is deliberately: both feeds are empty today (every real content
+ * entry is `draft: true`), so this defect has zero live impact, and
+ * rendering MDX to real HTML outside of an actual Astro page render is
+ * real, non-trivial work in Astro 7 (no remark pipeline to borrow -- see
+ * astro.config.mjs's own comment on `markdown.processor` -- so this would
+ * mean reaching for Astro's container API) that is not worth building for
+ * zero items. tests/pages.test.ts's RSS tripwire test is the forcing
+ * function: it passes while the feed is empty and starts FAILING the
+ * moment a published entry would actually ship markdown here, at which
+ * point the choice this comment defers -- render to real HTML, or keep
+ * markdown and say so honestly in the feed's own `<description>` -- has to
+ * be made for real, not silently shipped either way.
  *
  * `toMarkdown` THROWS if a component tag survives MDX stripping outside code
  * (markdown-export.ts's module doc) -- deliberately left to propagate: a
