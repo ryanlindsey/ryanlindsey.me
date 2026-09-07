@@ -36,9 +36,15 @@ export function limiterFor(env: LimitsEnv, cost: ToolCost): RateLimit {
  * The rate-limit key.
  *
  * `CF-Connecting-IP` is set by Cloudflare on every edge request and cannot be
- * spoofed by the client, which is what makes it usable here. It is NOT stored
- * -- it is hashed into a bucket key and discarded, and /ai-policy (06 §2) says
- * the site does no fingerprinting beyond UA and route.
+ * spoofed by the client, which is what makes it usable here. It is used as a
+ * bucket key and never persisted: the key is handed to the limiter binding and
+ * discarded with the request, it is not written to `mcp_tool_calls` (see
+ * migrations/0001_mcp_audit.sql -- there is no IP column), and /ai-policy
+ * (06 §2) says the site does no fingerprinting beyond UA and route.
+ *
+ * Not hashed, and saying so rather than implying otherwise: the key never
+ * outlives the request, so hashing it would buy no real privacy while making
+ * this comment the only place the truth was written down.
  *
  * The tool name is in the key so one tool's limit cannot starve another's:
  * a client that exhausts search_writing can still read a case study.

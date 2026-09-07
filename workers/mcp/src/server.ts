@@ -27,6 +27,13 @@ export interface ToolContext {
 /** A failure whose message is safe to show the caller. Anything else is not. */
 export class ToolError extends Error {}
 
+/**
+ * What `args_hash` says when the call failed before the hash could be taken.
+ * Deliberately not 64 hex characters, so /ops can tell it apart from a digest
+ * rather than reading it as one.
+ */
+const ARGS_HASH_UNAVAILABLE = 'unavailable';
+
 const INSTRUCTIONS = [
   "Ryan Lindsey's professional corpus, exposed as MCP tools.",
   'Public tools cover portfolio exploration. A private tier exists for scoped tokens;',
@@ -52,11 +59,14 @@ const INSTRUCTIONS = [
  */
 function clientIdentity(
   request: Request | undefined,
-  serverCtx: ServerContext,
+  serverCtx: ServerContext | undefined,
 ): Pick<AuditRow, 'clientName' | 'clientVersion' | 'userAgent' | 'protocolVersion'> {
   // `RequestMetaEnvelope` is an intentionally empty type at the SDK's neutral
   // layer, so the envelope is read as the string-keyed bag it is on the wire.
-  const envelope = (serverCtx.mcpReq.envelope ?? {}) as Record<string, unknown>;
+  // The context is optional because this is called from the audit path, which
+  // has to be able to write a row even when the failure it is recording
+  // happened before the context was resolved.
+  const envelope = (serverCtx?.mcpReq.envelope ?? {}) as Record<string, unknown>;
   const clientInfo = envelope[CLIENT_INFO_META_KEY] as
     { name?: unknown; version?: unknown } | undefined;
   const protocolVersion = envelope[PROTOCOL_VERSION_META_KEY];
@@ -102,11 +112,13 @@ export function defineTool<A>(
    * table would never show a repeated query.
    */
   const invoke = async (...params: unknown[]): Promise<CallToolResult> => {
-    const serverCtx = params[params.length - 1] as ServerContext;
-    const args = (params.length > 1 ? params[0] : undefined) as A;
-
     const started = Date.now();
-    const argsHash = await hashArgs(args);
+
+    // Both are resolved inside the try below, so both need a value the audit
+    // path can fall back on. `args_hash` is NOT NULL, and a row saying the
+    // hash could not be computed is worth more than a call that vanishes.
+    let argsHash = ARGS_HASH_UNAVAILABLE;
+    let serverCtx: ServerContext | undefined;
 
     const audit = (outcome: AuditRow['outcome']) =>
       tc.ctx.waitUntil(
@@ -124,25 +136,40 @@ export function defineTool<A>(
         }),
       );
 
-    const { success } = await limiterFor(tc.env, spec.cost).limit({
-      key: limitKeyFor(tc.request, spec.name),
-    });
-    if (!success) {
-      audit('rate_limited');
-      // A tool RESULT, not a thrown transport error: the client should read
-      // a sentence explaining what happened rather than lose the connection.
-      return {
-        isError: true,
-        content: [
-          {
-            type: 'text' as const,
-            text: `Rate limit reached for ${spec.name}. Try again in a minute.`,
-          },
-        ],
-      };
-    }
-
+    // ONE try around the whole body, deliberately: everything before the
+    // handler can throw too -- a limiter binding that rejects, a
+    // misconfigured deploy missing RATE_LIMITER_SEARCH -- and a throw that
+    // escapes here breaks both of this seam's guarantees at once. The call
+    // would go unaudited, so the table would under-report exactly the
+    // failures worth seeing; and the SDK's own `tools/call` wrapper answers
+    // an escaped throw with `createToolError(error.message)`, handing the raw
+    // internal message to a public caller. Nothing may leave this function
+    // except through the catch below.
     try {
+      // MEASURED: see the note above. Context last, arguments first and only
+      // when there is more than one parameter.
+      serverCtx = params[params.length - 1] as ServerContext;
+      const args = (params.length > 1 ? params[0] : undefined) as A;
+      argsHash = await hashArgs(args);
+
+      const { success } = await limiterFor(tc.env, spec.cost).limit({
+        key: limitKeyFor(tc.request, spec.name),
+      });
+      if (!success) {
+        audit('rate_limited');
+        // A tool RESULT, not a thrown transport error: the client should read
+        // a sentence explaining what happened rather than lose the connection.
+        return {
+          isError: true,
+          content: [
+            {
+              type: 'text' as const,
+              text: `Rate limit reached for ${spec.name}. Try again in a minute.`,
+            },
+          ],
+        };
+      }
+
       const output = await handler(args, tc);
       audit('ok');
       return {

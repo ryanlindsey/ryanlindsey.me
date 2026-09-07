@@ -117,10 +117,18 @@ const GET_CONTACT_RESULT = {
 };
 
 test('get_contact returns the same payload it returned before the wrapper', async () => {
+  const db = await auditDb();
   const { status, json } = await callTool('get_contact');
 
   expect(status).toBe(200);
   expect(json.result).toEqual(GET_CONTACT_RESULT);
+
+  // Not decoration: this call's audit row is written through `waitUntil` and
+  // can otherwise land AFTER the next test has cleared the table, turning its
+  // exact-row assertion into an intermittent two-row failure that looks
+  // nothing like its cause. Every test here that calls a tool settles its own
+  // audit writes before it returns.
+  await waitForAuditRows(db, 1);
 });
 
 test('every registered tool call writes exactly one audit row', async () => {
@@ -147,6 +155,34 @@ test('the audit row records a hash, never the arguments', async () => {
     .prepare('SELECT args_hash FROM mcp_tool_calls')
     .first<{ args_hash: string }>();
   expect(row?.args_hash).toMatch(/^[0-9a-f]{64}$/);
+});
+
+/**
+ * The property the audit schema is actually justified by.
+ *
+ * `migrations/0001_mcp_audit.sql` stores a hash instead of the arguments so
+ * that "the same query, repeated" stays visible while the query itself does
+ * not. That only works if identical calls hash identically -- and the way it
+ * breaks is not a malformed digest but a well-formed digest of the wrong
+ * object. The SDK hands a no-argument tool its `ServerContext` in the
+ * parameter slot an `inputSchema` tool gets `args` in, and that context
+ * carries the JSON-RPC request id, so hashing it yields a perfectly valid
+ * 64-hex string that is DIFFERENT on every call. The fixed-width assertion
+ * above passes on exactly that; this one does not.
+ */
+test('gives the same call the same args_hash every time', async () => {
+  const db = await auditDb();
+  await db.prepare('DELETE FROM mcp_tool_calls').run();
+
+  await callTool('get_contact');
+  await callTool('get_contact');
+  await waitForAuditRows(db, 2);
+
+  const { results } = await db
+    .prepare('SELECT args_hash FROM mcp_tool_calls ORDER BY id')
+    .all<{ args_hash: string }>();
+  expect(results).toHaveLength(2);
+  expect(results[0]!.args_hash).toBe(results[1]!.args_hash);
 });
 
 /**
@@ -214,6 +250,16 @@ test('audits the client identity a call genuinely carries, and no more', async (
   ]);
 });
 
+/**
+ * KEEP THIS TEST LAST, and append new tests ABOVE it.
+ *
+ * It deliberately exhausts the `get_contact:unknown` bucket, and the bucket's
+ * period is 60 seconds -- longer than this whole file takes to run. Any
+ * `get_contact` call appended after it is refused rather than served, and the
+ * failure surfaces as an unexplained `isError` in the new test rather than as
+ * anything pointing here. A tool with its own name is unaffected: the tool
+ * name is in the limiter key precisely so one tool cannot starve another.
+ */
 test('refuses past the limit and records the refusal', async () => {
   const db = await auditDb();
   await db.prepare('DELETE FROM mcp_tool_calls').run();
