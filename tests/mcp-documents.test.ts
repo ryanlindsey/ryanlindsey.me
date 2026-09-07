@@ -3,6 +3,7 @@ import { RESUME_SOURCE } from '../src/lib/corpus';
 import {
   fetchDocument,
   fetchDocumentIndex,
+  fetchResumeJson,
   pageUrlFor,
   parseFrontmatter,
   summarize,
@@ -110,6 +111,15 @@ describe('fetchDocument', () => {
     expect(
       await fetchDocument(env, { type: 'post', slug: 'nope', path: '/writing/nope.md' }),
     ).toBeNull();
+  });
+});
+
+describe('fetchResumeJson', () => {
+  test('returns the parsed JSON when published, and null when it is not', async () => {
+    const resume = { basics: { name: 'Ryan Lindsey' } };
+    const env = stubSite({ '/resume.json': JSON.stringify(resume) });
+    expect(await fetchResumeJson(env)).toEqual(resume);
+    expect(await fetchResumeJson(stubSite({}))).toBeNull();
   });
 });
 
