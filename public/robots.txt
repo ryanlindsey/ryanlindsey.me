@@ -177,9 +177,10 @@ User-agent: Applebot-Extended
 Content-Signal: search=yes, ai-input=yes, ai-train=no, use=reference
 Allow: /
 
-# Mistral -- MistralAI-User is user-triggered (Le Chat / API tool use) and,
-# unlike most other vendors' user-triggered tokens, is reported to honour
-# robots.txt rather than carrying the ignores-it-by-design caveat above.
+# Mistral -- docs.mistral.ai/robots. MistralAI-User is user-triggered (Le Chat
+# / API tool use) and, unlike most other vendors' user-triggered tokens, is
+# reported to honour robots.txt rather than carrying the ignores-it-by-design
+# caveat above.
 User-agent: MistralAI-User
 Content-Signal: search=yes, ai-input=yes, ai-train=no, use=reference
 Allow: /
