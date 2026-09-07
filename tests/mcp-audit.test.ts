@@ -47,12 +47,12 @@ test('produces a fixed-width hex digest for a large input', async () => {
  * them) for the two calls that actually register something with the SDK --
  * `server.registerTool(` and `server.registerResource(` -- and requires
  * every match to live in define.ts. Repo-wide today that is exactly three:
- * define.ts:325 (`registerTool`) and :467/:468 (`registerResource`, one call
- * per branch of the string-vs-template overload -- see that file's own note
- * on why the branches are identical). A new call site anywhere else fails
- * this test by construction, regardless of what the day-5 tool is named.
+ * one in `defineTool` (`registerTool`) and two in `defineResource`
+ * (`registerResource`, one per branch of the string-vs-template overload --
+ * see that file's own note on why the branches are identical). A new call
+ * site anywhere else fails this test by construction, regardless of what the day-5 tool is named.
  *
- * Cheap on purpose: no harness, no bindings, plain source text over ~230
+ * Cheap on purpose: no harness, no bindings, plain source text over 81
  * repo files (measured -- see the walk below), matching this file's own
  * no-bindings, no-index style.
  */
