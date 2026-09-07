@@ -58,6 +58,18 @@
 /work/*/
   X-Markdown-Variant: /work/:splat.md
 
+# The résumé's own X-Markdown-Variant (fix round 2). /resume had a `.md` twin,
+# a `run_worker_first` entry and Accept-negotiation in src/worker.ts, but
+# advertised none of it -- the header was missing here and the <link> tag was
+# missing from the page (src/pages/resume.astro now passes `markdownHref`).
+# An EXACT path, not a pattern: the trailing-slash form is what /resume is
+# actually served from (dist/client/resume/index.html, same 307 behaviour the
+# /writing/*/ comment above documents), and an exact path cannot overlap
+# /resume.md or /resume.json above -- which is what keeps this from being
+# comma-joined onto another rule's header, per the file-header note.
+/resume/
+  X-Markdown-Variant: /resume.md
+
 # Day 3 Task 9 (research appendix B2.6): the industry split observed live
 # across Anthropic, OpenAI, Cloudflare, Vercel and Perplexity is that the
 # llms.txt LAYER gets browser-friendly `text/plain` while `.md` PAGES get

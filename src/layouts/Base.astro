@@ -82,27 +82,36 @@ const jsonLdNodes = [
     }
     <link rel="alternate" type="application/feed+json" title="Ryan Lindsey" href="/feed.json" />
     {
-      markdownHref && (
-        <>
-          {/* rel="alternate" has pre-existing adoption (OpenAI's Codex CLI
-             follows it) and points at THIS page's own markdown twin. */}
-          <link rel="alternate" type="text/markdown" href={markdownHref} />
-          {/* rel="describedby" points at the llms.txt file that COVERS this
-             page (llms.txt v2, research appendix B1.2/B2.2), not at the
-             page's own .md twin -- that was Task 7's mistake, fixed here in
-             Task 9 (the earliest point /llms.txt existed to point at). No
-             `type` attribute, matching the spec's own header-form example
-             verbatim (`</docs/llms.txt>; rel="describedby"`, no `type`) --
-             llms.txt is not itself markdown. Hardcoded to the one, root-level
-             /llms.txt: this site has no subpath-scoped llms.txt files (v2's
-             "most specific file applies" rule, B1.3), so every page is
-             covered by the same one. Fix round 1 (task-9-report.md): this is
-             genuinely spec-only today -- the research appendix found no site
-             in its sample emitting rel="describedby" yet. Shipped because it
-             is free and correct, not because anything is known to consume it. */}
-          <link rel="describedby" href="/llms.txt" />
-        </>
-      )
+      /* rel="describedby" points at the llms.txt file that COVERS this page
+       (llms.txt v2, research appendix B1.2/B2.2), not at the page's own .md
+       twin -- that was Task 7's mistake, fixed in Task 9 (the earliest point
+       /llms.txt existed to point at). No `type` attribute, matching the
+       spec's own header-form example verbatim
+       (`</docs/llms.txt>; rel="describedby"`, no `type`) -- llms.txt is not
+       itself markdown.
+
+       SITEWIDE, exactly like the two feed links above, and for the same
+       reason (fix round 2): this site has one, root-level, unscoped
+       /llms.txt (v2's "most specific file applies" rule, B1.3), so EVERY
+       page is covered by it -- including the ones with no markdown twin.
+       This tag used to sit inside the `markdownHref &&` block below, which
+       made "is this page described by /llms.txt?" accidentally conditional
+       on "does this page have a .md variant?", and silently dropped the tag
+       from the home page and both index pages. Two unrelated facts, two
+       independent tags.
+
+       Fix round 1 (task-9-report.md): this is genuinely spec-only today --
+       the research appendix found no site in its sample emitting
+       rel="describedby" yet. Shipped because it is free and correct, not
+       because anything is known to consume it. */
+    }
+    <link rel="describedby" href="/llms.txt" />
+    {
+      /* rel="alternate" has pre-existing adoption (OpenAI's Codex CLI
+       follows it) and points at THIS page's own markdown twin -- so unlike
+       the sitewide links above, it is conditional on the page actually
+       having one. */
+      markdownHref && <link rel="alternate" type="text/markdown" href={markdownHref} />
     }
     {
       // One <script> per node rather than one script wrapping an array or an

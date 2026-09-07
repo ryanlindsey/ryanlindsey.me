@@ -20,9 +20,22 @@ const showGapNotice = import.meta.env.DEV && gaps.length > 0;
 // heading. groupWorkByCompany lives in src/lib/resume.ts (day 3 Task 3) so
 // /resume.md groups identically by construction instead of by agreement.
 const workGroups = groupWorkByCompany(resume.work);
+
+// FIX ROUND 2: `/resume` has a `.md` twin (src/pages/resume.md.ts), is named
+// in wrangler.jsonc's `run_worker_first`, and src/worker.ts negotiates
+// `Accept: text/markdown` for it -- but it passed no `markdownHref`, so it
+// was the one content page advertising none of that. Every draft blog post
+// emitted `<link rel="alternate" type="text/markdown">`; the résumé, the page
+// an agent is most likely to fetch, did not. The prop below is what Base.astro
+// turns into that tag, and public/_headers's `/resume/` rule carries the same
+// URL in `X-Markdown-Variant` -- the header and the tag must never disagree.
 ---
 
-<Shell title={`Resume — ${resume.basics.name}`} description={resume.basics.summary}>
+<Shell
+  title={`Resume — ${resume.basics.name}`}
+  description={resume.basics.summary}
+  markdownHref="/resume.md"
+>
   <div class="mx-auto max-w-3xl px-6 py-16" data-testid="resume">
     {
       showGapNotice && (

@@ -471,6 +471,67 @@ test('every writing and work HTML page links its .md variant, and both link tags
   }
 });
 
+test('/resume advertises its own .md variant, in both the link tag and the header', async () => {
+  // FIX ROUND 2: /resume was the one content page with a `.md` twin, a
+  // `run_worker_first` entry and Accept-negotiation (src/worker.ts) that
+  // advertised none of it -- src/pages/resume.astro passed no `markdownHref`,
+  // so no <link rel="alternate"> was emitted, and public/_headers had no
+  // X-Markdown-Variant rule for it. Every draft blog post got all three; the
+  // résumé, the page an agent is most likely to fetch, got none. Asserted the
+  // same way the /writing and /work pages are above -- tag, header, and the
+  // href actually resolving -- because it is the same claim.
+  const response = await server.fetch('/resume');
+  expect(response.status, '/resume should be 200').toBe(200);
+  const page = await response.text();
+  const head = page.slice(0, page.indexOf('</head>'));
+
+  expect(head, '/resume should carry rel="alternate" pointing at /resume.md').toContain(
+    '<link rel="alternate" type="text/markdown" href="/resume.md">',
+  );
+  expect(
+    response.headers.get('x-markdown-variant'),
+    '/resume should carry X-Markdown-Variant: /resume.md',
+  ).toBe('/resume.md');
+
+  const markdownResponse = await server.fetch('/resume.md');
+  expect(markdownResponse.status, "/resume's markdown link should actually resolve").toBe(200);
+  // The same exclusivity guard the /writing and /work test makes: the
+  // `/resume/` (X-Markdown-Variant) and `/resume.md` (Content-Type) rules in
+  // public/_headers are written never to match the same request, because
+  // Cloudflare comma-joins repeated header names across matching rules rather
+  // than letting the more specific one win.
+  expect(
+    markdownResponse.headers.get('x-markdown-variant'),
+    '/resume.md itself should not carry X-Markdown-Variant',
+  ).toBeNull();
+});
+
+test('every page carries rel="describedby" -> /llms.txt, including the ones with no .md twin', async () => {
+  // FIX ROUND 2: `describedby` used to sit INSIDE Base.astro's `markdownHref
+  // &&` block, which made "is this page described by /llms.txt?" accidentally
+  // conditional on "does this page have a markdown twin?" -- so the home page
+  // and both index pages, the three pages with no twin, advertised no llms.txt
+  // at all. Base.astro's own comment states the principle it was violating:
+  // this site has one root-level, unscoped /llms.txt, so EVERY page is covered
+  // by it, exactly like the two sitewide feed links directly above it.
+  //
+  // The three paths below are chosen for exactly that reason: they are the
+  // pages with no markdown variant, i.e. the ones the old placement dropped
+  // the tag from. /resume and the detail pages are covered by the tests above.
+  for (const path of ['/', '/writing', '/work']) {
+    const page = await html(path);
+    const head = page.slice(0, page.indexOf('</head>'));
+    expect(head, `${path} should carry rel="describedby" pointing at /llms.txt`).toContain(
+      '<link rel="describedby" href="/llms.txt">',
+    );
+    // ...and must NOT have gained a markdown alternate along the way: the two
+    // tags are independent facts, and hoisting one must not hoist the other.
+    expect(head, `${path} has no .md twin and must not claim one`).not.toContain(
+      'type="text/markdown"',
+    );
+  }
+});
+
 test('index pages carry no X-Markdown-Variant header', async () => {
   // The aggregation surfaces (02 §3's other tier) have no markdown variant of
   // their own -- this is the negative space the two rules above must not
