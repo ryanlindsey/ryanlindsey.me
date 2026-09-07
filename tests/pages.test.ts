@@ -821,12 +821,21 @@ test('buildRssFeed emits a published fixture entry with its full content, not ju
   expect(xml).toContain(
     '<description>A fixture post used only to prove /llms-full.txt concatenates.</description>',
   );
-  // ...but the FULL document -- frontmatter and body -- lives separately in
+  // ...but the FULL document, not just that excerpt, lives separately in
   // <content:encoded>, which is what 02 §3's "full-content, not summaries"
   // rule is actually asking for.
   expect(xml).toContain('<content:encoded>');
-  expect(xml).toContain('title: &quot;Fixture Post&quot;');
   expect(xml).toContain('Fixture body text.');
+  // FIX ROUND 2: this test used to also assert
+  // `toContain('title: &quot;Fixture Post&quot;')` -- i.e. it pinned the
+  // literal YAML frontmatter block `toMarkdown()` puts in front of the body
+  // as DESIRED output. It is not: it is the known defect src/lib/feeds.ts
+  // documents (raw markdown in a field feed readers render as HTML), and
+  // certifying it here quietly contradicted the tripwire test below, whose
+  // whole job is to force a decision about it. What that frontmatter block
+  // means for the feed is asserted where it belongs instead -- see the
+  // "armed" assertion in the tripwire test, which requires these very
+  // patterns to fire on this very fixture.
 });
 
 // Task 11 fix round 1: a deliberate future gate, not a check on today's
@@ -842,34 +851,82 @@ test('buildRssFeed emits a published fixture entry with its full content, not ju
 // <content:encoded>, or keep markdown and say so honestly in the feed's
 // own <description>) cannot be silently forgotten once it actually
 // matters.
+/**
+ * The ways `<content:encoded>` can betray that it is carrying raw markdown
+ * into a field feed readers render as HTML.
+ *
+ * FIX ROUND 2 -- WHY THIS IS A LIST AND NOT THREE INLINE ASSERTIONS. The
+ * original three patterns (heading, link, fence) matched NOTHING that
+ * `rssItemFor` actually produces. `toMarkdown()` returns
+ * `---\n<yaml>\n---\n\n<body>`, so every RSS item's `<content:encoded>`
+ * begins with a literal YAML frontmatter block -- not an edge case, 100% of
+ * items -- and none of `#`, `](` or ``` ``` ``` appears in it unless the
+ * body happens to contain one. A tripwire whose patterns cannot match the
+ * output of the code it is watching is not a tripwire. `---` is added here
+ * (the fence itself, opening or closing), along with line-start `- ` list
+ * items, `> ` blockquotes and a `**bold**` pair, which is the rest of what
+ * plain prose markdown ships.
+ *
+ * Named, and shared with the "armed" check below, so the patterns can be
+ * asserted to FIRE on a populated fixture as well as to stay silent on
+ * today's empty feed -- the two halves that together mean the gate works.
+ */
+const RSS_RAW_MARKDOWN_PATTERNS: { name: string; pattern: RegExp }[] = [
+  { name: 'a YAML frontmatter fence', pattern: /^---[ \t]*$/m },
+  { name: 'an unrendered markdown heading', pattern: /^#{1,6} /m },
+  { name: 'an unrendered markdown link', pattern: /\]\(/ },
+  { name: 'an unrendered fenced code block', pattern: /^```/m },
+  { name: 'an unrendered list item', pattern: /^[-*] /m },
+  { name: 'an unrendered blockquote', pattern: /^> /m },
+  { name: 'unrendered bold', pattern: /\*\*[^*\n]+\*\*/ },
+];
+
+/** Undo the entities fast-xml-parser's XMLBuilder emits, then name what matched. */
+const rawMarkdownIn = (encodedContent: string): string[] => {
+  const decoded = encodedContent
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"');
+  return RSS_RAW_MARKDOWN_PATTERNS.filter(({ pattern }) => pattern.test(decoded)).map(
+    ({ name }) => name,
+  );
+};
+
 test('TRIPWIRE: a published RSS item must not ship raw markdown in <content:encoded> (forces a real decision the moment this goes red -- see src/lib/feeds.ts)', async () => {
+  // ARMED (fix round 2): before asserting that today's real feed trips
+  // nothing, prove the patterns can trip at all -- on the exact output
+  // `rssItemFor` produces for a published entry. Without this, the loop below
+  // is vacuous twice over: no items today, and (before this round) no pattern
+  // that matched what an item would carry. This assertion is what makes the
+  // gate a gate rather than a comment.
+  const fixtureXml = await buildRssFeed([publishedPostFixture()], {
+    title: 'Ryan Lindsey',
+    description: 'A test summary.',
+    site: 'https://ryanlindsey.me',
+  });
+  const fixtureContent = fixtureXml.match(/<content:encoded>([\s\S]*?)<\/content:encoded>/);
+  expect(fixtureContent, 'the fixture item should carry <content:encoded>').not.toBeNull();
+  expect(
+    rawMarkdownIn(fixtureContent![1]),
+    'these patterns must actually fire on what rssItemFor ships today -- a tripwire ' +
+      'that cannot match the output of the code it watches is not a tripwire',
+  ).toContain('a YAML frontmatter fence');
+
   const xml = await (await server.fetch('/rss.xml')).text();
   const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
   // No loop body runs while items is empty -- that IS this test passing
-  // today, not a weaker check standing in for a real one.
+  // today, not a weaker check standing in for a real one. The assertion
+  // above is what keeps that emptiness from being the only thing under test.
   for (const [, itemXml] of items) {
     const contentMatch = itemXml.match(/<content:encoded>([\s\S]*?)<\/content:encoded>/);
     expect(contentMatch, 'a published item should still carry <content:encoded>').not.toBeNull();
-    // Undo the entities fast-xml-parser's XMLBuilder actually emits for
-    // this content (verified against the populated-fixture test above) so
-    // these patterns match the real markdown text, not its escaped form.
-    const decoded = contentMatch![1]
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"');
     expect(
-      decoded,
-      '<content:encoded> looks like an unrendered markdown heading -- see src/lib/feeds.ts',
-    ).not.toMatch(/^#{1,6} /m);
-    expect(
-      decoded,
-      '<content:encoded> looks like an unrendered markdown link -- see src/lib/feeds.ts',
-    ).not.toMatch(/\]\(/);
-    expect(
-      decoded,
-      '<content:encoded> looks like an unrendered fenced code block -- see src/lib/feeds.ts',
-    ).not.toMatch(/^```/m);
+      rawMarkdownIn(contentMatch![1]),
+      '<content:encoded> looks like unrendered markdown -- see src/lib/feeds.ts, which ' +
+        'names the decision this is meant to force: render MDX to real HTML here, or keep ' +
+        "markdown and say so honestly in the feed's own <description>",
+    ).toEqual([]);
   }
 });
 

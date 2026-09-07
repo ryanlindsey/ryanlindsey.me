@@ -55,7 +55,12 @@ function sortedEntries(entries: ExportableEntry[]): ExportableEntry[] {
  * `<content:encoded>` conventionally carries HTML, and feed readers render
  * it as HTML. What lands there here is raw markdown, not rendered HTML --
  * a real subscriber would see literal `##` headings, `**bold**` and
- * unformatted fenced code, not formatted prose. This is DIFFERENT from
+ * unformatted fenced code, not formatted prose. And it is not only the
+ * body: `toMarkdown` returns `---\n<yaml>\n---\n\n<body>`, so EVERY item
+ * would open with a literal YAML frontmatter block (fix round 2 -- the
+ * original wording implied this was a per-document risk when it is in fact
+ * 100% of items, and the tripwire's patterns had been written to match the
+ * body-only cases and so could never have fired). This is DIFFERENT from
  * `jsonFeedItemFor`'s `content_text` below, which IS the textually correct
  * field for markdown in JSON Feed 1.1 (its own spec's distinction between
  * `content_text` and `content_html`) -- RSS 2.0 has no equivalent "this is
