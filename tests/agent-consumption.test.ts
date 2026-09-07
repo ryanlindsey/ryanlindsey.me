@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
+import { buildMcpDiscovery } from '../src/lib/mcp/discovery';
 import { SITE_HARNESS_WORKERS } from './workers';
 
 // Day 3 Task 13 (02 §3): the launch gate over every agent-publishing surface
@@ -305,7 +306,12 @@ test('/.well-known/mcp.json describes the endpoint', async () => {
   const response = await server.fetch('/.well-known/mcp.json');
   expect(response.status).toBe(200);
   expect(response.headers.get('content-type')).toContain('application/json');
-  const doc = await response.json();
+  // Cast to the shape `buildMcpDiscovery` actually returns, the same
+  // as-cast convention tests/resume.test.ts (`as Resume`) and
+  // tests/pages.test.ts (`as JsonFeed`) already use for `response.json()`,
+  // which types as `unknown` -- tied to the source of truth rather than a
+  // duplicated ad hoc shape, since nothing here has its own named type.
+  const doc = (await response.json()) as ReturnType<typeof buildMcpDiscovery>;
   expect(doc.endpoint).toBe('https://ryanlindsey.me/mcp');
   expect(doc.transport).toBe('streamable-http');
   expect(doc.authentication).toBe('none');

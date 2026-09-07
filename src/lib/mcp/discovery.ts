@@ -45,11 +45,23 @@ export function buildMcpDiscovery(origin: string) {
  * below repeat `Allow: /` explicitly rather than one relying on the other,
  * for exactly that reason.
  *
- * No `Content-Signal` line: that line is a statement about page CONTENT
- * (search/AI-input/AI-training rights over what a crawler read), and this
- * origin serves a JSON-RPC tool endpoint and two small discovery files, not
- * indexable content -- adding it here would imply there is something to
- * take a rights position on.
+ * No `Content-Signal` line -- not because there is nothing worth protecting,
+ * but because the reservation is not made here. `Content-Signal`, and
+ * specifically `ai-train=no`, is an Article 4(3) TDM rights reservation over
+ * copyrightable CONTENT a crawler reads via GET on the origin the line sits
+ * on. The corpus this server exposes is not stored on this origin at all:
+ * the MCP Worker holds no copy of it and fetches every document, per call,
+ * from https://ryanlindsey.me over `SITE_ORIGIN` (global constraint,
+ * src/lib/corpus.ts) -- so the only things a GET on mcp.ryanlindsey.me can
+ * ever return are this file and /.well-known/mcp.json, neither of which is
+ * the corpus. That content already carries its reservation at the origin
+ * where it actually lives: every group in the site's own robots.txt repeats
+ * `ai-train=no` for exactly this reason. Restating the line here would not
+ * extend the reservation to anything new -- there is nothing new here to
+ * reserve rights over -- and it would have nowhere to attach on this
+ * origin's one real protocol surface regardless: `/mcp` answers JSON-RPC
+ * POST, not the GET-driven page retrieval `Content-Signal` was written to
+ * describe.
  *
  * Named agents are welcomed by the same tokens the site's own file uses,
  * for legibility -- consistent with 03 §5's framing, not because any of

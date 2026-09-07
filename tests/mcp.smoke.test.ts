@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
+import { buildMcpDiscovery } from '../src/lib/mcp/discovery';
 import { MCP_WORKER, MOCK_AI_WORKER } from './workers';
 
 // The exact instructions the server is expected to advertise. Asserting the
@@ -144,16 +145,33 @@ test('answers the CORS preflight a browser client sends first', async () => {
 // `route: '/mcp'` and 404s everything else, so these two surfaces and the
 // unrouted-404 case all have to be proven here, not assumed from the site
 // suite's own coverage.
-test('the MCP origin serves its own robots.txt', async () => {
+test('the MCP origin serves its own robots.txt, permissive and unrestricted', async () => {
   const response = await server.fetch('/robots.txt');
   expect(response.status).toBe(200);
-  expect(await response.text()).toMatch(/User-agent:/);
+  const body = await response.text();
+  expect(body).toMatch(/User-agent:/);
+  // The posture that actually matters for a published document, checked
+  // directly rather than left to a `/User-agent:/` match that would pass
+  // just as happily against a file that disallows everything: no
+  // `Disallow` DIRECTIVE anywhere (line-anchored and case-insensitive, so a
+  // mention of the word inside a `#` comment -- this file's own doc comment
+  // has one -- can never trip this), and at least one `Allow: /` present. A
+  // future edit that quietly added a real restriction here would cut agent
+  // access to this origin; this is what makes that edit fail the suite
+  // instead of only a human re-reading the file.
+  expect(body).not.toMatch(/^Disallow:/im);
+  expect(body).toMatch(/^Allow: \/$/m);
 });
 
 test('the MCP origin serves its own discovery document', async () => {
   const response = await server.fetch('/.well-known/mcp.json');
   expect(response.status).toBe(200);
-  expect((await response.json()).endpoint).toBe('https://mcp.ryanlindsey.me/mcp');
+  // Cast to the shape `buildMcpDiscovery` actually returns -- same
+  // as-cast convention `response.json()` (typed `unknown`) already gets
+  // elsewhere in this suite (tests/resume.test.ts's `as Resume`,
+  // tests/pages.test.ts's `as JsonFeed`).
+  const doc = (await response.json()) as ReturnType<typeof buildMcpDiscovery>;
+  expect(doc.endpoint).toBe('https://mcp.ryanlindsey.me/mcp');
 });
 
 test('an unrouted path on the MCP origin is a 404, not the MCP handler', async () => {
