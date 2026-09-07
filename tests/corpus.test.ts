@@ -18,6 +18,7 @@ import {
   planCorpusRefresh,
   surplusChunkIds,
   type CorpusDocumentEntry,
+  type CorpusEnv,
   type CorpusManifest,
   type CorpusSource,
   type HashedDocument,
@@ -446,21 +447,28 @@ describe('planCorpusRefresh', () => {
 });
 
 describe('corpusRefreshEnabled', () => {
+  // Only the var is read, but the parameter is the full CorpusEnv -- see its
+  // doc comment for why a narrower Pick does not compile at the real call site.
+  // The bindings are never touched, so a cast is honest here in a way a fake
+  // `Ai` or `VectorizeIndex` would not be.
+  const envWith = (CORPUS_REFRESH?: string): CorpusEnv =>
+    ({ SITE_ORIGIN: 'https://ryanlindsey.me', CORPUS_REFRESH }) as unknown as CorpusEnv;
+
   test('defaults to on, so the deployed default comes from the var being absent', () => {
-    expect(corpusRefreshEnabled({})).toBe(true);
-    expect(corpusRefreshEnabled({ CORPUS_REFRESH: 'on' })).toBe(true);
+    expect(corpusRefreshEnabled(envWith())).toBe(true);
+    expect(corpusRefreshEnabled(envWith('on'))).toBe(true);
   });
 
   test('is off only when something says so', () => {
-    expect(corpusRefreshEnabled({ CORPUS_REFRESH: 'off' })).toBe(false);
+    expect(corpusRefreshEnabled(envWith('off'))).toBe(false);
   });
 
   test('refuses to guess at a value it does not know', () => {
     // Same house rule as RESUME_PDF_RENDERER: a typo that silently disabled the
     // refresh forever would be indistinguishable from a corpus with nothing to
     // do.
-    expect(() => corpusRefreshEnabled({ CORPUS_REFRESH: 'false' })).toThrow(/CORPUS_REFRESH/);
-    expect(() => corpusRefreshEnabled({ CORPUS_REFRESH: '' })).toThrow(/CORPUS_REFRESH/);
+    expect(() => corpusRefreshEnabled(envWith('false'))).toThrow(/CORPUS_REFRESH/);
+    expect(() => corpusRefreshEnabled(envWith(''))).toThrow(/CORPUS_REFRESH/);
   });
 });
 

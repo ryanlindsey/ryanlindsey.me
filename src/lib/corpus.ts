@@ -596,8 +596,16 @@ export interface CorpusEnv {
  * Whether `scheduled()` should run the refresh. Throws on an unrecognised
  * value: a typo that silently disabled the corpus refresh forever would look
  * exactly like a corpus that had nothing to do.
+ *
+ * Takes the whole `CorpusEnv` rather than `Pick<CorpusEnv, 'CORPUS_REFRESH'>`,
+ * which looks tighter and does not compile. That Pick is all-optional, i.e. a
+ * WEAK TYPE, and `Env` -- which does not declare the test-only var at all --
+ * has no property in common with it, so TypeScript rejects the call at the one
+ * place it is actually made (ts2559). Naming the same type `refreshCorpus`
+ * takes makes both call sites in src/worker.ts identical and the weak-type rule
+ * inapplicable.
  */
-export function corpusRefreshEnabled(env: Pick<CorpusEnv, 'CORPUS_REFRESH'>): boolean {
+export function corpusRefreshEnabled(env: CorpusEnv): boolean {
   const mode = env.CORPUS_REFRESH ?? 'on';
   if (mode === 'on') return true;
   if (mode === 'off') return false;
@@ -634,13 +642,33 @@ export async function readCorpusManifest(
 /**
  * Embeds `chunks` as DOCUMENTS.
  *
- * `{ documents }`, no `instruction`, and never `text`. Task 14 measured all
- * three: `text` returns a bit-identical vector to `documents` (it is an alias,
- * not a query-side mode), `query` alone errors 3030, and `{ query, documents }`
- * silently DROPS `query` -- same vector, same token count. There is no
- * query-side mode for this model on Workers AI, which is why day 5 must embed
- * queries through this same call rather than reaching for an asymmetric one
- * that would return a plausible, well-formed, subtly wrong vector.
+ * `{ documents }`, no `instruction`, and never `text`. `text` is a plain alias
+ * for `documents` -- Task 14 measured a bit-identical vector -- so it buys
+ * nothing and says less.
+ *
+ * THIS MODEL DOES HAVE A QUERY SIDE, and it is `queries` (PLURAL). Task 14
+ * probed `query` (singular), which is not in the model's input schema at all,
+ * got `3030: invalid input`, and concluded from that rejection that no query
+ * side existed. Re-measured 2026-09-07 against this account, with a repeated
+ * identical call as the bit-identity control:
+ *
+ *   { documents: ['agentic engineering manager'] }  ->  5 prompt tokens
+ *   { queries:   ['agentic engineering manager'] }  -> 24 prompt tokens
+ *   cosine between the two: 0.717, NOT bit-identical
+ *
+ * The 19-token difference is a real instruction template the query side wraps
+ * its input in. `instruction` customises that template and only affects
+ * `queries`: on the documents side every instruction returned a bit-identical
+ * vector at an unchanged 5 prompt tokens, which is the correct asymmetric
+ * behaviour -- documents are meant to be embedded bare. `queries` and
+ * `documents` cannot be combined; together they error 3030.
+ *
+ * None of which changes THIS call. A corpus document must be embedded
+ * document-side, bare, and that is what happens here. What it changes is day
+ * 5: queries should go through `{ queries: [...] }`, optionally with an
+ * `instruction`, rather than being embedded as documents. See task-15-report.md
+ * §7 for the full measurement, including the caveat that whether the query side
+ * retrieves BETTER cannot be judged against a one-document corpus.
  *
  * The width check is not defensive padding. Vectorize cannot be resized, so a
  * model that starts returning a different width has to stop this job rather

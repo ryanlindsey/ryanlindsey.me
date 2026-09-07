@@ -111,12 +111,29 @@
   // Vectorize index can never change the one it is created at:
   //   env.AI.run('@cf/qwen/qwen3-embedding-0.6b', { documents: ['hello'] })
   //   -> { shape: [1, 1024] }, L2-normalised (|v| = 1.0000000).
-  // Two input-shape findings from the same probe, so nothing rediscovers them:
-  // `{ text: 'x' }` returns a BIT-IDENTICAL vector to `{ documents: ['x'] }`,
-  // and `query` is either rejected on its own (3030: invalid input) or silently
-  // ignored beside `documents` -- same vector, same 2 prompt tokens. This model
-  // has NO query-side mode on Workers AI, so queries embed exactly like
-  // documents. Both keys also take an array and batch: shape [n, 1024].
+  // Input-shape findings, so nothing rediscovers them. `{ text: 'x' }` returns
+  // a BIT-IDENTICAL vector to `{ documents: ['x'] }` -- an alias, not a second
+  // mode. Both keys take an array and batch: shape [n, 1024].
+  //
+  // CORRECTED 2026-09-07 (Task 15). Task 14 also concluded from a `3030:
+  // invalid input` on `{ query: 'x' }` that this model "has NO query-side mode
+  // on Workers AI". That was wrong, and the reason is a spelling: the key in
+  // the model's own input schema (worker-configuration.d.ts) is `queries`,
+  // PLURAL. `query` is not a schema key at all, so 3030 was a rejection of an
+  // unknown field, not evidence of a missing capability. Re-measured against
+  // this account, with a repeated identical call as the bit-identity control:
+  //   { documents: ['agentic engineering manager'] } ->  5 prompt tokens
+  //   { queries:   ['agentic engineering manager'] } -> 24 prompt tokens
+  //   cosine 0.717 between them, NOT bit-identical.
+  // The query side wraps its input in an instruction template, `instruction`
+  // customises that template, and it moves ONLY the query side -- every
+  // instruction on the documents side returned a bit-identical vector at an
+  // unchanged 5 tokens. `queries` + `documents` in one call errors 3030.
+  //
+  // So the plan's original "asymmetric query/passage embedding" justification
+  // for this model stands, and Task 14's correction to it is itself withdrawn.
+  // The corpus job is unaffected either way -- a document is embedded
+  // document-side and bare, which is what src/lib/corpus.ts does.
   //
   // No `remote`: Workers AI has no local emulator, so calls reach the real
   // account either way, and marking it remote would only add a route by which a
