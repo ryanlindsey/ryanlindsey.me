@@ -41,7 +41,11 @@ import { SITE_ORIGIN } from './markdown-export';
  */
 export const CORPUS_CONTRACT_VERSION = 1;
 
-/** KV key holding the manifest. The manifest write is the commit point. */
+/**
+ * KV key holding the manifest. A manifest write is the commit point -- one per
+ * document that changed, not one per run: see `refreshCorpus` for why a single
+ * write at the end re-billed every document in a run that failed part way.
+ */
 export const CORPUS_MANIFEST_KEY = 'corpus:manifest';
 
 /**
@@ -783,9 +787,29 @@ export async function refreshCorpus(
   const plan = planCorpusRefresh(manifest, documents, options);
 
   const next: CorpusManifest = { ...manifest };
-  for (const key of plan.removed) delete next[key];
-  const deleted = [...plan.staleIds];
+  const deleted: string[] = [];
   const embedded: CorpusRefreshResult['embedded'] = [];
+
+  /** Commits everything decided so far. Called per phase, never once at the end. */
+  const commit = (): Promise<void> => env.KV_CACHE.put(CORPUS_MANIFEST_KEY, JSON.stringify(next));
+
+  // UNPUBLISHING RUNS FIRST, AHEAD OF THE EMBED LOOP (fix round 2). It used to
+  // run after it, which made the more important of this job's two guarantees
+  // the more fragile one: a throw anywhere in the embed loop -- one asset that
+  // will not chunk, one AI.run that errors, one upsert that Vectorize rejects
+  // -- skipped the delete entirely, so an unpublished document's vectors stayed
+  // in the index answering queries for as long as the failure lasted. That is
+  // the exact leak `planCorpusRefresh`'s own doc calls the arm that matters
+  // most. Deletion depends on nothing the embed loop produces, so there is no
+  // reason for it to be downstream of it.
+  if (plan.staleIds.length > 0) {
+    await env.VECTORIZE.deleteByIds(plan.staleIds);
+    deleted.push(...plan.staleIds);
+  }
+  if (plan.removed.length > 0) {
+    for (const key of plan.removed) delete next[key];
+    await commit();
+  }
 
   for (const document of plan.embed) {
     const key = documentKey(document.source);
@@ -824,18 +848,23 @@ export async function refreshCorpus(
       size: encoder.encode(document.markdown).length,
       chunks: chunks.length,
     };
+    // COMMITTED PER DOCUMENT, not once at the end (fix round 2). The manifest
+    // flip is still the commit -- same as resume-pdf.ts's, and still written
+    // only after this document's vectors are in flight, so a half-finished run
+    // leaves vectors no manifest entry claims (re-upserted identically next
+    // run) and never an entry pointing at vectors that were never sent. What
+    // changes is the unit of work being committed: with one write at the end,
+    // a document failing at position N threw away the record of the N-1
+    // documents already embedded and PAID FOR, so the next run re-embedded and
+    // re-billed all of them -- permanently, if the failing document kept
+    // failing. Per-document commits mean a run makes forward progress even
+    // when it cannot finish, which is the property a hash-gated job exists to
+    // have. The cost is one KV write per CHANGED document; steady state (every
+    // hash unmoved) now writes nothing at all, where it previously rewrote an
+    // identical manifest on every cron tick.
+    await commit();
     embedded.push({ key, chunks: chunks.length, mutationId });
   }
-
-  if (plan.staleIds.length > 0) {
-    await env.VECTORIZE.deleteByIds(plan.staleIds);
-  }
-
-  // Written last, and only after every vector is in flight: the manifest flip
-  // is the commit, same as resume-pdf.ts's. A half-finished run leaves vectors
-  // no manifest entry claims -- re-upserted identically on the next run --
-  // never a manifest entry pointing at vectors that were never sent.
-  await env.KV_CACHE.put(CORPUS_MANIFEST_KEY, JSON.stringify(next));
 
   return { embedded, unchanged: plan.unchanged, deleted, manifest: next };
 }

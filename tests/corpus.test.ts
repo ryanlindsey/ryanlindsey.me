@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
+  CORPUS_DIMENSIONS,
+  CORPUS_MANIFEST_KEY,
   CORPUS_TIER,
   MAX_CHUNK_TOKENS,
   METADATA_INDEX_BYTE_LIMIT,
@@ -16,6 +18,7 @@ import {
   estimateTokens,
   metadataFor,
   planCorpusRefresh,
+  refreshCorpus,
   surplusChunkIds,
   type CorpusDocumentEntry,
   type CorpusEnv,
@@ -484,5 +487,218 @@ describe('surplusChunkIds', () => {
 
   test('returns nothing for a document the manifest has never seen', () => {
     expect(surplusChunkIds(undefined, 2)).toEqual([]);
+  });
+});
+
+// --- refreshCorpus: what happens when a run does not finish ---------------
+//
+// WHAT THESE TESTS DO AND DO NOT CLAIM (fix round 2). They say NOTHING about
+// whether the corpus works: the bindings below are hand-written fakes, and the
+// module doc at the top of this file explains why a green run against a fake
+// (or against wrangler's local Vectorize simulation) would prove nothing about
+// `ryanlindsey-me-corpus`. The embed/upsert/query round trip stays where it
+// was verified, by hand against the live index in task-15-report.md.
+//
+// What they DO cover is `refreshCorpus`'s own control flow -- the order it does
+// things in and where it commits -- which is not a fact about Vectorize at all
+// and is exactly what fix round 2 changed:
+//
+//   1. an unpublished document's vectors were deleted AFTER the embed loop, so
+//      any throw in that loop left them in the index answering queries; and
+//   2. the manifest was written ONCE, at the very end, so any throw discarded
+//      the record of every document already embedded -- and paid for -- and
+//      the next run re-embedded and re-billed all of them.
+//
+// Both are latent today (one document, `staleIds` always empty), which is the
+// argument for fixing them before content makes them live rather than after.
+
+/** A vector of the right width. Values are irrelevant; nothing here compares them. */
+const fakeVector = (): number[] => Array.from({ length: CORPUS_DIMENSIONS }, () => 0.1);
+
+interface FakeCorpus {
+  env: CorpusEnv;
+  /** Vector ids currently "in the index", sorted. */
+  vectorIds: () => string[];
+  /** The manifest as actually committed to KV -- not the value refreshCorpus returned. */
+  committedManifest: () => CorpusManifest;
+  /** Every chunk text handed to `AI.run`, in order: this is the billing record. */
+  embedded: string[];
+}
+
+/**
+ * The four bindings `refreshCorpus` touches, and nothing else. Deliberately
+ * hand-written rather than mocked with a library: each one is a few lines, and
+ * writing them out is what makes it obvious that they simulate storage and
+ * ordering only, with no opinion about embeddings or similarity.
+ */
+function fakeCorpus(options: {
+  assets: Record<string, string>;
+  manifest?: CorpusManifest;
+  seedVectorIds?: string[];
+  /** Makes `AI.run` throw for any chunk containing this substring. */
+  failEmbedContaining?: string;
+}): FakeCorpus {
+  const vectors = new Set<string>(options.seedVectorIds ?? []);
+  const kv = new Map<string, string>();
+  if (options.manifest) kv.set(CORPUS_MANIFEST_KEY, JSON.stringify(options.manifest));
+  const embedded: string[] = [];
+
+  const env = {
+    SITE_ORIGIN: 'https://ryanlindsey.me',
+    ASSETS: {
+      fetch: async (input: string) => {
+        const body = options.assets[new URL(input).pathname];
+        return body === undefined ? new Response('nope', { status: 404 }) : new Response(body);
+      },
+    },
+    AI: {
+      run: async (_model: string, input: { documents: string[] }) => {
+        for (const chunk of input.documents) {
+          if (
+            options.failEmbedContaining !== undefined &&
+            chunk.includes(options.failEmbedContaining)
+          ) {
+            throw new Error('corpus test: embedding failed');
+          }
+          embedded.push(chunk);
+        }
+        return { data: input.documents.map(fakeVector) };
+      },
+    },
+    VECTORIZE: {
+      upsert: async (batch: { id: string }[]) => {
+        for (const vector of batch) vectors.add(vector.id);
+        return { mutationId: 'mutation-test' };
+      },
+      deleteByIds: async (ids: string[]) => {
+        for (const id of ids) vectors.delete(id);
+        return { mutationId: 'mutation-test' };
+      },
+    },
+    KV_CACHE: {
+      get: async (key: string) => {
+        const value = kv.get(key);
+        return value === undefined ? null : JSON.parse(value);
+      },
+      put: async (key: string, value: string) => {
+        kv.set(key, value);
+      },
+    },
+  } as unknown as CorpusEnv;
+
+  return {
+    env,
+    vectorIds: () => [...vectors].sort(),
+    committedManifest: () => {
+      const value = kv.get(CORPUS_MANIFEST_KEY);
+      return value === undefined ? {} : (JSON.parse(value) as CorpusManifest);
+    },
+    embedded,
+  };
+}
+
+/** The `.md` bodies the populated /llms.txt fixture above points at. */
+const POPULATED_ASSETS: Record<string, string> = {
+  '/llms.txt': LLMS_TXT_POPULATED,
+  '/resume.md': RESUME_MARKDOWN,
+  '/writing/second-post.md': '# Second Post\n\nThe newer post body.\n',
+  '/writing/first-post.md': '# First Post\n\nThe older post body.\n',
+  '/work/a-case-study.md': '# A Case Study\n\nWhat happened, at length.\n',
+};
+
+describe('refreshCorpus', () => {
+  test('embeds every published document once, then embeds nothing on a re-run', async () => {
+    // The baseline the two failure tests below are departures from: a clean run
+    // upserts one vector per chunk and commits an entry per document, and the
+    // next run finds every hash unmoved and bills nothing.
+    const corpus = fakeCorpus({ assets: POPULATED_ASSETS });
+
+    const first = await refreshCorpus(corpus.env);
+    expect(first.embedded.map((document) => document.key)).toEqual([
+      'resume:resume',
+      'post:second-post',
+      'post:first-post',
+      'case-study:a-case-study',
+    ]);
+    expect(corpus.vectorIds()).toEqual([
+      'case-study:a-case-study:0',
+      'post:first-post:0',
+      'post:second-post:0',
+      'resume:resume:0',
+    ]);
+    expect(Object.keys(corpus.committedManifest()).sort()).toEqual([
+      'case-study:a-case-study',
+      'post:first-post',
+      'post:second-post',
+      'resume:resume',
+    ]);
+
+    const embeddedAfterFirstRun = corpus.embedded.length;
+    const second = await refreshCorpus(corpus.env);
+    expect(second.embedded).toEqual([]);
+    expect(second.unchanged).toHaveLength(4);
+    expect(
+      corpus.embedded.length,
+      'a run over unchanged content must not embed (bill for) anything',
+    ).toBe(embeddedAfterFirstRun);
+  });
+
+  test("deletes an unpublished document's vectors even when the run later fails", async () => {
+    // The leak the old ordering allowed: `post:gone` is in the manifest but no
+    // longer in /llms.txt, so its vectors must go -- and they must go whether or
+    // not the rest of the run succeeds. Here the résumé's embedding throws, which
+    // under the old order (delete AFTER the embed loop) meant the delete never
+    // ran at all and an unpublished document kept answering queries.
+    const corpus = fakeCorpus({
+      assets: { '/llms.txt': LLMS_TXT_TODAY, '/resume.md': RESUME_MARKDOWN },
+      manifest: {
+        'post:gone': entry({ key: 'post:gone', hash: 'gone-hash', chunks: 2 }),
+      },
+      seedVectorIds: ['post:gone:0', 'post:gone:1'],
+      failEmbedContaining: 'Senior Engineering Manager',
+    });
+
+    await expect(refreshCorpus(corpus.env)).rejects.toThrow(/embedding failed/);
+
+    expect(
+      corpus.vectorIds(),
+      "an unpublished document's vectors must not survive a failed run",
+    ).toEqual([]);
+    expect(
+      corpus.committedManifest(),
+      'and the removal must be committed, so the next run does not re-delete blind',
+    ).toEqual({});
+  });
+
+  test('keeps what it already embedded when a later document fails, so a retry re-bills nothing', async () => {
+    // The re-billing the single end-of-run manifest write caused: three
+    // documents embed successfully, the fourth throws, and with one write at the
+    // end the first three were paid for and then forgotten -- every subsequent
+    // run re-embedded all of them, forever, for as long as the fourth kept
+    // failing.
+    const corpus = fakeCorpus({
+      assets: POPULATED_ASSETS,
+      failEmbedContaining: 'What happened, at length.',
+    });
+
+    await expect(refreshCorpus(corpus.env)).rejects.toThrow(/embedding failed/);
+    const afterFailedRun = [...corpus.embedded];
+    expect(
+      afterFailedRun,
+      'the three documents before the failure should have embedded',
+    ).toHaveLength(3);
+    expect(Object.keys(corpus.committedManifest()).sort()).toEqual([
+      'post:first-post',
+      'post:second-post',
+      'resume:resume',
+    ]);
+
+    // The retry: the same failure, and nothing already paid for is paid for
+    // again. Only the still-broken document is attempted.
+    await expect(refreshCorpus(corpus.env)).rejects.toThrow(/embedding failed/);
+    expect(
+      corpus.embedded,
+      'a retry must re-embed nothing that already succeeded and committed',
+    ).toEqual(afterFailedRun);
   });
 });
