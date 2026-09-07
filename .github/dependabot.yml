@@ -10,8 +10,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
-      day: saturday
-      time: '10:00'
+      day: monday
+      time: '04:20'
       timezone: America/Los_Angeles
     commit-message:
       prefix: deps
@@ -30,8 +30,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
-      day: saturday
-      time: '10:00'
+      day: monday
+      time: '04:20'
       timezone: America/Los_Angeles
     # No `prefix-development`: the github-actions ecosystem has no dev/prod split, so every
     # action bump is a plain dependency.
@@ -44,8 +44,8 @@ updates:
     directory: /workers/mcp
     schedule:
       interval: weekly
-      day: saturday
-      time: '10:00'
+      day: monday
+      time: '04:20'
       timezone: America/Los_Angeles
     commit-message:
       prefix: deps
