@@ -165,10 +165,14 @@ test('carries no candidacy language on any public surface', async () => {
   for (const route of [
     '/',
     '/writing',
-    '/writing/type-specimen',
     '/work',
-    '/work/shape-specimen',
     '/resume',
+    // Day 3 Task 13: every day-3 format/aggregation surface Tasks 3, 9, 11
+    // and 12 added, extending this check past the six routes it originally
+    // covered (task-13-brief.md Step 3). /resume.md and /resume.json are
+    // the other two résumé formats alongside the HTML page above.
+    '/resume.md',
+    '/resume.json',
     // Day 3 Task 9: the single highest-risk leak surface on this site is
     // /llms-full.txt (task-9-brief.md's own words) -- it concatenates every
     // published document into one response, so anything that leaks
@@ -183,6 +187,23 @@ test('carries no candidacy language on any public surface', async () => {
     // empty), but the check stays true the moment content ships.
     '/rss.xml',
     '/feed.json',
+    // Day 3 Task 12: robots.txt is a public, hand-authored file that
+    // welcomes named crawlers by name -- it must carry no candidacy
+    // language either.
+    '/robots.txt',
+    // Day 3 Task 13: every discovered content entry's HTML page AND its
+    // `.md` sibling (task-13-brief.md's "the .md variants"), read off
+    // CONTENT_ENTRIES above rather than hardcoded as the two specimen
+    // routes this list used to name directly -- a route added later is
+    // covered automatically, the same reasoning every other CONTENT_ENTRIES
+    // loop in this file already gives. Drafts are included on purpose: a
+    // draft is reachable by URL (the detail tier of the draft rule) and
+    // must carry no candidacy language either, exactly like a published
+    // page.
+    ...CONTENT_ENTRIES.flatMap((entry) => [
+      `/${entry.section}/${entry.slug}`,
+      `/${entry.section}/${entry.slug}.md`,
+    ]),
   ]) {
     const page = await html(route);
     for (const pattern of BANNED) {
