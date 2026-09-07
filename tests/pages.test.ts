@@ -781,6 +781,38 @@ test('footer links /llms.txt and the MCP endpoint, and never links /llms-full.tx
   );
 });
 
+// Day 4 Task 13 (03 §1): `https://ryanlindsey.me/mcp` is the PRIMARY MCP
+// endpoint, `mcp.ryanlindsey.me` the vanity alias -- so this origin must
+// serve the protocol rather than 404. `server.fetch()` in this file always
+// addresses the site Worker (SITE_HARNESS_WORKERS lists it first, making it
+// the harness's primary), so these two exercise the forward over the `MCP`
+// service binding end to end, not the MCP Worker directly the way
+// tests/mcp-tools.test.ts and tests/mcp.smoke.test.ts do.
+
+test('/mcp on the site origin completes the MCP handshake', async () => {
+  const response = await server.fetch('/mcp', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'site', version: '0' },
+      },
+    }),
+  });
+  expect(response.status).toBe(200);
+  expect(await response.text()).toContain('ryanlindsey-me');
+});
+
+test('/mcp is not swallowed by the SPA 404 page', async () => {
+  const response = await server.fetch('/mcp');
+  expect(response.headers.get('content-type') ?? '').not.toContain('text/html');
+});
+
 // Day 3 Task 12 (02 §3 / research appendix B5): public/robots.txt is a
 // hand-authored static file, not a prerendered endpoint, so these tests
 // read the file over HTTP the same way every other route in this file is

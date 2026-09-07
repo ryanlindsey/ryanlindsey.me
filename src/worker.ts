@@ -233,6 +233,28 @@ async function serveMarkdownAsset(
 
 export default {
   fetch: async (request, env, ctx) => {
+    // Day 4 Task 13 (03 §1): https://ryanlindsey.me/mcp is the PRIMARY MCP
+    // endpoint and mcp.ryanlindsey.me the vanity alias, so this origin must
+    // serve the protocol rather than a 404. One Worker owns the MCP server
+    // (workers/mcp/src/index.ts); this forwards to it over the `MCP` service
+    // binding rather than hosting a second copy, so the two origins cannot
+    // answer differently and this file grows no routing, CORS or origin-policy
+    // logic of its own.
+    //
+    // The request is passed through unchanged -- method, headers (Origin
+    // included, for Task 2's browser-connector CORS policy) and body. Nothing
+    // here touches the request object, so the hop is faithful by construction
+    // rather than by a field-by-field reconstruction that could drift.
+    //
+    // The MCP handler matches on the request's pathname via `route: '/mcp'`
+    // (workers/mcp/src/index.ts's HANDLER_OPTIONS). A service binding's
+    // `Fetcher.fetch()` delivers the request to the target Worker with its
+    // URL untouched -- verified here, not assumed: tests/pages.test.ts's
+    // "/mcp on the site origin completes the MCP handshake" only turns green
+    // once this forward is wired in, which would not be true if the pathname
+    // were rewritten or dropped somewhere along the hop.
+    if (new URL(request.url).pathname === '/mcp') return env.MCP.fetch(request);
+
     // `markdownPath` is non-null exactly on a content route being fetched
     // with a negotiable method -- i.e. exactly the requests this module has
     // an opinion about. It is computed once and used twice below: to decide
