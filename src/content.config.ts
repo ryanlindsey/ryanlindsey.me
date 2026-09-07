@@ -58,6 +58,16 @@ const caseStudies = defineCollection({
 // which would be a second source of truth.
 const yearMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'expected a YYYY-MM date');
 
+// Education is the one place a bare year is the honest value. A degree is
+// remembered and stated by year ("2003-2007"), not by the month the registrar
+// recorded, so demanding YYYY-MM here would force a made-up month into the
+// data -- the same error as coercing a day onto a YYYY-MM string, which the
+// comment above refuses to make. Work dates stay strict: a job does start in a
+// known month.
+const yearOrYearMonth = z
+  .string()
+  .regex(/^\d{4}(-(0[1-9]|1[0-2]))?$/, 'expected a YYYY or YYYY-MM date');
+
 const isoDate = z
   .string()
   .regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, 'expected a YYYY-MM-DD date');
@@ -108,8 +118,8 @@ export const resumeSchema = z.object({
       institution: z.string(),
       area: z.string().optional(),
       studyType: z.string().optional(),
-      startDate: yearMonth.optional(),
-      endDate: yearMonth.optional(),
+      startDate: yearOrYearMonth.optional(),
+      endDate: yearOrYearMonth.optional(),
     }),
   ),
   skills: z.array(

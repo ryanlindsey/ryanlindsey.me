@@ -32,9 +32,10 @@ basics:
     city: Laguna Niguel
     region: CA
     countryCode: US
-  # phone deliberately still omitted: the archive carries one consistent number
-  # from 2014 to 2022, but whether a public résumé should publish it at all is
-  # Ryan's call, not a gap to be helpfully filled. resumeGaps() still reports it.
+  # Ryan ruled on 2026-09-07: publish it. His read is that the number is
+  # effectively public already, having appeared on every résumé he has sent out
+  # since 2014. This closes the last content-track gap resumeGaps() reported.
+  phone: (714) 330-6251
   profiles:
     - network: GitHub
       username: ryanlindsey
@@ -221,19 +222,20 @@ work:
         communities, and custom content management systems for local
         businesses, independent films, and bands.
 
-# Dates deliberately omitted. The archive records the years (Art Institute
-# 2003-2007, Golden West 2001-2003) but the schema's `yearMonth` needs a month,
-# and inventing one to satisfy a regex is the same error as coercing a day onto
-# a YYYY-MM string, which content.config.ts already refuses to do. If the years
-# should render, that is a small schema change plus Ryan's confirmation, not a
-# guess made here.
+# Years confirmed by Ryan 2026-09-07. They are bare years on purpose: the
+# schema's `yearOrYearMonth` accepts `YYYY` for education specifically, so no
+# invented month is needed to satisfy a regex. See content.config.ts.
 education:
   - institution: The Art Institute of California
     area: Interactive Media (HCI)
     studyType: B.S.
+    startDate: '2003'
+    endDate: '2007'
   - institution: Golden West College
     area: Business Administration
     studyType: A.A.
+    startDate: '2001'
+    endDate: '2003'
 
 skills:
   - name: Engineering leadership

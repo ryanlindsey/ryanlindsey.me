@@ -42,6 +42,10 @@ const MONTH_NAMES = [
 
 function formatYearMonth(yearMonth: string): string {
   const [year, month] = yearMonth.split('-');
+  // A bare `YYYY` renders as the year alone. Education dates are allowed to be
+  // year-only (see `yearOrYearMonth` in content.config.ts); without this branch
+  // the missing month would index past MONTH_NAMES and render "undefined 2003".
+  if (month === undefined) return year;
   return `${MONTH_NAMES[Number(month) - 1]} ${year}`;
 }
 

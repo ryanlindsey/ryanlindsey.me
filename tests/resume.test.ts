@@ -53,6 +53,7 @@ const resumeFixture: Resume = {
     summary:
       'Agentic engineering is making engineers dramatically faster. I build the instruments that let the organization around them keep pace. Nineteen years in software, a decade of it leading engineering teams: I own incident management for an entire engineering organization, I build the agentic tooling that other managers choose to adopt, and I still ship the code. The habit underneath all of it is to measure a process before improving it, because the constraint is rarely where everyone assumes it is.',
     email: 'hello@ryanlindsey.me',
+    phone: '(714) 330-6251',
     url: 'https://ryanlindsey.me',
     location: { city: 'Laguna Niguel', region: 'CA', countryCode: 'US' },
     profiles: [
@@ -157,8 +158,16 @@ const resumeFixture: Resume = {
       institution: 'The Art Institute of California',
       area: 'Interactive Media (HCI)',
       studyType: 'B.S.',
+      startDate: '2003',
+      endDate: '2007',
     },
-    { institution: 'Golden West College', area: 'Business Administration', studyType: 'A.A.' },
+    {
+      institution: 'Golden West College',
+      area: 'Business Administration',
+      studyType: 'A.A.',
+      startDate: '2001',
+      endDate: '2003',
+    },
   ],
   skills: [
     {
@@ -330,32 +339,61 @@ describe('formatDateRange', () => {
   test('renders a range crossing a year boundary', () => {
     expect(formatDateRange('2020-11', '2021-02')).toBe('Nov 2020 — Feb 2021');
   });
+
+  // Education dates are allowed to be bare years (content.config.ts's
+  // `yearOrYearMonth`). Without the year-only branch in formatYearMonth these
+  // render as "undefined 2003", which is how this reached a rendered page
+  // before it reached a test.
+  test('renders a bare-year range without inventing a month', () => {
+    expect(formatDateRange('2003', '2007')).toBe('2003 — 2007');
+  });
+
+  test('renders an open-ended bare-year range', () => {
+    expect(formatDateRange('2003')).toBe('2003 — Present');
+  });
+
+  test('renders a bare year against a month-precise end date', () => {
+    expect(formatDateRange('2003', '2007-06')).toBe('2003 — Jun 2007');
+  });
 });
 
 describe('resumeGaps', () => {
-  // Résumé interview session 2 (2026-09-07) closed every content-track gap
-  // except one: all eight roles have highlights, education and profiles are
-  // populated. `basics.phone` is the sole remaining gap and it is not an
-  // oversight -- publishing a phone number is Ryan's decision, not a hole for
-  // the content track to fill. See the YAML's comment at `basics`.
-  test('flags every currently-missing piece of content', () => {
-    const gaps = resumeGaps(resumeFixture);
-    expect(gaps.filter((gap) => gap.includes('has no highlights'))).toHaveLength(0);
-    expect(gaps).not.toContain('education is empty');
-    expect(gaps).not.toContain('basics.profiles is empty');
-    expect(gaps).not.toContain('basics.email is missing');
-    expect(gaps).not.toContain('basics.url is missing');
-    expect(gaps).toEqual(['basics.phone is missing']);
+  // THE CONTENT-TRACK GATE, AND IT IS GREEN. This assertion spent day 3 through
+  // to 2026-09-07 as `test.fails` -- eleven gaps, then one. Résumé interview
+  // session 2 filled highlights for all eight roles plus education, skills and
+  // profiles, and Ryan's ruling on the phone number closed the last one. It is
+  // an ordinary `test` now, which means it has become a REGRESSION guard: from
+  // here, emptying any of those fields fails the suite rather than being
+  // absorbed as an expected failure.
+  test('the résumé has no content-track gaps left', () => {
+    expect(resumeGaps(resumeFixture)).toEqual([]);
   });
 
-  // Deliberately red: the content-track gate. It went from eleven gaps to one
-  // on 2026-09-07. It stays `test.fails` because that last gap is a live
-  // decision rather than missing content -- when Ryan rules on the phone
-  // number this becomes an ordinary `test`, either because the number is added
-  // or because `resumeGaps` stops treating an intentional omission as a gap.
-  // `test.fails` keeps the suite green while the assertion itself stays honest.
-  test.fails('the résumé has no content-track gaps left', () => {
-    expect(resumeGaps(resumeFixture)).toEqual([]);
+  // The test above only proves the real data is complete. If `resumeGaps` were
+  // broken to always return [], it would still pass -- vacuously. This one
+  // keeps the detector honest by handing it a résumé that is missing one of
+  // everything and checking it reports each.
+  test('still detects each kind of gap it is responsible for', () => {
+    const stripped: Resume = {
+      ...resumeFixture,
+      basics: {
+        ...resumeFixture.basics,
+        email: undefined,
+        phone: undefined,
+        url: undefined,
+        profiles: [],
+      },
+      work: [workEntry({ name: 'A', position: 'Role', startDate: '2020-01' })],
+      education: [],
+    };
+    expect(resumeGaps(stripped)).toEqual([
+      'A — Role (2020-01) has no highlights',
+      'education is empty',
+      'basics.email is missing',
+      'basics.phone is missing',
+      'basics.url is missing',
+      'basics.profiles is empty',
+    ]);
   });
 });
 
