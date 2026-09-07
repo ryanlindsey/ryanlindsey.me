@@ -605,7 +605,7 @@ function fakeCorpus(options: {
 
   const env = {
     SITE_ORIGIN: 'https://ryanlindsey.me',
-    ASSETS: {
+    SITE: {
       fetch: async (input: string) => {
         const body = options.assets[new URL(input).pathname];
         return body === undefined ? new Response('nope', { status: 404 }) : new Response(body);

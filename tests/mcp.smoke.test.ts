@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
+import { MCP_WORKER, MOCK_AI_WORKER } from './workers';
 
 // The exact instructions the server is expected to advertise. Asserting the
 // whole string — rather than scanning it for a list of disallowed words — is
@@ -10,8 +11,15 @@ const EXPECTED_INSTRUCTIONS =
   'Public tools cover portfolio exploration. A private tier exists for scoped tokens; ' +
   'ask Ryan for access if you need it.';
 
+// The MCP Worker plus the Workers AI stand-in its `ai` binding is overridden to.
+// mock-ai is not optional here even though nothing in this file touches AI: the
+// binding moved to this Worker with the corpus job, Workers AI has no local
+// emulator, and an un-overridden `ai` binding makes booting this Worker open a
+// real remote proxy session that fails without credentials. Shared with the site
+// suites via tests/workers.ts rather than restated, so the override cannot drift
+// between the two places this Worker is booted.
 const server = createTestHarness({
-  workers: [{ configPath: './workers/mcp/wrangler.jsonc' }],
+  workers: [MCP_WORKER, MOCK_AI_WORKER],
 });
 
 beforeAll(async () => {

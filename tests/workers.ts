@@ -48,41 +48,53 @@ export const TEST_SITE_ORIGIN = 'http://resume-pdf.test';
  * CI path -- and the way that would happen is some future test fetching
  * /resume.pdf without thinking about it.
  *
- * The AI override is here for a harder reason than a download: without it, 8 of
- * the 14 suites do not start at all. Workers AI has no local emulator, so an
- * `ai` binding with no explicit `remote` is remote, and booting the site tries
- * to open a real remote proxy session -- which fails on "More than one account
- * available but unable to select one in non-interactive mode", because this
- * login sees two accounts and mock-browser deliberately carries no account_id.
- * Pinning an account would fix the message and keep the hazard, since `npm test`
- * would then need live credentials and could bill neurons. Overriding the
- * binding to a local service means no remote session is opened at all. See
- * workers/mock-ai/wrangler.jsonc for why this is not `"remote": false` instead.
- *
- * `CORPUS_REFRESH: 'off'` (day 3 Task 15) follows from that AI override and
- * from one more fact: an unset `remote` resolves the OPPOSITE way for
- * `vectorize` than it does for `ai`, so `env.VECTORIZE` under this harness is a
- * LOCAL SIMULATION rather than `ryanlindsey-me-corpus`. Running the embedding
- * job here would therefore need a stub embedder feeding a simulated index, and
- * would report success while the real corpus stayed empty -- a green run that
- * proves nothing, which is the specific failure this repo has now been bitten
- * by often enough to name. So the job does not run here. Its pure half (the
- * chunker, the source list, the hash, the refresh plan) is covered directly in
- * tests/corpus.test.ts with no bindings at all; its embed/upsert/query round
- * trip is verified by hand against the live index.
+ * The AI override that used to sit here has gone WITH the binding, to
+ * MCP_WORKER below. ./wrangler.jsonc no longer declares `ai` at all: an
+ * always-remote binding in the site's config made `astro build` open that proxy
+ * session one layer earlier than the harness, which is the failure that broke
+ * CI. There is nothing left on this Worker to override, and an override naming a
+ * binding this config does not have would be a comment pretending to be code.
  */
 export const SITE_WORKER = {
   configPath: './dist/server/wrangler.json',
-  vars: { SITE_ORIGIN: TEST_SITE_ORIGIN, RESUME_PDF_RENDERER: 'stub', CORPUS_REFRESH: 'off' },
-  bindingOverrides: { BROWSER: 'mock-browser', AI: 'mock-ai' },
+  vars: { SITE_ORIGIN: TEST_SITE_ORIGIN, RESUME_PDF_RENDERER: 'stub' },
+  bindingOverrides: { BROWSER: 'mock-browser' },
 };
 
 /**
- * The MCP Worker is listed alongside the site in every harness that boots the
- * site: the site's `MCP` service binding names it, and workerd refuses to start
- * a Worker whose service binding names an undefined service.
+ * The MCP Worker, which is where the `ai` and `vectorize` bindings and the
+ * corpus cron now live.
+ *
+ * It is listed alongside the site in every harness that boots the site: the
+ * site's `MCP` service binding names it, and workerd refuses to start a Worker
+ * whose service binding names an undefined service.
+ *
+ * The AI override moved here with the binding, for exactly the reason it existed
+ * on the site: Workers AI has no local emulator, so an `ai` binding with no
+ * explicit `remote` is remote, and booting this Worker would try to open a real
+ * remote proxy session -- which fails on "More than one account available but
+ * unable to select one in non-interactive mode". Pointing the binding at a local
+ * service Worker means no remote session is opened at all. See
+ * workers/mock-ai/wrangler.jsonc for why this is not `"remote": false` instead.
+ * Any harness that lists this Worker must therefore list MOCK_AI_WORKER too.
+ *
+ * `CORPUS_REFRESH: 'off'` (day 3 Task 15) follows from that AI override and from
+ * one more fact: an unset `remote` resolves the OPPOSITE way for `vectorize`
+ * than it does for `ai`, so `env.VECTORIZE` under this harness is a LOCAL
+ * SIMULATION rather than `ryanlindsey-me-corpus`. Running the embedding job here
+ * would therefore need a stub embedder feeding a simulated index, and would
+ * report success while the real corpus stayed empty -- a green run that proves
+ * nothing, which is the specific failure this repo has now been bitten by often
+ * enough to name. So the job does not run here. Its pure half (the chunker, the
+ * source list, the hash, the refresh plan) is covered directly in
+ * tests/corpus.test.ts with no bindings at all; its embed/upsert/query round
+ * trip is verified by hand against the live index.
  */
-export const MCP_WORKER = { configPath: './workers/mcp/wrangler.jsonc' };
+export const MCP_WORKER = {
+  configPath: './workers/mcp/wrangler.jsonc',
+  vars: { CORPUS_REFRESH: 'off' },
+  bindingOverrides: { AI: 'mock-ai' },
+};
 
 /** The Browser Run stand-in the override above resolves. Test-only, never deployed. */
 export const MOCK_BROWSER_WORKER = { configPath: './workers/mock-browser/wrangler.jsonc' };

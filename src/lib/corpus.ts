@@ -4,21 +4,31 @@ import { SITE_ORIGIN } from './markdown-export';
 // published document, embed the chunks with Workers AI, and upsert them into
 // the `ryanlindsey-me-corpus` Vectorize index created in Task 14.
 //
-// WHERE THE TEXT COMES FROM, and why it is not `getCollection`. This module is
-// imported by src/worker.ts, which the Cloudflare Vite plugin builds as the
-// Worker ENTRY rather than as part of Astro's SSR graph -- `astro:content` is
-// an Astro-only virtual module and does not resolve there. src/lib/resume-pdf.ts
-// hit the same wall in Task 5 and answered it with a `?raw` import of the
-// résumé source. That answer does not generalise: a `?raw` MDX body is
-// unrendered, unstripped and still carries `draft: true`, so reusing it here
+// WHERE THIS RUNS. Not on the site Worker. The job needs the `ai` binding, and
+// `ai` is always-remote to @cloudflare/vite-plugin -- its presence in the site's
+// wrangler.jsonc made `astro build` open a remote proxy session and fail in
+// credential-free CI. So `ai`, `vectorize` and the cron all live on the MCP
+// Worker (workers/mcp/), which CI never builds, and which needs both bindings
+// for day 4's semantic search over this same corpus anyway. This module stays
+// here, in src/lib/, and is imported across the directory boundary -- one copy
+// of the embedding job, not two.
+//
+// WHERE THE TEXT COMES FROM, and why it is not `getCollection`. This module runs
+// inside a Worker bundle rather than as part of Astro's SSR graph, and
+// `astro:content` is an Astro-only virtual module that does not resolve there --
+// which is also what makes the module portable to workers/mcp/ at all.
+// src/lib/resume-pdf.ts hit the same wall in Task 5 and answered it with a `?raw`
+// import of the résumé source. That answer does not generalise: a `?raw` MDX body
+// is unrendered, unstripped and still carries `draft: true`, so reusing it here
 // would mean re-implementing frontmatter parsing, the draft filter and MDX
 // stripping inside the Worker -- three second sources of truth for rules that
 // already exist and are already tested.
 //
-// Instead this job reads the PRERENDERED `.md` assets through the `ASSETS`
-// binding, which is the same "reuse, not re-derivation" move src/worker.ts's
-// Task 8 negotiation already makes for the same files. Those assets are the
-// output of Task 6's `toMarkdown` via Task 7's `.md` routes, so:
+// Instead this job reads the PRERENDERED `.md` assets over `SITE_ORIGIN`, which
+// is the same "reuse, not re-derivation" move src/worker.ts's Task 8
+// negotiation makes for the same files -- one hop further out, because the MCP
+// Worker has no asset binding to read them through. Those assets are the output
+// of Task 6's `toMarkdown` via Task 7's `.md` routes, so:
 //
 //   - the exporter runs exactly once, at build time;
 //   - `toMarkdown`'s throw on unstrippable MDX fails the BUILD (it is not
@@ -601,15 +611,37 @@ export function surplusChunkIds(
  * `ResumePdfEnv`.
  */
 export interface CorpusEnv {
-  ASSETS: Fetcher;
+  /**
+   * Fetches the site's published documents (`/llms.txt` and the `.md` assets it
+   * links).
+   *
+   * This WAS `ASSETS: Fetcher`, the site Worker's own asset binding, and the
+   * rename is the visible half of moving this job to the MCP Worker. That move
+   * was forced: `ai` is always-remote to @cloudflare/vite-plugin, so its mere
+   * presence in the site's wrangler.jsonc made `astro build` open a remote proxy
+   * session and fail in credential-free CI (see that file's note). The MCP
+   * Worker has no assets of its own, and giving it a copy of the site's would
+   * mean uploading the whole site twice and rebuilding it before every MCP
+   * deploy, so it fetches the same documents over `SITE_ORIGIN` instead.
+   *
+   * `Pick<Fetcher, 'fetch'>` rather than `Fetcher`, and that is the point of the
+   * type rather than a weakening of it: this module only ever calls `.fetch`, so
+   * the narrower type is satisfied by an asset binding, by a service binding,
+   * and by a thin wrapper over global `fetch` -- which is what the MCP Worker
+   * passes. Requiring the full `Fetcher` would have ruled out the last of those
+   * for no reason this module cares about.
+   */
+  SITE: Pick<Fetcher, 'fetch'>;
   AI: Ai;
   VECTORIZE: VectorizeIndex;
   KV_CACHE: KVNamespace;
   /**
-   * Only ever used to give `env.ASSETS.fetch` an absolute URL. The host is
-   * irrelevant to an asset binding -- it never leaves the Worker -- but this is
-   * the origin this site declares it has, and inventing a second sentinel here
-   * would be one more string to keep in step with nothing.
+   * The origin `SITE` is asked for -- `https://ryanlindsey.me`, from the MCP
+   * Worker's `vars`. It used to be needed only to give an asset binding an
+   * absolute URL, where the host never left the Worker; now that the fetch is a
+   * real one it is load-bearing, and pointing it at the wrong host would embed
+   * the wrong site. The test harness overrides it to a sentinel that resolves
+   * nowhere (tests/workers.ts).
    */
   SITE_ORIGIN: string;
   /**
@@ -619,7 +651,7 @@ export interface CorpusEnv {
    * `'off'`. No deployed environment sets it -- wrangler.jsonc does not declare
    * it -- and an unrecognised value throws rather than guessing.
    *
-   * `'off'` is set by tests/workers.ts, and the reason is not squeamishness
+   * `'off'` is set on the MCP Worker by tests/workers.ts, and the reason is not squeamishness
    * about network calls. Task 14 overrode the `AI` binding to a local service
    * (`workers/mock-ai`) so that `npm test` cannot open a remote proxy session or
    * bill neurons; a service binding hands the Worker a `Fetcher`, so
@@ -645,10 +677,10 @@ export interface CorpusEnv {
  *
  * Takes the whole `CorpusEnv` rather than `Pick<CorpusEnv, 'CORPUS_REFRESH'>`,
  * which looks tighter and does not compile. That Pick is all-optional, i.e. a
- * WEAK TYPE, and `Env` -- which does not declare the test-only var at all --
- * has no property in common with it, so TypeScript rejects the call at the one
- * place it is actually made (ts2559). Naming the same type `refreshCorpus`
- * takes makes both call sites in src/worker.ts identical and the weak-type rule
+ * WEAK TYPE, and an env type that does not declare the test-only var at all has
+ * no property in common with it, so TypeScript rejects the call at the one place
+ * it is actually made (ts2559). Naming the same type `refreshCorpus` takes makes
+ * both call sites in workers/mcp/src/index.ts identical and the weak-type rule
  * inapplicable.
  */
 export function corpusRefreshEnabled(env: CorpusEnv): boolean {
@@ -672,9 +704,9 @@ const EMBED_BATCH_SIZE = 20;
 const UPSERT_BATCH_SIZE = 100;
 
 async function readAsset(env: CorpusEnv, path: string): Promise<string> {
-  const response = await env.ASSETS.fetch(new URL(path, env.SITE_ORIGIN).toString());
+  const response = await env.SITE.fetch(new URL(path, env.SITE_ORIGIN).toString());
   if (!response.ok) {
-    throw new Error(`corpus: ${path} returned ${response.status} from the ASSETS binding`);
+    throw new Error(`corpus: ${path} returned ${response.status} from ${env.SITE_ORIGIN}`);
   }
   return await response.text();
 }
@@ -798,10 +830,10 @@ export interface CorpusRefreshResult {
 }
 
 /**
- * The embedding refresh. Called from `scheduled()` in src/worker.ts alongside
- * the résumé-PDF job.
+ * The embedding refresh. Called from `scheduled()` in workers/mcp/src/index.ts;
+ * the résumé-PDF job it used to share a handler with stayed on the site Worker.
  *
- * Steady state is two asset reads and one KV read: `planCorpusRefresh` finds
+ * Steady state is two document reads and one KV read: `planCorpusRefresh` finds
  * every hash unmoved and nothing is embedded, so a daily cron over unchanged
  * content bills no neurons. That is the same shape `regenerateResumePdf` uses
  * to keep browser-hours near zero, for the same reason.

@@ -92,88 +92,46 @@
   // additionalProperties: false, and it is not inherited by named environments.
   "browser": { "binding": "BROWSER" },
 
-  // 05:17 UTC daily. The handler is a no-op unless the résumé source hash has
-  // moved (see src/lib/resume-pdf.ts), so the steady-state cost is one KV read.
+  // 05:17 UTC daily, and now the résumé-PDF job alone: the corpus refresh that
+  // used to share this trigger moved to workers/mcp/wrangler.jsonc with the
+  // bindings it runs on (see the note below). The handler is a no-op unless the
+  // résumé source hash has moved (see src/lib/resume-pdf.ts), so the
+  // steady-state cost is one KV read.
   "triggers": { "crons": ["17 5 * * *"] },
 
-  // Workers AI, for the publishing corpus's embedding job. It is back in day 3,
-  // not day 4: the day-3 build track owns the corpus, and this is the binding it
-  // runs on.
+  // NO `ai` AND NO `vectorize` BINDING HERE, AND THAT IS A BUILD CONSTRAINT
+  // RATHER THAN A STATEMENT ABOUT NEED. Both moved to workers/mcp/wrangler.jsonc
+  // together with the corpus-refresh cron; see that file for the measurements
+  // (embedding width, metric, metadata-index ordering) that used to live here.
   //
-  // The comment that stood here had been describing a false state for a day. It
-  // said the gateway was "blocked on credits" -- resolved on day 2, when the
-  // owner added AI Gateway credits, Unified Billing began serving env.AI.run()
-  // and all four capability probes passed -- and that the binding would return
-  // "on day 4", which was never this plan's shape.
+  // The `ai` binding cannot exist in THIS config, because this config is the one
+  // `astro build` instantiates. @cloudflare/vite-plugin classifies `ai` as
+  // "DO-NOT-USE-this-resource-will-never-have-a-local-simulator", so
+  // `pickRemoteBindings` returns true for it no matter what `remote` says --
+  // and `validateBindingRemoteSetting` THROWS on `remote: false`, so it cannot
+  // be opted out of either. Any tooling that instantiates this Worker's
+  // bindings therefore opens a remote proxy session, including
+  // @astrojs/cloudflare's prerenderer, which `astro build` runs. CI has no
+  // Cloudflare credentials by design (10 §2.4), so `npm run build` failed there
+  // with "In a non-interactive environment, it's necessary to set a
+  // CLOUDFLARE_API_TOKEN". A local build passed only because a dev machine has
+  // wrangler OAuth -- the exact class of green-here/red-in-CI gap this repo
+  // keeps finding. Confirmed by bisection: with `ai` removed and nothing else
+  // changed, `astro build` completes against an isolated `HOME`.
   //
-  // MEASURED against this account 2026-09-06 from a throwaway dev Worker, kept
-  // here because no Cloudflare model page states qwen3's output width and a
-  // Vectorize index can never change the one it is created at:
-  //   env.AI.run('@cf/qwen/qwen3-embedding-0.6b', { documents: ['hello'] })
-  //   -> { shape: [1, 1024] }, L2-normalised (|v| = 1.0000000).
-  // Input-shape findings, so nothing rediscovers them. `{ text: 'x' }` returns
-  // a BIT-IDENTICAL vector to `{ documents: ['x'] }` -- an alias, not a second
-  // mode. Both keys take an array and batch: shape [n, 1024].
+  // `vectorize` did NOT force the session (an unset `remote` resolves to local
+  // simulation for it, the opposite of `ai`), so it could have stayed. It went
+  // with `ai` because the two are one feature: the embedding job needs both, and
+  // splitting them across two Workers would put half a job in a config that
+  // cannot hold the other half.
   //
-  // CORRECTED 2026-09-07 (Task 15). Task 14 also concluded from a `3030:
-  // invalid input` on `{ query: 'x' }` that this model "has NO query-side mode
-  // on Workers AI". That was wrong, and the reason is a spelling: the key in
-  // the model's own input schema (worker-configuration.d.ts) is `queries`,
-  // PLURAL. `query` is not a schema key at all, so 3030 was a rejection of an
-  // unknown field, not evidence of a missing capability. Re-measured against
-  // this account, with a repeated identical call as the bit-identity control:
-  //   { documents: ['agentic engineering manager'] } ->  5 prompt tokens
-  //   { queries:   ['agentic engineering manager'] } -> 24 prompt tokens
-  //   cosine 0.717 between them, NOT bit-identical.
-  // The query side wraps its input in an instruction template, `instruction`
-  // customises that template, and it moves ONLY the query side -- every
-  // instruction on the documents side returned a bit-identical vector at an
-  // unchanged 5 tokens. `queries` + `documents` in one call errors 3030.
+  // `browser` above stays. It is `local-and-remote` in the same plugin table, so
+  // it is served by miniflare's real local browser plugin and starts no session.
   //
-  // So the plan's original "asymmetric query/passage embedding" justification
-  // for this model stands, and Task 14's correction to it is itself withdrawn.
-  // The corpus job is unaffected either way -- a document is embedded
-  // document-side and bare, which is what src/lib/corpus.ts does.
-  //
-  // No `remote`: Workers AI has no local emulator, so calls reach the real
-  // account either way, and marking it remote would only add a route by which a
-  // future test bills neurons. Object, not array, and -- like `browser` above --
-  // NOT inherited by named environments.
-  "ai": { "binding": "AI" },
-
-  // The publishing corpus. Created 2026-09-07 at the 1024 measured above, metric
-  // cosine, and BOTH of those are permanent: Vectorize has no resize and no way
-  // to change a metric, so a wrong number here would have meant a new index and
-  // a new name rather than an edit. That is why the binding was added in a
-  // second commit, after `vectorize get` confirmed the index -- naming an index
-  // that does not exist breaks `wrangler types` and every deploy.
-  //
-  // The `tier` and `type` metadata indexes were created immediately after the
-  // index itself and BEFORE anything was upserted (confirmed: vectorCount 0 at
-  // the time). This ordering is not a preference. Vectorize does not backfill
-  // metadata indexes, and a filtered query against an unindexed property
-  // returns partial or empty results with NO error -- so getting it wrong
-  // produces a corpus that looks healthy and quietly under-answers. Any future
-  // filterable property has to be indexed before the vectors carrying it land.
-  //
-  // Vectors go in pre-normalised (|v| = 1.0 straight from the model), so cosine
-  // and dot product coincide and nothing has to normalise before upserting.
-  //
-  // No `remote`, and that cuts the OPPOSITE way from the `ai` binding above --
-  // the two defaults are not the same and the difference is easy to lose.
-  // Wrangler defaults an unset `remote` to remote for `ai` (no local emulator
-  // exists) but to LOCAL SIMULATION for `vectorize`. So under `wrangler dev`
-  // and under the test harness, `env.VECTORIZE` is a local simulated index, NOT
-  // ryanlindsey-me-corpus. An embedding job run that way reports success and
-  // leaves the real index at vectorCount 0.
-  //
-  // It is left local on purpose: flipping it to `remote: true` opens a remote
-  // proxy session in the harness and breaks the same 8 suites the `ai` binding
-  // did, for the same account-ambiguity reason. Anything that must write to the
-  // real index should say so deliberately -- `wrangler vectorize insert`, the
-  // deployed Worker, or a temporary `remote: true` -- rather than assuming this
-  // binding points at production.
-  "vectorize": [{ "binding": "VECTORIZE", "index_name": "ryanlindsey-me-corpus" }],
+  // Day 4's MCP server does semantic search over this corpus, so it needed both
+  // bindings regardless; the Worker that queries the corpus is now also the one
+  // that fills it. CI never builds that Worker -- .github/workflows/checks.yml
+  // has no reference to it -- so the conflict has nowhere left to reappear.
 
   // No `destination_address`: this binding may send to any address verified on
   // Email Routing, and the owner's private address must not appear in a public repo.

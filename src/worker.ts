@@ -1,6 +1,5 @@
 import { handle } from '@astrojs/cloudflare/handler';
 import { regenerateResumePdf } from './lib/resume-pdf';
-import { corpusRefreshEnabled, refreshCorpus } from './lib/corpus';
 
 /**
  * The site's Worker entry.
@@ -18,7 +17,12 @@ import { corpusRefreshEnabled, refreshCorpus } from './lib/corpus';
  * deployed Worker. src/pages/resume.pdf.ts is the route that keeps that from
  * happening; it is on-demand by nature rather than a contrivance.
  *
- * Tasks 8 and 15 add their handlers here.
+ * Task 8's `Accept:` negotiation is the other handler here. Task 15's corpus
+ * embedding job is NOT, though it briefly was: it needs the `ai` binding, and an
+ * `ai` binding in this Worker's wrangler.jsonc makes `astro build` open a remote
+ * proxy session it has no credentials for in CI. The job, its bindings and its
+ * cron all live on the MCP Worker now (workers/mcp/src/index.ts); see
+ * wrangler.jsonc for the mechanism.
  */
 
 // --- Day 3 Task 8 (02 §3): `Accept: text/markdown` content negotiation ----
@@ -253,28 +257,20 @@ export default {
   },
 
   /**
-   * The daily jobs (see `triggers.crons` in wrangler.jsonc): the résumé-PDF
-   * refresh (Task 5) and the publishing corpus's embedding refresh (Task 15).
+   * The daily job (see `triggers.crons` in wrangler.jsonc): the résumé-PDF
+   * refresh (Task 5), and now only that.
    *
-   * Both are hash-gated, and that is the whole point of running them on a
-   * schedule at all: `regenerateResumePdf` does not touch a browser unless the
-   * résumé source hash has moved, and `refreshCorpus` does not embed anything
-   * unless a document's hash has moved. The steady state of this cron is a
-   * handful of KV and asset reads, so cost scales with content changing rather
-   * than with days elapsed.
+   * The publishing corpus's embedding refresh (Task 15) ran here too until the
+   * `ai` binding it needs turned out to force a remote proxy session on every
+   * build of this Worker. It moved, whole, to workers/mcp/src/index.ts. The two
+   * jobs were independent -- one writes a PDF to R2, the other vectors to
+   * Vectorize, and neither was a precondition for the other -- so nothing had to
+   * be untangled to separate them.
    *
-   * TWO `waitUntil` CALLS, NOT ONE CHAINED PROMISE. The jobs are independent --
-   * one writes a PDF to R2, the other writes vectors to Vectorize -- and
-   * neither is a precondition for the other. Sequencing them would make a
-   * Browser Run failure (the more failure-prone of the two by a wide margin,
-   * see resume-pdf.ts's lock/cooldown note) silently skip the corpus refresh
-   * for that day.
-   *
-   * `corpusRefreshEnabled` is the test seam, not a feature flag: it reads a var
-   * no deployed environment sets, so the deployed default is "run". See its
-   * doc in src/lib/corpus.ts for why the harness turns it off rather than
-   * pointing it at a stub -- short version, the harness's Vectorize is a local
-   * simulation and a green run against one would prove nothing.
+   * It is hash-gated, and that is the whole point of running it on a schedule at
+   * all: `regenerateResumePdf` does not touch a browser unless the résumé source
+   * hash has moved. The steady state of this cron is one KV read, so cost scales
+   * with content changing rather than with days elapsed.
    *
    * NOT YET PROVEN: Astro's docs show `fetch`, `queue` and Durable Object
    * exports from this entry but carry no `scheduled()` example. It should
@@ -284,6 +280,5 @@ export default {
    */
   scheduled: (_controller, env, ctx) => {
     ctx.waitUntil(regenerateResumePdf(env, { force: false }));
-    if (corpusRefreshEnabled(env)) ctx.waitUntil(refreshCorpus(env));
   },
 } satisfies ExportedHandler<Env>;
