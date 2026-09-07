@@ -1,0 +1,38 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+
+  // TEST-ONLY. Never deployed: no account_id, no routes, no workers.dev
+  // subdomain, and no deploy script references it. `workers_dev: false` is the
+  // mechanism rather than the convention, exactly as in workers/mock-browser --
+  // the absence of routes alone would not stop a stray
+  // `wrangler deploy --config workers/mock-ai/wrangler.jsonc`.
+  //
+  // It exists for a narrower reason than mock-browser, and a sharper one.
+  // Workers AI has NO local emulator, and wrangler treats an `ai` binding whose
+  // `remote` is undefined as remote. So the moment the root wrangler.jsonc
+  // gained its `ai` binding, every harness that boots the site tried to open a
+  // REAL remote proxy session against the account, and 8 of 14 suites failed
+  // with "More than one account available but unable to select one in
+  // non-interactive mode" -- this login can see both Ryan Lindsey and
+  // Pixelsonly Racing, and mock-browser deliberately carries no account_id to
+  // disambiguate with.
+  //
+  // Pinning an account would have been the wrong repair. It fixes the error
+  // message and keeps the hazard: `npm test` would then need network and live
+  // credentials on a required CI path, and could bill neurons. `bindingOverrides`
+  // instead replaces the binding with a plain service binding pointed here,
+  // which is local, so no remote session is started at all.
+  //
+  // Setting `"remote": false` on the root `ai` binding would also have silenced
+  // it, in one line and with no new files -- but it would disarm real AI under
+  // `wrangler dev` for everyone, which is precisely what the embedding job
+  // built on this binding needs. The cost belongs in the test harness, not in
+  // the config that local development reads.
+  //
+  // The name is what `bindingOverrides: { AI: "mock-ai" }` resolves.
+  "name": "mock-ai",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+}

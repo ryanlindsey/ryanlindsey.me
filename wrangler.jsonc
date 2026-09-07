@@ -96,8 +96,33 @@
   // moved (see src/lib/resume-pdf.ts), so the steady-state cost is one KV read.
   "triggers": { "crons": ["17 5 * * *"] },
 
-  // No "ai" binding yet: nothing calls Workers AI, and the day-1 spike found the
-  // gateway blocked on credits. It comes back on day 4 with the code that uses it.
+  // Workers AI, for the publishing corpus's embedding job. It is back in day 3,
+  // not day 4: the day-3 build track owns the corpus, and this is the binding it
+  // runs on.
+  //
+  // The comment that stood here had been describing a false state for a day. It
+  // said the gateway was "blocked on credits" -- resolved on day 2, when the
+  // owner added AI Gateway credits, Unified Billing began serving env.AI.run()
+  // and all four capability probes passed -- and that the binding would return
+  // "on day 4", which was never this plan's shape.
+  //
+  // MEASURED against this account 2026-09-06 from a throwaway dev Worker, kept
+  // here because no Cloudflare model page states qwen3's output width and a
+  // Vectorize index can never change the one it is created at:
+  //   env.AI.run('@cf/qwen/qwen3-embedding-0.6b', { documents: ['hello'] })
+  //   -> { shape: [1, 1024] }, L2-normalised (|v| = 1.0000000).
+  // Two input-shape findings from the same probe, so nothing rediscovers them:
+  // `{ text: 'x' }` returns a BIT-IDENTICAL vector to `{ documents: ['x'] }`,
+  // and `query` is either rejected on its own (3030: invalid input) or silently
+  // ignored beside `documents` -- same vector, same 2 prompt tokens. This model
+  // has NO query-side mode on Workers AI, so queries embed exactly like
+  // documents. Both keys also take an array and batch: shape [n, 1024].
+  //
+  // No `remote`: Workers AI has no local emulator, so calls reach the real
+  // account either way, and marking it remote would only add a route by which a
+  // future test bills neurons. Object, not array, and -- like `browser` above --
+  // NOT inherited by named environments.
+  "ai": { "binding": "AI" },
 
   // No `destination_address`: this binding may send to any address verified on
   // Email Routing, and the owner's private address must not appear in a public repo.

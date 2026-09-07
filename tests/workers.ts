@@ -47,11 +47,22 @@ export const TEST_SITE_ORIGIN = 'http://resume-pdf.test';
  * downloads 150-200 MB of Chrome-for-Testing, which has no place on a required
  * CI path -- and the way that would happen is some future test fetching
  * /resume.pdf without thinking about it.
+ *
+ * The AI override is here for a harder reason than a download: without it, 8 of
+ * the 14 suites do not start at all. Workers AI has no local emulator, so an
+ * `ai` binding with no explicit `remote` is remote, and booting the site tries
+ * to open a real remote proxy session -- which fails on "More than one account
+ * available but unable to select one in non-interactive mode", because this
+ * login sees two accounts and mock-browser deliberately carries no account_id.
+ * Pinning an account would fix the message and keep the hazard, since `npm test`
+ * would then need live credentials and could bill neurons. Overriding the
+ * binding to a local service means no remote session is opened at all. See
+ * workers/mock-ai/wrangler.jsonc for why this is not `"remote": false` instead.
  */
 export const SITE_WORKER = {
   configPath: './dist/server/wrangler.json',
   vars: { SITE_ORIGIN: TEST_SITE_ORIGIN, RESUME_PDF_RENDERER: 'stub' },
-  bindingOverrides: { BROWSER: 'mock-browser' },
+  bindingOverrides: { BROWSER: 'mock-browser', AI: 'mock-ai' },
 };
 
 /**
@@ -64,9 +75,12 @@ export const MCP_WORKER = { configPath: './workers/mcp/wrangler.jsonc' };
 /** The Browser Run stand-in the override above resolves. Test-only, never deployed. */
 export const MOCK_BROWSER_WORKER = { configPath: './workers/mock-browser/wrangler.jsonc' };
 
+/** The Workers AI stand-in the override above resolves. Test-only, never deployed. */
+export const MOCK_AI_WORKER = { configPath: './workers/mock-ai/wrangler.jsonc' };
+
 /**
- * All three, in the order every suite wants them: the site first, so it is the
+ * All four, in the order every suite wants them: the site first, so it is the
  * primary Worker that relative `server.fetch()` URLs address and the one
  * `server.getWorker()` returns unnamed.
  */
-export const SITE_HARNESS_WORKERS = [SITE_WORKER, MCP_WORKER, MOCK_BROWSER_WORKER];
+export const SITE_HARNESS_WORKERS = [SITE_WORKER, MCP_WORKER, MOCK_BROWSER_WORKER, MOCK_AI_WORKER];
