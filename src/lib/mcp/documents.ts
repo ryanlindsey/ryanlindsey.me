@@ -62,15 +62,32 @@ export function pageUrlFor(source: CorpusSource, origin: string): string {
 const FRONTMATTER_FENCE = /^---\s*$/;
 
 /**
+ * One item of the block list `frontmatterYaml` emits for `outcomes`: exactly
+ * two spaces, a `- `, then the (quoted, per `yamlString`) item text. Nothing
+ * looser -- a different indent or a bare `-` with no following space is not
+ * this shape and falls through to the nested-map skip below, same as before.
+ */
+const BLOCK_LIST_ITEM = /^ {2}- (.*)$/;
+
+/**
  * A small hand-rolled splitter for the frontmatter `frontmatterFor`
  * (src/lib/markdown-export.ts) emits -- not a YAML parser. This plan adds no
  * new dependencies, and the frontmatter this reads is written by code in
  * this same repo, so its grammar is known and closed: a leading `---`
  * fence, scalar `key: value` pairs (optionally double-quoted, per
- * `yamlString`), and a closing `---` fence. Anything it does not recognise
- * -- a nested structure like `series:`, an unquoted list -- is skipped
- * rather than guessed at, and a document with no frontmatter block at all is
- * returned whole as `body` with an empty `data`.
+ * `yamlString`), a closing `---` fence, and the two nested shapes a bare
+ * `key:` can introduce, because `frontmatterYaml` emits exactly two of them:
+ *
+ * - A BLOCK LIST (Task 7's `outcomes:`, one `  - "item"` line per array
+ *   entry, per `BLOCK_LIST_ITEM` above). Read into a real string array, each
+ *   item unquoted through the same `unquote` path a scalar value uses.
+ * - A NESTED MAP (`series:` with `  name: ...` / `  order: ...` children).
+ *   There is no reader for this shape here -- it is skipped, key and every
+ *   more-indented line under it, exactly like anything else this function
+ *   does not recognise.
+ *
+ * A document with no frontmatter block at all is returned whole as `body`
+ * with an empty `data`.
  *
  * The chunker that produced the corpus vectors ran over the WHOLE asset,
  * frontmatter included, so `body` is exactly the input with the frontmatter
@@ -108,11 +125,25 @@ export function parseFrontmatter(markdown: string): {
     const [, key = '', rawValue = ''] = match;
     const value = rawValue.trim();
     if (value === '') {
-      // A bare `key:` with nothing after it on the line introduces a nested
-      // structure (`series:` / `name:` / `order:` below it, per
-      // `frontmatterFor`). Skip the key and every more-indented line that
-      // belongs to it, rather than misreading the first child line as this
-      // key's scalar value.
+      // A bare `key:` with nothing after it on the line introduces one of the
+      // two nested shapes described above. Try the block-list reading first:
+      // if what follows is one or more `BLOCK_LIST_ITEM` lines, this key is
+      // an array and each item is unquoted the same way a scalar value is.
+      const items: unknown[] = [];
+      while (i < closingIndex) {
+        const listItem = BLOCK_LIST_ITEM.exec(lines[i] ?? '');
+        if (!listItem) break;
+        items.push(unquote(listItem[1] ?? ''));
+        i++;
+      }
+      if (items.length > 0) {
+        data[key] = items;
+        continue;
+      }
+      // Not a block list -- a nested map (`series:` / `name:` / `order:`) or
+      // anything else this function does not recognise. Skip the key and
+      // every more-indented line that belongs to it, rather than misreading
+      // the first child line as this key's scalar value.
       while (i < closingIndex && /^\s+\S/.test(lines[i] ?? '')) i++;
       continue;
     }

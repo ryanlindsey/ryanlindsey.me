@@ -166,15 +166,15 @@ function yamlString(value: string): string {
  * should not reshuffle its own frontmatter from one build to the next.
  *
  * `outcomes` is the one array in this shape, and it is written as a YAML
- * block list (`- "item"` per line, two-space indented), the same nested-value
- * idiom `series` already uses below -- not a flow-style `[...]`, which
- * `src/lib/mcp/documents.ts`'s hand-rolled `parseFrontmatter` explicitly does
- * not attempt to parse either way (its own doc comment: "an unquoted list --
- * is skipped rather than guessed at"). A case study that eventually declares
- * `outcomes` is therefore visible in this export and in the rendered page, but
- * -- like a bare `series:` block -- not yet something `list_case_studies`
- * reads back out of the frontmatter; that is `parseFrontmatter`'s scope, not
- * this module's, and no case study in this repo declares one yet.
+ * block list (`- "item"` per line, two-space indented) -- not a flow-style
+ * `[...]`. That specific shape is deliberate, not cosmetic:
+ * `src/lib/mcp/documents.ts`'s hand-rolled `parseFrontmatter` reads exactly
+ * this block-list grammar back into a real array (Task 7 fix round 1), the
+ * one nested shape besides `series`'s bare-map form it understands. A case
+ * study that declares `outcomes` is therefore visible in this export, in the
+ * rendered page, AND in `list_case_studies`'/`get_case_study`'s tool output --
+ * the three are the same document read three ways, not three chances to
+ * drift.
  */
 function frontmatterYaml(frontmatter: ExportedFrontmatter): string {
   const lines = [
