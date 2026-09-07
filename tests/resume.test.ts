@@ -38,65 +38,138 @@ const workEntry = (
 // the real collection, are the stronger, drift-proof version of the
 // completeness assertion below -- this fixture must be kept in sync by hand
 // until then.
+//
+// Highlight TEXT is abbreviated here rather than duplicated verbatim: the pure
+// functions under test only ever read `highlights.length`, and a second copy of
+// ~25 paragraphs of résumé prose would be a maintenance trap that drifts
+// silently. Highlight COUNTS, and every other field, do mirror the real file --
+// those are what these assertions actually depend on. The HTTP-level tests
+// further down read the real collection and are the drift-proof check on the
+// prose itself.
 const resumeFixture: Resume = {
   basics: {
     name: 'Ryan Lindsey',
     label: 'Senior Engineering Manager',
     summary:
-      'Agentic engineering is making engineers dramatically faster. I build the instruments that let the organization around them keep pace.',
+      'Agentic engineering is making engineers dramatically faster. I build the instruments that let the organization around them keep pace. Nineteen years in software, a decade of it leading engineering teams: I own incident management for an entire engineering organization, I build the agentic tooling that other managers choose to adopt, and I still ship the code. The habit underneath all of it is to measure a process before improving it, because the constraint is rarely where everyone assumes it is.',
     email: 'hello@ryanlindsey.me',
     url: 'https://ryanlindsey.me',
     location: { city: 'Laguna Niguel', region: 'CA', countryCode: 'US' },
-    profiles: [],
+    profiles: [
+      { network: 'GitHub', username: 'ryanlindsey', url: 'https://github.com/ryanlindsey' },
+      {
+        network: 'LinkedIn',
+        username: 'ryanclindsey',
+        url: 'https://www.linkedin.com/in/ryanclindsey',
+      },
+    ],
   },
   work: [
-    workEntry({ name: 'Weedmaps', position: 'Senior Engineering Manager', startDate: '2021-02' }),
+    workEntry({
+      name: 'Weedmaps',
+      position: 'Senior Engineering Manager',
+      startDate: '2021-02',
+      x_artifacts: ['delivery-forecasting'],
+      highlights: [
+        'Own incident management for the entire engineering organization',
+        'Measured the inherited process before changing it',
+        'Risky changes are reviewed in advance by a change advisory board',
+        'Designed and built a delivery-forecasting toolchain',
+        'Publish agentic tooling as Claude Skills in a shared repository',
+        'Took on an advertising technology platform to raise its engineering rigor',
+        'Delivered an off-marketplace e-commerce platform for cannabis retailers',
+      ],
+    }),
     workEntry({
       name: 'Weedmaps',
       position: 'Engineering Manager',
       startDate: '2017-09',
       endDate: '2021-02',
+      highlights: [
+        'Managed 12 to 19 engineers across several cross-functional teams',
+        'Decoupled deployment from feature release',
+        'Introduced global edge caching across the primary web applications',
+        'Tripled overall test coverage and reduced escape defects',
+        'Led image processing pipeline work spanning millions of unique assets',
+        'Sat several hundred interviews and grew the engineering team by dozens',
+        'Founded and ran a public monthly engineering meetup',
+      ],
     }),
     workEntry({
       name: 'Weedmaps',
       position: 'Manager, Front End Engineering',
       startDate: '2016-05',
       endDate: '2017-09',
+      highlights: [
+        "The company's first engineering manager below the executive level",
+        'Chartered to develop front-end developers into front-end engineers',
+        'Began the front-end re-architecture',
+        'Defined and delivered the front-end staffing roadmap',
+      ],
     }),
     workEntry({
       name: 'Weedmaps',
       position: 'Sr. Front End Engineer',
       startDate: '2016-03',
       endDate: '2016-05',
+      highlights: ["Built and maintained features across the company's web applications"],
     }),
     workEntry({
       name: 'RED Digital Cinema',
       position: 'Sr. Front End Developer',
       startDate: '2011-10',
       endDate: '2016-02',
+      highlights: [
+        'Architected and implemented user-interface features',
+        'Drove the adoption of a new UI component library and design language',
+      ],
     }),
     workEntry({
       name: 'Innocean Worldwide',
       position: 'Sr. Front End Developer',
       startDate: '2011-02',
       endDate: '2011-10',
+      highlights: [
+        'Led development of interactive experiences for Hyundai USA',
+        'Worked with the creative team from the conceptual phase onward',
+      ],
     }),
     workEntry({
       name: 'Y&R Brands / Wunderman',
       position: 'Front End Developer',
       startDate: '2007-06',
       endDate: '2011-02',
+      highlights: [
+        'Delivered award-winning interactive experiences',
+        'Recognized with Lester Wunderman and Creativity awards',
+      ],
     }),
     workEntry({
       name: 'Freelance',
       position: 'Web design & development',
       startDate: '2001-01',
       endDate: '2007-06',
+      highlights: ['Ran every part of the business'],
     }),
   ],
-  education: [],
-  skills: [],
-  meta: { version: '0.1.0', lastModified: '2026-09-06' },
+  education: [
+    {
+      institution: 'The Art Institute of California',
+      area: 'Interactive Media (HCI)',
+      studyType: 'B.S.',
+    },
+    { institution: 'Golden West College', area: 'Business Administration', studyType: 'A.A.' },
+  ],
+  skills: [
+    {
+      name: 'Engineering leadership',
+      keywords: ['Incident management', 'Change management', 'Observability practice'],
+    },
+    { name: 'Agentic engineering', keywords: ['MCP servers', 'Claude Skills', 'Agent design'] },
+    { name: 'Platform and delivery', keywords: ['CI/CD', 'Blue/green deployment'] },
+    { name: 'Languages and runtimes', keywords: ['TypeScript', 'Ruby', 'Node.js'] },
+  ],
+  meta: { version: '0.2.0', lastModified: '2026-09-07' },
 };
 
 describe('workHistoryIssues', () => {
@@ -225,8 +298,23 @@ describe('unresolvedArtifactSlugs', () => {
     expect(unresolvedArtifactSlugs(work, ['shape-specimen'])).toEqual(['never-published']);
   });
 
-  test('resolves when no entry declares x_artifacts', () => {
-    expect(unresolvedArtifactSlugs(resumeFixture.work, ['shape-specimen'])).toEqual([]);
+  // The résumé's own artifact link, checked against the case studies that
+  // actually exist. `delivery-forecasting` is the case study written from the
+  // same work as the Senior Engineering Manager entry's forecasting highlight.
+  test("resolves the real résumé's artifact links against the published case studies", () => {
+    expect(
+      unresolvedArtifactSlugs(resumeFixture.work, [
+        'delivery-forecasting',
+        'silent-failure',
+        'shape-specimen',
+      ]),
+    ).toEqual([]);
+  });
+
+  test("flags the résumé's artifact links when the case study is absent", () => {
+    expect(unresolvedArtifactSlugs(resumeFixture.work, ['shape-specimen'])).toEqual([
+      'delivery-forecasting',
+    ]);
   });
 });
 
@@ -245,25 +333,27 @@ describe('formatDateRange', () => {
 });
 
 describe('resumeGaps', () => {
+  // Résumé interview session 2 (2026-09-07) closed every content-track gap
+  // except one: all eight roles have highlights, education and profiles are
+  // populated. `basics.phone` is the sole remaining gap and it is not an
+  // oversight -- publishing a phone number is Ryan's decision, not a hole for
+  // the content track to fill. See the YAML's comment at `basics`.
   test('flags every currently-missing piece of content', () => {
     const gaps = resumeGaps(resumeFixture);
-    expect(gaps.filter((gap) => gap.includes('has no highlights'))).toHaveLength(8);
-    expect(gaps).toContain('education is empty');
-    expect(gaps).toContain('basics.phone is missing');
-    expect(gaps).toContain('basics.profiles is empty');
+    expect(gaps.filter((gap) => gap.includes('has no highlights'))).toHaveLength(0);
+    expect(gaps).not.toContain('education is empty');
+    expect(gaps).not.toContain('basics.profiles is empty');
     expect(gaps).not.toContain('basics.email is missing');
     expect(gaps).not.toContain('basics.url is missing');
-    // 8 empty-highlight roles + education + phone + profiles.
-    expect(gaps).toHaveLength(11);
+    expect(gaps).toEqual(['basics.phone is missing']);
   });
 
-  // Deliberately red: the content-track gate. This fails today with the
-  // eight empty-highlight roles, the empty education section, and the
-  // missing phone/profiles fields, and it goes green when the content track
-  // fills them in. `test.fails` keeps the suite green while the assertion
-  // itself stays honest -- an ordinary failing test would block every later
-  // task's `npx vitest run` verification step, and a skipped test would stop
-  // reporting the gap at all.
+  // Deliberately red: the content-track gate. It went from eleven gaps to one
+  // on 2026-09-07. It stays `test.fails` because that last gap is a live
+  // decision rather than missing content -- when Ryan rules on the phone
+  // number this becomes an ordinary `test`, either because the number is added
+  // or because `resumeGaps` stops treating an intentional omission as a gap.
+  // `test.fails` keeps the suite green while the assertion itself stays honest.
   test.fails('the résumé has no content-track gaps left', () => {
     expect(resumeGaps(resumeFixture)).toEqual([]);
   });
@@ -400,10 +490,11 @@ describe('/resume.json and /resume.md over HTTP', () => {
     // brief calls out).
     expect(markdown).not.toMatch(/^- *$/m);
     expect(hasEmptyH2Section(markdown)).toBe(false);
-    // Deterministic today: education and skills are both [] in the real
-    // data, so both headings must be absent entirely, not present-but-empty.
-    expect(markdown).not.toContain('## Education');
-    expect(markdown).not.toContain('## Skills');
+    // Both sections carry real data since 2026-09-07, so both headings must now
+    // be present. `hasEmptyH2Section` above is what still guards the case these
+    // assertions used to cover: a heading rendered over nothing.
+    expect(markdown).toContain('## Education');
+    expect(markdown).toContain('## Skills');
   });
 
   test('/resume.json, /resume.md and /resume name the same companies and date ranges', async () => {
