@@ -34,6 +34,12 @@
       "binding": "DB",
       "database_name": "ryanlindsey-me-db",
       "database_id": "3e7e8dfd-7926-4309-80ec-b583529394d3",
+      // Default is `migrations/` relative to this config file, i.e.
+      // `workers/mcp/migrations/`. The site Worker binds the same database
+      // and will get its own migrations later; two migration directories
+      // against one D1 database is a corruption waiting to happen, so both
+      // configs point at the one directory at the repo root instead.
+      "migrations_dir": "../../migrations",
     },
   ],
 
