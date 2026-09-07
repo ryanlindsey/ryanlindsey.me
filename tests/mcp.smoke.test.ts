@@ -18,6 +18,8 @@ const EXPECTED_INSTRUCTIONS = [
   'search_writing: semantic search over the corpus; each result is a passage with a real, fetchable citation URL.',
   'request_private_access: explains the private tier and how to request a scoped token.',
   '',
+  'Two MCP resources serve the same documents for clients that prefer resource attachment over tool calls: resume://json and writing://{slug}.',
+  '',
   'A private tier exists beyond these public tools, for scoped tokens; call request_private_access to learn how to request one.',
 ].join('\n');
 

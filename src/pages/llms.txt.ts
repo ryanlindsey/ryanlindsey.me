@@ -85,10 +85,15 @@ const MCP_LINKS: LlmsLink[] = [
     // registrations: that tool map lives in a separate Worker with its own
     // module graph, and `astro:content` (this file's own build, per the
     // module doc above) cannot import it. tests/pages.test.ts's
-    // "/llms.txt describes the MCP server current tool map" assertion is
-    // what stops this hand-written copy drifting from the real registrations
-    // silently a second time -- keep the two in step by hand on every task
-    // that changes either one.
+    // "/llms.txt describes the MCP server current tool map" assertion only
+    // guards the specific regression above (the stale line, and
+    // `search_writing` by name) -- it stays green if a ninth tool is added to
+    // `tools.ts` with no update here. The guard that actually catches THAT is
+    // tests/mcp-tools.test.ts's "/llms.txt names every registered tool", which
+    // boots both this site and the MCP Worker in one harness and enumerates
+    // the live `tools/list` result against the built `/llms.txt`. Keep the two
+    // in step by hand on every task that changes either one; that test is
+    // what stops silent drift, not this comment.
     description:
       'Model Context Protocol server with eight tools (get_contact, get_resume, ' +
       'list_case_studies, get_case_study, list_writing, get_post, search_writing, ' +

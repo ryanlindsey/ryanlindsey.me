@@ -53,7 +53,7 @@ const LLMS_TXT_HEADER = `# Ryan Lindsey
 
 ## MCP
 
-- [MCP server](https://mcp.ryanlindsey.me/mcp): Model Context Protocol server. One tool today: get_contact.
+- [MCP server](https://mcp.ryanlindsey.me/mcp): Model Context Protocol server with eight tools (get_contact, get_resume, list_case_studies, get_case_study, list_writing, get_post, search_writing, request_private_access) and two resources (resume://json, writing://{slug}). A private tier exists for scoped tokens; request_private_access explains how to ask.
 `;
 
 /**

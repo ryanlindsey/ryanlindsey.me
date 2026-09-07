@@ -737,6 +737,35 @@ describe('request_private_access', () => {
 });
 
 /**
+ * Task 12 (03 §1): `/llms.txt`'s MCP description is a hand-written literal
+ * (src/pages/llms.txt.ts's own comment explains why -- `astro:content` and
+ * this Worker's module graph are two separate builds, so generating the line
+ * from these registrations is not reachable at build time). A literal copy
+ * drifts, and it already had once: this file's own description said "One tool
+ * today: get_contact" from Task 9 until Task 12, false since Task 6 added a
+ * second tool.
+ *
+ * tests/pages.test.ts's Task 12 assertion only checks for the specific
+ * stale line and for `search_writing` by name -- it would stay green if a
+ * NINTH tool were added to `tools.ts` without a matching update to
+ * `llms.txt.ts`, reproducing the exact bug this task exists to fix under a
+ * different tool's name. This is the real guard: it enumerates the live
+ * `tools/list` result from THIS harness's MCP Worker and requires every name
+ * to appear in the SAME harness's built `/llms.txt` (served by the site
+ * Worker, over the SITE_ORIGIN wiring `beforeAll` above sets up) -- so it
+ * fails the moment the two go out of step, regardless of which tool moved.
+ * Mirrors tests/mcp.smoke.test.ts's "the instructions name every registered
+ * tool", the same shape of guard for the other published surface.
+ */
+test('/llms.txt names every registered tool, so the two cannot drift apart silently', async () => {
+  const { json: listed } = await rpc({ jsonrpc: '2.0', id: 96, method: 'tools/list', params: {} });
+  const page = await (await server.fetch('/llms.txt')).text();
+  for (const tool of listed.result.tools) {
+    expect(page, `/llms.txt should name ${tool.name}`).toContain(tool.name);
+  }
+});
+
+/**
  * Task 11's resources: `resume://json` and the `writing://{slug}` template.
  *
  * A resource is not a tool and cannot go through `defineTool` -- `resources/read`

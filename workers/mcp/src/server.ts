@@ -8,7 +8,10 @@ import { registerTools } from './tools';
  * prose on purpose: tests/mcp.smoke.test.ts's "the instructions name every
  * registered tool" enumerates `tools/list` at runtime and fails the moment a
  * later task adds a tool without a matching line here. Under ~1200
- * characters, per that same spec section.
+ * characters, per that same spec section. The two `resume://json` /
+ * `writing://{slug}` resources get their own line for the same reason
+ * `/llms.txt`'s MCP description (src/pages/llms.txt.ts) names both: two texts
+ * describing the same server should not disagree about what it serves.
  *
  * Candidacy-language discipline (09 §2/§4) applies to this string exactly as
  * it does to `request_private_access`'s copy in ./tools.ts: never `hire`,
@@ -26,6 +29,8 @@ const INSTRUCTIONS = [
   'get_post: full markdown of one post, by slug.',
   'search_writing: semantic search over the corpus; each result is a passage with a real, fetchable citation URL.',
   'request_private_access: explains the private tier and how to request a scoped token.',
+  '',
+  'Two MCP resources serve the same documents for clients that prefer resource attachment over tool calls: resume://json and writing://{slug}.',
   '',
   'A private tier exists beyond these public tools, for scoped tokens; call request_private_access to learn how to request one.',
 ].join('\n');

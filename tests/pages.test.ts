@@ -638,9 +638,19 @@ test('/llms.txt describes the MCP server current tool map, not the stale one-too
   // from Astro at build time (astro:content and the Worker's own module
   // graph are two separate builds -- see src/pages/llms.txt.ts's module
   // doc), so MCP_LINKS' description is written literally rather than
-  // generated. This assertion is what stops the two from drifting apart
-  // silently again: it fails the moment either the stale line comes back or
-  // a real tool name goes missing from this hand-written copy.
+  // generated.
+  //
+  // NARROW guard, deliberately: this only proves the specific regression
+  // above is fixed (the stale line is gone, `search_writing` is named) --
+  // it says nothing about a NINTH tool added later with no matching update
+  // here, and would stay green if that happened. The guard that actually
+  // covers every tool is tests/mcp-tools.test.ts's "/llms.txt names every
+  // registered tool": this harness (SITE_HARNESS_WORKERS) boots the MCP Worker
+  // too, so that assertion COULD live here, but mcp-tools.test.ts already
+  // exports an `rpc` helper for talking to the MCP Worker by name and already
+  // asserts (in its own `beforeAll`) that this harness's MCP Worker reads the
+  // SAME build this site serves -- reusing that rather than re-deriving the
+  // same JSON-RPC/SSE plumbing a second time here.
   const page = await html('/llms.txt');
   expect(page).not.toContain('One tool today');
   expect(page).toContain('search_writing');
