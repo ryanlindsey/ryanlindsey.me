@@ -10,6 +10,7 @@ import {
   type Resume,
   type ResumeWorkEntry,
 } from '../src/lib/resume';
+import { stripXKeys } from '../src/lib/json-resume';
 
 // This suite covers the pure half of the résumé data model only.
 // `getResume()` (src/lib/resume-collection.ts) reads the `resume` content
@@ -265,6 +266,52 @@ describe('resumeGaps', () => {
   // reporting the gap at all.
   test.fails('the résumé has no content-track gaps left', () => {
     expect(resumeGaps(resumeFixture)).toEqual([]);
+  });
+});
+
+// Day 3 Task 13 (carried from Task 3, progress.md's Task 3 entry, "SHOULD
+// FIX BEFORE MERGE"): stripXKeys, unit-tested directly against a synthetic
+// nested `x_` fixture. The HTTP test just below ("/resume.json parses...")
+// pre-dates this and only proves the REAL résumé data carries no `x_`-prefixed
+// key -- true today because no work entry populates `x_artifacts` at all, so
+// that assertion passes VACUOUSLY: it proves there is nothing to strip, not
+// that stripping works. This block is the actual proof, independent of
+// whatever the real résumé data happens to contain.
+describe('stripXKeys', () => {
+  test('drops a top-level x_-prefixed key, keeping every other key', () => {
+    expect(stripXKeys({ name: 'Ada', x_secret: 'drop me' })).toEqual({ name: 'Ada' });
+  });
+
+  test('drops an x_-prefixed key nested inside an object, at any depth', () => {
+    expect(
+      stripXKeys({
+        work: { name: 'A', x_artifacts: ['shape-specimen'], nested: { x_internal: 1, kept: 2 } },
+      }),
+    ).toEqual({ work: { name: 'A', nested: { kept: 2 } } });
+  });
+
+  test('drops an x_-prefixed key inside objects nested inside an array', () => {
+    expect(
+      stripXKeys([
+        { name: 'A', x_artifacts: ['one'] },
+        { name: 'B', x_artifacts: ['two'] },
+      ]),
+    ).toEqual([{ name: 'A' }, { name: 'B' }]);
+  });
+
+  test('leaves a value with no x_-prefixed key anywhere unchanged', () => {
+    const value = { basics: { name: 'Ada' }, work: [{ name: 'A', highlights: [] }] };
+    expect(stripXKeys(value)).toEqual(value);
+  });
+
+  test('does not treat "x" or a mid-string "x_" as the prefix -- only a leading x_ matches', () => {
+    // Guards the exact boundary of the rule this function implements: a key
+    // has to START WITH `x_`, not merely contain it, or a real field like
+    // `prefix_x_suffix` would be silently dropped.
+    expect(stripXKeys({ x: 'kept', prefix_x_suffix: 'kept', x_dropped: 'gone' })).toEqual({
+      x: 'kept',
+      prefix_x_suffix: 'kept',
+    });
   });
 });
 

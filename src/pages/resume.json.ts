@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { getResume } from '../lib/resume-collection';
+import { stripXKeys } from '../lib/json-resume';
 
 // Day 3 Task 3 (02 §1): "JSON Resume schema verbatim -- machine-readable,
 // standard." Static output: this route is a pure function of the same
@@ -17,28 +18,6 @@ export const prerender = true;
 
 const JSON_RESUME_SCHEMA_URL =
   'https://raw.githubusercontent.com/jsonresume/resume-schema/v1.0.0/schema.json';
-
-/**
- * Strips every `x_`-prefixed key, at any depth, from an arbitrarily nested
- * JSON-compatible value. `x_artifacts` is this site's own extension (see
- * content.config.ts) and a consumer validating against the JSON Resume
- * schema should never meet it -- stripping by prefix rather than naming
- * `x_artifacts` explicitly means a future `x_`-prefixed extension is handled
- * here without anyone having to remember to edit this file.
- */
-function stripXKeys(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(stripXKeys);
-  }
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .filter(([key]) => !key.startsWith('x_'))
-        .map(([key, entryValue]) => [key, stripXKeys(entryValue)]),
-    );
-  }
-  return value;
-}
 
 export const GET: APIRoute = async () => {
   const resume = await getResume();
