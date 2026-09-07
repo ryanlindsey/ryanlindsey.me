@@ -22,21 +22,37 @@ import { documentsEnv, RESUME_UNAVAILABLE } from './tools';
 // it.
 //
 // What is NOT guarded, deliberately: discovery. `resources/list` and
-// `resources/templates/list` are the resource surface's `tools/list`, they are
-// how a client learns what is here, and a limiter on them would refuse the
-// handshake rather than bound anything worth bounding. Reads are guarded; the
-// menu is free.
+// `resources/templates/list` go through no limiter and write no audit row.
+// That is an accepted trade, and it is worth stating precisely rather than by
+// analogy, because the obvious analogy is wrong.
+//
+// `tools/list` is free in a way this is NOT. It enumerates an in-memory
+// registry and does no I/O at all. The writing template's `list` callback
+// below makes a live `fetchDocumentIndex` call -- the same `/llms.txt` fetch
+// `list_writing` makes behind a 60/60s limiter -- so an unthrottled
+// `resources/list` is a second, unmetered path to that backend cost. What
+// keeps it small is that the cost is 1:1 rather than amplifying: one listing,
+// one fetch, no per-document fan-out (see the `list` callback's own note), of
+// a small static asset the site serves to anonymous GETs anyway.
+//
+// It is still not limited, because throttling it fails worse than it helps.
+// Clients call discovery on connect and again on every reconnect, so a refused
+// `resources/list` refuses the connection rather than one read -- and a client
+// that cannot list cannot find the resource it would then have been allowed to
+// read. The option that removes the cost instead of refusing the caller is
+// caching the index (`KV_CACHE` is bound on this Worker); that was considered
+// and deliberately not taken here, and it belongs with day 5/6's work on this
+// surface rather than to Task 11. Reads are limited; the menu is not.
 
 /**
  * The published index, with a message a stranger's agent can be shown.
  *
  * `fetchDocumentIndex` throws when `/llms.txt` will not read, and its message
  * names the status and the origin it tried. The reason this wrapper exists is
- * the LISTING, which does not go through `defineResource` at all:
- * `resources/list` is discovery, like `tools/list`, and the SDK calls a
- * template's `list` callback straight from its own request handler, where a
- * throw is copied onto the wire verbatim. The read path is sanitised by
- * `defineResource` regardless, and calls this for the better sentence.
+ * the LISTING, which does not go through `defineResource` at all: the SDK
+ * calls a template's `list` callback straight from its own request handler,
+ * where a throw is copied onto the wire verbatim. The read path is sanitised
+ * by `defineResource` regardless, and calls this for the better sentence.
  *
  * It re-raises rather than answering `[]`, for the reason `fetchDocumentIndex`
  * itself gives: "there are no documents" would be a confident lie about a
@@ -113,10 +129,11 @@ export function registerResources(server: McpServer, tc: ToolContext): void {
          * spreads the template's own `title`/`description`/`mimeType` over
          * every listed resource, so the alternative -- a real title and
          * description per post -- would mean one `.md` fetch PER DOCUMENT on
-         * every `resources/list`. Listing is discovery and is not rate
-         * limited (`tools/list` is not either), so it must not fan out into a
-         * request per document; `list_writing` is the tool for per-document
-         * metadata, and it is limited.
+         * every `resources/list`. This callback is not rate limited (see the
+         * note at the top of this file), and the whole basis of that trade is
+         * that its cost stays 1:1 with the call -- one `/llms.txt` fetch --
+         * rather than growing with the corpus. `list_writing` is the tool for
+         * per-document metadata, and it is limited.
          */
         list: async () => {
           const index = await publishedIndex(tc);
