@@ -1,7 +1,7 @@
 import { createMcpHandler } from 'agents/mcp/server';
-import { McpServer } from '@modelcontextprotocol/server';
 import { corpusRefreshEnabled, refreshCorpus, type CorpusEnv } from '../../../src/lib/corpus';
 import { type McpEnv } from './env';
+import { createServer } from './server';
 
 /**
  * The corpus job's view of this Worker, assembled explicitly rather than spread
@@ -29,12 +29,6 @@ function corpusEnv(env: McpEnv): CorpusEnv {
     CORPUS_REFRESH: env.CORPUS_REFRESH,
   };
 }
-
-const INSTRUCTIONS = [
-  "Ryan Lindsey's professional corpus, exposed as MCP tools.",
-  'Public tools cover portfolio exploration. A private tier exists for scoped tokens;',
-  'ask Ryan for access if you need it.',
-].join(' ');
 
 /**
  * Handler options shared by every request.
@@ -77,51 +71,20 @@ const HANDLER_OPTIONS = {
   },
 } as const;
 
-function createServer() {
-  // `instructions` belongs to ServerOptions (the second argument), not to the
-  // Implementation identity. Passing it here is also what puts it at the top
-  // level of the initialize result, where the spec and clients look for it.
-  // The `x-release-please-version` marker is load-bearing: release-please's `generic` updater
-  // rewrites the semver on any line carrying it, which is what keeps the version this server
-  // advertises over MCP in step with package.json. Moving the version off this line, or letting
-  // a formatter split it across lines, silently strands it at whatever it says today.
-  const server = new McpServer(
-    { name: 'ryanlindsey-me', version: '1.4.1' }, // x-release-please-version
-    { instructions: INSTRUCTIONS },
-  );
-
-  // No `inputSchema`: this tool takes no arguments, and the empty-object form
-  // resolves to the deprecated raw-shape overload. Day 4 adds zod schemas with
-  // the first tool that takes arguments.
-  server.registerTool(
-    'get_contact',
-    {
-      description: 'How to reach Ryan Lindsey, and his working timezone.',
-    },
-    async () => ({
-      content: [
-        {
-          type: 'text' as const,
-          text: JSON.stringify(
-            {
-              email: 'hello@ryanlindsey.me',
-              site: 'https://ryanlindsey.me',
-              timezone: 'America/Los_Angeles',
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    }),
-  );
-
-  return server;
-}
-
 export default {
+  /**
+   * The server itself is built in ./server.ts, one instance per HTTP request:
+   * `createMcpHandler` is stateless, and `defineTool` needs `env`, `ctx` and
+   * the original request in scope to limit and audit the call. `requestInfo`
+   * is the SDK's own handle on that request and is preferred over the
+   * closed-over `request` for exactly the case where they differ -- a legacy
+   * fallback instance the handler constructs for a request of its own.
+   */
   fetch(request, env, ctx) {
-    return createMcpHandler(createServer, HANDLER_OPTIONS)(request, env, ctx);
+    return createMcpHandler(
+      (mcpCtx) => createServer({ env, ctx, request: mcpCtx.requestInfo ?? request }),
+      HANDLER_OPTIONS,
+    )(request, env, ctx);
   },
 
   /**

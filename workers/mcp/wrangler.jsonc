@@ -157,8 +157,21 @@
   // and one KV read, and a daily cron over unchanged content bills no neurons.
   "triggers": { "crons": ["32 5 * * *"] },
 
+  // Two buckets, because the tools do not cost the same thing (03 §3).
+  // RATE_LIMITER covers the document reads: they are asset fetches against
+  // the site origin, so 60/minute is generous on purpose -- an agent
+  // exploring the portfolio should never meet a limit.
+  // RATE_LIMITER_SEARCH covers search_writing, which spends a Workers AI
+  // embedding call per query. Cheap (24 prompt tokens, measured day 3) but
+  // not free, and the only tool here whose cost scales with a stranger's
+  // enthusiasm. `namespace_id` must differ or the two share one bucket.
   "ratelimits": [
     { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } },
+    {
+      "name": "RATE_LIMITER_SEARCH",
+      "namespace_id": "1002",
+      "simple": { "limit": 10, "period": 60 },
+    },
   ],
 
   "secrets_store_secrets": [

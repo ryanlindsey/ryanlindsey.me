@@ -22,6 +22,8 @@ export interface McpEnv {
   AI: Ai;
   VECTORIZE: VectorizeIndex;
   RATE_LIMITER: RateLimit;
+  /** The `inference` bucket; see `limiterFor` in src/lib/mcp/limits.ts. */
+  RATE_LIMITER_SEARCH: RateLimit;
   /** Day 5's, bound already. Nothing in day 4 may read it. */
   RLME_TOKEN_SIGNING_KEY: SecretsStoreSecret;
   RLME_AI_GATEWAY_ID: string;
@@ -45,6 +47,7 @@ export const MCP_BINDING_NAMES = [
   'AI',
   'VECTORIZE',
   'RATE_LIMITER',
+  'RATE_LIMITER_SEARCH',
   'RLME_TOKEN_SIGNING_KEY',
   'RLME_AI_GATEWAY_ID',
   'SITE_ORIGIN',

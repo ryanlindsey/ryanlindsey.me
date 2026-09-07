@@ -80,8 +80,8 @@ const MCP_LINKS: LlmsLink[] = [
     url: MCP_ENDPOINT,
     // Fix round 2 (task-9-report.md): the previous wording ("...and other
     // portfolio tools") overclaimed. Verified live against the deployed
-    // server's own `tools/list` (matches `workers/mcp/src/index.ts`'s single
-    // `registerTool` call): exactly one tool exists today, `get_contact`.
+    // server's own `tools/list` (matches `workers/mcp/src/server.ts`'s single
+    // `defineTool` call): exactly one tool exists today, `get_contact`.
     // `/llms.txt` is a machine-facing index an agent acts on directly -- a
     // tool it cannot find after being told to expect it is worse for this
     // file's credibility than a terse, accurate line. No date promised here
