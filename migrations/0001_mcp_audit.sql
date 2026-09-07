@@ -3,8 +3,8 @@
 --
 -- What is deliberately NOT here: tool arguments. `args_hash` is a SHA-256 of
 -- the canonical form, which is enough to see that the same query repeated and
--- not enough to reconstruct it. From day 5 `analyze_job_fit` accepts pasted
--- job-description text, and a schema that stored raw args would quietly make
+-- not enough to reconstruct it. Day 5's fit-analysis tool accepts text the
+-- caller pastes in, and a schema that stored raw args would quietly make
 -- this table a store of other people's documents.
 CREATE TABLE mcp_tool_calls (
   id               INTEGER PRIMARY KEY AUTOINCREMENT,

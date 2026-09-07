@@ -10,8 +10,10 @@
 # not machine-readable instructions.
 #
 # robots.txt is per-origin (RFC 9309 §2.3). This file has no effect on
-# mcp.ryanlindsey.me, which is a separate origin and will carry its own
-# robots.txt when day 4's MCP work ships.
+# mcp.ryanlindsey.me, which is a separate origin and carries its own
+# robots.txt, served by that Worker itself (workers/mcp/src/index.ts, built by
+# src/lib/mcp/discovery.ts's buildMcpRobotsTxt) -- not this file, and not a
+# copy of it.
 #
 # ---------------------------------------------------------------------------
 # READ THIS BEFORE ADDING A Disallow

@@ -43,6 +43,23 @@ import { documentsEnv, RESUME_UNAVAILABLE } from './tools';
 // caching the index (`KV_CACHE` is bound on this Worker); that was considered
 // and deliberately not taken here, and it belongs with day 5/6's work on this
 // surface rather than to Task 11. Reads are limited; the menu is not.
+//
+// The day-5 consequence of that, stated plainly so it does not have to be
+// rediscovered: a `ResourceTemplate`'s `list` callback -- the `writing`
+// template's, below -- is invoked by the SDK straight from its own
+// `resources/list` request handler. It never passes through `defineResource`,
+// and cannot: `guarded` wraps a REGISTERED resource's READ, and `list` is not
+// a read of a registered resource, it is metadata the template contributes to
+// a request this module's own registration call never sees. On the public
+// tier that is harmless -- this template's `list` only ever enumerates
+// already-public slugs from the published index. On day 5's gated tier, a
+// template whose `list` enumerates non-public documents would bypass the
+// limiter, the audit trail, AND any token check, because there is no point
+// anywhere in that call path where a token would be read at all -- leaking
+// the existence and slugs of gated documents to a caller who was never
+// authenticated. Day 5 must treat a template's `list` as a surface needing
+// its OWN guard; `defineResource` covering `resources/read` is not evidence
+// that `resources/list` is covered too.
 
 /**
  * The published index, with a message a stranger's agent can be shown.

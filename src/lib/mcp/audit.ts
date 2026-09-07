@@ -46,35 +46,6 @@ export async function hashArgs(args: unknown): Promise<string> {
 }
 
 /**
- * The prepared insert for one audit row, bound but not run. Exported
- * separately from `recordToolCall` because Task 5's `defineTool` needs the
- * statement form -- e.g. to batch it alongside other writes -- not just the
- * fire-and-forget call below.
- */
-export function auditStatement(db: D1Database, row: AuditRow): D1PreparedStatement {
-  return db
-    .prepare(
-      `INSERT INTO mcp_tool_calls
-         (called_at, tool, args_hash, tier, audience, client_name, client_version,
-          user_agent, protocol_version, outcome, duration_ms)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .bind(
-      row.calledAt,
-      row.tool,
-      row.argsHash,
-      row.tier,
-      row.audience,
-      row.clientName,
-      row.clientVersion,
-      row.userAgent,
-      row.protocolVersion,
-      row.outcome,
-      row.durationMs,
-    );
-}
-
-/**
  * Writes one audit row and awaits it.
  *
  * Catches and swallows its own failure (after logging it): an audit write
@@ -84,7 +55,27 @@ export function auditStatement(db: D1Database, row: AuditRow): D1PreparedStateme
  */
 export async function recordToolCall(db: D1Database, row: AuditRow): Promise<void> {
   try {
-    await auditStatement(db, row).run();
+    await db
+      .prepare(
+        `INSERT INTO mcp_tool_calls
+           (called_at, tool, args_hash, tier, audience, client_name, client_version,
+            user_agent, protocol_version, outcome, duration_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        row.calledAt,
+        row.tool,
+        row.argsHash,
+        row.tier,
+        row.audience,
+        row.clientName,
+        row.clientVersion,
+        row.userAgent,
+        row.protocolVersion,
+        row.outcome,
+        row.durationMs,
+      )
+      .run();
   } catch (err) {
     console.error('mcp/audit: failed to record tool call', err);
   }

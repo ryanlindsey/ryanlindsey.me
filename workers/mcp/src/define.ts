@@ -77,8 +77,14 @@ function clientIdentity(
   // layer, so the envelope is read as the string-keyed bag it is on the wire.
   // The context is optional because this is called from the audit path, which
   // has to be able to write a row even when the failure it is recording
-  // happened before the context was resolved.
-  const envelope = (serverCtx?.mcpReq.envelope ?? {}) as Record<string, unknown>;
+  // happened before the context was resolved -- and `mcpReq` is
+  // optional-chained too, not just `serverCtx`: a `ServerContext` whose
+  // `mcpReq` is itself absent is exactly the shape a request that failed
+  // before that field was populated would have, and a bare `serverCtx?.mcpReq
+  // .envelope` throws in precisely that case, escaping `guarded`'s `catch` and
+  // handing the caller a raw internal message -- the one outcome that
+  // function's own comment says nothing may do.
+  const envelope = (serverCtx?.mcpReq?.envelope ?? {}) as Record<string, unknown>;
   const clientInfo = envelope[CLIENT_INFO_META_KEY] as
     { name?: unknown; version?: unknown } | undefined;
   const protocolVersion = envelope[PROTOCOL_VERSION_META_KEY];
@@ -168,7 +174,23 @@ async function guarded<C, R>(
   let argsHash = ARGS_HASH_UNAVAILABLE;
   let serverCtx: ServerContext | undefined;
 
-  const audit = (outcome: AuditRow['outcome']) =>
+  const audit = (outcome: AuditRow['outcome']) => {
+    // `audit('error')` runs inside the `catch` below, which is the LAST place
+    // in this function anything can still catch a throw -- so building the
+    // row here must not itself throw, or the failure escapes `guarded`
+    // entirely and the SDK copies its message straight to the caller, same as
+    // the escape this whole function exists to close. `clientIdentity` cannot
+    // throw once `mcpReq` is optional-chained (see its own comment), but this
+    // is wrapped anyway so a future change to it, or to anything else added
+    // here, has nowhere to reopen that gap.
+    let identity: Pick<AuditRow, 'clientName' | 'clientVersion' | 'userAgent' | 'protocolVersion'>;
+    try {
+      identity = clientIdentity(tc.request, serverCtx);
+    } catch (identityError) {
+      console.error('mcp/audit: failed to read client identity', identityError);
+      identity = { clientName: null, clientVersion: null, userAgent: null, protocolVersion: null };
+    }
+
     tc.ctx.waitUntil(
       recordToolCall(tc.env.DB, {
         calledAt: new Date().toISOString(),
@@ -179,11 +201,12 @@ async function guarded<C, R>(
         // here ONLY, so day 5 cannot change one surface and miss the other.
         tier: 'public',
         audience: null,
-        ...clientIdentity(tc.request, serverCtx),
+        ...identity,
         outcome,
         durationMs: Date.now() - started,
       }),
     );
+  };
 
   // ONE try around the whole body, deliberately: everything before the
   // handler can throw too -- a limiter binding that rejects, a misconfigured
