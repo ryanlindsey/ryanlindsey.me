@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.3.0...ryanlindsey-me-v1.4.0) (2026-09-07)
+
+
+### Features
+
+* **work:** publish the first two case studies ([#20](https://github.com/ryanlindsey/ryanlindsey.me/issues/20)) ([cddddb9](https://github.com/ryanlindsey/ryanlindsey.me/commit/cddddb960479eecb6dea7ac0cb8fd0c0b9606ddf))
+
 ## [1.3.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.2.0...ryanlindsey-me-v1.3.0) (2026-09-07)
 
 
