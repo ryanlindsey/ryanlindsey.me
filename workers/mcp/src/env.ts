@@ -30,12 +30,33 @@ export interface McpEnv {
   SITE_ORIGIN: string;
   /** Test-only seam; see `CorpusEnv.CORPUS_REFRESH` in src/lib/corpus.ts. */
   CORPUS_REFRESH?: string;
+  /**
+   * Test-only seam, the same shape and the same reasoning as `CORPUS_REFRESH`
+   * above and `RESUME_PDF_RENDERER` before it: `'on'` (the deployed default,
+   * which comes from the var being ABSENT rather than from a default branch)
+   * or `'stub'`. No deployed environment sets it -- wrangler.jsonc does not
+   * declare it -- and an unrecognised value throws rather than guessing.
+   *
+   * `'stub'` is set on this Worker by tests/workers.ts. It exists because the
+   * harness overrides `AI` to a local service Worker (workers/mock-ai), which
+   * hands this Worker a `Fetcher` rather than an `Ai`, so `env.AI.run()` is a
+   * TypeError there by design -- see that Worker's own doc comment, which
+   * rules out teaching it to impersonate Workers AI and says code needing its
+   * embedding path exercised should inject a fake at the call site instead.
+   * Under `'stub'`, `search_writing` skips the embedding call and queries with
+   * a fixed vector, which is enough to reach the limiter and the Vectorize
+   * binding but proves nothing about retrieval: the query-side embedding call
+   * is asserted directly in tests/mcp-search.test.ts, and the round trip
+   * against the live index is verified by hand.
+   */
+  MCP_SEARCH_EMBEDDER?: string;
 }
 
 /**
- * The same list as runtime data, for the drift test. `CORPUS_REFRESH` is
- * excluded deliberately: it is a test-only var that no deployed environment
- * and no config declares, so `wrangler types` will never emit it.
+ * The same list as runtime data, for the drift test. `CORPUS_REFRESH` and
+ * `MCP_SEARCH_EMBEDDER` are excluded deliberately: they are test-only vars
+ * that no deployed environment and no config declares, so `wrangler types`
+ * will never emit them.
  */
 export const MCP_BINDING_NAMES = [
   'DB',

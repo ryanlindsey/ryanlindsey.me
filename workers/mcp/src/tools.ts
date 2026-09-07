@@ -1,6 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { RESUME_SOURCE, type CorpusType } from '../../../src/lib/corpus';
+import {
+  CORPUS_DIMENSIONS,
+  CORPUS_TIER,
+  documentKey,
+  readCorpusManifest,
+  RESUME_SOURCE,
+  type CorpusType,
+} from '../../../src/lib/corpus';
 import {
   fetchDocument,
   fetchDocumentIndex,
@@ -11,6 +18,13 @@ import {
   type DocumentsEnv,
   type DocumentSummary,
 } from '../../../src/lib/mcp/documents';
+import {
+  embedQuery,
+  excerptFor,
+  parseChunkId,
+  UNKNOWN_CHUNK_COUNT,
+  type Citation,
+} from '../../../src/lib/mcp/search';
 import type { McpEnv } from './env';
 import { defineTool, ToolError, type ToolContext } from './define';
 
@@ -29,6 +43,44 @@ function documentsEnv(env: McpEnv): DocumentsEnv {
     SITE_ORIGIN: env.SITE_ORIGIN,
   };
 }
+
+/**
+ * The query's vector, through the test-only `MCP_SEARCH_EMBEDDER` seam.
+ *
+ * The seam is HERE rather than inside `embedQuery` on purpose: reading an
+ * environment variable is Worker wiring, and src/lib/mcp/search.ts is the pure
+ * module the root Vitest suite exercises with nothing bound. `embedQuery` is
+ * therefore still the only thing that talks to Workers AI, and it is asserted
+ * directly in tests/mcp-search.test.ts with a stub `Ai` at the call site --
+ * which is what workers/mock-ai's own doc comment asks for, since a service
+ * binding hands this Worker a `Fetcher` and `env.AI.run()` is a TypeError
+ * against it.
+ *
+ * Throws on an unrecognised value, matching `corpusRefreshEnabled`: a typo
+ * that silently stubbed out the embedder in production would look exactly like
+ * a search that returns nothing.
+ */
+async function queryVector(env: McpEnv, query: string): Promise<number[]> {
+  const mode = env.MCP_SEARCH_EMBEDDER ?? 'on';
+  if (mode === 'on') return await embedQuery(env.AI, query);
+  // A fixed vector of the index's own width. It retrieves nothing meaningful
+  // and is not meant to: it exists so the rest of the handler -- the limiter,
+  // the Vectorize call, the manifest read -- can be exercised without an
+  // embedding call.
+  if (mode === 'stub') return new Array<number>(CORPUS_DIMENSIONS).fill(0);
+  throw new Error(`unknown MCP_SEARCH_EMBEDDER ${JSON.stringify(mode)}`);
+}
+
+const SEARCH_INPUT = z.object({
+  query: z.string().min(1).max(500).describe('What to look for, in natural language.'),
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .default(5)
+    .describe('How many passages to return. Defaults to 5.'),
+});
 
 const RESUME_FORMAT = z.object({
   format: z
@@ -296,6 +348,115 @@ export function registerTools(server: McpServer, tc: ToolContext): void {
         url: pageUrlFor(source, tc.env.SITE_ORIGIN),
         markdown: parseFrontmatter(markdown).body,
       };
+    },
+  );
+
+  defineTool<z.infer<typeof SEARCH_INPUT>>(
+    server,
+    tc,
+    {
+      name: 'search_writing',
+      title: 'Search the writing',
+      description:
+        'Semantic search across the published posts, case studies and résumé. Returns matching passages with the URL each one is published at.',
+      // The only `inference` tool: it spends a Workers AI embedding call per
+      // query, so it draws from RATE_LIMITER_SEARCH rather than the document
+      // reads' bucket (src/lib/mcp/limits.ts).
+      cost: 'inference',
+      inputSchema: SEARCH_INPUT,
+    },
+    async ({ query, limit }, tc): Promise<Citation[]> => {
+      const vector = await queryVector(tc.env, query);
+
+      const found = await tc.env.VECTORIZE.query(vector, {
+        topK: limit,
+        returnMetadata: 'indexed',
+        // STRUCTURAL INTENT, not decoration, and day 5 replaces it -- read
+        // 09 §3 before deleting or widening this line. Everything in
+        // `ryanlindsey-me-corpus` today is `tier: 'public'` (src/lib/corpus.ts's
+        // `CORPUS_TIER`), so the filter changes no result on this branch. It is
+        // written now because day 5 adds a gated tier, and a retrieval path
+        // that filters what it could have partitioned is exactly the shape
+        // 09 §3 says is worth nothing: one forgotten filter and the private
+        // tier leaks through the public tool. Day 5's job is to replace this
+        // with a SEPARATE index, so that a missing filter cannot return a
+        // private passage at all -- a deliberate edit here, not an oversight
+        // somewhere else.
+        filter: { tier: CORPUS_TIER },
+      });
+
+      // Nothing matched: answer with the empty list before spending an
+      // /llms.txt fetch and a KV read that could not change it.
+      if (found.matches.length === 0) return [];
+
+      const documents = documentsEnv(tc.env);
+      const [manifest, index] = await Promise.all([
+        // The chunk counts the embedding job recorded. They are what makes a
+        // rebuilt excerpt checkable at all -- see `excerptFor`.
+        readCorpusManifest(tc.env),
+        fetchDocumentIndex(documents),
+      ]);
+
+      // One fetch per cited DOCUMENT, not per match: several chunks of the
+      // same post routinely come back in one result set.
+      const fetched = new Map<string, string | null>();
+      const citations: Citation[] = [];
+
+      for (const match of found.matches) {
+        const parsed = parseChunkId(match.id);
+        if (parsed === null) {
+          console.warn(`mcp/search: unrecognised vector id ${JSON.stringify(match.id)}`);
+          continue;
+        }
+
+        // The index is the live list of PUBLISHED documents, so this is also
+        // the check that a citation can never name something the site no
+        // longer serves. A vector for an unpublished document should have been
+        // deleted by the refresh; if one survives, it is dropped here rather
+        // than cited.
+        const source = index.find((s) => s.type === parsed.type && s.slug === parsed.slug);
+        if (source === undefined) {
+          console.warn(`mcp/search: ${match.id} is not a published document; dropping the match`);
+          continue;
+        }
+
+        const key = documentKey(source);
+        if (!fetched.has(key)) fetched.set(key, await fetchDocument(documents, source));
+        const markdown = fetched.get(key) ?? null;
+        // Listed but unfetchable is a broken deploy, not an answerable result:
+        // drop the match rather than cite a document with no excerpt, the same
+        // call `listDocuments` makes for the same case.
+        if (markdown === null) continue;
+
+        // Destructured under a different name: `text` is a module-level helper
+        // in this file (`summaryOf` uses it), and shadowing it here would be a
+        // trap for the next edit rather than a nuisance for this one.
+        const { text: excerpt, exact } = excerptFor(
+          markdown,
+          parsed.chunk,
+          manifest[key]?.chunks ?? UNKNOWN_CHUNK_COUNT,
+        );
+        if (!exact) {
+          // Logged rather than swallowed: an inexact excerpt is still honest
+          // (it is the cited document's opening, under the document's own
+          // URL) but it means the index and the chunker have drifted apart,
+          // and the fix is a re-embed, not a smaller excerpt.
+          console.warn(
+            `mcp/search: ${match.id} did not line up with the manifest; citing the document lead`,
+          );
+        }
+
+        citations.push({
+          type: parsed.type,
+          slug: parsed.slug,
+          chunk: parsed.chunk,
+          url: pageUrlFor(source, tc.env.SITE_ORIGIN),
+          score: match.score,
+          excerpt,
+        });
+      }
+
+      return citations;
     },
   );
 }

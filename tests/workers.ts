@@ -89,10 +89,35 @@ export const SITE_WORKER = {
  * source list, the hash, the refresh plan) is covered directly in
  * tests/corpus.test.ts with no bindings at all; its embed/upsert/query round
  * trip is verified by hand against the live index.
+ *
+ * `MCP_SEARCH_EMBEDDER: 'stub'` (day 4 Task 9) is the same seam pointed at the
+ * read side of that corpus. `search_writing` is a tool rather than a cron job,
+ * so it DOES run here -- but its embedding call cannot, for exactly the reason
+ * above: the `AI` override is a SERVICE binding, so `env.AI` is a `Fetcher`
+ * and `env.AI.run()` is a TypeError rather than a response. Under the stub the
+ * tool skips the embedding call and queries with a fixed vector.
+ *
+ * MEASURED under this harness, and it is NOT what the day-4 plan assumed:
+ * `env.VECTORIZE.query(...)` throws `Binding VECTORIZE needs to be run
+ * remotely`, from inside the Worker as well as through `getEnv()`. So this
+ * harness has no Vectorize at all -- not an empty simulated index, which is
+ * what the wrangler.jsonc note about `vectorize` defaulting to a local
+ * simulation under `wrangler dev` had led the plan to expect. `search_writing`
+ * therefore cannot complete here at any setting of this var, and tests
+ * asserting on retrieved citations would be asserting on a thrown binding.
+ * What the stub still buys is that the failure lands at the Vectorize call
+ * with a well-formed query rather than one step earlier at a TypeError on
+ * `env.AI`, so the query-shaping code is on the executed path and the tool
+ * goes green with no test edit the day a local Vectorize exists.
+ *
+ * The query-side embedding call is asserted at the call site in
+ * tests/mcp-search.test.ts with a stub `Ai`, which is what workers/mock-ai's
+ * doc comment asks for instead of teaching that Worker to impersonate Workers
+ * AI. The retrieval round trip is verified by hand against the live index.
  */
 export const MCP_WORKER = {
   configPath: './workers/mcp/wrangler.jsonc',
-  vars: { CORPUS_REFRESH: 'off' },
+  vars: { CORPUS_REFRESH: 'off', MCP_SEARCH_EMBEDDER: 'stub' },
   bindingOverrides: { AI: 'mock-ai' },
 };
 
