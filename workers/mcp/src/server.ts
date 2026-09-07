@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { defineTool, type ToolContext } from './define';
+import { registerResources } from './resources';
 import { registerTools } from './tools';
 
 const INSTRUCTIONS = [
@@ -46,6 +47,10 @@ export function createServer(tc: ToolContext): McpServer {
   );
 
   registerTools(server, tc);
+  // The same documents, for clients that prefer resource attachment over tool
+  // calls (03 §2). Registered through `defineResource`, which limits and
+  // audits a read exactly as `defineTool` does a call.
+  registerResources(server, tc);
 
   return server;
 }

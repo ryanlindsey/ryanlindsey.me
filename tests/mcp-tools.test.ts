@@ -692,9 +692,30 @@ describe('request_private_access', () => {
   // The banned-pattern list is written as regexes over sanctioned text (day 1's
   // ruling): this file is in the public repo, so the check never enumerates
   // forbidden vocabulary into a file that ships publicly.
-  test('neither the copy nor the tool description carries search language', async () => {
+  //
+  // It covers the RESOURCE surface as well as the tools, because 09 §2 binds
+  // resource names, titles and descriptions the same way it binds a tool's --
+  // they are read by strangers' agents by design, so a leak in either is a
+  // broadcast leak, and one list checking both is one list to keep current.
+  test('nothing on the published surface carries search language', async () => {
     const { json } = await rpc({ jsonrpc: '2.0', id: 99, method: 'tools/list', params: {} });
-    const surface = JSON.stringify(json.result.tools) + PRIVATE_ACCESS_TEXT;
+    const { json: listed } = await rpc({
+      jsonrpc: '2.0',
+      id: 98,
+      method: 'resources/list',
+      params: {},
+    });
+    const { json: templates } = await rpc({
+      jsonrpc: '2.0',
+      id: 97,
+      method: 'resources/templates/list',
+      params: {},
+    });
+    const surface =
+      JSON.stringify(json.result.tools) +
+      JSON.stringify(listed.result.resources) +
+      JSON.stringify(templates.result.resourceTemplates) +
+      PRIVATE_ACCESS_TEXT;
     for (const banned of [
       /\bhir(e|ing)\b/i,
       /\bcandidat/i,
@@ -712,6 +733,205 @@ describe('request_private_access', () => {
     const db = await auditDb();
     const row = await db.prepare('SELECT tool FROM mcp_tool_calls').first<{ tool: string }>();
     expect(row?.tool).toBe('request_private_access');
+  });
+});
+
+/**
+ * Task 11's resources: `resume://json` and the `writing://{slug}` template.
+ *
+ * A resource is not a tool and cannot go through `defineTool` -- `resources/read`
+ * has its own handler shape, its own result (`contents`, not `content`) and no
+ * `isError` result to put a sentence in. It goes through `defineResource`
+ * instead, which limits and audits a read exactly as `defineTool` does a call,
+ * so the first three tests here are about the guard rather than the content.
+ * Discovery (`resources/list`, `resources/templates/list`) is neither limited
+ * nor audited, matching `tools/list`.
+ *
+ * ORDER MATTERS INSIDE THIS GROUP. The three tests the plan specifies verbatim
+ * come further down, and one of them reads `resume://json` without settling the
+ * audit write that read dispatches through `ctx.waitUntil` -- the race
+ * `waitForAuditRows`'s note describes. An exact-row assertion can only be made
+ * while the table is quiet, so the audit tests run BEFORE that read rather than
+ * after it. The limiter test runs LAST in the group for the same kind of
+ * reason: it exhausts a bucket, and every read above it would be refused.
+ */
+describe('resources', () => {
+  let resourceCallId = 400;
+  function readResource(uri: string, headers?: Record<string, string>) {
+    return rpc(
+      { jsonrpc: '2.0', id: ++resourceCallId, method: 'resources/read', params: { uri } },
+      headers,
+    );
+  }
+
+  test('audits a resource read under its own name, like every tool call', async () => {
+    const db = await auditDb();
+    await db.prepare('DELETE FROM mcp_tool_calls').run();
+
+    await readResource('resume://json');
+    await waitForAuditRows(db, 1);
+
+    // The same assertion the tool surface makes ("every registered tool call
+    // writes exactly one audit row"), against the half of the surface that is
+    // not a tool: 03 §3 logs every call, and a read is a call.
+    const { results } = await db
+      .prepare('SELECT tool, tier, audience, outcome FROM mcp_tool_calls')
+      .all();
+    expect(results).toEqual([
+      { tool: 'resource:resume', tier: 'public', audience: null, outcome: 'ok' },
+    ]);
+  });
+
+  test('audits a template read under the template name, failures included', async () => {
+    const db = await auditDb();
+    await db.prepare('DELETE FROM mcp_tool_calls').run();
+
+    const { json } = await readResource('writing://no-such-post');
+    // `resources/read` has no `isError` result shape, so a miss is a JSON-RPC
+    // error rather than a result -- and it is audited all the same.
+    //
+    // Asserted as a MISS rather than merely as an error, because the two are
+    // different answers and only one of them is true: -32602 carrying the URI
+    // in `data` is how this SDK spells resource-not-found, and the message is
+    // one written for the caller. `defineResource` passes a deliberate
+    // `ProtocolError` through and replaces anything else with a generic
+    // sentence, so a generic message here would mean the sanitiser had
+    // swallowed the real answer.
+    expect(json.error.code).toBe(-32602);
+    expect(json.error.message).toBe('Resource not found: writing://no-such-post');
+    await waitForAuditRows(db, 1);
+
+    const { results } = await db.prepare('SELECT tool, outcome FROM mcp_tool_calls').all();
+    expect(results).toEqual([{ tool: 'resource:writing', outcome: 'error' }]);
+  });
+
+  test('advertises a resources capability alongside tools', async () => {
+    const { json } = await initialize(203);
+    expect(json.result.capabilities.tools).toBeTruthy();
+    expect(json.result.capabilities.resources).toBeTruthy();
+  });
+
+  test('advertises the resume resource', async () => {
+    const { json } = await rpc({ jsonrpc: '2.0', id: 200, method: 'resources/list', params: {} });
+    expect(json.result.resources.map((r: { uri: string }) => r.uri)).toContain('resume://json');
+  });
+
+  test('reads the resume resource as JSON Resume', async () => {
+    const { json } = await rpc({
+      jsonrpc: '2.0',
+      id: 201,
+      method: 'resources/read',
+      params: { uri: 'resume://json' },
+    });
+    expect(JSON.parse(json.result.contents[0].text).basics.name).toBe('Ryan Lindsey');
+  });
+
+  test('templates writing:// over published slugs only', async () => {
+    const { json } = await rpc({
+      jsonrpc: '2.0',
+      id: 202,
+      method: 'resources/templates/list',
+      params: {},
+    });
+    expect(JSON.stringify(json.result)).toContain('writing://');
+  });
+
+  /**
+   * What the template enumerates TODAY, asserted rather than assumed.
+   *
+   * No post is published on this branch (`src/content/posts/type-specimen.mdx`
+   * is the only one and it is `draft: true`), so the template advertises itself
+   * and lists nothing -- the same real state `list_writing` asserts against.
+   * The day a post ships this line fails and has to name it, which is the
+   * intended cost: a document appearing on the public resource surface should
+   * be a reviewed edit rather than a silent one.
+   */
+  test('lists no writing resource while no post is published', async () => {
+    const { json } = await rpc({ jsonrpc: '2.0', id: 204, method: 'resources/list', params: {} });
+    const uris: string[] = json.result.resources.map((r: { uri: string }) => r.uri);
+    expect(uris.filter((uri) => uri.startsWith('writing://'))).toEqual([]);
+  });
+
+  /**
+   * Dormant until a post is published, and skipped out loud rather than
+   * passing quietly -- the same shape `get_post`'s dormant test uses, for the
+   * same reason. Nothing here needs editing the day a post ships: the list
+   * above it stops being empty and the skip is never reached.
+   */
+  test('serves a published post through the writing:// template', async (ctx) => {
+    const { json: list } = await rpc({
+      jsonrpc: '2.0',
+      id: 205,
+      method: 'resources/list',
+      params: {},
+    });
+    const post = list.result.resources.find((r: { uri: string }) => r.uri.startsWith('writing://'));
+    if (post === undefined) {
+      ctx.skip(
+        'no published post exists yet -- src/content/posts/type-specimen.mdx is the only post and it is draft: true',
+      );
+    }
+    const { json } = await readResource(post.uri);
+    expect(json.result.contents[0].mimeType).toBe('text/markdown');
+    expect(json.result.contents[0].text.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * The controller's extension to Task 11, and the reason `defineResource`
+   * exists at all rather than a bare `server.registerResource`.
+   *
+   * `writing://{slug}` serves the same documents `get_post` serves, and
+   * `get_post` is limited at 60/60s. An unlimited resource path to identical
+   * content would make that limiter decorative -- a client wanting the whole
+   * corpus would simply read the resource instead. So a read is limited, and
+   * the three assertions after the loop are what "its own bucket" means:
+   * `limitKeyFor` is `<name>:<ip>`, so exhausting `resource:writing` for ONE
+   * client leaves the same resource open to another client, leaves the other
+   * resource open, and leaves the tools open.
+   *
+   * Keyed on a `cf-connecting-ip` of its own, which is also why this test does
+   * not have to be the last one in the file the way the `get_contact` limiter
+   * test does: every other test here answers to the `unknown` IP.
+   */
+  test('refuses a resource read past the limit, from a bucket of its own', async () => {
+    const db = await auditDb();
+    await db.prepare('DELETE FROM mcp_tool_calls').run();
+    const client = { 'cf-connecting-ip': '203.0.113.11' };
+
+    const attempts = [];
+    for (let i = 0; i < 70; i++) attempts.push(await readResource(`writing://p${i}`, client));
+
+    const refused = attempts.filter((a) => /rate limit/i.test(a.json.error?.message ?? ''));
+    expect(refused.length).toBeGreaterThan(0);
+    // A JSON-RPC error, not a broken connection: the client reads a sentence.
+    expect(refused[0]!.status).toBe(200);
+    // And it reads as a refusal rather than as a miss: -32000 is JSON-RPC's
+    // implementation-defined server-error range, where -32602 would tell the
+    // client its URI was wrong and invite it to drop a URI that is fine.
+    expect(refused[0]!.json.error.code).toBe(-32000);
+
+    // Same URI, different client: a bucket per IP, so one caller cannot
+    // exhaust the resource for everyone. This also proves the header above is
+    // genuinely reaching `limitKeyFor` rather than being ignored.
+    const otherClient = await readResource('writing://p0');
+    expect(otherClient.json.error?.message ?? '').not.toMatch(/rate limit/i);
+
+    // Same client, the other resource and a tool: separate buckets, so the
+    // writing resource cannot starve either of them.
+    const resume = await readResource('resume://json', client);
+    expect(resume.json.result.contents[0].text).toContain('Ryan Lindsey');
+    const contact = await callTool('get_contact', {}, client);
+    expect(contact.json.result.isError).toBeFalsy();
+
+    // Refusals are audited too, exactly as a tool's are -- an unaudited
+    // refusal would make the table under-report the traffic worth looking at.
+    await waitForAuditRows(db, attempts.length + 3);
+    const row = await db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM mcp_tool_calls WHERE tool='resource:writing' AND outcome='rate_limited'",
+      )
+      .first<{ n: number }>();
+    expect(row!.n).toBeGreaterThan(0);
   });
 });
 

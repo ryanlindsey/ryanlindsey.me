@@ -36,8 +36,12 @@ import { defineTool, ToolError, type ToolContext } from './define';
  * declares, the documents are read over the public origin rather than from a
  * second copy of the site's assets, and global `fetch` is wrapped in an arrow
  * rather than passed as a bare reference.
+ *
+ * Exported for ./resources.ts, which reads the same published documents and
+ * must read them the same way. A second copy of these four lines would be a
+ * second place for `SITE_ORIGIN` and the fetch wrapper to drift.
  */
-function documentsEnv(env: McpEnv): DocumentsEnv {
+export function documentsEnv(env: McpEnv): DocumentsEnv {
   return {
     SITE: { fetch: (input, init) => fetch(input, init) },
     SITE_ORIGIN: env.SITE_ORIGIN,
@@ -164,8 +168,11 @@ function summaryOf(resume: unknown, origin: string): string {
  * A `ToolError`, so `defineTool` shows this sentence rather than the generic
  * "the error was logged" -- the caller asked for a document and the honest
  * answer is that it is not there, not that something broke inside.
+ *
+ * Exported for ./resources.ts: `resume://json` serves the same document and
+ * has to say the same thing when it is missing. One sentence, reviewed once.
  */
-const RESUME_UNAVAILABLE = 'The résumé could not be read from the site right now.';
+export const RESUME_UNAVAILABLE = 'The résumé could not be read from the site right now.';
 
 /**
  * Shared by both case-study tools; `section` is the `CorpusType` they filter

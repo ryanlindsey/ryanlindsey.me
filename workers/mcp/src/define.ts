@@ -2,8 +2,13 @@ import {
   CLIENT_INFO_META_KEY,
   McpServer,
   PROTOCOL_VERSION_META_KEY,
+  ProtocolError,
+  ProtocolErrorCode,
   type CallToolResult,
+  type ReadResourceResult,
+  type ResourceTemplate,
   type ServerContext,
+  type Variables,
 } from '@modelcontextprotocol/server';
 import type { z } from 'zod';
 import { hashArgs, recordToolCall, type AuditRow } from '../../../src/lib/mcp/audit';
@@ -219,4 +224,166 @@ export function defineTool<A>(
     },
     invoke,
   );
+}
+
+/**
+ * The JSON-RPC code a REFUSED resource read answers with.
+ *
+ * MCP defines no rate-limit code, and no member of `ProtocolErrorCode` is
+ * honest here: `InternalError` (-32603) would claim this server broke, and
+ * `InvalidParams` (-32602) carrying a `uri` is specifically how the SDK spells
+ * "resource not found" (`ResourceNotFoundError`) -- the one wrong answer a
+ * client might act on, by dropping a URI that is perfectly fine. -32000 sits
+ * in JSON-RPC 2.0's reserved implementation-defined server-error range
+ * (-32000..-32099), and it is already the code this Worker's own transport
+ * uses for its refusals: the `agents` handler answers a rejected Origin with
+ * `{"code":-32000,"message":"Invalid Origin: <host>"}` (see ./index.ts).
+ */
+const RESOURCE_RATE_LIMITED = -32000;
+
+/**
+ * The ONLY way a resource is registered, and the one place the "there is
+ * exactly one tool-registration path" rule does not apply.
+ *
+ * It does not apply because a resource is not a tool and CANNOT go through
+ * `defineTool`: `resources/read` has its own handler shape (a `URL`, plus the
+ * template's filled-in variables), its own result (`contents`, not
+ * `content`), and no `isError` result to put a sentence in -- a failed read
+ * is a JSON-RPC error. What the rule is FOR applies undiminished, though.
+ * 03 §3 says every call is logged and every call is limited, and a resource
+ * read is a read: `writing://{slug}` serves the same documents `get_post`
+ * serves, and `get_post` is limited at 60/60s, so an unlimited resource path
+ * to identical content would make that limiter decorative -- something a
+ * client routes around rather than something that bounds it.
+ *
+ * So this is the resource equivalent of `defineTool`, deliberately built from
+ * the same parts: the same `limiterFor`/`limitKeyFor`, the same
+ * `hashArgs`/`recordToolCall`, the same three outcomes, and the same refusal
+ * to let an internal error message reach a public caller. Registering a
+ * resource by calling `server.registerResource` directly is the same defect
+ * as calling `server.registerTool` directly, for the same reason, and the
+ * invariant then holds across the whole surface rather than over half of it.
+ */
+export function defineResource(
+  server: McpServer,
+  tc: ToolContext,
+  spec: {
+    /**
+     * The resource's client-visible name. The audit trail and the limiter
+     * both know it as `resource:<name>` -- derived once, below, so the two
+     * cannot drift apart. The prefix is what keeps the buckets separate: no
+     * tool this Worker registers has a colon in its name, so a resource
+     * shares a bucket with neither a tool nor the other resource.
+     */
+    name: string;
+    title: string;
+    description: string;
+    /** Applied to the listing AND to every `contents` entry this emits. */
+    mimeType: string;
+    cost: ToolCost;
+    /** A fixed URI, or a template whose `list` enumerates what it covers. */
+    uri: string | ResourceTemplate;
+  },
+  handler: (uri: URL, variables: Variables, tc: ToolContext) => Promise<string>,
+): void {
+  const audited = `resource:${spec.name}`;
+
+  /**
+   * MEASURED against @modelcontextprotocol/server 2.0.0, and the mirror image
+   * of the note in `defineTool`: the SDK calls a fixed resource's callback as
+   * `(uri, ctx)` and a template's as `(uri, variables, ctx)`. The URI is
+   * therefore always FIRST and the context always LAST, with the variables in
+   * between and only for a template -- so the context is taken from the end
+   * rather than from a fixed position, exactly as `defineTool` takes its own.
+   */
+  const invoke = async (...params: unknown[]): Promise<ReadResourceResult> => {
+    const started = Date.now();
+
+    const uri = params[0] as URL;
+    const serverCtx = params[params.length - 1] as ServerContext;
+    const variables = (params.length > 2 ? params[1] : {}) as Variables;
+
+    // `args_hash` is NOT NULL, and a row saying the hash could not be computed
+    // is worth more than a read that vanishes from the table.
+    let argsHash = ARGS_HASH_UNAVAILABLE;
+    // Identity-compared in the catch below, so the refusal this function
+    // raises itself is not audited a second time as an `error`.
+    let refusal: ProtocolError | undefined;
+
+    const audit = (outcome: AuditRow['outcome']) =>
+      tc.ctx.waitUntil(
+        recordToolCall(tc.env.DB, {
+          calledAt: new Date().toISOString(),
+          tool: audited,
+          argsHash,
+          // Hard-coded for the same reason `defineTool` hard-codes them: day 5
+          // resolves both from the request's token, and until then the public
+          // tier must not be able to write an audience.
+          tier: 'public',
+          audience: null,
+          ...clientIdentity(tc.request, serverCtx),
+          outcome,
+          durationMs: Date.now() - started,
+        }),
+      );
+
+    // ONE try around the whole body, for the reasons `defineTool` gives at
+    // length: everything before the handler can throw too, and a throw that
+    // escapes here would break both guarantees at once -- an unaudited read,
+    // and a raw internal message copied onto the wire.
+    try {
+      // The whole of `resources/read`'s params is `{ uri }`, hashed the same
+      // way a tool's arguments are, so /ops can see the same document read
+      // twice without the table storing which document it was.
+      argsHash = await hashArgs({ uri: uri.href });
+
+      const { success } = await limiterFor(tc.env, spec.cost).limit({
+        key: limitKeyFor(tc.request, audited),
+      });
+      if (!success) {
+        audit('rate_limited');
+        // THROWN, where `defineTool` returns an error result: `resources/read`
+        // has no `isError` shape, and answering with `contents` would hand the
+        // client a refusal notice dressed as the document it asked for.
+        // `spec.name`, not `audited`: the caller knows this resource by the
+        // name `resources/list` gave it, and the `resource:` prefix is an
+        // internal key-space convention it has no way to have seen.
+        refusal = new ProtocolError(
+          RESOURCE_RATE_LIMITED,
+          `Rate limit reached for ${spec.name}. Try again in a minute.`,
+        );
+        throw refusal;
+      }
+
+      const text = await handler(uri, variables, tc);
+      audit('ok');
+      return { contents: [{ uri: uri.href, mimeType: spec.mimeType, text }] };
+    } catch (error) {
+      // The limiter's own refusal: already audited above, and its message was
+      // written for the caller. Identity, and guarded against `refusal` still
+      // being undefined -- a handler that threw `undefined` must not be
+      // mistaken for a refusal and skip its audit row.
+      if (refusal !== undefined && error === refusal) throw error;
+
+      audit('error');
+      console.error(`mcp/resource: ${audited} failed`, error);
+      // Only a `ProtocolError` -- one this Worker constructed deliberately,
+      // such as the `ResourceNotFoundError` a miss raises -- reaches the
+      // caller. MEASURED: the Protocol layer copies `error.message` onto the
+      // JSON-RPC error response verbatim for anything thrown out of a request
+      // handler, so an internal path or a stack would be published as-is.
+      if (error instanceof ProtocolError) throw error;
+      throw new ProtocolError(
+        ProtocolErrorCode.InternalError,
+        `${spec.name} could not be read. The error was logged.`,
+      );
+    }
+  };
+
+  const config = { title: spec.title, description: spec.description, mimeType: spec.mimeType };
+  // Branched rather than passed through: `registerResource` is overloaded on
+  // the URI argument, and a `string | ResourceTemplate` union matches neither
+  // overload.
+  if (typeof spec.uri === 'string') server.registerResource(spec.name, spec.uri, config, invoke);
+  else server.registerResource(spec.name, spec.uri, config, invoke);
 }
