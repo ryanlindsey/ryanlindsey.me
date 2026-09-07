@@ -1,6 +1,11 @@
 import { getRssString, type RSSFeedItem } from '@astrojs/rss';
 import { byPublishedDesc } from './llms-index';
-import { canonicalUrlFor, toMarkdown, type ExportableEntry } from './markdown-export';
+import {
+  canonicalUrlFor,
+  stripNonPortableMdx,
+  toMarkdown,
+  type ExportableEntry,
+} from './markdown-export';
 
 // Day 3 Task 11 (02 §3): the pure half of `/rss.xml` and `/feed.json`, same
 // split as src/lib/llms-index.ts and for the same reason -- `astro:content`
@@ -38,6 +43,28 @@ export interface RssFeedMeta {
   site: string | URL;
 }
 
+/**
+ * Appended to the channel `<description>`, and the second half of the
+ * decision `rssItemFor` documents below.
+ *
+ * `<content:encoded>` conventionally carries HTML and feed readers render it
+ * as HTML; what this feed puts there is Markdown source. Publishing the first
+ * two case studies made that live, which is what tests/pages.test.ts's RSS
+ * tripwire existed to force. The choice taken was to keep Markdown and say so
+ * here rather than to render MDX to HTML outside an Astro page render, which
+ * in Astro 7 means reaching for the container API (astro.config.mjs's own note
+ * on `markdown.processor`: there is no remark pipeline to borrow).
+ *
+ * This is a disclosure, not a fix. A subscriber still sees literal `##` and
+ * `**bold**`; the difference is that the feed now says which format it is
+ * handing them instead of implying HTML and shipping something else. If a
+ * human subscriber ever complains, that is the signal to spend the container
+ * API's cost -- and until one does, the readers this site is actually
+ * publishing for read `content_text` in `/feed.json` or the `.md` routes,
+ * where Markdown is the correct answer rather than a disclosed compromise.
+ */
+export const RSS_MARKDOWN_NOTICE = 'Full-content items carry Markdown source, not HTML.' as const;
+
 /** Newest first, matching every other feed/index on this site. */
 function sortedEntries(entries: ExportableEntry[]): ExportableEntry[] {
   return [...entries].sort(byPublishedDesc);
@@ -46,43 +73,50 @@ function sortedEntries(entries: ExportableEntry[]): ExportableEntry[] {
 /**
  * One entry's RSS item. `description` carries the frontmatter one-liner (the
  * excerpt a feed reader shows in a list view); `content` carries the FULL
- * document via `toMarkdown()` -- 02 §3's "full-content, not summaries" rule
- * is about which field holds the whole article, not a ban on also having a
- * short excerpt. `@astrojs/rss` maps `content` to the `<content:encoded>`
- * element (RSS's own full-content extension).
+ * article body -- 02 §3's "full-content, not summaries" rule is about which
+ * field holds the whole article, not a ban on also having a short excerpt.
+ * `@astrojs/rss` maps `content` to the `<content:encoded>` element (RSS's own
+ * full-content extension).
  *
- * KNOWN LIMITATION, not a claim of correctness (Task 11 fix round 1):
- * `<content:encoded>` conventionally carries HTML, and feed readers render
- * it as HTML. What lands there here is raw markdown, not rendered HTML --
- * a real subscriber would see literal `##` headings, `**bold**` and
- * unformatted fenced code, not formatted prose. And it is not only the
- * body: `toMarkdown` returns `---\n<yaml>\n---\n\n<body>`, so EVERY item
- * would open with a literal YAML frontmatter block (fix round 2 -- the
- * original wording implied this was a per-document risk when it is in fact
- * 100% of items, and the tripwire's patterns had been written to match the
- * body-only cases and so could never have fired). This is DIFFERENT from
- * `jsonFeedItemFor`'s `content_text` below, which IS the textually correct
- * field for markdown in JSON Feed 1.1 (its own spec's distinction between
- * `content_text` and `content_html`) -- RSS 2.0 has no equivalent "this is
- * plain text, not HTML" field to move it to.
+ * WHY THIS IS `stripNonPortableMdx`, NOT `toMarkdown`. `toMarkdown` returns
+ * `---\n<yaml>\n---\n\n<body>`, so every item built from it opened with a
+ * literal YAML frontmatter block -- 100% of items, not an edge case. In a
+ * field feed readers render as HTML that is a duplicate of metadata the item
+ * already carries in its own `<title>`, `<link>`, `<description>` and
+ * `<pubDate>` elements, dumped on the subscriber as text. So the body alone
+ * goes here. The frontmatter block stays in `jsonFeedItemFor`'s
+ * `content_text` below, where the whole document is the point and no reader
+ * is trying to render it.
  *
- * Left as-is deliberately: both feeds are empty today (every real content
- * entry is `draft: true`), so this defect has zero live impact, and
- * rendering MDX to real HTML outside of an actual Astro page render is
- * real, non-trivial work in Astro 7 (no remark pipeline to borrow -- see
- * astro.config.mjs's own comment on `markdown.processor` -- so this would
- * mean reaching for Astro's container API) that is not worth building for
- * zero items. tests/pages.test.ts's RSS tripwire test is the forcing
- * function: it passes while the feed is empty and starts FAILING the
- * moment a published entry would actually ship markdown here, at which
- * point the choice this comment defers -- render to real HTML, or keep
- * markdown and say so honestly in the feed's own `<description>` -- has to
- * be made for real, not silently shipped either way.
+ * The Markdown that remains -- `##` headings, `**bold**`, fenced code, and
+ * `[text](url)` links -- is DISCLOSED rather than removed.
+ * `<content:encoded>` conventionally carries HTML and readers render it as
+ * HTML, so a subscriber still sees literal `##` where a heading belongs. What
+ * makes that acceptable is that every one of those degrades LOSSLESSLY: a
+ * link's URL is still there in the text to read or copy, so the reader is
+ * given no less than they would have been, only less styling.
+ * `RSS_MARKDOWN_NOTICE` above holds that decision, what it costs, and what
+ * would justify paying the container API's price instead. This is DIFFERENT
+ * from `jsonFeedItemFor`'s `content_text` below, which IS the textually
+ * correct field for markdown in JSON Feed 1.1 (its own spec's distinction
+ * between `content_text` and `content_html`) -- RSS 2.0 has no equivalent
+ * "this is plain text, not HTML" field to move it to, which is why the
+ * disclosure has to live in the channel description.
  *
- * `toMarkdown` THROWS if a component tag survives MDX stripping outside code
- * (markdown-export.ts's module doc) -- deliberately left to propagate: a
- * corrupted feed item belongs in a failed build, not a silently-shipped feed,
- * same reasoning as buildLlmsFullTxt in llms-index.ts.
+ * Publishing the first two case studies is what made this live and what
+ * fired tests/pages.test.ts's RSS tripwire, exactly as that test was built
+ * to do. The tripwire did not go away with the decision: it narrowed to the
+ * one thing that must never appear in this field again, a frontmatter fence,
+ * and keeps its own arming assertion so it cannot pass vacuously. Its paired
+ * test asserts the disclosed markdown really is present, so the notice cannot
+ * quietly become a false statement either.
+ *
+ * `stripNonPortableMdx` THROWS if a component tag survives MDX stripping
+ * outside code (markdown-export.ts's module doc) -- deliberately left to
+ * propagate, and unaffected by this call no longer going through
+ * `toMarkdown`, since the throw was always this function's rather than its
+ * caller's: a corrupted feed item belongs in a failed build, not a
+ * silently-shipped feed, same reasoning as buildLlmsFullTxt in llms-index.ts.
  */
 function rssItemFor(entry: ExportableEntry): RSSFeedItem {
   return {
@@ -90,7 +124,7 @@ function rssItemFor(entry: ExportableEntry): RSSFeedItem {
     link: canonicalUrlFor(entry),
     description: entry.data.description,
     pubDate: entry.data.publishedAt,
-    content: toMarkdown(entry),
+    content: stripNonPortableMdx(entry.body ?? ''),
   };
 }
 
@@ -98,14 +132,21 @@ function rssItemFor(entry: ExportableEntry): RSSFeedItem {
  * The full `/rss.xml` document, RSS 2.0, via `@astrojs/rss`. Verified
  * (scratch script against `getRssString` directly) that zero items produces
  * a well-formed `<rss version="2.0"><channel>...</channel></rss>` with no
- * `<item>` element at all -- not a malformed document -- which is exactly
- * what ships today, since every real content entry is `draft: true`
- * (task-11-brief.md's "thing that will ship wrong if you are not careful").
+ * `<item>` element at all -- not a malformed document. That is no longer
+ * what actually ships (the first case studies are published), but it stays
+ * guaranteed: unpublishing everything must degrade to an empty channel
+ * rather than to a broken one.
+ *
+ * `RSS_MARKDOWN_NOTICE` is appended to the channel description HERE rather
+ * than in src/pages/rss.xml.ts, so the disclosure travels with the code that
+ * creates the thing being disclosed. The route keeps passing the résumé
+ * summary unmodified -- one reused summary, not a hand-written fourth copy
+ * (that route's own note) -- and cannot forget the notice or drift from it.
  */
 export async function buildRssFeed(entries: ExportableEntry[], meta: RssFeedMeta): Promise<string> {
   return getRssString({
     title: meta.title,
-    description: meta.description,
+    description: `${meta.description} ${RSS_MARKDOWN_NOTICE}`,
     site: meta.site,
     items: sortedEntries(entries).map(rssItemFor),
   });

@@ -1,0 +1,173 @@
+---
+title: Replacing guessed delivery dates with calibrated forecasts
+description: An agent-native forecasting tool for engineering managers that grew from a set of Claude Skills into an internal MCP server, and ended up inside the org's roadmapping process.
+publishedAt: 2026-09-05
+draft: false
+---
+
+Every engineering manager I know has had the same bad afternoon. A leader asks when a project
+will land. You open the epic, squint at the story points, do some arithmetic that is really
+just vibes with a calculator, and produce a date. You commit to it. You are not confident in
+it and neither is anyone else, but it is a date, and the meeting needed one.
+
+I spent a few years having that afternoon before I built something to replace it.
+
+## Context
+
+I am one of several senior managers on the management team of a largely flat engineering
+department at a cannabis-tech marketplace, and I own delivery for a set of teams whose work
+shows up on an org-wide roadmap. The expectation of the role is that I solve problems not just
+for my own teams, but for the betterment of the whole organization.
+
+Forecasting was a recurring obligation: leadership plans around dates, so dates have to exist,
+and somebody has to produce them. Every manager in the department was producing them the same
+way, which made the method an org-level problem rather than a local one.
+
+That method was an educated guess extrapolated from Agile story-point estimates and
+back-of-napkin math. It had two problems, and only one of them was accuracy.
+
+The first was that the number had no traceable basis. A date arrived and nobody, including the
+manager who produced it, could reconstruct how. That made the number difficult to defend,
+which meant every forecast opened a negotiation. Leaders pushed on dates because there was
+little to push against except the manager's confidence, and confidence is not evidence.
+
+The second was that producing one was stressful in a way that was out of proportion to the
+arithmetic. It took a few hours at most. But you were committing your team to something you
+had thin grounds for, and you knew it, and you would be held to it anyway.
+
+## Constraint
+
+Whatever replaced it had to satisfy three things at once.
+
+It had to be **objective enough to survive a challenge**, not more confident but more
+inspectable, so that a disagreement became a conversation about inputs rather than a contest
+of conviction.
+
+It had to be **usable by managers who were not going to learn a modeling tool**. Anything
+requiring a spreadsheet discipline or a statistics vocabulary would be adopted by three people
+and abandoned.
+
+And it had to **fit where the work already happened**. Engineering managers at this point
+were living in agentic sessions for a growing share of their day. A dashboard would have been
+one more tab nobody opened.
+
+## Intervention
+
+I built a forecasting toolchain that a manager drives in natural language, inside a session
+they are already in. They say what project they want a forecast for. They get back a
+distribution of likely completion dates, and dates drawn from that distribution at stated
+confidence intervals.
+
+It shipped first as a set of Claude Skills, because that was the fastest way to put something
+in front of colleagues and find out whether the idea survived contact. It did. Then it
+outgrew that form, which I will come back to.
+
+The output is deliberately not a single number. Alongside the distribution it returns **p50,
+p70 and p85 targets**: the dates by which the project lands with 50%, 70% and 85% likelihood.
+The change that mattered was not moving from a wrong date to a right one. It was moving from
+false precision to a date with a stated confidence attached, which is a different kind of
+claim and a much more defensible one.
+
+Because the forecast needs only a reasonable idea of _who_ will work on the project, it can
+run at planning time rather than after commitment. That shift-left is most of the practical
+value: a forecast that arrives before the date is promised is an input to the decision instead
+of a report on it.
+
+## Mechanism
+
+Underneath, it is a Monte Carlo simulation over empirical cycle time. That technique is not
+mine and is not new. Forecasting delivery from observed throughput rather than estimates has
+been well-documented practice for years. What was worth building was everything around it.
+
+**Real cycle time from real people.** The simulation draws on how the specific humans on the
+project have actually completed work, not on an idealized team velocity. It accounts for
+holidays and PTO, because a forecast that assumes a full team in late December is wrong in a
+way everyone can see, and one visibly wrong output is enough to discredit a tool.
+
+**Scenario projection.** Scope growth is not a static fudge factor. A manager can project scope
+changes and re-run, which turns the tool from a reporting instrument into a planning one.
+_What happens if we add this, or if we lose this person for three weeks_ is a question you can
+now answer in the session rather than in a follow-up meeting.
+
+**Calibration as a regression test.** Calibration was performed against historical data, and
+the results were frozen into fixtures feeding a test suite. The intent was that calibration
+would not be a one-time exercise that silently rots, and that changes to the model would have
+to answer to how it had actually performed. That intent was sound. The execution had a hole in
+it, which is the most interesting part of this story and is below.
+
+**Disclosure control.** This is the design decision I would defend hardest. In the interactive
+session, the manager sees everything the model knows, including which people on a project
+look like bottlenecks or risks. That is genuinely useful and genuinely sensitive. So the
+manager, and only the manager, decides what gets published from the forecast onto the epic.
+The private view is complete; the shared artifact is curated by a human who is accountable for
+it. No individual-level inference reaches an org-visible surface without a person choosing to
+put it there.
+
+**Skills to MCP.** The Skills version was outgrown within months. Agentic adoption across the
+org was climbing fast, project planning practice was changing underneath us, and the Skills
+packaging imposed operational and distribution problems that got worse with every new user.
+Moving into our internal MCP server solved them. That migration and a port from Python to
+TypeScript were run as one coordinated project, with testing, rollout and org communications
+planned together, rather than something done quietly and announced afterwards.
+
+## Outcome
+
+**Adoption above 80% of engineering managers**, and the part I care about more: it was
+absorbed into the org-wide roadmapping and reporting process. It stopped being my tool and
+became how the work is done. There are managers using it who have never had a conversation
+with me about it, which is the only adoption signal I actually trust.
+
+**Forecasts land inside the p85 target better than 75% of the time**, and around 80% since the
+port. Roughly one project in ten delivers ahead of the forecast entirely.
+
+**Forecast production went from a few hours to minutes**, but that is the smaller number. The
+real saving is that the negotiation mostly stopped. When the basis is inspectable, a
+disagreement becomes a question about inputs, which is a conversation worth having, instead of
+a contest about whose instinct is better, which is not.
+
+Forecasts are reviewed with engineering managers weekly and targets are updated on a regular
+cadence. Nobody treats them as etched in stone, and some margin of error is expected. That
+turned out to matter more than I anticipated.
+
+## What I'd do differently
+
+**My test suite certified a bug rather than catching it.**
+
+The first version had a critical defect in the empirical cycle-time calculation, the input
+everything else rests on. It survived for some time, through a test suite I considered robust.
+
+Here is why the tests could not have caught it. Calibration was run against historical data
+and frozen into fixtures. Those fixtures were generated _before_ the bug was found, which
+means they were generated by the buggy calculation. The suite was not failing to detect the
+defect; it had encoded it as the expected result. Every run confirmed that the system behaved
+exactly as the system behaved.
+
+It surfaced when the tool was ported from Python to TypeScript. Re-deriving the logic in
+another language broke the shared assumption, because the port could not inherit the
+misunderstanding the original had been written with. The fixtures were regenerated afterwards
+against the corrected calculation.
+
+The lesson generalizes past forecasting: **a test suite cannot validate the assumption it was
+derived from.** If your expected values are produced by the system under test, your tests
+measure self-consistency, not correctness. I knew that in the abstract. I did not notice I had
+done it, on the input everything else rests on, in a tool the whole engineering org had adopted.
+
+The blast radius was smaller than it could have been, and not because of anything clever I
+did. Because forecasts were reviewed weekly and targets were expected to move, a correction
+propagated through the normal cadence instead of becoming an incident. A forecasting tool that
+published immutable dates would have turned the same bug into a much worse week. Building the
+expectation of revision into the process was accidental insurance, and I would now design for
+it deliberately.
+
+**The second thing I would change: the baseline is not stationary.**
+
+The model forecasts from historical cycle time: how the team has performed. But agentic
+tooling was making those same engineers faster over the period the model was
+learning from. A simulation trained on the team that existed will systematically under-predict
+the team that exists now. That is very likely part of why a tenth of projects finish early,
+and part of the residual gap between an 85% target and an 80% hit rate.
+
+I do not think the answer is a correction factor bolted on top. The honest fix is for the
+model to account for drift in its own baseline, weighting recent throughput more heavily or
+modeling the trend rather than the average. I have not built that yet. It is the most
+interesting problem the tool has left.

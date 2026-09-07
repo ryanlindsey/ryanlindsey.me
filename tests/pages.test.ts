@@ -5,7 +5,11 @@ import type { CollectionEntry } from 'astro:content';
 import { SITE_HARNESS_WORKERS } from './workers';
 import { formatDateRange } from '../src/lib/resume';
 import { buildLlmsTxt, buildLlmsFullTxt, type LlmsLink } from '../src/lib/llms-index';
-import { buildRssFeed, buildJsonFeed, type JsonFeed } from '../src/lib/feeds';
+import { buildRssFeed, buildJsonFeed, RSS_MARKDOWN_NOTICE, type JsonFeed } from '../src/lib/feeds';
+// The RSS tripwire's arming assertion runs the patterns against `toMarkdown()`
+// output, which is what `rssItemFor` used to ship and what a regression would
+// ship again -- see the tripwire's own comment.
+import { toMarkdown } from '../src/lib/markdown-export';
 
 // See ./workers.ts for why the site Worker is booted from the build output and
 // why the MCP Worker is always listed with it.
@@ -563,12 +567,40 @@ test('index pages carry no X-Markdown-Variant header', async () => {
 // proving the generator actually produces a populated, correctly-shaped
 // result and not just nothing.
 
-test("/llms.txt omits the Writing and Case studies sections while nothing is published (today's real state)", async () => {
+test('/llms.txt carries a Case studies section listing every published case study, and still omits Writing while no post is published', async () => {
   const page = await html('/llms.txt');
   expect(page).toContain('# Ryan Lindsey');
   expect(page).toMatch(/^> \S/m);
+
+  // The published half. Derived from CONTENT_ENTRIES rather than hardcoded,
+  // so a third case study is covered the day it lands -- the same reasoning
+  // that file-level comment gives for reading entries off disk at all.
+  const publishedWork = CONTENT_ENTRIES.filter((e) => e.section === 'work' && !e.draft);
+  expect(publishedWork.length, 'expected at least one published case study').toBeGreaterThan(0);
+  expect(page).toContain('## Case studies');
+  for (const entry of publishedWork) {
+    expect(page, `/llms.txt should link /work/${entry.slug}.md`).toContain(
+      `(https://ryanlindsey.me/work/${entry.slug}.md)`,
+    );
+  }
+  for (const entry of CONTENT_ENTRIES.filter((e) => e.section === 'work' && e.draft)) {
+    expect(page, `/llms.txt must not link the draft /work/${entry.slug}`).not.toContain(
+      `/work/${entry.slug}.md`,
+    );
+  }
+
+  // The omission half, still live: every post is a draft, so `buildSection`'s
+  // no-empty-scaffolding rule must still drop the Writing heading entirely.
+  // This is what keeps the rule under test now that the section above it is
+  // populated -- had both gone published at once, nothing here would still be
+  // checking that an empty section is omitted rather than rendered bare.
+  expect(
+    CONTENT_ENTRIES.some((e) => e.section === 'writing' && !e.draft),
+    'expected every post to still be a draft; if one shipped, this test needs the ' +
+      'omission assertion moved to whichever section is still empty',
+  ).toBe(false);
   expect(page).not.toContain('## Writing');
-  expect(page).not.toContain('## Case studies');
+
   // The three sections that never depend on published content still render --
   // their absence would mean the whole generator broke, not that the
   // omission rule is working.
@@ -653,12 +685,32 @@ test('buildLlmsTxt lists a published entry with its .md URL and one-line descrip
   expect(text).not.toContain('## Case studies');
 });
 
-test("/llms-full.txt is empty while nothing is published (today's real state)", async () => {
+test('/llms-full.txt concatenates every published document, each preceded by its canonical URL, and carries no draft', async () => {
   const response = await server.fetch('/llms-full.txt');
   expect(response.status).toBe(200);
   expect(response.headers.get('content-type')).toMatch(/^text\/plain\b/);
   const body = await response.text();
-  expect(body).toBe('');
+
+  const published = CONTENT_ENTRIES.filter((entry) => !entry.draft);
+  const drafts = CONTENT_ENTRIES.filter((entry) => entry.draft);
+  expect(published.length, 'expected at least one published entry').toBeGreaterThan(0);
+  expect(drafts.length, 'expected at least one draft entry').toBeGreaterThan(0);
+
+  for (const entry of published) {
+    expect(body, `/llms-full.txt should carry ${entry.section}/${entry.slug}`).toContain(
+      `https://ryanlindsey.me/${entry.section}/${entry.slug}/\n\n`,
+    );
+  }
+  // This is the site's highest-risk leak surface (the route-scan comment near
+  // the top of this file says so in task-9-brief.md's own words), and the
+  // draft filter is the only thing between an unfinished document and one
+  // response containing everything. So the exclusion is asserted here too,
+  // not just on the smaller index.
+  for (const entry of drafts) {
+    expect(body, `/llms-full.txt must not carry the draft ${entry.slug}`).not.toContain(
+      `/${entry.section}/${entry.slug}/`,
+    );
+  }
 });
 
 /**
@@ -815,7 +867,7 @@ test('robots.txt documents the group-inheritance trap, the enforceability caveat
 // actually produces a populated result with the entry's FULL content --
 // not its one-line description -- and not just nothing.
 
-test("/rss.xml is a well-formed, empty RSS 2.0 channel while nothing is published (today's real state)", async () => {
+test('/rss.xml is a well-formed RSS 2.0 channel carrying one item per published entry and none per draft', async () => {
   const response = await server.fetch('/rss.xml');
   expect(response.status).toBe(200);
   expect(response.headers.get('content-type')).toMatch(/^application\/rss\+xml\b/);
@@ -828,8 +880,22 @@ test("/rss.xml is a well-formed, empty RSS 2.0 channel while nothing is publishe
   expect(xml).toContain('<title>Ryan Lindsey</title>');
   expect(xml).toContain('<link>https://ryanlindsey.me/</link>');
   expect(xml.endsWith('</channel></rss>')).toBe(true);
-  // Zero items, not a malformed or missing channel: no <item> element at all.
-  expect(xml).not.toContain('<item>');
+
+  // Exact count, not "at least one": an item appearing for a draft is the
+  // failure this is really watching for, and a subset check would miss it.
+  const published = CONTENT_ENTRIES.filter((entry) => !entry.draft);
+  expect(published.length, 'expected at least one published entry').toBeGreaterThan(0);
+  expect([...xml.matchAll(/<item>/g)]).toHaveLength(published.length);
+  for (const entry of published) {
+    expect(xml, `/rss.xml should link ${entry.section}/${entry.slug}`).toContain(
+      `<link>https://ryanlindsey.me/${entry.section}/${entry.slug}/</link>`,
+    );
+  }
+
+  // src/lib/feeds.ts keeps Markdown in <content:encoded> and discloses it
+  // here rather than rendering MDX to HTML. The disclosure is part of the
+  // feed's contract with a subscriber, so it is asserted, not assumed.
+  expect(xml).toContain(RSS_MARKDOWN_NOTICE);
 });
 
 test('buildRssFeed emits a published fixture entry with its full content, not just its description (proves the generator works, not just that it currently produces nothing)', async () => {
@@ -861,99 +927,110 @@ test('buildRssFeed emits a published fixture entry with its full content, not ju
   // patterns to fire on this very fixture.
 });
 
-// Task 11 fix round 1: a deliberate future gate, not a check on today's
-// code. src/lib/feeds.ts's rssItemFor puts raw toMarkdown() output in
-// <content:encoded>, which conventionally carries HTML -- a real feed
-// reader would render literal "##"/"**"/fenced code rather than formatted
-// prose. That is harmless today only because /rss.xml has zero items (both
-// real content entries are drafts); this test passes for exactly that
-// reason and is meant to start FAILING the moment it stops being true,
-// mirroring tests/resume.test.ts's test.fails completeness gate but in the
-// opposite direction -- green until content ships, then red -- so the
-// choice src/lib/feeds.ts's comment names (render MDX to real HTML for
-// <content:encoded>, or keep markdown and say so honestly in the feed's
-// own <description>) cannot be silently forgotten once it actually
-// matters.
-/**
- * The ways `<content:encoded>` can betray that it is carrying raw markdown
- * into a field feed readers render as HTML.
- *
- * FIX ROUND 2 -- WHY THIS IS A LIST AND NOT THREE INLINE ASSERTIONS. The
- * original three patterns (heading, link, fence) matched NOTHING that
- * `rssItemFor` actually produces. `toMarkdown()` returns
- * `---\n<yaml>\n---\n\n<body>`, so every RSS item's `<content:encoded>`
- * begins with a literal YAML frontmatter block -- not an edge case, 100% of
- * items -- and none of `#`, `](` or ``` ``` ``` appears in it unless the
- * body happens to contain one. A tripwire whose patterns cannot match the
- * output of the code it is watching is not a tripwire. `---` is added here
- * (the fence itself, opening or closing), along with line-start `- ` list
- * items, `> ` blockquotes and a `**bold**` pair, which is the rest of what
- * plain prose markdown ships.
- *
- * Named, and shared with the "armed" check below, so the patterns can be
- * asserted to FIRE on a populated fixture as well as to stay silent on
- * today's empty feed -- the two halves that together mean the gate works.
- */
-const RSS_RAW_MARKDOWN_PATTERNS: { name: string; pattern: RegExp }[] = [
-  { name: 'a YAML frontmatter fence', pattern: /^---[ \t]*$/m },
-  { name: 'an unrendered markdown heading', pattern: /^#{1,6} /m },
-  { name: 'an unrendered markdown link', pattern: /\]\(/ },
-  { name: 'an unrendered fenced code block', pattern: /^```/m },
-  { name: 'an unrendered list item', pattern: /^[-*] /m },
-  { name: 'an unrendered blockquote', pattern: /^> /m },
-  { name: 'unrendered bold', pattern: /\*\*[^*\n]+\*\*/ },
+// Task 11's deliberate future gate, now fired and re-armed. It was written to
+// pass while /rss.xml was empty and to start FAILING the moment a published
+// entry actually shipped markdown into <content:encoded>, so that the choice
+// src/lib/feeds.ts deferred -- render MDX to real HTML, or keep markdown and
+// say so honestly in the feed's own <description> -- had to be made for real
+// rather than silently shipped either way. Publishing the first two case
+// studies fired it, and the second option was taken.
+//
+// A fired tripwire is not a spent one. What changed is what it guards. The
+// broad "no markdown at all" list below could not survive the decision -- the
+// feed now ships markdown ON PURPOSE and says so -- so the forbidden set
+// narrows to the one thing that is still a defect rather than a disclosure:
+//
+//   - a YAML frontmatter fence, which is metadata the item already carries in
+//     its own <title>/<link>/<description>/<pubDate> elements, duplicated into
+//     the body as text. It is the specific thing rssItemFor stopped doing by
+//     calling stripNonPortableMdx instead of toMarkdown, and this is the
+//     assertion that stops it coming back.
+//
+// Everything else -- headings, bold, fences, list items, blockquotes and
+// links -- degrades visibly but LOSSLESSLY, which is the line between the two
+// sets. `[text](url)` is worth naming because it looks like the exception and
+// is not: unrendered, the URL is still right there in the text for a reader to
+// read or copy. Nothing is withheld, only unstyled, and that is exactly what
+// RSS_MARKDOWN_NOTICE tells subscribers to expect.
+//
+// Those patterns stay in the list below rather than being deleted, because the
+// second test in this pair asserts they DO appear -- which is what keeps the
+// notice honest if the feed ever quietly starts emitting HTML instead.
+const RSS_MARKDOWN_PATTERNS: { name: string; pattern: RegExp; forbidden: boolean }[] = [
+  { name: 'a YAML frontmatter fence', pattern: /^---[ \t]*$/m, forbidden: true },
+  { name: 'an unrendered markdown link', pattern: /\]\(/, forbidden: false },
+  { name: 'an unrendered markdown heading', pattern: /^#{1,6} /m, forbidden: false },
+  { name: 'an unrendered fenced code block', pattern: /^```/m, forbidden: false },
+  { name: 'an unrendered list item', pattern: /^[-*] /m, forbidden: false },
+  { name: 'an unrendered blockquote', pattern: /^> /m, forbidden: false },
+  { name: 'unrendered bold', pattern: /\*\*[^*\n]+\*\*/, forbidden: false },
 ];
 
 /** Undo the entities fast-xml-parser's XMLBuilder emits, then name what matched. */
-const rawMarkdownIn = (encodedContent: string): string[] => {
-  const decoded = encodedContent
+const decodeEncoded = (encodedContent: string): string =>
+  encodedContent
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"');
-  return RSS_RAW_MARKDOWN_PATTERNS.filter(({ pattern }) => pattern.test(decoded)).map(
-    ({ name }) => name,
-  );
+
+const matchingPatterns = (encodedContent: string, forbiddenOnly: boolean): string[] => {
+  const decoded = decodeEncoded(encodedContent);
+  return RSS_MARKDOWN_PATTERNS.filter(
+    ({ pattern, forbidden }) => (forbidden || !forbiddenOnly) && pattern.test(decoded),
+  ).map(({ name }) => name);
 };
 
-test('TRIPWIRE: a published RSS item must not ship raw markdown in <content:encoded> (forces a real decision the moment this goes red -- see src/lib/feeds.ts)', async () => {
-  // ARMED (fix round 2): before asserting that today's real feed trips
-  // nothing, prove the patterns can trip at all -- on the exact output
-  // `rssItemFor` produces for a published entry. Without this, the loop below
-  // is vacuous twice over: no items today, and (before this round) no pattern
-  // that matched what an item would carry. This assertion is what makes the
-  // gate a gate rather than a comment.
-  const fixtureXml = await buildRssFeed([publishedPostFixture()], {
-    title: 'Ryan Lindsey',
-    description: 'A test summary.',
-    site: 'https://ryanlindsey.me',
-  });
-  const fixtureContent = fixtureXml.match(/<content:encoded>([\s\S]*?)<\/content:encoded>/);
-  expect(fixtureContent, 'the fixture item should carry <content:encoded>').not.toBeNull();
+const encodedContentsOf = (xml: string): string[] =>
+  [...xml.matchAll(/<content:encoded>([\s\S]*?)<\/content:encoded>/g)].map((match) => match[1]);
+
+test('TRIPWIRE: a published RSS item must not ship a YAML frontmatter fence in <content:encoded> (see src/lib/feeds.ts)', async () => {
+  // ARMED. Before asserting anything about the real feed, prove the patterns
+  // can match at all -- against toMarkdown() output, which is what rssItemFor
+  // used to ship and what a regression would ship again. Without this the
+  // assertion below could pass because the patterns are broken rather than
+  // because the feed is clean, which is the exact trap this file has been
+  // caught by before.
+  const regressionShape = toMarkdown(publishedPostFixture());
   expect(
-    rawMarkdownIn(fixtureContent![1]),
-    'these patterns must actually fire on what rssItemFor ships today -- a tripwire ' +
-      'that cannot match the output of the code it watches is not a tripwire',
+    matchingPatterns(regressionShape, true),
+    'these patterns must fire on toMarkdown() output -- a tripwire that cannot match ' +
+      'the regression it watches for is not a tripwire',
   ).toContain('a YAML frontmatter fence');
 
   const xml = await (await server.fetch('/rss.xml')).text();
-  const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
-  // No loop body runs while items is empty -- that IS this test passing
-  // today, not a weaker check standing in for a real one. The assertion
-  // above is what keeps that emptiness from being the only thing under test.
-  for (const [, itemXml] of items) {
-    const contentMatch = itemXml.match(/<content:encoded>([\s\S]*?)<\/content:encoded>/);
-    expect(contentMatch, 'a published item should still carry <content:encoded>').not.toBeNull();
+  const contents = encodedContentsOf(xml);
+  // Every published item must HAVE the element, and there must be items: an
+  // empty feed would otherwise satisfy the loop below by running zero times.
+  expect(contents).toHaveLength(CONTENT_ENTRIES.filter((entry) => !entry.draft).length);
+  expect(contents.length).toBeGreaterThan(0);
+
+  for (const content of contents) {
     expect(
-      rawMarkdownIn(contentMatch![1]),
-      '<content:encoded> looks like unrendered markdown -- see src/lib/feeds.ts, which ' +
-        'names the decision this is meant to force: render MDX to real HTML here, or keep ' +
-        "markdown and say so honestly in the feed's own <description>",
+      matchingPatterns(content, true),
+      '<content:encoded> is carrying something the feed does not disclose and cannot ' +
+        'render -- see src/lib/feeds.ts and RSS_MARKDOWN_NOTICE',
     ).toEqual([]);
   }
 });
 
-test("/feed.json is a well-formed, empty JSON Feed 1.1 document while nothing is published (today's real state)", async () => {
+test('the disclosed markdown really is present, so RSS_MARKDOWN_NOTICE is an honest statement rather than a stale one', async () => {
+  // The other side of the decision. The notice tells subscribers the content
+  // is Markdown; if a later change quietly started rendering HTML, the notice
+  // would become a lie and nothing above would catch it, because "no markdown"
+  // is what the forbidden list wants. This test fails in that direction.
+  const xml = await (await server.fetch('/rss.xml')).text();
+  const contents = encodedContentsOf(xml);
+  expect(contents.length).toBeGreaterThan(0);
+  const disclosed = contents.flatMap((content) => matchingPatterns(content, false));
+  expect(
+    disclosed,
+    'RSS_MARKDOWN_NOTICE claims items carry Markdown source; nothing markdown-shaped ' +
+      'was found, so either the notice is now wrong or the feed changed format',
+  ).toContain('an unrendered markdown heading');
+});
+
+test('/feed.json is a well-formed JSON Feed 1.1 document carrying one item per published entry and none per draft', async () => {
   const response = await server.fetch('/feed.json');
   expect(response.status).toBe(200);
   expect(response.headers.get('content-type')).toMatch(/^application\/feed\+json\b/);
@@ -962,10 +1039,23 @@ test("/feed.json is a well-formed, empty JSON Feed 1.1 document while nothing is
   expect(feed.title).toBe('Ryan Lindsey');
   expect(feed.home_page_url).toBe('https://ryanlindsey.me/');
   expect(feed.feed_url).toBe('https://ryanlindsey.me/feed.json');
-  // A well-formed feed with zero items, not a malformed document: the
-  // `items` key is present and is an empty array, not omitted or null.
   expect(Array.isArray(feed.items)).toBe(true);
-  expect(feed.items).toHaveLength(0);
+
+  const published = CONTENT_ENTRIES.filter((entry) => !entry.draft);
+  expect(published.length, 'expected at least one published entry').toBeGreaterThan(0);
+  expect(feed.items).toHaveLength(published.length);
+  const urls = feed.items.map((item) => item.url);
+  for (const entry of published) {
+    expect(urls).toContain(`https://ryanlindsey.me/${entry.section}/${entry.slug}/`);
+  }
+
+  // Unlike RSS, `content_text` IS the correct JSON Feed field for markdown
+  // (src/lib/feeds.ts's note), so the full document -- frontmatter block
+  // included -- belongs here and must differ from the one-line summary.
+  for (const item of feed.items) {
+    expect(item.content_text).toContain('title:');
+    expect(item.content_text).not.toBe(item.summary);
+  }
 });
 
 test('buildJsonFeed emits a published fixture entry with its full content, not just its description (proves the generator works, not just that it currently produces nothing)', () => {

@@ -1,0 +1,305 @@
+---
+title: 'A green run is not proof: building an agent platform around silent failure'
+description: A production coaching agent for a sim racing team, built solo on Cloudflare and Claude. Every control in it exists because something failed without saying so.
+publishedAt: 2026-09-06
+draft: false
+---
+
+A GitHub Actions workflow of mine discarded roughly 639 driver sessions. There was no error, no
+failed run, and no alert.
+[`concurrency.cancel-in-progress: false`](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+does not mean "queue everything": GitHub keeps at most one pending run per group and cancels the
+older one when a new one arrives. Under a retry storm that policy throws work away by design, and
+the only reason I know the number is that I went looking afterward.
+
+Nothing was broken. Every run that executed was green. That is the failure mode I now build
+against, and this is the system I built against it.
+
+## Context
+
+I founded and manage Pixelsonly Racing, a competitive sim racing team, and I am the only engineer
+on the platform that supports it. Four drivers, which is a medium-sized roster in this sport, and
+we take on new ones. I am also driver zero, which is why 67% of last month's inference spend is
+attributable to me.
+
+The product is focused rather than narrow, and the difference shows up first in the companion app.
+A driver finishes a session and the PC app reads the simulator's local telemetry file, then helps
+them decide which of it is worth sending at all: what the capture actually contains, which
+sessions have laps clean enough to measure against, and which ones would add nothing that is not
+already on record. Pressing upload is the end of that judgment rather than a substitute for it.
+Some minutes later the driver gets a debrief: where they lost time on that track in that car,
+corner by corner, measured against their own best lap in that same session, and what to drill
+next time out. Everything between those two events is automatic.
+
+It works, and the evidence I trust most is not a number. Drivers read their own data more easily
+than they could before the platform existed, which is the thing they say back to me unprompted.
+Development targets are written automatically out of each debrief, filed under the session they
+were set for, and drilled in the next practice session at that circuit. The loop from session to
+diagnosis to a target a driver takes back on track runs without me in it.
+
+The roster grows, so the platform is built ahead of it. A hard gate on the roadmap
+holds new drivers behind per-driver spend budgets and delivery observability, and the line in it
+reads "not a consequence of driver 12." Controls that arrive with the driver who needed them are
+controls that arrived late.
+
+## Constraint
+
+Three things had to hold at once, and the third one shaped everything.
+
+**Per-driver isolation, with every exception named.** A debrief is personal performance data about
+a person who races alongside everyone else on the platform. One driver seeing another's numbers is
+a trust failure before it is a security one, so private is the default and every crossing has to
+be a deliberate, enumerated one rather than a consequence of how a query happened to be written.
+
+Two crossings exist, and each is bounded by a test rather than by a promise. The team page, which
+every driver on the roster can open, shows roster context: who has driven lately and how much, what
+a rule has flagged and the cutoff it fired on, and where each driver sits in a development spread.
+Most of that the sport already publishes. A session with its date, circuit, and car exists upstream
+and in public before this platform ever sees it, so putting it in front of a teammate discloses
+nothing that was not already available. The one genuinely personalized panel is the development
+spread, and it names nobody: no names, no ordering, no team average, only a driver's own marker
+against the shape of the roster. A driver can see where they sit. They cannot see where anyone else
+sits.
+
+So the test the page passes is "already public, or nobody named," which is cheaper to keep than a
+disclosure policy and stronger to hold than one. What it does not show at all is another driver's
+telemetry, their debrief, or the corner-level figures underneath any of it. The second crossing is
+an explicit driver-to-coach relationship: a coach reads their own students' debriefs and data,
+because that is the job, and reads nobody else's.
+
+What holds without exception is the negative. No driver acquires a read path to another driver's
+raw telemetry or session analysis, no relationship is implicit, and nothing anywhere ranks drivers
+against each other. The code justifies that last one on product grounds rather than security
+grounds: leaderboards are an anti-feature here.
+
+**A minutes-long paid model call inside a request-shaped runtime.** A debrief run spends about
+282 seconds waiting on the model. Nothing about an HTTP request, a queue message, or a chat
+command is shaped like that.
+
+**One operator who cannot watch it.** This is the constraint that produced the system's
+character. I am not going to notice a quiet failure. So the requirement was not "make it
+reliable," which is unachievable and also unfalsifiable. The requirement was that when it does
+fail, it has to say so, to somebody, in a way that survives me not looking.
+
+## Intervention
+
+The driver never chooses anything the system can be wrong about.
+
+The companion app requests
+[presigned upload URLs](https://developers.cloudflare.com/r2/api/s3/presigned-urls/), and **the
+[Worker](https://developers.cloudflare.com/workers/) builds every storage key server-side** from
+the token-authenticated driver. The app never picks a key; it adopts the ones it is handed. On
+completion the Worker reads the manifest and refuses a session that has zero clean laps, is a
+duplicate, or is over budget, **and tells the driver which**. A refusal that the driver can read is
+a different object than a refusal that only exists in a log.
+
+Accepted work is enqueued, and a [Queues](https://developers.cloudflare.com/queues/) consumer
+starts a [Workflow](https://developers.cloudflare.com/workflows/), a durable execution run that
+resumes rather than restarts, whose instance id is `{driver}--{session_id}`. A duplicate dispatch
+therefore resolves to the run that already happened rather than starting a second paid one.
+Idempotency here is a spend control as much as a correctness control.
+
+That queue is where the 639 sessions went. It is worth being precise about why I moved, because
+the obvious reasons were not the real ones. Cost was not the reason: that path was about 6% of
+billable minutes. Latency was not the reason: 88% of a run is the model call, so changing hosts
+saves roughly 30 seconds out of 320. **Reliability was the reason.** For a per-session workload,
+cancel-the-older-one is lossy by design, and a queue-backed consumer with an idempotent instance
+id is lossless by construction. I did not need a faster pipeline. I needed one that could not
+throw work away without telling me.
+
+The one genuinely non-obvious platform choice is Workflows, and it is an economic one:
+[billed CPU time excludes time spent awaiting I/O](https://developers.cloudflare.com/workflows/reference/pricing/).
+Those 282 seconds of waiting cost nothing. That single property is what makes a multi-minute paid
+model call a sensible thing to run inside a Worker at all.
+
+Storage is a lakehouse split. Objects in [R2](https://developers.cloudflare.com/r2/) are truth;
+[D1](https://developers.cloudflare.com/d1/), the relational index over them, is derived and
+rebuildable. The scope limit matters more than the pattern: it is **telemetry-only**. Authored
+coaching state, the briefs and benchmarks and targets, has no stored object to replay from, so for
+that data D1 is a genuine second source of truth with its own durability contract. "Just rebuild
+it from the object store" is written down as a rule, and it is written down alongside the case
+where it does not apply. A rebuild invariant you have not scoped is a rebuild invariant you will
+discover the limits of during an incident.
+
+## Mechanism
+
+### Isolation by object addressing, not by a `WHERE` clause
+
+Drivers authenticate through a separate broker that mints a short-lived ES256 JWT, verified
+against a published public key. Each driver's agent is a
+[Durable Object](https://developers.cloudflare.com/durable-objects/), a single addressable
+instance with its own embedded SQLite storage, and it is reached like this:
+
+```ts
+return env.DRIVER_AGENT.getByName(claims.slug).fetch(request);
+```
+
+The instance name **is** the verified slug from the token.
+[`getByName`](https://developers.cloudflare.com/durable-objects/api/namespace/#getbyname) is the
+only way anything in the codebase addresses that class, and no route accepts an object id. Each
+driver's working memory and conversation transcript live in a physically separate database inside
+a separate object. An unverified caller resolves to no slug, so there is no instance to address.
+
+For the data the agent holds, this is stronger than row-level scoping, and the reason is worth
+stating plainly: there is no shared table for a bug to leak across. A forgotten predicate in a
+query over a shared table is a data breach. There is no equivalent mistake available here, because
+the isolation is in the addressing rather than in the filtering.
+
+The relational layer cannot make that claim and should not pretend to. Every statement there is
+scoped by `driver_id` on both sides of every join, which is filtering, and filtering is the thing
+you can forget. Two habits keep it honest. The store interface takes the **subject's** `driver_id`
+and never the caller's, so the question of whether this caller may read that subject is answered
+once, above the store, instead of being re-litigated inside every query. The coach relationship
+reads through that single check rather than around it. And the cross-driver surfaces are kept
+deliberately few and deliberately dull: roster activity and rule flags on the team page, a coach
+reading their own students, each through its own query rather than by relaxing the scoping on a
+general one, and neither returning telemetry. A short enumerated list is a thing that stays
+reviewable. A general-purpose cross-driver read is not.
+
+The same idea runs through storage. An artifact key names its owning driver in its fourth
+segment:
+
+```
+telemetry/ibt-lap/1/{driver}/{track}/{car}/{session}/lap-NNN.json.gz
+```
+
+So the artifact route authorizes from the key alone, by string equality between that segment and
+the subject the caller is entitled to read. For a driver that subject is themselves and nothing
+else, which means there is no lookup to get wrong: **the key structure is the access control**, and
+another driver's valid key reads as not-found rather than as forbidden.
+
+None of that is a claim about intent, so it is tested against the runtime that ships.
+`agent.workers.test.ts` runs inside [workerd](https://github.com/cloudflare/workerd), the open
+source runtime Workers actually execute on, through
+[`@cloudflare/vitest-pool-workers`](https://developers.cloudflare.com/workers/testing/vitest-integration/),
+reading the real
+[`wrangler.toml`](https://developers.cloudflare.com/workers/wrangler/configuration/), against real
+Durable Object storage and a real database seeded from the production migrations. The assertions
+are named for the behavior rather than the code: an agent for driver A cannot read driver B's
+storage, and each tool separately cannot be pointed at another driver's history, fuel, debrief, or
+observations. Those are behavioral tests in the real runtime, not shape tests against a mock.
+
+### Evals that refuse to be green
+
+The output is prose, so the scorers are property-based rather than string-matching. A test that
+pinned strings would fail on every improvement, which trains you to stop reading it. Each scorer
+instead states a shape an answer must not have or a claim it must carry, and names the document
+that owns that rule.
+
+Three decisions in the harness are the ones I would defend in an interview.
+
+**Known-open cases run, report, and do not gate.** A suite that is red on day one is a suite
+nobody reads. So a known-open failure is visible without blocking, and the report also calls out
+a known-open case that _starts passing_. The ratchet runs in both directions, which is what stops
+the known-open list from becoming a place where problems go to be forgotten.
+
+**A deliberate run that measures nothing is red.** No opt-in, no key, an unset secret: every one
+of those paths ends at a failing coverage assertion rather than a skipped test. A green and empty
+eval reports that the engineer is comfortable having asked the system nothing, and that is a
+worse state than a failing one because it looks like the good state.
+
+**A ratchet between prose and code.** The scorers carry unit tests asserting that the vocabulary
+and style documents still say what the scorers enforce. Editing either document fails CI until
+somebody comes back and re-reads the rules. A written-down contract and its enforcement drift
+apart silently otherwise, and this is the cheapest mechanism I have found for making that drift
+loud.
+
+The conversation harness has a specific origin. Three consecutive releases in one day each fixed
+a different instance of one behavioral bug class. Every fix was correct. Nothing in the system
+could tell anyone whether the class was still open, and that gap was the actual defect.
+
+### Why the advice is bounded
+
+The honest answer to "how do you know the coaching is any good" is that **there is no outcome
+study**. No control group, no counterfactual, no measured causal effect on lap time. A four-driver
+roster and a few dozen debriefs cannot support that claim, so I do not make it.
+
+What I built instead is a structural bound. Every target is a time the driver already drove, in
+the same session, on the same track, in the same car. The reference is their own lap. The system
+cannot invent a target that is faster than the driver has been, because the target _is_ something
+they did. The worst realistic failure is therefore a misattributed location for time that is
+genuinely recoverable, rather than a fabricated goal. That is a much smaller failure, and it is
+one a driver can catch and report.
+
+When a driver does report one, it is settleable in a single read-only query, because the engine's
+own hint and the exact figures a claim was minted from are both persisted next to the claim. That
+has already overturned a diagnosis I had stated confidently and wrongly.
+
+## Outcome
+
+Live with real users since June, with the queryable index dating from the cutover on 2026-07-22.
+Every message delivered since delivery observability existed carries a recorded delivery status,
+and none of them records a failure. The honest footnote is that the deliveries before that point
+carry no status at all, so the clean record covers the period since I could see it, and that is
+the only period it is entitled to cover.
+
+**A debrief run costs $2.06**, averaged over 20 August runs and measured from a spend ledger that
+prices each response from its own usage block, including cache read and write multipliers. Not
+estimated, and not the number in my own documentation, which still says $0.85 and is stale by
+roughly a factor of two after the analysis substrate grew, the tool-use cap tripled, and a model's
+introductory rate reverted. Enforcement is that ledger plus a dispatch gate, defaulting to a $60
+per driver per month budget in code.
+
+**The replay eval's own gate is unmet, and the report says so.** The bar is at least 10 usable
+bundles across at least 2 drivers and 3 tracks. I have 2 bundles. I wrote that bar before any
+numbers existed, which is the only order in which writing a bar means anything, and the harness
+reports the shortfall every time it runs rather than quietly scoring what it happens to have.
+
+I would rather ship a governance artifact that says it is not yet satisfied than one that was
+tuned until it passed.
+
+## What I'd do differently
+
+**Two things are still open, and only one of them tells me when it happens.**
+
+The one I can state plainly: deploying the Worker while a debrief is running can abort that run. A
+debrief is a multi-minute paid call, so there is a real chance one is in flight at any given
+moment, and shipping a change to an unrelated part of the Worker is enough to end it. The retry
+lands and the driver gets their debrief late rather than not at all, so this is a far smaller
+failure than the 639. It is the same shape, though: a platform behavior I never chose, quietly
+deciding that live work is expendable. The fix is a dispatch check for in-flight runs before a
+deploy takes, and it is on the list rather than in the system.
+
+The one I cannot state plainly is the more interesting problem, and it is the reason this section
+exists. Each debrief runs in a [container](https://developers.cloudflare.com/containers/) sandbox,
+and for a stretch roughly half of first attempts died mid-run with the Durable Object reporting
+that it was no longer active. Retries landed, and one session needed three. I have not seen it
+lately. Debriefs are completing and no driver has reported anything. What I cannot tell you is
+whether it is fixed, because that failure path captures zero forensics and books no spend, which is
+the worst available combination: I cannot reconstruct what happened, and the ledger that is
+supposed to be my second witness saw nothing either.
+
+So the honest status is open and under investigation, with no evidence available to close it. That
+is the real cost, and it is not the flakiness. From where I am standing, a genuine fix and a quiet
+stretch look exactly the same. Every other failure in the platform was made to announce itself, and
+this is the one I have not yet made announce itself. It is a straightforward instrumentation job
+that I have deprioritized behind features more than once, and writing this down is partly an
+attempt to stop doing that.
+
+**And I would distrust platform defaults much earlier.**
+
+Three of the eight incidents I have written up share one shape: a tool quietly answered a
+question I did not know I was asking.
+
+`cancel-in-progress: false` answered "should concurrent runs queue?" with a policy I had not read.
+A pinned CLI version turned out to be a model capability table, clamping output to a limit set
+before the current model generation existed, so an environment variable raising that limit was a
+no-op; dependency tooling cannot see a version inside a container build instruction, and that
+blind spot cost two outages three days apart. Generated files that were committed to the
+repository were permanently stale by design, because a deploy regenerates every one and never
+commits it back, and a month-old copy was read as live production state and reported as an outage
+that was not happening.
+
+The fix for the last one generalized into the rule I would put on the wall: **no file in this
+repository can tell you what is deployed. Only the deployment can.** So those files are ignored
+now, an endpoint returns what the live bundle actually carries, and a daily check compares it
+against source. That check catches both directions: a source change that fired no deploy, and a
+deploy that went green without taking.
+
+Which is the rule the whole platform now runs on, and it is four words long: **a green run is not
+proof.** Engine steps warn and continue, so every cutover needs a positive signal, a row count or
+a resolved-source log or a message id or a token count, and no ticket closes on a green tick
+alone. Its companion costs more to keep: every failure path must tell the driver something.
+
+I have kept the first rule everywhere. On the second I am two short, and the one that bothers me
+is the one I cannot yet measure.
