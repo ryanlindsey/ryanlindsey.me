@@ -806,11 +806,49 @@ test('/mcp on the site origin completes the MCP handshake', async () => {
   });
   expect(response.status).toBe(200);
   expect(await response.text()).toContain('ryanlindsey-me');
+  // CORS parity between the two origins is the point of Task 2's opened
+  // policy (workers/mcp/src/index.ts's HANDLER_OPTIONS), and every response
+  // the MCP Worker returns -- this one included -- is wrapped in `withCors`
+  // unconditionally from that config, regardless of the request's own Origin
+  // (node_modules/agents' handler-stateless.ts). So these are assertable
+  // proof that the forward carries CORS behavior across the service-binding
+  // hop intact, not just that *some* response came back: a browser client at
+  // https://ryanlindsey.me/mcp must see the same CORS posture a client at
+  // mcp.ryanlindsey.me/mcp does.
+  expect(response.headers.get('access-control-allow-origin')).toBe('*');
+  expect(response.headers.get('access-control-allow-headers')).toBe(
+    'content-type, accept, mcp-session-id, mcp-protocol-version, authorization',
+  );
 });
 
 test('/mcp is not swallowed by the SPA 404 page', async () => {
   const response = await server.fetch('/mcp');
   expect(response.headers.get('content-type') ?? '').not.toContain('text/html');
+});
+
+test('/mcp on the site origin answers a CORS preflight, Origin and requested headers included', async () => {
+  // The transport's OPTIONS branch (node_modules/agents' handler-stateless.ts)
+  // answers before any JSON-RPC handling runs, so this exercises a different
+  // code path than the POST handshake above -- and it is exactly the request
+  // a real browser MCP client sends before its actual call, which is why
+  // Task 2 (03 §1) and this task's own constraints both single preflights out
+  // by name. Reaching this response at all already proves the OPTIONS method
+  // and the Origin/Access-Control-Request-* headers survived the forward: the
+  // route-matching check ahead of this branch would 404 first otherwise.
+  const response = await server.fetch('/mcp', {
+    method: 'OPTIONS',
+    headers: {
+      origin: 'https://claude.ai',
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': 'content-type,mcp-protocol-version',
+    },
+  });
+  expect(response.status).toBe(200);
+  expect(response.headers.get('access-control-allow-origin')).toBe('*');
+  expect(response.headers.get('access-control-allow-methods')).toBe('GET, POST, OPTIONS');
+  expect(response.headers.get('access-control-allow-headers')).toBe(
+    'content-type, accept, mcp-session-id, mcp-protocol-version, authorization',
+  );
 });
 
 // Day 3 Task 12 (02 §3 / research appendix B5): public/robots.txt is a

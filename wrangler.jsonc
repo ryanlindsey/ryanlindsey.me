@@ -50,6 +50,22 @@
       "/work",
       "/work/*",
       "!/work/*.md",
+      // Day 4 Task 13 (03 §1): `/mcp` has no matching entry in `dist/client`
+      // (confirmed: `find dist/client -iname '*mcp*'` is empty), so today it
+      // already falls through to src/worker.ts's forward with no entry here
+      // -- unlike every other path above, which is listed BECAUSE it shadows
+      // a real static asset. This one changes NOTHING today; it is here for
+      // durability. `not_found_handling` is unset now (the plain "answer a
+      // real 404" default), but `single-page-application` or `404-page`
+      // would change what an UNMATCHED path does -- the Asset Worker would
+      // answer it directly and src/worker.ts's `fetch` would never run,
+      // exactly the "code before `handle()` is unreachable for paths it does
+      // not name" trap the comment above this array already names. If that
+      // ever changes, `/mcp` -- the endpoint 03 §1 calls PRIMARY -- would go
+      // silently unreachable while `mcp.ryanlindsey.me` kept working: the
+      // asymmetric-origin failure this whole task exists to close, reopened
+      // by asset config instead of code. Do not delete this as redundant.
+      "/mcp",
     ],
   },
 
