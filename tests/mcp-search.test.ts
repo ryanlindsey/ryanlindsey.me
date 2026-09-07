@@ -3,10 +3,14 @@ import { CORPUS_EMBEDDING_MODEL, chunkMarkdown } from '../src/lib/corpus';
 import { citationFor, embedQuery, excerptFor, parseChunkId } from '../src/lib/mcp/search';
 
 // Task 9's pure half. No bindings, no index, no credentials -- the same split
-// tests/corpus.test.ts draws for the same reason: `env.VECTORIZE` under the
-// harness is a LOCAL SIMULATION holding no vectors and `env.AI` is a mock
-// service binding (tests/workers.ts), so a retrieval assertion made against
-// either of them would be green and worthless.
+// tests/corpus.test.ts draws, and for a harder reason than that file had.
+// `env.VECTORIZE` under the harness is not an empty index a retrieval test
+// could run green-but-meaningless against: it THROWS `Binding VECTORIZE needs
+// to be run remotely` (measured; the note beside the binding in
+// workers/mcp/wrangler.jsonc has the detail), and `env.AI` is a mock service
+// binding, so `env.AI.run()` is a TypeError there. `search_writing`'s handler
+// therefore cannot execute under the harness at all, and everything about a
+// citation that can be checked has to be checkable here, with nothing bound.
 //
 // What IS covered here is the half that decides whether a citation is honest:
 // the chunk-id grammar the corpus job writes, the re-chunking that rebuilds
@@ -96,9 +100,16 @@ test('a degraded citation says so and drops the chunk index it cannot stand behi
   // ABSENT, not null and not undefined -- the same "omit, don't null" contract
   // the document tools follow for metadata a document does not declare.
   expect(citation).not.toHaveProperty('chunk');
-  // The property that holds no matter what: the excerpt is still text from the
-  // cited document, under the cited document's own URL.
-  expect(markdown).toContain(citation.excerpt);
+  // The property that holds no matter what: the excerpt is still real text
+  // from the cited document, under the cited document's own URL.
+  //
+  // Pinned to the document's LEAD CHUNK rather than asserted with
+  // `expect(markdown).toContain(citation.excerpt)`, which was the first
+  // version of this line and guaranteed nothing: the empty string is a
+  // substring of every document, so a `citationFor` that dropped the excerpt
+  // entirely on degradation would have satisfied the very invariant the line
+  // exists to protect.
+  expect(citation.excerpt).toBe(chunkMarkdown(markdown)[0]);
   expect(citation.url).toBe('https://ryanlindsey.me/work/silent-failure/');
 });
 

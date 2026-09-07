@@ -653,6 +653,11 @@ describe('search_writing', () => {
     // The whole point of two buckets: exhausting search leaves reading intact.
     const { json } = await callTool('get_contact');
     expect(json.result.isError).toBeFalsy();
+
+    // Settled before returning, like every tool call in this file: that write
+    // is dispatched through `ctx.waitUntil` and would otherwise be in flight
+    // when the next test clears the table. See `waitForAuditRows`.
+    await waitForAuditRows(db, 13);
   });
 });
 

@@ -373,6 +373,10 @@ export function registerTools(server: McpServer, tc: ToolContext): void {
 
       const found = await tc.env.VECTORIZE.query(vector, {
         topK: limit,
+        // Asked for AND read: every match's `tier` is re-checked in the loop
+        // below. Free at this level ("no additional overhead" for indexed
+        // properties), and `tier` and `type` are the only two properties any
+        // vector in this index carries (src/lib/corpus.ts's `metadataFor`).
         returnMetadata: 'indexed',
         // STRUCTURAL INTENT, not decoration, and day 5 replaces it -- read
         // 09 §3 before deleting or widening this line. Everything in
@@ -406,6 +410,29 @@ export function registerTools(server: McpServer, tc: ToolContext): void {
       const citations: Citation[] = [];
 
       for (const match of found.matches) {
+        // The `filter` above should already have made this impossible, which
+        // is precisely why it is checked rather than assumed. Vectorize's
+        // documented behaviour for a filtered query against a property that is
+        // not indexed is to return partial or EMPTY results with NO ERROR
+        // (workers/mcp/wrangler.jsonc's note on the metadata indexes), so a
+        // filter that stops doing its job does not announce itself -- and the
+        // direction it fails in is the one that matters here, because day 5
+        // puts a non-public tier behind this same call. The metadata is
+        // already on the wire, so the second opinion costs one comparison.
+        //
+        // Fails CLOSED: a match whose tier cannot be confirmed `public` is
+        // dropped rather than cited. Every vector this corpus writes carries
+        // `{ tier, type }` and both are indexed, so a match reaching this
+        // branch means something is wrong with the index rather than with the
+        // document -- and the safe answer to "I cannot tell whose this is" on
+        // a public tool is not to serve it.
+        if (match.metadata?.tier !== CORPUS_TIER) {
+          console.warn(
+            `mcp/search: ${match.id} did not come back as tier=${CORPUS_TIER}; dropping the match`,
+          );
+          continue;
+        }
+
         const parsed = parseChunkId(match.id);
         if (parsed === null) {
           console.warn(`mcp/search: unrecognised vector id ${JSON.stringify(match.id)}`);
