@@ -118,6 +118,61 @@ for (const route of CONTENT_ROUTES) {
   });
 }
 
+for (const route of CONTENT_ROUTES) {
+  test(`${route}: a conditional markdown request revalidates as markdown, never as HTML`, async () => {
+    // FIX ROUND 2, and the reason this test exists at all: `serveMarkdownAsset`
+    // used to bail on `!assetResponse.ok`, which is TRUE for `304 Not
+    // Modified`. Caching a `.md` variant and revalidating it is the single most
+    // ordinary thing an agent does with these routes, and it was the one case
+    // with no coverage -- so the bail fell through to `handle()` and answered a
+    // conditional markdown request with the full HTML page (observed before the
+    // fix: `200 text/html`, 9,503 bytes, on a request whose `Accept` said
+    // `text/markdown`). A client that revalidates its cached copy would have
+    // silently swapped markdown for HTML at the first cache hit.
+    const first = await fetchWith(route, 'text/markdown');
+    expect(first.status).toBe(200);
+    const etag = first.headers.get('etag');
+    expect(etag, `${route}.md should carry an ETag for a client to revalidate with`).not.toBeNull();
+
+    const revalidated = await server.fetch(route, {
+      headers: { Accept: 'text/markdown', 'If-None-Match': etag! },
+    });
+    expect(
+      revalidated.status,
+      `${route}: a matching If-None-Match must revalidate (304), not re-answer with a different representation`,
+    ).toBe(304);
+    // The assertion that actually catches the bug: whatever the status, the
+    // response to a markdown-preferring conditional request must never be the
+    // HTML page. A 304 carries no Content-Type of its own, so this is checked
+    // as "not HTML" rather than as "is markdown".
+    expect(
+      revalidated.headers.get('content-type'),
+      `${route}: a conditional markdown request must never come back as HTML`,
+    ).not.toMatch(/^text\/html\b/);
+    expect(await revalidated.text(), `${route}: a 304 body must be empty`).toBe('');
+    // Vary matters MORE here than on the 200: this is the response a shared
+    // cache uses to decide which stored representation to reuse.
+    expect(
+      revalidated.headers.get('vary'),
+      `${route}'s revalidation response must carry Vary: Accept`,
+    ).toBe('Accept');
+  });
+
+  test(`${route}: a stale If-None-Match returns the markdown body again, not HTML`, async () => {
+    // The other half of the conditional-request contract: a NON-matching
+    // validator must serve the full markdown representation, not fall through
+    // to the HTML page either.
+    const response = await server.fetch(route, {
+      headers: { Accept: 'text/markdown', 'If-None-Match': '"not-the-current-etag"' },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toMatch(/^text\/markdown\b/);
+    expect(response.headers.get('vary')).toBe('Accept');
+    const direct = await server.fetch(`${route}.md`);
+    await expect(response.text()).resolves.toBe(await direct.text());
+  });
+}
+
 test('the trailing-slash form of a content route also negotiates', async () => {
   // task-8-brief.md's called-out edge case: an extensionless request like
   // /writing/foo 307-redirects to /writing/foo/ before Cloudflare would ever

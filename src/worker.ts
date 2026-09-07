@@ -186,14 +186,33 @@ function withVaryAccept(response: Response): Response {
 
 /**
  * Fetches `markdownPath` through the `ASSETS` binding and returns it with
- * `Vary: Accept` appended, or `null` if the asset does not exist (`ok` is
- * false) -- in which case the caller falls through to `handle()` exactly as
- * if negotiation had not run.
+ * `Vary: Accept` appended, or `null` if the asset does not exist -- in which
+ * case the caller falls through to `handle()` exactly as if negotiation had
+ * not run.
  *
  * `Vary: Accept` is mandatory on the response this returns: without it,
  * Cloudflare's cache could key a markdown body under a URL a browser then
  * requests with `Accept: text/html`, and serve raw markdown as if it were
  * the page.
+ *
+ * "DOES NOT EXIST" IS `404`, NOT `!ok` (fix round 2). The request headers are
+ * forwarded to the asset binding verbatim -- deliberately, so conditional
+ * requests work at all -- which means a client that cached `/resume.md` and
+ * revalidates with `If-None-Match` gets a `304` back from that binding. `304`
+ * is not `ok`, so the earlier `!assetResponse.ok` bail treated the single most
+ * common cache-revalidation response as "there is no markdown here" and fell
+ * through to `handle()`, answering a conditional markdown request with a full
+ * HTML page (observed: `GET /resume`, `Accept: text/markdown` +
+ * `If-None-Match` -> `200 text/html`, 9,503 bytes). Passing it through is
+ * correct and legal: a `304` carries no body, and `Vary: Accept` matters more
+ * on it than anywhere else, since it is precisely the response a shared cache
+ * uses to decide which stored representation to reuse.
+ *
+ * Any other non-404 status (a `500` out of the asset binding, say) is also
+ * passed through rather than converted into an HTML page: this module's whole
+ * job is to keep one URL's two representations from being confused for each
+ * other, and answering a failed markdown fetch with HTML is exactly that
+ * confusion.
  */
 async function serveMarkdownAsset(
   env: Env,
@@ -204,7 +223,7 @@ async function serveMarkdownAsset(
     method: request.method,
     headers: request.headers,
   });
-  if (!assetResponse.ok) return null;
+  if (assetResponse.status === 404) return null;
   return withVaryAccept(assetResponse);
 }
 
