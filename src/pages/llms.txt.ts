@@ -93,6 +93,27 @@ const MCP_LINKS: LlmsLink[] = [
   },
 ];
 
+/**
+ * The bulk-ingest corpus (fix round 2). `/llms-full.txt` had no inbound link
+ * from anywhere on the site, while src/pages/llms-full.txt.ts,
+ * src/components/SiteFooter.astro and tests/pages.test.ts each explained their
+ * own shape by saying that /llms.txt pointed at it. This is that link.
+ *
+ * Unconditional, like RESUME_LINKS and MCP_LINKS above and unlike the
+ * Writing/Case studies sections: the route always exists and always resolves.
+ * It is empty today only because every content entry is `draft: true`, and it
+ * fills in on its own with no change here -- the same way /llms.txt's own
+ * sections do.
+ */
+const FULL_CONTENT_LINKS: LlmsLink[] = [
+  {
+    title: 'All content (llms-full.txt)',
+    url: `${SITE_ORIGIN}/llms-full.txt`,
+    description:
+      "Every published document's markdown in one file -- one fetch instead of one per page.",
+  },
+];
+
 export const GET: APIRoute = async () => {
   // Aggregation surface (task-9-brief.md's "draft rule"): only published
   // entries reach this file, matching src/pages/writing/index.astro and
@@ -114,6 +135,7 @@ export const GET: APIRoute = async () => {
     mcp: MCP_LINKS,
     posts: posts.sort(byPublishedDesc).map(markdownLinkFor),
     caseStudies: caseStudies.sort(byPublishedDesc).map(markdownLinkFor),
+    full: FULL_CONTENT_LINKS,
   });
 
   // The Content-Type set here does not survive Astro's static build --

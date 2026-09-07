@@ -39,13 +39,8 @@ import {
 
 // --- Fixtures -----------------------------------------------------------
 
-/**
- * `/llms.txt` exactly as this repo builds it TODAY: both `.mdx` files are
- * `draft: true`, so the aggregation filter leaves the Writing and Case studies
- * sections omitted entirely and only the Resume format manifest and the MCP
- * link survive. Copied from dist/client/llms.txt rather than paraphrased.
- */
-const LLMS_TXT_TODAY = `# Ryan Lindsey
+/** Everything in /llms.txt that does not depend on published content. */
+const LLMS_TXT_HEADER = `# Ryan Lindsey
 
 > Agentic engineering is making engineers dramatically faster. I build the instruments that let the organization around them keep pace.
 
@@ -62,11 +57,33 @@ const LLMS_TXT_TODAY = `# Ryan Lindsey
 `;
 
 /**
+ * The bulk-ingest section, last in the real file (fix round 2 added the link).
+ * It is here rather than merely absent because it is a same-origin markdown
+ * link that is NOT a document -- exactly the shape `corpusSources` has to
+ * decline, and it now ships in the real file every build.
+ */
+const LLMS_TXT_FULL_SECTION = `
+## Full content
+
+- [All content (llms-full.txt)](https://ryanlindsey.me/llms-full.txt): Every published document's markdown in one file -- one fetch instead of one per page.
+`;
+
+/**
+ * `/llms.txt` exactly as this repo builds it TODAY: both `.mdx` files are
+ * `draft: true`, so the aggregation filter leaves the Writing and Case studies
+ * sections omitted entirely and only the Resume format manifest, the MCP link
+ * and the bulk-ingest link survive. Copied from dist/client/llms.txt rather
+ * than paraphrased.
+ */
+const LLMS_TXT_TODAY = `${LLMS_TXT_HEADER}${LLMS_TXT_FULL_SECTION}`;
+
+/**
  * The same file once something is published. This is the case the empty one
  * above can never exercise, and the reason it is here: a source list only ever
- * tested against an all-draft site is a source list nobody has tested.
+ * tested against an all-draft site is a source list nobody has tested. Section
+ * order matches the real generator's -- curated lists first, firehose last.
  */
-const LLMS_TXT_POPULATED = `${LLMS_TXT_TODAY}
+const LLMS_TXT_POPULATED = `${LLMS_TXT_HEADER}
 ## Writing
 
 - [Second Post](https://ryanlindsey.me/writing/second-post.md): Newer.
@@ -75,7 +92,7 @@ const LLMS_TXT_POPULATED = `${LLMS_TXT_TODAY}
 ## Case studies
 
 - [A Case Study](https://ryanlindsey.me/work/a-case-study.md): What happened.
-`;
+${LLMS_TXT_FULL_SECTION}`;
 
 /** `/resume.md` as built today, verbatim from dist/client/resume.md. */
 const RESUME_MARKDOWN = `# Ryan Lindsey
@@ -161,6 +178,14 @@ describe('corpusSources', () => {
 - [Elsewhere](https://example.invalid/writing/not-ours.md): Not this site.
 `;
     expect(corpusSources(withForeignMarkdown)).toEqual([RESUME_SOURCE]);
+  });
+
+  test('does not mistake the bulk-ingest file for a document', () => {
+    // /llms-full.txt is a same-origin link in the file (fix round 2 added it)
+    // and is emphatically not a document to embed -- it is every document at
+    // once. The `/writing|work/<slug>.md` shape is what excludes it, and this
+    // pins that rather than leaving it to the two fixtures' silence.
+    expect(corpusSources(LLMS_TXT_TODAY).map((s) => s.path)).toEqual(['/resume.md']);
   });
 
   test('ignores HTML page links, which have no .md suffix', () => {

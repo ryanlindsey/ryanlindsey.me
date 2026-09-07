@@ -59,6 +59,16 @@ export function buildLlmsTxt(input: {
   mcp: LlmsLink[];
   posts: LlmsLink[];
   caseStudies: LlmsLink[];
+  /**
+   * The bulk-ingest sibling, `/llms-full.txt` (fix round 2). It had ZERO
+   * inbound links anywhere on the site while three separate comments -- in
+   * src/pages/llms-full.txt.ts, src/components/SiteFooter.astro and
+   * tests/pages.test.ts -- each justified their own choice by asserting that
+   * /llms.txt linked it. It does now. Last section, after the curated lists:
+   * an index should offer what fits in a context window first, and name the
+   * firehose at the end.
+   */
+  full: LlmsLink[];
 }): string {
   const header = `# Ryan Lindsey\n\n> ${input.summary}`;
   const sections = [
@@ -66,6 +76,7 @@ export function buildLlmsTxt(input: {
     buildSection('MCP', input.mcp),
     buildSection('Writing', input.posts),
     buildSection('Case studies', input.caseStudies),
+    buildSection('Full content', input.full),
   ].filter((value): value is string => value !== null);
 
   return sections.length > 0 ? `${header}\n\n${sections.join('\n\n')}\n` : `${header}\n`;

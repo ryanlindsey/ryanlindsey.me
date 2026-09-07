@@ -569,11 +569,12 @@ test("/llms.txt omits the Writing and Case studies sections while nothing is pub
   expect(page).toMatch(/^> \S/m);
   expect(page).not.toContain('## Writing');
   expect(page).not.toContain('## Case studies');
-  // The two sections that never depend on published content still render --
+  // The three sections that never depend on published content still render --
   // their absence would mean the whole generator broke, not that the
   // omission rule is working.
   expect(page).toContain('## Resume');
   expect(page).toContain('## MCP');
+  expect(page).toContain('## Full content');
 });
 
 test('/llms.txt links the résumé in all four formats and the MCP endpoint, and serves text/plain', async () => {
@@ -589,6 +590,13 @@ test('/llms.txt links the résumé in all four formats and the MCP endpoint, and
   expect(page, '/llms.txt should link the MCP endpoint').toContain(
     '(https://mcp.ryanlindsey.me/mcp)',
   );
+  // Fix round 2: /llms-full.txt had zero inbound links from anywhere on the
+  // site, while this file's own footer test, src/pages/llms-full.txt.ts and
+  // src/components/SiteFooter.astro each justified their shape by asserting
+  // that /llms.txt linked it. This is the assertion that keeps that true.
+  expect(page, '/llms.txt should link its bulk-ingest sibling').toContain(
+    '(https://ryanlindsey.me/llms-full.txt)',
+  );
 });
 
 test('buildLlmsTxt omits a heading entirely when its link list is empty', () => {
@@ -601,6 +609,7 @@ test('buildLlmsTxt omits a heading entirely when its link list is empty', () => 
     mcp: [],
     posts: [],
     caseStudies: [],
+    full: [],
   });
   expect(text).toBe('# Ryan Lindsey\n\n> A test summary.\n');
   expect(text).not.toContain('##');
@@ -625,8 +634,17 @@ test('buildLlmsTxt lists a published entry with its .md URL and one-line descrip
     mcp: [{ title: 'MCP server', url: 'https://mcp.ryanlindsey.me/mcp', description: 'x' }],
     posts: [fixturePost],
     caseStudies: [],
+    full: [
+      {
+        title: 'All content (llms-full.txt)',
+        url: 'https://ryanlindsey.me/llms-full.txt',
+        description: 'x',
+      },
+    ],
   });
   expect(text).toContain('## Writing');
+  // The bulk-ingest sibling comes last, after the curated lists.
+  expect(text.indexOf('## Full content')).toBeGreaterThan(text.indexOf('## Writing'));
   expect(text).toContain(
     '- [Fixture Post](https://ryanlindsey.me/writing/fixture-post.md): A fixture post used only to prove the generator works.',
   );
