@@ -79,3 +79,40 @@ test('advertises exactly the reviewed server instructions', async () => {
   // Top level of the result, per the spec — not nested inside serverInfo.
   expect(json.result.instructions).toBe(EXPECTED_INSTRUCTIONS);
 });
+
+test('accepts a browser client on a third-party origin', async () => {
+  const response = await server.fetch('/mcp', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+      origin: 'https://claude.ai',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'b', version: '0' },
+      },
+    }),
+  });
+
+  expect(response.status).toBe(200);
+  expect(response.headers.get('access-control-allow-origin')).toBe('*');
+});
+
+test('answers the CORS preflight a browser client sends first', async () => {
+  const response = await server.fetch('/mcp', {
+    method: 'OPTIONS',
+    headers: { origin: 'https://claude.ai', 'access-control-request-method': 'POST' },
+  });
+
+  expect(response.status).toBe(200);
+  expect(response.headers.get('access-control-allow-origin')).toBe('*');
+  // Without this, a browser client cannot send the session header the
+  // Streamable HTTP transport uses, and the preflight silently wins.
+  expect(response.headers.get('access-control-allow-headers')).toContain('mcp-session-id');
+});

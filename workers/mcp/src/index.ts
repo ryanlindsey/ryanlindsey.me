@@ -36,6 +36,47 @@ const INSTRUCTIONS = [
   'ask Ryan for access if you need it.',
 ].join(' ');
 
+/**
+ * Handler options shared by every request.
+ *
+ * `allowedOriginHostnames: '*'` is a DELIBERATE opening, measured before it
+ * was made: `agents`' stateless handler otherwise validates `Origin` against
+ * `localhostAllowedOrigins()` (`localhost`, `127.0.0.1`, `[::1]`) and answers
+ * a browser client on any other origin with
+ * `403 {"code":-32000,"message":"Invalid Origin: <host>"}`. Verified against
+ * production on 2026-09-06: `Origin: https://claude.ai` -> 403,
+ * `Origin: http://localhost:6274` (MCP Inspector) -> 200. A request with NO
+ * `Origin` header always passed, which is why curl and Claude Code worked and
+ * a browser connector did not.
+ *
+ * Why opening it is safe HERE, stated so day 5 can check whether it still
+ * holds: this tier is unauthenticated and read-only, it returns only
+ * documents already published at https://ryanlindsey.me, and it carries no
+ * ambient credential -- no cookies, no session the browser attaches on its
+ * own. Origin validation exists to stop a page using a victim's ambient
+ * authority; there is none to borrow, so a cross-origin fetch obtains exactly
+ * what the attacker's own server could have fetched.
+ *
+ * DAY 5 MUST RE-READ THIS. Scoped tokens arrive then. The property that keeps
+ * this safe is that a token is supplied EXPLICITLY by the client on each
+ * call. If a token is ever accepted from a cookie, or cached per-origin, this
+ * setting becomes a real cross-origin read of gated data and must change.
+ */
+const HANDLER_OPTIONS = {
+  route: '/mcp',
+  allowedOriginHostnames: '*',
+  corsOptions: {
+    origin: '*',
+    methods: 'GET, POST, OPTIONS',
+    // `mcp-session-id` and `mcp-protocol-version` are the transport's own
+    // headers; without them in the preflight allowlist a browser client
+    // cannot send them and the session header is dropped before it is read.
+    headers: 'content-type, accept, mcp-session-id, mcp-protocol-version, authorization',
+    exposeHeaders: 'mcp-session-id',
+    maxAge: 86400,
+  },
+} as const;
+
 function createServer() {
   // `instructions` belongs to ServerOptions (the second argument), not to the
   // Implementation identity. Passing it here is also what puts it at the top
@@ -80,7 +121,7 @@ function createServer() {
 
 export default {
   fetch(request, env, ctx) {
-    return createMcpHandler(createServer, { route: '/mcp' })(request, env, ctx);
+    return createMcpHandler(createServer, HANDLER_OPTIONS)(request, env, ctx);
   },
 
   /**
