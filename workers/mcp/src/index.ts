@@ -1,5 +1,6 @@
 import { createMcpHandler } from 'agents/mcp/server';
 import { corpusRefreshEnabled, refreshCorpus, type CorpusEnv } from '../../../src/lib/corpus';
+import { buildMcpDiscovery, buildMcpRobotsTxt } from '../../../src/lib/mcp/discovery';
 import { type McpEnv } from './env';
 import { createServer } from './server';
 
@@ -71,6 +72,19 @@ const HANDLER_OPTIONS = {
   },
 } as const;
 
+/**
+ * This Worker's own vanity domain (workers/mcp/wrangler.jsonc's `routes`
+ * entry), a literal for the same reason src/pages/llms.txt.ts's own
+ * `MCP_ENDPOINT` is one: this Worker has no var naming its own hostname
+ * (`SITE_ORIGIN` in McpEnv names the SITE's origin, for the corpus job's
+ * fetches, not this one), and `request.url` reads as the test harness's
+ * loopback address under `createTestHarness` rather than the real custom
+ * domain (tests/workers.ts's own note on `inferOriginFromRoutes`) -- deriving
+ * this from the request would silently answer with the wrong endpoint under
+ * every suite that boots this Worker.
+ */
+const MCP_ORIGIN = 'https://mcp.ryanlindsey.me';
+
 export default {
   /**
    * The server itself is built in ./server.ts, one instance per HTTP request:
@@ -81,6 +95,25 @@ export default {
    * fallback instance the handler constructs for a request of its own.
    */
   fetch(request, env, ctx) {
+    // Day 4 Task 14 (roadmap "/.well-known + discovery"; 03 §5): routed
+    // BEFORE the MCP handler, deliberately. HANDLER_OPTIONS above answers
+    // exactly `route: '/mcp'` and 404s everything else it sees, so these two
+    // discovery surfaces have to be intercepted here or they never reach
+    // anything that could answer them.
+    const { pathname } = new URL(request.url);
+
+    if (pathname === '/robots.txt') {
+      return new Response(buildMcpRobotsTxt(), {
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
+    }
+
+    if (pathname === '/.well-known/mcp.json') {
+      return new Response(JSON.stringify(buildMcpDiscovery(MCP_ORIGIN), null, 2), {
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      });
+    }
+
     return createMcpHandler(
       (mcpCtx) => createServer({ env, ctx, request: mcpCtx.requestInfo ?? request }),
       HANDLER_OPTIONS,

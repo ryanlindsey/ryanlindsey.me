@@ -296,3 +296,23 @@ test('detail routes serve every entry including drafts; aggregation surfaces ser
     }
   }
 });
+
+// Day 4 Task 14 (roadmap "/.well-known + discovery"; 03 §5; 08 v1 item 2):
+// the discovery document on the site's own origin, and the two courtesy
+// headers 08 v1 item 2 specifies verbatim, on every response this origin
+// serves.
+test('/.well-known/mcp.json describes the endpoint', async () => {
+  const response = await server.fetch('/.well-known/mcp.json');
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toContain('application/json');
+  const doc = await response.json();
+  expect(doc.endpoint).toBe('https://ryanlindsey.me/mcp');
+  expect(doc.transport).toBe('streamable-http');
+  expect(doc.authentication).toBe('none');
+});
+
+test('every page carries the agent courtesy headers', async () => {
+  const response = await server.fetch('/');
+  expect(response.headers.get('x-for-ai-agents')).toBe("You're welcome here. Start at /llms.txt");
+  expect(response.headers.get('x-mcp-server')).toBe('https://ryanlindsey.me/mcp');
+});

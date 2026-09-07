@@ -104,3 +104,21 @@
 
 /feed.json
   Content-Type: application/feed+json; charset=utf-8
+
+# Day 4 Task 14 (roadmap "/.well-known + discovery"; 03 §5): same reasoning
+# as every rule above -- Astro's static build discards a prerendered
+# endpoint's own Content-Type header (see src/pages/.well-known/mcp.json.ts),
+# so without this the served type would fall back to Cloudflare's default
+# mime-table entry for `.json`, which omits the charset (the same gap
+# /resume.json's own rule above closes).
+/.well-known/mcp.json
+  Content-Type: application/json; charset=utf-8
+
+# Day 4 Task 14 (08 v1 item 2): the two discovery headers, verbatim, on
+# every response this origin serves. `/*` is the broadest pattern in this
+# file and sets no header any rule above also sets, so there is nothing for
+# it to be comma-joined with -- see the file-header note for why that would
+# matter if there were.
+/*
+  X-For-AI-Agents: You're welcome here. Start at /llms.txt
+  X-MCP-Server: https://ryanlindsey.me/mcp

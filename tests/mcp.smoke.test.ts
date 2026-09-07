@@ -136,3 +136,26 @@ test('answers the CORS preflight a browser client sends first', async () => {
   // Streamable HTTP transport uses, and the preflight silently wins.
   expect(response.headers.get('access-control-allow-headers')).toContain('mcp-session-id');
 });
+
+// Day 4 Task 14 (roadmap "/.well-known + discovery"; 03 §5): the day-3 owner
+// decision deferred this origin's own robots.txt to here -- robots.txt is
+// per-origin (RFC 9309 §2.3), so the site's own file (which explicitly says
+// so) has no effect on mcp.ryanlindsey.me. HANDLER_OPTIONS answers exactly
+// `route: '/mcp'` and 404s everything else, so these two surfaces and the
+// unrouted-404 case all have to be proven here, not assumed from the site
+// suite's own coverage.
+test('the MCP origin serves its own robots.txt', async () => {
+  const response = await server.fetch('/robots.txt');
+  expect(response.status).toBe(200);
+  expect(await response.text()).toMatch(/User-agent:/);
+});
+
+test('the MCP origin serves its own discovery document', async () => {
+  const response = await server.fetch('/.well-known/mcp.json');
+  expect(response.status).toBe(200);
+  expect((await response.json()).endpoint).toBe('https://mcp.ryanlindsey.me/mcp');
+});
+
+test('an unrouted path on the MCP origin is a 404, not the MCP handler', async () => {
+  expect((await server.fetch('/anything-else')).status).toBe(404);
+});
