@@ -154,16 +154,14 @@ const workGroups = groupWorkByCompany(resume.work);
   </div>
 
   <script>
-    // /resume?print is what Task 5's Browser-Rendering job navigates to for
-    // the PDF. This page is static (prerendered), so the query string never
-    // reaches Astro.url server-side -- the print search param can only be
-    // read client-side. Deferred/non-blocking is fine: Task 5 waits for this
-    // attribute to appear before printing rather than assuming it is present
-    // on first paint.
-    const root = document.querySelector<HTMLElement>('[data-testid="resume"]');
-    if (root && new URLSearchParams(window.location.search).has('print')) {
-      root.setAttribute('data-print-mode', '');
-    }
+    // `data-print-mode` USED TO BE SET HERE and was removed in fix round 2: it
+    // was written on `/resume?print` and read by nothing. Task 5 ended up
+    // driving the PDF with `page.emulateMediaType('print')` instead (see
+    // src/lib/resume-pdf.ts's `browserRenderer`), which makes the real
+    // `@media print` rules in global.css and tokens.css apply -- so the
+    // attribute was advertising a styling hook that did not exist. `?print` is
+    // still the URL Browser Run navigates to (`RESUME_PRINT_PATH`); it just
+    // does not need this page's help to mean anything.
 
     // Day 3 Task 5: the readiness signal Browser Run waits on before calling
     // page.pdf(). document.fonts.ready is the only deterministic "this page is
