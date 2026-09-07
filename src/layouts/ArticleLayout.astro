@@ -21,14 +21,40 @@ interface Props {
   // through as-is; readingTimeFor already treats undefined as empty.
   body: string | undefined;
   headings: Heading[];
+  // Root-relative URL of this article's `.md` variant (Task 7). Threaded
+  // straight through to Base.astro's `markdownHref` prop -- see that file
+  // for why this stays an explicit prop rather than something inferred here.
+  markdownHref?: string;
+  // This article's BlogPosting+BreadcrumbList (posts) or TechArticle (case
+  // studies) node(s) (Task 10, 02 §3). Threaded straight through to
+  // Base.astro's `structuredData` prop, same reasoning as `markdownHref`:
+  // the caller (writing/[...slug].astro or work/[...slug].astro) is the one
+  // that knows which collection it is rendering, so it builds the right
+  // node(s) rather than this shared template guessing from the URL.
+  structuredData?: object;
 }
 
-const { title, description, publishedAt, updatedAt, kicker, body, headings } = Astro.props;
+const {
+  title,
+  description,
+  publishedAt,
+  updatedAt,
+  kicker,
+  body,
+  headings,
+  markdownHref,
+  structuredData,
+} = Astro.props;
 const toc = buildToc(headings);
 const readingTime = readingTimeFor(body);
 ---
 
-<Shell title={`${title} — Ryan Lindsey`} description={description}>
+<Shell
+  title={`${title} — Ryan Lindsey`}
+  description={description}
+  markdownHref={markdownHref}
+  structuredData={structuredData}
+>
   <article class="mx-auto max-w-5xl px-6 py-16">
     <header class="max-w-3xl">
       <h1 class="font-display text-title text-ink">{title}</h1>

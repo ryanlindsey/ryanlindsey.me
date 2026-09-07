@@ -6,12 +6,21 @@ import SiteFooter from '../components/SiteFooter.astro';
 interface Props {
   title: string;
   description?: string;
+  markdownHref?: string;
+  // Task 10 (02 §3): pure pass-through, same as `markdownHref` -- see
+  // Base.astro for what this prop is and why Person is not part of it.
+  structuredData?: object;
 }
 
-const { title, description } = Astro.props;
+const { title, description, markdownHref, structuredData } = Astro.props;
 ---
 
-<Base title={title} description={description}>
+<Base
+  title={title}
+  description={description}
+  markdownHref={markdownHref}
+  structuredData={structuredData}
+>
   <a
     href="#main"
     class="sr-only font-mono text-small focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:bg-accent-ground focus:px-3 focus:py-2 focus:text-accent-on"

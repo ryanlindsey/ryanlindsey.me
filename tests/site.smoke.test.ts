@@ -1,16 +1,16 @@
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
+import { SITE_HARNESS_WORKERS } from './workers';
 
-// Two Workers are listed because the site's `MCP` service binding resolves
-// against the MCP Worker -- workerd refuses to start a Worker whose service
-// binding names an undefined service. The site is listed first, making it the
-// primary Worker that relative `server.fetch()` URLs address.
+// See ./workers.ts for why the site Worker is booted from the build output and
+// why the MCP Worker is always listed with it. The site is listed first, making
+// it the primary Worker that relative `server.fetch()` URLs address.
 //
-// Fetches go through `server.fetch()` rather than `getWorker().fetch()`: the
-// site is an assets-only Worker, and `getWorker()` dispatches to user Worker
-// code, bypassing the asset router that serves every route on day 1.
+// Fetches go through `server.fetch()` rather than `getWorker().fetch()` so they
+// hit the asset router first, which is what serves every route on this site but
+// /resume.pdf. `getWorker().fetch()` would dispatch straight into Worker code.
 const server = createTestHarness({
-  workers: [{ configPath: './wrangler.jsonc' }, { configPath: './workers/mcp/wrangler.jsonc' }],
+  workers: SITE_HARNESS_WORKERS,
 });
 
 beforeAll(async () => {

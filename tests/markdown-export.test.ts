@@ -1,0 +1,311 @@
+import { describe, expect, test } from 'vitest';
+import type { CollectionEntry } from 'astro:content';
+import {
+  SITE_ORIGIN,
+  canonicalUrlFor,
+  frontmatterFor,
+  stripNonPortableMdx,
+  toMarkdown,
+  type ExportableEntry,
+} from '../src/lib/markdown-export';
+
+const post = (overrides: {
+  id?: string;
+  title?: string;
+  body?: string;
+  updatedAt?: Date;
+  series?: { name: string; order: number };
+}): CollectionEntry<'posts'> =>
+  ({
+    id: overrides.id ?? 'a-post',
+    collection: 'posts',
+    body: overrides.body ?? 'Body text.',
+    data: {
+      title: overrides.title ?? 'A Post',
+      description: 'A post about something.',
+      publishedAt: new Date('2026-09-04T00:00:00Z'),
+      updatedAt: overrides.updatedAt,
+      pillar: 'agentic-engineering',
+      series: overrides.series,
+      draft: false,
+    },
+  }) as unknown as CollectionEntry<'posts'>;
+
+const caseStudy = (overrides: {
+  id?: string;
+  body?: string;
+  updatedAt?: Date;
+}): CollectionEntry<'caseStudies'> =>
+  ({
+    id: overrides.id ?? 'a-case-study',
+    collection: 'caseStudies',
+    body: overrides.body ?? 'Body text.',
+    data: {
+      title: 'A Case Study',
+      description: 'A case study about something.',
+      publishedAt: new Date('2026-09-06T00:00:00Z'),
+      updatedAt: overrides.updatedAt,
+      draft: false,
+    },
+  }) as unknown as CollectionEntry<'caseStudies'>;
+
+describe('canonicalUrlFor', () => {
+  test('builds a /writing/<id>/ URL for posts', () => {
+    expect(canonicalUrlFor(post({ id: 'type-specimen' }))).toBe(
+      `${SITE_ORIGIN}/writing/type-specimen/`,
+    );
+  });
+
+  test('builds a /work/<id>/ URL for case studies', () => {
+    expect(canonicalUrlFor(caseStudy({ id: 'shape-specimen' }))).toBe(
+      `${SITE_ORIGIN}/work/shape-specimen/`,
+    );
+  });
+});
+
+describe('frontmatterFor', () => {
+  test('carries pillar and series for a post that declares both', () => {
+    const entry = post({ id: 'p', series: { name: 'Building in the open', order: 2 } });
+    expect(frontmatterFor(entry)).toEqual({
+      title: 'A Post',
+      description: 'A post about something.',
+      publishedAt: '2026-09-04',
+      pillar: 'agentic-engineering',
+      series: { name: 'Building in the open', order: 2 },
+      canonical: `${SITE_ORIGIN}/writing/p/`,
+    });
+  });
+
+  test('omits updatedAt and series when the post has neither', () => {
+    const frontmatter = frontmatterFor(post({ id: 'p' }));
+    expect(frontmatter).not.toHaveProperty('updatedAt');
+    expect(frontmatter).not.toHaveProperty('series');
+  });
+
+  test('includes updatedAt, formatted YYYY-MM-DD, when the post has one', () => {
+    const frontmatter = frontmatterFor(post({ id: 'p', updatedAt: new Date('2026-09-05') }));
+    expect(frontmatter.updatedAt).toBe('2026-09-05');
+  });
+
+  test('a case study frontmatter has no pillar or series keys at all', () => {
+    // Not "pillar: undefined" -- content.config.ts gives caseStudies no
+    // pillar field, and this module must not invent one (see the comment in
+    // frontmatterFor).
+    const frontmatter = frontmatterFor(caseStudy({ id: 'c' }));
+    expect(frontmatter).not.toHaveProperty('pillar');
+    expect(frontmatter).not.toHaveProperty('series');
+    expect(frontmatter).toMatchObject({
+      title: 'A Case Study',
+      description: 'A case study about something.',
+      publishedAt: '2026-09-06',
+      canonical: `${SITE_ORIGIN}/work/c/`,
+    });
+  });
+});
+
+describe('toMarkdown', () => {
+  test('emits a stable frontmatter block, in field order, then the body', () => {
+    const entry = post({
+      id: 'p',
+      body: 'Real prose, unchanged.',
+      updatedAt: new Date('2026-09-05'),
+      series: { name: 'Building in the open', order: 2 },
+    });
+    expect(toMarkdown(entry)).toBe(
+      [
+        '---',
+        'title: "A Post"',
+        'description: "A post about something."',
+        'publishedAt: "2026-09-04"',
+        'updatedAt: "2026-09-05"',
+        'pillar: agentic-engineering',
+        'series:',
+        '  name: "Building in the open"',
+        '  order: 2',
+        `canonical: "${SITE_ORIGIN}/writing/p/"`,
+        '---',
+        '',
+        'Real prose, unchanged.',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  test('uses entry.body verbatim for ordinary prose, not a rendered/derived form', () => {
+    const body = 'Body with **bold**, `code`, and a [link](https://example.com).';
+    expect(toMarkdown(post({ body }))).toContain(body);
+  });
+
+  test('quotes a title containing a colon so it cannot corrupt the YAML block', () => {
+    const entry = post({ id: 'p', title: 'Title: With a Colon' });
+    expect(toMarkdown(entry)).toContain('title: "Title: With a Colon"');
+  });
+
+  test('escapes an embedded double quote', () => {
+    const entry = post({ id: 'p', title: 'A "Quoted" Title' });
+    expect(toMarkdown(entry)).toContain('title: "A \\"Quoted\\" Title"');
+  });
+
+  test('quotes a title starting with # so it cannot read as a YAML comment', () => {
+    const entry = post({ id: 'p', title: '#1 in the series' });
+    expect(toMarkdown(entry)).toContain('title: "#1 in the series"');
+  });
+
+  test('escapes an embedded newline instead of leaving a raw one for a parser to fold to a space', () => {
+    // A real YAML parser line-folds a raw newline inside a double-quoted flow
+    // scalar to a space -- that is the spec's behaviour, not a parser bug --
+    // so a raw newline here would silently and irreversibly merge two lines
+    // the next time this frontmatter is read back.
+    const entry = post({ id: 'p', title: 'Line one\nLine two' });
+    const rendered = toMarkdown(entry);
+    expect(rendered).toContain('title: "Line one\\nLine two"');
+    const [frontmatterBlock] = rendered.split('\n---\n');
+    expect(frontmatterBlock).not.toMatch(/title: "[^"]*\n[^"]*"/);
+  });
+});
+
+// The component-stripping fixture. Neither src/content specimen uses a
+// component beyond a code fence (the brief calls this out by name), so this
+// fixture is written to actually exercise every branch of
+// stripNonPortableMdx rather than adding a fourth vacuous test to a codebase
+// that has already shipped three: a deleted `.sort()` left six tests green, a
+// `stripXKeys` test passed with nothing to strip, and a stale-serve test
+// passed with the behaviour it claimed to test removed.
+const MDX_FIXTURE = `import Aside from '../../components/Aside.astro';
+import {
+  Foo,
+  Bar,
+} from '../../lib/foo';
+import '../../styles/one-off.css';
+
+# Real heading
+
+Ordinary prose survives untouched, including \`inline code\`.
+
+<Aside>An allowlisted note that should survive, unwrapped.</Aside>
+
+<RelatedPosts slugs="a,b" />
+
+<Callout type="warning">This entire block, including this sentence, should disappear.</Callout>
+
+A code sample that must NOT be touched, because it is inside a fence:
+
+\`\`\`jsx
+import Aside from '../../components/Aside.astro';
+<Aside>literal example text, inside a fence, must not be stripped</Aside>
+\`\`\`
+
+Prose after the fence survives too.
+`;
+
+describe('stripNonPortableMdx (component and import stripping)', () => {
+  const stripped = stripNonPortableMdx(MDX_FIXTURE);
+
+  test('removes every real import statement, single- and multi-line', () => {
+    // The one `import ` left standing is inside the fenced code sample --
+    // asserted separately below -- so this counts occurrences rather than
+    // asserting absence outright.
+    expect(stripped.split('import ').length - 1).toBe(1);
+    expect(stripped).not.toContain("from '../../lib/foo'");
+    expect(stripped).not.toContain('../../styles/one-off.css');
+    expect(stripped).not.toContain('Foo,');
+    expect(stripped).not.toContain('Bar,');
+  });
+
+  test('unwraps an allowlisted component, keeping its children', () => {
+    expect(stripped).toContain('An allowlisted note that should survive, unwrapped.');
+    // The one `<Aside>`/`</Aside>` pair left standing is inside the fenced
+    // code sample -- asserted separately below -- so this counts occurrences
+    // of the real (prose) usage rather than asserting absence outright.
+    expect(stripped.split('<Aside>').length - 1).toBe(1);
+    expect(stripped.split('</Aside>').length - 1).toBe(1);
+  });
+
+  test('drops a self-closing non-allowlisted component entirely', () => {
+    expect(stripped).not.toContain('RelatedPosts');
+    expect(stripped).not.toContain('slugs=');
+  });
+
+  test('drops a paired non-allowlisted component and its children, not just its tags', () => {
+    expect(stripped).not.toContain('Callout');
+    expect(stripped).not.toContain('This entire block, including this sentence, should disappear.');
+  });
+
+  test('leaves a fenced code block byte-for-byte untouched, even one containing an import and JSX', () => {
+    expect(stripped).toContain(
+      "import Aside from '../../components/Aside.astro';\n<Aside>literal example text, inside a fence, must not be stripped</Aside>",
+    );
+  });
+
+  test('keeps ordinary prose before and after the stripped material', () => {
+    expect(stripped).toContain('# Real heading');
+    expect(stripped).toContain('Ordinary prose survives untouched, including `inline code`.');
+    expect(stripped).toContain('Prose after the fence survives too.');
+  });
+
+  test('end to end: toMarkdown on a real post applies the same stripping to entry.body', () => {
+    const rendered = toMarkdown(post({ id: 'p', body: MDX_FIXTURE }));
+    expect(rendered).toContain('An allowlisted note that should survive, unwrapped.');
+    expect(rendered).not.toContain('RelatedPosts');
+    expect(rendered).not.toContain('Callout');
+    // The real (prose) import of Aside is gone; the one inside the fenced
+    // code sample survives -- exactly one occurrence left, inside the fence.
+    const occurrences =
+      rendered.split("import Aside from '../../components/Aside.astro';").length - 1;
+    expect(occurrences).toBe(1);
+    expect(rendered).toContain("```jsx\nimport Aside from '../../components/Aside.astro';");
+  });
+});
+
+// Fix round 1 (post-review): three adversarial inputs reproduced against the
+// round-1 regexes produced silent corruption rather than a build failure --
+// same-tag nesting, an attribute value containing a bare `>`, and an inline
+// (single-backtick) code span that was not exempted the way triple-backtick
+// fences already were. All three are exercised here against the actual
+// exported functions, not a standalone copy of the regexes.
+describe('fix round 1: the stripper fails loudly instead of shipping corruption', () => {
+  test('same-tag nesting throws instead of leaving a literal unstripped tag in the output', () => {
+    // Round 1 produced "outer <Aside>inner end</Aside>" here -- a literal,
+    // unstripped `<Aside>` fragment shipped as if it were clean markdown.
+    const input = '<Aside>outer <Aside>inner</Aside> end</Aside>';
+    expect(() => stripNonPortableMdx(input)).toThrow(/component tag survived/);
+  });
+
+  test('an attribute expression containing a bare > throws instead of shipping a garbage fragment', () => {
+    // Round 1 produced `" 5}>Important note."` here: the `<Aside level={x`
+    // prefix was silently swallowed as if it were the tag's own opening
+    // bracket, against this module's OWN allowlisted component. Excluding
+    // `{` from the attribute scan means the tag now fails to match at all --
+    // it survives untouched in the input to the guard, which then throws.
+    const input = '<Aside level={x > 5}>Important note.</Aside>';
+    expect(() => stripNonPortableMdx(input)).toThrow(/component tag survived/);
+  });
+
+  test('a leftover tag anywhere in an otherwise-clean document still throws, not just in isolation', () => {
+    const input =
+      'Clean prose before.\n\n<Broken prop={a > b}>never stripped</Broken>\n\nClean prose after.';
+    expect(() => stripNonPortableMdx(input)).toThrow(/component tag survived/);
+  });
+
+  test('an inline single-backtick code span mentioning a component is exempted, not corrupted', () => {
+    // The undisclosed round-1 bug: only triple-backtick fences were exempt.
+    // Round 1 turned this into "For example, `` renders a callout." --
+    // deleting the entire code span's content. Post 1 on this site's plan is
+    // a build log about this repository, which will very naturally use
+    // inline backticks around a component name -- this is not hypothetical.
+    const input = 'For example, `<Aside type="note" />` renders a callout.';
+    expect(stripNonPortableMdx(input)).toBe(input);
+  });
+
+  test('toMarkdown propagates the throw rather than swallowing it', () => {
+    const entry = post({ id: 'p', body: '<Aside level={x > 5}>Important note.</Aside>' });
+    expect(() => toMarkdown(entry)).toThrow(/component tag survived/);
+  });
+});
+
+describe('ExportableEntry', () => {
+  test('accepts both posts and case studies at the type level', () => {
+    const entries: ExportableEntry[] = [post({ id: 'p' }), caseStudy({ id: 'c' })];
+    expect(entries).toHaveLength(2);
+  });
+});

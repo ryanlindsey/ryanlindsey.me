@@ -1,0 +1,106 @@
+# IMPORTANT for whoever edits this file next (confirmed against Cloudflare's
+# own docs, fix round 1 of Day 3 Task 7): when a request matches more than one
+# rule below, and two matching rules set the SAME header name, Cloudflare does
+# NOT let the more specific rule win -- it joins both values with a comma.
+# "Add a more specific rule to override this" is the wrong instinct here and
+# will corrupt the header instead of replacing it. If two rules must set the
+# same header for overlapping paths, make the path patterns mutually
+# exclusive instead (see the /writing/*.md vs /writing/*/ split below for a
+# worked example).
+#
+# Day 3 Task 3: Astro's static build writes only a prerendered endpoint's
+# Response BODY to disk (astro build discards the headers set in
+# src/pages/resume.json.ts / resume.md.ts) -- the Content-Type actually
+# served comes from Cloudflare's asset-server mime lookup by file extension
+# instead. `.md` already resolves to `text/markdown; charset=utf-8` by
+# default, but `.json` resolves to `application/json` with no charset, which
+# does not match 02 §1's "JSON Resume verbatim" requirement. This rule makes
+# the deployed response match the endpoint's own declared header exactly,
+# for both formats, so neither depends on the mime table's current defaults.
+/resume.json
+  Content-Type: application/json; charset=utf-8
+
+/resume.md
+  Content-Type: text/markdown; charset=utf-8
+
+# Day 3 Task 7 (02 §3): the `.md` variant of every /writing and /work detail
+# page (src/pages/writing/[...slug].md.ts, src/pages/work/[...slug].md.ts),
+# same reasoning as /resume.md above -- the endpoint's own Content-Type
+# header does not survive the static build, and this rule ships the
+# explicit charset rather than trusting the mime table's current default.
+# Wildcarded (not one line per slug) so a route added later needs no
+# _headers edit: `*` greedily matches the rest of the path, `:splat` below
+# reuses exactly what it captured.
+/writing/*.md
+  Content-Type: text/markdown; charset=utf-8
+
+/work/*.md
+  Content-Type: text/markdown; charset=utf-8
+
+# The HTML detail pages advertise their `.md` sibling via X-Markdown-Variant
+# (Base.astro's `markdownHref` prop carries the same URL into the <link>
+# tags -- this header and those tags must never disagree). Verified over
+# real HTTP (task-7-report.md): an extensionless request like /writing/foo
+# 307-redirects to /writing/foo/ before Cloudflare serves the asset, so this
+# targets the trailing-slash form the page is actually served from -- a rule
+# keyed on the extensionless path would only ever land on a 307 response
+# nothing reads. The trailing `/` after the splat also keeps this rule from
+# ever matching a `*.md` request (which has no trailing slash) or the bare
+# `/writing/` index (too short to satisfy both the prefix and the trailing
+# slash) -- see the file-header note above for why that exclusivity, not a
+# more-specific override, is what keeps this from colliding with the
+# Content-Type rules above. tests/pages.test.ts's "index pages carry no
+# X-Markdown-Variant header" and the .md-response-has-no-header assertion in
+# the test above it are the mutation-tested guards for this.
+/writing/*/
+  X-Markdown-Variant: /writing/:splat.md
+
+/work/*/
+  X-Markdown-Variant: /work/:splat.md
+
+# The résumé's own X-Markdown-Variant (fix round 2). /resume had a `.md` twin,
+# a `run_worker_first` entry and Accept-negotiation in src/worker.ts, but
+# advertised none of it -- the header was missing here and the <link> tag was
+# missing from the page (src/pages/resume.astro now passes `markdownHref`).
+# An EXACT path, not a pattern: the trailing-slash form is what /resume is
+# actually served from (dist/client/resume/index.html, same 307 behaviour the
+# /writing/*/ comment above documents), and an exact path cannot overlap
+# /resume.md or /resume.json above -- which is what keeps this from being
+# comma-joined onto another rule's header, per the file-header note.
+/resume/
+  X-Markdown-Variant: /resume.md
+
+# Day 3 Task 9 (research appendix B2.6): the industry split observed live
+# across Anthropic, OpenAI, Cloudflare, Vercel and Perplexity is that the
+# llms.txt LAYER gets browser-friendly `text/plain` while `.md` PAGES get
+# semantically correct `text/markdown` -- this site's own /resume.md and
+# /writing|work/*.md rules above are the latter; these two are the former.
+# text/plain also means /llms-full.txt (which can grow arbitrarily large as
+# content is added) reliably renders in a browser tab rather than prompting
+# a download the way text/markdown sometimes does (B2.6's honest caveat).
+# Same reason these need an explicit rule at all: Astro's static build
+# discards a prerendered endpoint's own Content-Type header (see
+# src/pages/llms.txt.ts and llms-full.txt.ts), so without this, the served
+# type would fall back to whatever Cloudflare's default `.txt` mime mapping
+# happens to be today.
+/llms.txt
+  Content-Type: text/plain; charset=utf-8
+
+/llms-full.txt
+  Content-Type: text/plain; charset=utf-8
+
+# Day 3 Task 11 (02 §3): /rss.xml and /feed.json, same reasoning as every
+# other rule in this file -- Astro's static build discards a prerendered
+# endpoint's own Content-Type header (see src/pages/rss.xml.ts and
+# feed.json.ts), so without these, the served type would fall back to
+# Cloudflare's default mime-table entry for `.xml`/`.json`, neither of which
+# matches what a feed reader expects. `application/rss+xml` is RSS's
+# de facto (if never formally registered) media type; `application/feed+json`
+# is JSON Feed 1.1's own registered one (jsonfeed.org/version/1.1's Discovery
+# section) -- not the more generic `application/json` /resume.json uses for
+# an unrelated format.
+/rss.xml
+  Content-Type: application/rss+xml; charset=utf-8
+
+/feed.json
+  Content-Type: application/feed+json; charset=utf-8

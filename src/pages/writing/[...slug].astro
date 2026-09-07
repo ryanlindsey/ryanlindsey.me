@@ -3,6 +3,9 @@ import { getCollection, render } from 'astro:content';
 import ArticleLayout from '../../layouts/ArticleLayout.astro';
 import SeriesNav from '../../components/SeriesNav.astro';
 import { PILLAR_LABELS } from '../../lib/pillars';
+import { getResume } from '../../lib/resume-collection';
+import { canonicalUrlFor } from '../../lib/markdown-export';
+import { buildBlogPosting, buildBreadcrumbList } from '../../lib/structured-data';
 import type { GetStaticPaths } from 'astro';
 
 // Drafts get a route but never an index entry, so work in progress is
@@ -19,6 +22,29 @@ export const getStaticPaths = (async () => {
 
 const { post, siblings } = Astro.props;
 const { Content, headings } = await render(post);
+
+// Task 10 (02 §3): BlogPosting + BreadcrumbList. Built here, not in
+// ArticleLayout, per the plan's own ruling on markdownHref (progress.md):
+// "prefer the explicit prop over inferring from Astro.url.pathname" -- this
+// route already knows it is rendering a post, so it builds the right node
+// rather than a shared template guessing collection from the URL.
+const resume = await getResume();
+const author = { name: resume.basics.name, url: new URL('/', Astro.site).href };
+const structuredData = [
+  buildBlogPosting({
+    headline: post.data.title,
+    description: post.data.description,
+    url: canonicalUrlFor(post),
+    datePublished: post.data.publishedAt,
+    dateModified: post.data.updatedAt,
+    author,
+  }),
+  buildBreadcrumbList([
+    { name: resume.basics.name, url: new URL('/', Astro.site).href },
+    { name: 'Writing', url: new URL('/writing', Astro.site).href },
+    { name: post.data.title, url: canonicalUrlFor(post) },
+  ]),
+];
 ---
 
 <ArticleLayout
@@ -29,6 +55,8 @@ const { Content, headings } = await render(post);
   kicker={PILLAR_LABELS[post.data.pillar] ?? post.data.pillar}
   body={post.body}
   headings={headings}
+  markdownHref={`/writing/${post.id}.md`}
+  structuredData={structuredData}
 >
   <Content />
   <SeriesNav slot="footer" current={post} siblings={siblings} />

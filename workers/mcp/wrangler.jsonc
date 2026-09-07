@@ -37,6 +37,12 @@
     },
   ],
 
+  // KV_CACHE is where the corpus manifest lives, under `corpus:manifest`
+  // (src/lib/corpus.ts). The id below is the SAME namespace the site Worker
+  // binds, and it has to stay that way: the key already exists in production
+  // with real content, so a second namespace would make the refresh read an
+  // empty manifest, conclude every document had changed, and re-embed and
+  // re-bill the whole corpus on its first run.
   "kv_namespaces": [
     { "binding": "KV_CONFIG", "id": "aa1dd780da1e49eb8cf2dbf8ac9cf2b9" },
     { "binding": "KV_CACHE", "id": "c0a1106f9c9944979cd228070be21b53" },
@@ -49,11 +55,101 @@
 
   "analytics_engine_datasets": [{ "binding": "AE", "dataset": "ryanlindsey_me_events" }],
 
-  // No "ai" binding yet. Workers AI is remote-only: Wrangler starts a remote
-  // proxy session for it even under the local test harness, which needs account
-  // credentials and so breaks the credential-free CI rule. Nothing here calls
-  // AI yet, and the day-1 spike found the gateway blocked on credits anyway.
-  // It comes back on day 4 with the code that uses it.
+  // Workers AI, for the publishing corpus's embedding job -- which runs HERE
+  // rather than on the site Worker, and the reason is a build constraint rather
+  // than a preference. @cloudflare/vite-plugin's binding table classifies `ai` as
+  // "DO-NOT-USE-this-resource-will-never-have-a-local-simulator":
+  // `pickRemoteBindings` returns true for it regardless of `remote`, and
+  // `validateBindingRemoteSetting` throws on `remote: false`, so any tooling that
+  // instantiates the owning Worker's bindings opens a remote proxy session. On
+  // the site Worker that tooling is `astro build` (via @astrojs/cloudflare's
+  // prerenderer), and CI has no Cloudflare credentials by design, so the build
+  // failed there. Nothing in CI builds THIS Worker -- .github/workflows/checks.yml
+  // has no reference to it -- so the binding is inert as far as the required
+  // checks are concerned. It is also not conflation: day 4's semantic search runs
+  // over this same corpus and needs `ai` and `vectorize` anyway.
+  //
+  // The test harness still overrides this binding to workers/mock-ai (see
+  // tests/workers.ts). That is unchanged and still necessary: `npm test` boots
+  // this Worker, and an un-overridden `ai` binding would open the same remote
+  // session under vitest that it opened under `astro build`.
+  //
+  // MEASURED against this account 2026-09-06 from a throwaway dev Worker, kept
+  // because no Cloudflare model page states qwen3's output width and a Vectorize
+  // index can never change the one it is created at:
+  //   env.AI.run('@cf/qwen/qwen3-embedding-0.6b', { documents: ['hello'] })
+  //   -> { shape: [1, 1024] }, L2-normalised (|v| = 1.0000000).
+  // `{ text: 'x' }` returns a BIT-IDENTICAL vector to `{ documents: ['x'] }` --
+  // an alias, not a second mode. Both keys take an array and batch: [n, 1024].
+  //
+  // CORRECTED 2026-09-07 (Task 15). Task 14 concluded from a `3030: invalid
+  // input` on `{ query: 'x' }` that this model "has NO query-side mode on
+  // Workers AI". That was wrong, and the reason is a spelling: the key in the
+  // model's own input schema is `queries`, PLURAL. `query` is not a schema key
+  // at all, so 3030 was a rejection of an unknown field, not evidence of a
+  // missing capability. Re-measured, with a repeated identical call as the
+  // bit-identity control:
+  //   { documents: ['agentic engineering manager'] } ->  5 prompt tokens
+  //   { queries:   ['agentic engineering manager'] } -> 24 prompt tokens
+  //   cosine 0.717 between them, NOT bit-identical.
+  // The query side wraps its input in an instruction template, `instruction`
+  // customises that template, and it moves ONLY the query side. `queries` and
+  // `documents` in one call error 3030. The refresh below is unaffected -- a
+  // corpus document is embedded document-side and bare -- but day 4's retrieval
+  // should embed its queries through `queries`.
+  //
+  // No `remote`: Workers AI has no local emulator, so calls reach the real
+  // account either way, and marking it remote would only add a route by which a
+  // future test bills neurons. Object, not array, and not inherited by named
+  // environments.
+  "ai": { "binding": "AI" },
+
+  // The publishing corpus. Created 2026-09-07 at the 1024 measured above, metric
+  // cosine, and BOTH of those are permanent: Vectorize has no resize and no way
+  // to change a metric, so a wrong number would have meant a new index and a new
+  // name rather than an edit. Naming an index that does not exist breaks
+  // `wrangler types` and every deploy, so the name here is one `vectorize get`
+  // has confirmed.
+  //
+  // The `tier` and `type` metadata indexes were created immediately after the
+  // index itself and BEFORE anything was upserted (confirmed: vectorCount 0 at
+  // the time). This ordering is not a preference. Vectorize does not backfill
+  // metadata indexes, and a filtered query against an unindexed property returns
+  // partial or empty results with NO error -- so getting it wrong produces a
+  // corpus that looks healthy and quietly under-answers. Any future filterable
+  // property has to be indexed before the vectors carrying it land.
+  //
+  // Vectors go in pre-normalised (|v| = 1.0 straight from the model), so cosine
+  // and dot product coincide and nothing has to normalise before upserting.
+  //
+  // No `remote`, and that cuts the OPPOSITE way from the `ai` binding above --
+  // the two defaults are not the same and the difference is easy to lose.
+  // Wrangler defaults an unset `remote` to remote for `ai` (no local emulator
+  // exists) but to LOCAL SIMULATION for `vectorize`. So under `wrangler dev` and
+  // under the test harness, `env.VECTORIZE` is a local simulated index, NOT
+  // ryanlindsey-me-corpus. An embedding job run that way reports success and
+  // leaves the real index at vectorCount 0. It is left local on purpose:
+  // `remote: true` would open the very proxy session this whole move exists to
+  // avoid. Anything that must write to the real index should say so deliberately
+  // -- `wrangler vectorize insert`, the deployed Worker, or a temporary
+  // `remote: true` -- rather than assuming this binding points at production.
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "ryanlindsey-me-corpus" }],
+
+  // 05:32 UTC daily: the corpus embedding refresh (src/lib/corpus.ts), invoked
+  // from this Worker's `scheduled()`. It used to share the site Worker's 05:17
+  // trigger and moved here with the two bindings above.
+  //
+  // A separate slot rather than the same one, because the jobs now sit in
+  // different Workers with separate logs: 15 minutes of separation means a cron
+  // failure is attributable on sight rather than by reading which handler threw.
+  // There is no ordering dependency in either direction -- the résumé job writes
+  // a PDF to R2, and this one reads the build's published `.md` assets, which
+  // neither job produces.
+  //
+  // The handler is hash-gated: `refreshCorpus` embeds nothing unless a
+  // document's hash has moved, so the steady state is a handful of asset reads
+  // and one KV read, and a daily cron over unchanged content bills no neurons.
+  "triggers": { "crons": ["32 5 * * *"] },
 
   "ratelimits": [
     { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } },
@@ -67,5 +163,14 @@
     },
   ],
 
-  "vars": { "RLME_AI_GATEWAY_ID": "ryanlindsey-me" },
+  // SITE_ORIGIN is the origin the corpus refresh reads the site's published
+  // `.md` assets from. On the site Worker that was the `ASSETS` binding; this
+  // Worker has no assets of its own and must not grow a copy of them, so it
+  // fetches the same documents over the public origin instead -- which also
+  // means the corpus embeds exactly what a reader is served. See
+  // `CorpusEnv.SITE` in src/lib/corpus.ts.
+  "vars": {
+    "RLME_AI_GATEWAY_ID": "ryanlindsey-me",
+    "SITE_ORIGIN": "https://ryanlindsey.me",
+  },
 }

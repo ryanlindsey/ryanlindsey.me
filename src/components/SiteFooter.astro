@@ -1,7 +1,19 @@
 ---
-// The agent courtesies (llms.txt, markdown variants, the MCP endpoint) land on
-// days 3 and 4. Linking them before they exist would ship dead links, so the
-// footer states the colophon now and grows then.
+// Day 3 Task 9 (02 §3): the agent courtesies the comment above used to defer
+// -- /llms.txt (the curated index) and the MCP endpoint. /llms-full.txt is
+// deliberately NOT linked here: it is the bulk-ingestion corpus and
+// /llms.txt already points at it (task-9-brief.md Step 3), so a footer link
+// to both would be redundant, and a footer link to the raw corpus is not a
+// courtesy to a human visitor scanning the colophon. The `.md` variant
+// routes (Task 7) have no single URL to link -- they are discoverable
+// page-by-page via each HTML page's own <link rel="alternate">.
+//
+// Fix round 1 (task-9-report.md): the MCP link is `/mcp` on that domain, not
+// the bare origin -- the custom domain is only the host,
+// `workers/mcp/src/index.ts`'s `createMcpHandler(..., { route: '/mcp' })`
+// mounts the actual JSON-RPC endpoint at that path, and the bare origin
+// 404s. Verified live: POST https://mcp.ryanlindsey.me/mcp with an
+// `initialize` body succeeds.
 const year = new Date().getFullYear();
 ---
 
@@ -10,6 +22,10 @@ const year = new Date().getFullYear();
     class="mx-auto flex max-w-5xl flex-wrap items-baseline justify-between gap-4 px-6 py-8 font-mono text-micro uppercase text-ink-muted"
   >
     <span>&copy; {year} Ryan Lindsey</span>
+    <nav aria-label="Agent resources" class="flex items-baseline gap-4">
+      <a href="/llms.txt" class="hover:text-accent">llms.txt</a>
+      <a href="https://mcp.ryanlindsey.me/mcp" class="hover:text-accent">MCP</a>
+    </nav>
     <span>Built on Cloudflare Workers &middot; Astro</span>
   </div>
 </footer>

@@ -44,4 +44,89 @@ const caseStudies = defineCollection({
   }),
 });
 
-export const collections = { posts, caseStudies };
+// Résumé data model (day 3, 02 §1): the one validated value every rendered
+// format -- HTML, Markdown, JSON, PDF -- reads from, so "one commit updates
+// every format atomically" is actually true rather than aspirational.
+//
+// A month has no day, so dates are YYYY-MM strings checked by regex, not
+// `z.coerce.date()`: coercing invents a day, which then renders as an
+// off-by-one month in some timezones. `meta.lastModified` is a full calendar
+// date (YYYY-MM-DD) for the same reason, checked by its own regex.
+//
+// `resumeSchema` is exported so `src/lib/resume.ts` can infer the `Resume`
+// type from it with `z.infer` instead of hand-writing a parallel interface,
+// which would be a second source of truth.
+const yearMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'expected a YYYY-MM date');
+
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, 'expected a YYYY-MM-DD date');
+
+export const resumeSchema = z.object({
+  basics: z.object({
+    name: z.string(),
+    label: z.string(),
+    summary: z.string(),
+    email: z.string().optional(),
+    phone: z.string().optional(),
+    url: z.string().optional(),
+    location: z.object({
+      city: z.string(),
+      region: z.string(),
+      countryCode: z.string(),
+    }),
+    // Defaults to [] rather than staying optional/undefined, same reasoning
+    // as `work[].highlights` below: absence is valid data, not a build error.
+    profiles: z
+      .array(
+        z.object({
+          network: z.string(),
+          username: z.string(),
+          url: z.string(),
+        }),
+      )
+      .default([]),
+  }),
+  work: z.array(
+    z.object({
+      name: z.string(),
+      position: z.string(),
+      location: z.string().optional(),
+      startDate: yearMonth,
+      endDate: yearMonth.optional(),
+      summary: z.string().optional(),
+      // A role with nothing extracted is valid data, not a build error --
+      // 2026-09-06 role inventory: all eight current entries are [].
+      highlights: z.array(z.string()).default([]),
+      // The one extension to JSON Resume. Case-study slugs; the `x_` prefix
+      // marks it as non-standard so /resume.json (Task 3) can strip it.
+      x_artifacts: z.array(z.string()).optional(),
+    }),
+  ),
+  education: z.array(
+    z.object({
+      institution: z.string(),
+      area: z.string().optional(),
+      studyType: z.string().optional(),
+      startDate: yearMonth.optional(),
+      endDate: yearMonth.optional(),
+    }),
+  ),
+  skills: z.array(
+    z.object({
+      name: z.string(),
+      keywords: z.array(z.string()),
+    }),
+  ),
+  meta: z.object({
+    version: z.string(),
+    lastModified: isoDate,
+  }),
+});
+
+const resume = defineCollection({
+  loader: glob({ base: './src/content/resume', pattern: '**/*.yaml' }),
+  schema: resumeSchema,
+});
+
+export const collections = { posts, caseStudies, resume };
