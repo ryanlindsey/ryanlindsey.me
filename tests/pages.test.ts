@@ -617,7 +617,12 @@ test('buildLlmsTxt lists a published entry with its .md URL and one-line descrip
     resume: [
       { title: 'Resume (Markdown)', url: 'https://ryanlindsey.me/resume.md', description: 'x' },
     ],
-    mcp: [{ title: 'MCP server', url: 'https://mcp.ryanlindsey.me', description: 'x' }],
+    // `/mcp`, not the bare origin: the custom domain is only the host and the
+    // bare origin 404s (task-9-report.md's fix round 1, and the value both the
+    // real /llms.txt and the footer assert above). A fixture is a worked
+    // example a reader copies, so shipping the known-wrong URL in one -- in the
+    // same file that asserts the right one twice -- is worth the two words.
+    mcp: [{ title: 'MCP server', url: 'https://mcp.ryanlindsey.me/mcp', description: 'x' }],
     posts: [fixturePost],
     caseStudies: [],
   });
