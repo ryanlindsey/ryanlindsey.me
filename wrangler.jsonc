@@ -124,6 +124,40 @@
   // NOT inherited by named environments.
   "ai": { "binding": "AI" },
 
+  // The publishing corpus. Created 2026-09-07 at the 1024 measured above, metric
+  // cosine, and BOTH of those are permanent: Vectorize has no resize and no way
+  // to change a metric, so a wrong number here would have meant a new index and
+  // a new name rather than an edit. That is why the binding was added in a
+  // second commit, after `vectorize get` confirmed the index -- naming an index
+  // that does not exist breaks `wrangler types` and every deploy.
+  //
+  // The `tier` and `type` metadata indexes were created immediately after the
+  // index itself and BEFORE anything was upserted (confirmed: vectorCount 0 at
+  // the time). This ordering is not a preference. Vectorize does not backfill
+  // metadata indexes, and a filtered query against an unindexed property
+  // returns partial or empty results with NO error -- so getting it wrong
+  // produces a corpus that looks healthy and quietly under-answers. Any future
+  // filterable property has to be indexed before the vectors carrying it land.
+  //
+  // Vectors go in pre-normalised (|v| = 1.0 straight from the model), so cosine
+  // and dot product coincide and nothing has to normalise before upserting.
+  //
+  // No `remote`, and that cuts the OPPOSITE way from the `ai` binding above --
+  // the two defaults are not the same and the difference is easy to lose.
+  // Wrangler defaults an unset `remote` to remote for `ai` (no local emulator
+  // exists) but to LOCAL SIMULATION for `vectorize`. So under `wrangler dev`
+  // and under the test harness, `env.VECTORIZE` is a local simulated index, NOT
+  // ryanlindsey-me-corpus. An embedding job run that way reports success and
+  // leaves the real index at vectorCount 0.
+  //
+  // It is left local on purpose: flipping it to `remote: true` opens a remote
+  // proxy session in the harness and breaks the same 8 suites the `ai` binding
+  // did, for the same account-ambiguity reason. Anything that must write to the
+  // real index should say so deliberately -- `wrangler vectorize insert`, the
+  // deployed Worker, or a temporary `remote: true` -- rather than assuming this
+  // binding points at production.
+  "vectorize": [{ "binding": "VECTORIZE", "index_name": "ryanlindsey-me-corpus" }],
+
   // No `destination_address`: this binding may send to any address verified on
   // Email Routing, and the owner's private address must not appear in a public repo.
   "send_email": [{ "name": "EMAIL" }],
