@@ -382,6 +382,114 @@ describe('get_resume', () => {
 });
 
 /**
+ * Task 7's tools, copying the `get_resume` group's shape: each tool gets its
+ * own `describe` (so `vitest -t list_case_studies` selects exactly one) and
+ * its own local `callAudited`, because every tool-calling test in this file
+ * settles its own audit writes before returning -- see `waitForAuditRows`.
+ *
+ * The stale-content note above the brief's own sketch of these tests no
+ * longer holds on this branch: `delivery-forecasting` and `silent-failure`
+ * are both `draft: false` (only `shape-specimen` still is), so
+ * `list_case_studies` returns two real entries here, not zero. These tests
+ * assert against that populated list rather than guarding an empty-list early
+ * return the corpus no longer produces.
+ */
+describe('list_case_studies', () => {
+  async function callAudited(name: string, args?: Record<string, unknown>) {
+    const db = await auditDb();
+    await db.prepare('DELETE FROM mcp_tool_calls').run();
+    const call = await callTool(name, args);
+    await waitForAuditRows(db, 1);
+    return call;
+  }
+
+  test('lists every published case study with its citation URL', async () => {
+    const { json } = await callAudited('list_case_studies');
+    const listed = JSON.parse(json.result.content[0].text);
+    expect(Array.isArray(listed)).toBe(true);
+    // At least the two real .mdx case studies published on this branch at
+    // task-7 time (`delivery-forecasting`, `silent-failure`) -- not pinned to
+    // exactly 2, since a third publishing later should not fail this suite
+    // for a reason that has nothing to do with the tool under test.
+    expect(listed.length).toBeGreaterThan(0);
+    for (const item of listed) {
+      // `https?`, not `https` only: this suite's SITE_ORIGIN is the harness's
+      // own loopback address (tests/mcp-tools.test.ts's own `beforeAll`
+      // comment -- "127.0.0.1"), not the production origin, so the scheme
+      // here is genuinely `http` under this harness.
+      expect(item.url).toMatch(/^https?:\/\/[^/]+\/work\/[^/]+\/$/);
+      expect(item.title).toBeTruthy();
+    }
+  });
+
+  test('omits metadata fields the entry does not declare, rather than nulling them', async () => {
+    const { json } = await callAudited('list_case_studies');
+    const listed = JSON.parse(json.result.content[0].text);
+    expect(listed.length).toBeGreaterThan(0);
+    for (const item of listed) {
+      expect(Object.values(item)).not.toContain(null);
+      // Neither published case study declares orgScale/domain/outcomes yet
+      // (task-7 note); asserting their absence is what makes this a test of
+      // the "omit, don't null" contract rather than a no-op over keys that
+      // were never going to be there regardless of how this is implemented.
+      expect(item).not.toHaveProperty('orgScale');
+      expect(item).not.toHaveProperty('domain');
+      expect(item).not.toHaveProperty('outcomes');
+    }
+  });
+
+  test('joins the audit trail without asking to, like every tool', async () => {
+    await callAudited('list_case_studies');
+    const { results } = await (
+      await auditDb()
+    )
+      .prepare('SELECT tool, COUNT(*) AS n FROM mcp_tool_calls GROUP BY tool')
+      .all();
+    expect(results).toEqual([{ tool: 'list_case_studies', n: 1 }]);
+  });
+});
+
+describe('get_case_study', () => {
+  async function callAudited(name: string, args?: Record<string, unknown>) {
+    const db = await auditDb();
+    await db.prepare('DELETE FROM mcp_tool_calls').run();
+    const call = await callTool(name, args);
+    await waitForAuditRows(db, 1);
+    return call;
+  }
+
+  test('returns the full document body for a published slug', async () => {
+    const { json: list } = await callAudited('list_case_studies');
+    const listed = JSON.parse(list.result.content[0].text);
+    expect(listed.length).toBeGreaterThan(0); // see the note on list_case_studies above.
+
+    const { json } = await callAudited('get_case_study', { slug: listed[0].slug });
+    const detail = JSON.parse(json.result.content[0].text);
+    expect(detail.slug).toBe(listed[0].slug);
+    expect(detail.url).toBe(listed[0].url);
+    expect(typeof detail.markdown).toBe('string');
+    expect(detail.markdown.length).toBeGreaterThan(0);
+    // The frontmatter block is the export format's envelope, not part of what
+    // a reader was served -- get_resume's format=markdown makes the same call.
+    expect(detail.markdown).not.toContain('---\ntitle:');
+  });
+
+  test('answers a missing slug with a readable error, not a crash', async () => {
+    const { json } = await callAudited('get_case_study', { slug: 'no-such-case-study' });
+    expect(json.result.isError).toBe(true);
+    expect(json.result.content[0].text).toMatch(/not found/i);
+  });
+
+  // Plain `callTool`, matching `get_resume`'s schema-rejection test: a call
+  // the SDK refuses at the input schema never reaches `defineTool`'s handler,
+  // so there is no audit row for `callAudited` to wait on.
+  test('rejects an empty slug at the schema, before the handler runs', async () => {
+    const { json } = await callTool('get_case_study', { slug: '' });
+    expect(json.result?.isError ?? json.error).toBeTruthy();
+  });
+});
+
+/**
  * KEEP THIS TEST LAST, and append new tests ABOVE it.
  *
  * It deliberately exhausts the `get_contact:unknown` bucket, and the bucket's

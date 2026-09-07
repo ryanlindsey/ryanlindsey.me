@@ -1,12 +1,15 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { RESUME_SOURCE } from '../../../src/lib/corpus';
+import { RESUME_SOURCE, type CorpusType } from '../../../src/lib/corpus';
 import {
   fetchDocument,
+  fetchDocumentIndex,
   fetchResumeJson,
   pageUrlFor,
   parseFrontmatter,
+  summarize,
   type DocumentsEnv,
+  type DocumentSummary,
 } from '../../../src/lib/mcp/documents';
 import type { McpEnv } from './env';
 import { defineTool, ToolError, type ToolContext } from './define';
@@ -113,6 +116,25 @@ function summaryOf(resume: unknown, origin: string): string {
 const RESUME_UNAVAILABLE = 'The résumé could not be read from the site right now.';
 
 /**
+ * Shared by both case-study tools; `section` is the `CorpusType` they filter
+ * to. Only `case-study` is used today, but the shape generalises to Task 8's
+ * `list_writing`/`get_writing` (`section: 'post'`) without a second copy of
+ * this loop.
+ */
+async function listDocuments(tc: ToolContext, section: CorpusType): Promise<DocumentSummary[]> {
+  const documents = documentsEnv(tc.env);
+  const index = await fetchDocumentIndex(documents);
+  const summaries: DocumentSummary[] = [];
+  for (const source of index.filter((s) => s.type === section)) {
+    const markdown = await fetchDocument(documents, source);
+    // A document the index lists but that will not fetch is a broken deploy,
+    // not an empty section. Skip it rather than fail the whole listing.
+    if (markdown !== null) summaries.push(summarize(source, markdown, tc.env.SITE_ORIGIN));
+  }
+  return summaries;
+}
+
+/**
  * Every tool this server exposes beyond the one `createServer` registers
  * itself, through `defineTool` and nothing else (03 §3).
  *
@@ -175,6 +197,53 @@ export function registerTools(server: McpServer, tc: ToolContext): void {
       // `json` returns it UNRESHAPED (02 §1). `summary` is derived from the
       // same object rather than from a second fetch of the markdown.
       return format === 'summary' ? summaryOf(resume, env.SITE_ORIGIN) : resume;
+    },
+  );
+
+  defineTool(
+    server,
+    tc,
+    {
+      name: 'list_case_studies',
+      title: 'List case studies',
+      description: 'Published case studies with their metadata and citation URLs.',
+      cost: 'cheap',
+    },
+    async (_args, tc) => await listDocuments(tc, 'case-study'),
+  );
+
+  defineTool(
+    server,
+    tc,
+    {
+      name: 'get_case_study',
+      title: 'Get a case study',
+      description: 'The full markdown of one published case study, by slug.',
+      cost: 'cheap',
+      inputSchema: z.object({
+        slug: z.string().min(1).describe('The slug from list_case_studies.'),
+      }),
+    },
+    async ({ slug }: { slug: string }, tc) => {
+      const documents = documentsEnv(tc.env);
+      const index = await fetchDocumentIndex(documents);
+      const source = index.find((s) => s.type === 'case-study' && s.slug === slug);
+      if (!source) {
+        const published = index.filter((s) => s.type === 'case-study').map((s) => s.slug);
+        // Naming what IS available turns a dead end into a next step.
+        throw new ToolError(
+          `Case study "${slug}" not found. Published slugs: ${published.join(', ') || '(none yet)'}`,
+        );
+      }
+      const markdown = await fetchDocument(documents, source);
+      if (markdown === null) {
+        throw new ToolError(`Case study "${slug}" is indexed but did not fetch.`);
+      }
+      return {
+        slug,
+        url: pageUrlFor(source, tc.env.SITE_ORIGIN),
+        markdown: parseFrontmatter(markdown).body,
+      };
     },
   );
 }

@@ -54,6 +54,12 @@ export interface ExportedFrontmatter {
   pillar?: string;
   /** Posts only, and only when the entry declares one. */
   series?: { name: string; order: number };
+  /** Case studies only (03 §2), and only when the entry declares it. */
+  orgScale?: string;
+  /** Case studies only, and only when the entry declares it. */
+  domain?: string;
+  /** Case studies only, and only when the entry declares it. */
+  outcomes?: string[];
   canonical: string;
 }
 
@@ -79,6 +85,15 @@ export function canonicalUrlFor(entry: ExportableEntry): string {
  * carries. Deliberately not the full collection schema -- `draft` is the
  * consuming route's concern (see the module doc above), not a fact a portable
  * document needs to assert about itself.
+ *
+ * `orgScale`, `domain` and `outcomes` (case studies only, Task 7, 03 §2) are
+ * the one addition to that smallness since this comment was written, and they
+ * earn their place by the same test the rest of the set already passes: a
+ * machine consumer (`list_case_studies`) asked for them BY NAME. They stay
+ * optional and are emitted only when the entry declares them -- see
+ * `content.config.ts`'s schema comment for why a required field would have
+ * been the wrong call, and `summarize` in `src/lib/mcp/documents.ts` for the
+ * matching rule on the read side (an omitted field is absent, never `null`).
  */
 export function frontmatterFor(entry: ExportableEntry): ExportedFrontmatter {
   const frontmatter: ExportedFrontmatter = {
@@ -102,6 +117,16 @@ export function frontmatterFor(entry: ExportableEntry): ExportedFrontmatter {
     if (entry.data.series) {
       frontmatter.series = entry.data.series;
     }
+  } else {
+    // caseStudies: the mirror image of the branch above. Posts have no
+    // `orgScale`/`domain`/`outcomes` (02 §2 asks nothing of posts either), and
+    // each of these three is copied ONLY when the entry declares it -- an
+    // `undefined` here must not become a key on `frontmatter`, the same
+    // reason `summarize`'s `OPTIONAL_KEYS` loop checks presence explicitly
+    // rather than assigning unconditionally.
+    if (entry.data.orgScale !== undefined) frontmatter.orgScale = entry.data.orgScale;
+    if (entry.data.domain !== undefined) frontmatter.domain = entry.data.domain;
+    if (entry.data.outcomes !== undefined) frontmatter.outcomes = entry.data.outcomes;
   }
 
   return frontmatter;
@@ -136,9 +161,20 @@ function yamlString(value: string): string {
  * Serializes `ExportedFrontmatter` to the YAML body of the frontmatter block
  * (no `---` fences -- `toMarkdown` adds those). Key order is fixed and matches
  * the brief exactly: `title, description, publishedAt, updatedAt?, pillar?,
- * series?, canonical`. Fixed order is what "small, stable" means here -- a
- * document a model re-reads on every request should not reshuffle its own
- * frontmatter from one build to the next.
+ * series?, orgScale?, domain?, outcomes?, canonical`. Fixed order is what
+ * "small, stable" means here -- a document a model re-reads on every request
+ * should not reshuffle its own frontmatter from one build to the next.
+ *
+ * `outcomes` is the one array in this shape, and it is written as a YAML
+ * block list (`- "item"` per line, two-space indented), the same nested-value
+ * idiom `series` already uses below -- not a flow-style `[...]`, which
+ * `src/lib/mcp/documents.ts`'s hand-rolled `parseFrontmatter` explicitly does
+ * not attempt to parse either way (its own doc comment: "an unquoted list --
+ * is skipped rather than guessed at"). A case study that eventually declares
+ * `outcomes` is therefore visible in this export and in the rendered page, but
+ * -- like a bare `series:` block -- not yet something `list_case_studies`
+ * reads back out of the frontmatter; that is `parseFrontmatter`'s scope, not
+ * this module's, and no case study in this repo declares one yet.
  */
 function frontmatterYaml(frontmatter: ExportedFrontmatter): string {
   const lines = [
@@ -159,6 +195,18 @@ function frontmatterYaml(frontmatter: ExportedFrontmatter): string {
     lines.push('series:');
     lines.push(`  name: ${yamlString(frontmatter.series.name)}`);
     lines.push(`  order: ${frontmatter.series.order}`);
+  }
+  if (frontmatter.orgScale) {
+    lines.push(`orgScale: ${yamlString(frontmatter.orgScale)}`);
+  }
+  if (frontmatter.domain) {
+    lines.push(`domain: ${yamlString(frontmatter.domain)}`);
+  }
+  if (frontmatter.outcomes) {
+    lines.push('outcomes:');
+    for (const outcome of frontmatter.outcomes) {
+      lines.push(`  - ${yamlString(outcome)}`);
+    }
   }
   lines.push(`canonical: ${yamlString(frontmatter.canonical)}`);
 
