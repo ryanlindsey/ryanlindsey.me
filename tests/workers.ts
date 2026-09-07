@@ -58,10 +58,22 @@ export const TEST_SITE_ORIGIN = 'http://resume-pdf.test';
  * would then need live credentials and could bill neurons. Overriding the
  * binding to a local service means no remote session is opened at all. See
  * workers/mock-ai/wrangler.jsonc for why this is not `"remote": false` instead.
+ *
+ * `CORPUS_REFRESH: 'off'` (day 3 Task 15) follows from that AI override and
+ * from one more fact: an unset `remote` resolves the OPPOSITE way for
+ * `vectorize` than it does for `ai`, so `env.VECTORIZE` under this harness is a
+ * LOCAL SIMULATION rather than `ryanlindsey-me-corpus`. Running the embedding
+ * job here would therefore need a stub embedder feeding a simulated index, and
+ * would report success while the real corpus stayed empty -- a green run that
+ * proves nothing, which is the specific failure this repo has now been bitten
+ * by often enough to name. So the job does not run here. Its pure half (the
+ * chunker, the source list, the hash, the refresh plan) is covered directly in
+ * tests/corpus.test.ts with no bindings at all; its embed/upsert/query round
+ * trip is verified by hand against the live index.
  */
 export const SITE_WORKER = {
   configPath: './dist/server/wrangler.json',
-  vars: { SITE_ORIGIN: TEST_SITE_ORIGIN, RESUME_PDF_RENDERER: 'stub' },
+  vars: { SITE_ORIGIN: TEST_SITE_ORIGIN, RESUME_PDF_RENDERER: 'stub', CORPUS_REFRESH: 'off' },
   bindingOverrides: { BROWSER: 'mock-browser', AI: 'mock-ai' },
 };
 

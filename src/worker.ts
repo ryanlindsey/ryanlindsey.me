@@ -1,5 +1,6 @@
 import { handle } from '@astrojs/cloudflare/handler';
 import { regenerateResumePdf } from './lib/resume-pdf';
+import { corpusRefreshEnabled, refreshCorpus } from './lib/corpus';
 
 /**
  * The site's Worker entry.
@@ -233,11 +234,28 @@ export default {
   },
 
   /**
-   * Daily résumé-PDF refresh (see `triggers.crons` in wrangler.jsonc).
+   * The daily jobs (see `triggers.crons` in wrangler.jsonc): the résumé-PDF
+   * refresh (Task 5) and the publishing corpus's embedding refresh (Task 15).
    *
-   * `force: false` is the whole point: regenerateResumePdf returns without
-   * touching a browser unless the résumé source hash has moved, so the steady
-   * state of this cron is one KV read.
+   * Both are hash-gated, and that is the whole point of running them on a
+   * schedule at all: `regenerateResumePdf` does not touch a browser unless the
+   * résumé source hash has moved, and `refreshCorpus` does not embed anything
+   * unless a document's hash has moved. The steady state of this cron is a
+   * handful of KV and asset reads, so cost scales with content changing rather
+   * than with days elapsed.
+   *
+   * TWO `waitUntil` CALLS, NOT ONE CHAINED PROMISE. The jobs are independent --
+   * one writes a PDF to R2, the other writes vectors to Vectorize -- and
+   * neither is a precondition for the other. Sequencing them would make a
+   * Browser Run failure (the more failure-prone of the two by a wide margin,
+   * see resume-pdf.ts's lock/cooldown note) silently skip the corpus refresh
+   * for that day.
+   *
+   * `corpusRefreshEnabled` is the test seam, not a feature flag: it reads a var
+   * no deployed environment sets, so the deployed default is "run". See its
+   * doc in src/lib/corpus.ts for why the harness turns it off rather than
+   * pointing it at a stub -- short version, the harness's Vectorize is a local
+   * simulation and a green run against one would prove nothing.
    *
    * NOT YET PROVEN: Astro's docs show `fetch`, `queue` and Durable Object
    * exports from this entry but carry no `scheduled()` example. It should
@@ -247,5 +265,6 @@ export default {
    */
   scheduled: (_controller, env, ctx) => {
     ctx.waitUntil(regenerateResumePdf(env, { force: false }));
+    if (corpusRefreshEnabled(env)) ctx.waitUntil(refreshCorpus(env));
   },
 } satisfies ExportedHandler<Env>;
