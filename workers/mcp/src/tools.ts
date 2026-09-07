@@ -187,6 +187,22 @@ async function listDocuments(tc: ToolContext, section: CorpusType): Promise<Docu
 }
 
 /**
+ * The copy for `request_private_access`, verbatim -- 03 §2's single most
+ * delicate string in the repo. Reviewed neutral wording: a private tier is
+ * normal, and asking about one does not imply Ryan is searching for anything.
+ * Asserted as a whole string in tests/mcp-tools.test.ts, the same discipline
+ * tests/mcp.smoke.test.ts applies to the server's own `instructions`, so any
+ * edit here has to be made deliberately rather than slipping past a keyword
+ * scan.
+ */
+const PRIVATE_ACCESS_TEXT =
+  'Some material on this site is served to scoped tokens rather than published: ' +
+  'reference contacts, engagement logistics, and the unredacted layer of a few case ' +
+  'studies. This is an ordinary access tier, not a waiting list. Email ' +
+  'hello@ryanlindsey.me with who you are and what you are evaluating, and Ryan will ' +
+  'issue a scoped, expiring token if it fits. Public tools cover the portfolio in full.';
+
+/**
  * Every tool this server exposes beyond the one `createServer` registers
  * itself, through `defineTool` and nothing else (03 §3).
  *
@@ -483,5 +499,23 @@ export function registerTools(server: McpServer, tc: ToolContext): void {
 
       return citations;
     },
+  );
+
+  defineTool(
+    server,
+    tc,
+    {
+      name: 'request_private_access',
+      title: 'Request private access',
+      description: 'Explains the private access tier and how to request a scoped token.',
+      cost: 'cheap',
+    },
+    // No arguments and no lookup: the reviewed copy above is the whole
+    // answer. 06 §3 treats a call here as a high-intent event worth a
+    // notification, but the queue that would carry one is day 6's and is not
+    // bound on this Worker (day 5 finding 7) -- this tool call's audit row is
+    // the day-4 record of the event, and that gap is a recorded decision, not
+    // an omission.
+    async (_args, _tc) => PRIVATE_ACCESS_TEXT,
   );
 }

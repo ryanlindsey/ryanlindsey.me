@@ -662,6 +662,60 @@ describe('search_writing', () => {
 });
 
 /**
+ * Task 10's tool, and the single most delicate string in the repo (03 §2):
+ * a private tier is normal; it does not imply a search. The whole string is
+ * asserted verbatim below -- the same discipline tests/mcp.smoke.test.ts
+ * applies to the server's own `instructions` -- so any edit to this copy
+ * fails this test and has to be made deliberately.
+ */
+describe('request_private_access', () => {
+  async function callAudited(name: string, args?: Record<string, unknown>) {
+    const db = await auditDb();
+    await db.prepare('DELETE FROM mcp_tool_calls').run();
+    const call = await callTool(name, args);
+    await waitForAuditRows(db, 1);
+    return call;
+  }
+
+  const PRIVATE_ACCESS_TEXT =
+    'Some material on this site is served to scoped tokens rather than published: ' +
+    'reference contacts, engagement logistics, and the unredacted layer of a few case ' +
+    'studies. This is an ordinary access tier, not a waiting list. Email ' +
+    'hello@ryanlindsey.me with who you are and what you are evaluating, and Ryan will ' +
+    'issue a scoped, expiring token if it fits. Public tools cover the portfolio in full.';
+
+  test('returns exactly the reviewed private-tier copy', async () => {
+    const { json } = await callAudited('request_private_access');
+    expect(json.result.content[0].text).toBe(PRIVATE_ACCESS_TEXT);
+  });
+
+  // The banned-pattern list is written as regexes over sanctioned text (day 1's
+  // ruling): this file is in the public repo, so the check never enumerates
+  // forbidden vocabulary into a file that ships publicly.
+  test('neither the copy nor the tool description carries search language', async () => {
+    const { json } = await rpc({ jsonrpc: '2.0', id: 99, method: 'tools/list', params: {} });
+    const surface = JSON.stringify(json.result.tools) + PRIVATE_ACCESS_TEXT;
+    for (const banned of [
+      /\bhir(e|ing)\b/i,
+      /\bcandidat/i,
+      /\brecruit/i,
+      /\bjob[ -]?search/i,
+      /\bopen to (work|offers)\b/i,
+      /\bavailab(le|ility) for\b/i,
+    ]) {
+      expect(surface).not.toMatch(banned);
+    }
+  });
+
+  test('is audited like any other tool', async () => {
+    await callAudited('request_private_access');
+    const db = await auditDb();
+    const row = await db.prepare('SELECT tool FROM mcp_tool_calls').first<{ tool: string }>();
+    expect(row?.tool).toBe('request_private_access');
+  });
+});
+
+/**
  * KEEP THIS TEST LAST, and append new tests ABOVE it.
  *
  * It deliberately exhausts the `get_contact:unknown` bucket, and the bucket's
