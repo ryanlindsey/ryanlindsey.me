@@ -14,3 +14,10 @@ package-lock.json
 # rewrites the file on the next release and the check goes red again.
 CHANGELOG.md
 .release-please-manifest.json
+
+# Agent scratch: plans, task reports and review diffs written during
+# subagent-driven execution. Git-ignored and never shipped, but `prettier
+# --check .` still walks it, so a local `npm run lint` goes red on generated
+# markdown that is not ours to format. CI never sees it -- a fresh checkout
+# has no such directory -- which is exactly why it can rot unnoticed locally.
+.superpowers/
