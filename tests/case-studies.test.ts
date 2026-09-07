@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { SITE_HARNESS_WORKERS } from './workers';
@@ -31,6 +31,21 @@ const html = async (path: string) => {
 const slugs = readdirSync('src/content/caseStudies')
   .filter((file) => file.endsWith('.mdx'))
   .map((file) => file.replace(/\.mdx$/, ''));
+
+// Draft state read the same way for the same reason: the index test below
+// needs to know which slugs the aggregation surface is supposed to carry, and
+// hardcoding "everything except shape-specimen" would go quietly wrong the day
+// a second specimen or an unfinished case study lands. Same frontmatter-only
+// regex tests/pages.test.ts uses, so `draft:` in prose cannot be mistaken for
+// the field.
+const isDraft = (slug: string) => {
+  const source = readFileSync(`src/content/caseStudies/${slug}.mdx`, 'utf8');
+  const end = source.indexOf('\n---', 3);
+  return /\ndraft:\s*true\b/.test(end === -1 ? source : source.slice(0, end));
+};
+
+const publishedSlugs = slugs.filter((slug) => !isDraft(slug));
+const draftSlugs = slugs.filter(isDraft);
 
 // Markdown turns a straight apostrophe into a typographic one, so "What I'd do
 // differently" does not match its own source text after rendering.
@@ -82,11 +97,33 @@ test('renders code blocks in a case study with Expressive Code frames', async ()
   expect(page).toContain('data-code=');
 });
 
-test('keeps case-study drafts out of the index but reachable by URL', async () => {
+test('lists every published case study in the index and keeps drafts out of it', async () => {
+  // Both halves, deliberately. Until the first case studies shipped this test
+  // asserted only the exclusion plus `data-testid="work-empty"`, which an
+  // index that had silently stopped listing anything would also have passed.
+  // The inclusion half is what stops that, and the guards below are what stop
+  // either half from going vacuous if the collection's makeup changes.
+  expect(publishedSlugs.length, 'expected at least one published case study').toBeGreaterThan(0);
+  expect(draftSlugs.length, 'expected at least one draft case study').toBeGreaterThan(0);
+
   const index = await html('/work');
-  expect(index).not.toContain('/work/shape-specimen');
-  expect(index).toContain('data-testid="work-empty"');
-  expect((await server.fetch('/work/shape-specimen')).status).toBe(200);
+  for (const slug of publishedSlugs) {
+    expect(index, `/work should link /work/${slug}`).toContain(`/work/${slug}`);
+  }
+  for (const slug of draftSlugs) {
+    expect(index, `/work must not link the draft /work/${slug}`).not.toContain(`/work/${slug}`);
+  }
+  // The empty state is the other side of the same branch in
+  // src/pages/work/index.astro, so it must be gone now that entries exist.
+  expect(index).not.toContain('data-testid="work-empty"');
+});
+
+test('serves a draft case study by URL even though the index omits it', async () => {
+  // The detail tier of the draft rule (tests/pages.test.ts's own framing):
+  // aggregation surfaces filter on `!data.draft`, detail routes do not.
+  for (const slug of draftSlugs) {
+    expect((await server.fetch(`/work/${slug}`)).status, `/work/${slug} should be 200`).toBe(200);
+  }
 });
 
 test('links Work from the primary navigation and marks it current', async () => {
