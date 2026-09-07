@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.2.0...ryanlindsey-me-v1.3.0) (2026-09-07)
+
+
+### Features
+
+* **resume:** complete the resume pipeline, agent-publishing surfaces, and corpus ([#18](https://github.com/ryanlindsey/ryanlindsey.me/issues/18)) ([dafbf38](https://github.com/ryanlindsey/ryanlindsey.me/commit/dafbf38fac6949e4b1aeb9fdea8a2a92bece7130))
+
 ## [1.2.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.1.1...ryanlindsey-me-v1.2.0) (2026-09-06)
 
 
