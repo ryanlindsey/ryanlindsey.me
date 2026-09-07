@@ -150,12 +150,43 @@ async function auditDb() {
  * what makes these assertions about the audit trail rather than about timing.
  */
 async function waitForAuditRows(db: D1Database, atLeast: number) {
-  for (let attempt = 0; attempt < 200; attempt++) {
+  // 400, not 200: the three limiter-flake fixes below (`burstSize`) push the
+  // largest row count this file waits on from 73 to 124, and the budget has
+  // to clear whatever it asks for with room to spare rather than exactly
+  // enough to have covered the old, smaller bursts.
+  for (let attempt = 0; attempt < 400; attempt++) {
     const row = await db.prepare('SELECT COUNT(*) AS n FROM mcp_tool_calls').first<{ n: number }>();
     if ((row?.n ?? 0) >= atLeast) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error(`audit rows never reached ${atLeast}`);
+}
+
+/**
+ * How big a burst has to be to guarantee at least one refusal from
+ * Miniflare's rate limiter, which simulates a FIXED, wall-clock-aligned
+ * window rather than a sliding one:
+ *
+ *   epoch = Math.floor(Date.now() / (period * 1e3))
+ *   … count >= limit ? {success:false} : putBucket({…, count: count + 1})
+ *
+ * A burst of exactly `limit` calls can straddle a window boundary -- some in
+ * the closing window, some in the fresh one the roll wipes the counter for --
+ * with EVERY call allowed and zero refusals. That is not a corner case: it
+ * happens whenever a minute boundary falls anywhere inside the burst, which
+ * measured out to roughly 1-4% of runs and is exactly the intermittent this
+ * suite used to see.
+ *
+ * `2 * limit + 1` calls closes that gap regardless of where a single boundary
+ * falls: window A can absorb at most `limit` of them and window B at most
+ * `limit` of the rest, and `2 * limit + 1` exceeds the total the two windows
+ * can jointly allow -- so at least one call is refused no matter which side
+ * of the boundary the burst splits on. Sized arithmetically rather than
+ * worked around with fake timers or a sleep to the next boundary: this stays
+ * deterministic and needs no clock control at all.
+ */
+function burstSize(limit: number): number {
+  return 2 * limit + 1;
 }
 
 // The payload `get_contact` answered with BEFORE it moved onto `defineTool`,
@@ -625,25 +656,29 @@ describe('search_writing', () => {
   /**
    * The routing `cost: 'inference'` buys, and it discriminates: RATE_LIMITER
    * is 60/minute and RATE_LIMITER_SEARCH is 10/minute
-   * (workers/mcp/wrangler.jsonc), so 12 calls cross the search bucket and
-   * would not come close to the cheap one. A `search_writing` registered as
-   * `cheap` fails this test rather than passing it quietly.
+   * (workers/mcp/wrangler.jsonc), so `burstSize(10)` (21) calls cross the
+   * search bucket and would not come close to the cheap one. A
+   * `search_writing` registered as `cheap` fails this test rather than
+   * passing it quietly. 21, not a smaller number that would merely exceed 10:
+   * see `burstSize`'s own comment for why a plain burst of the limit can
+   * produce zero refusals under Miniflare's fixed-window simulation.
    *
    * It runs without the index because `defineTool` checks the limit BEFORE
-   * calling the handler, so the refusals are real refusals; the ten calls
-   * that get past the limiter go on to fail at the Vectorize binding, which
-   * is why this asserts on the `rate_limited` rows specifically rather than
-   * on anything the tool returned.
+   * calling the handler, so the refusals are real refusals; the calls that
+   * get past the limiter go on to fail at the Vectorize binding, which is
+   * why this asserts on the `rate_limited` rows specifically rather than on
+   * anything the tool returned.
    */
   test('draws from the search limiter, and does not starve the cheap tools', async () => {
     const db = await auditDb();
     await db.prepare('DELETE FROM mcp_tool_calls').run();
 
-    for (let i = 0; i < 12; i++) await callTool('search_writing', { query: `q${i}` });
+    const burst = burstSize(10);
+    for (let i = 0; i < burst; i++) await callTool('search_writing', { query: `q${i}` });
 
-    // Every one of the twelve is audited -- refusals included, or the table
+    // Every one of the burst is audited -- refusals included, or the table
     // would under-report exactly the traffic worth looking at.
-    await waitForAuditRows(db, 12);
+    await waitForAuditRows(db, burst);
     const row = await db
       .prepare(
         "SELECT COUNT(*) AS n FROM mcp_tool_calls WHERE tool='search_writing' AND outcome='rate_limited'",
@@ -658,7 +693,7 @@ describe('search_writing', () => {
     // Settled before returning, like every tool call in this file: that write
     // is dispatched through `ctx.waitUntil` and would otherwise be in flight
     // when the next test clears the table. See `waitForAuditRows`.
-    await waitForAuditRows(db, 13);
+    await waitForAuditRows(db, burst + 1);
   });
 });
 
@@ -682,18 +717,52 @@ describe('search_writing', () => {
  * is asserted for real below. The retrieval half is deferred to Task 16's live
  * run against the real index, where it can actually be observed, and marked
  * with an explicit named skip rather than silently omitted.
+ *
+ * One more thing has to be true for "fails closed under this harness" to
+ * test anything real: the query has to actually REACH the handler. The plain
+ * `search_writing` describe block immediately above fires `burstSize(10)`
+ * (21) calls at the `search_writing:unknown` bucket, and Miniflare's rate
+ * limiter caps the counter at the limit without incrementing it further past
+ * a refusal, so that bucket is left DRAINED -- for the rest of this file, not
+ * just for that test. Calls made here milliseconds later, at the same
+ * `unknown` IP, would therefore be refused by the LIMITER and never reach the
+ * handler at all. That refusal is itself `isError: true`, with a message
+ * ("Rate limit reached for search_writing. Try again in a minute.") that
+ * trivially satisfies every banned pattern checked below -- so this whole
+ * describe block would go green while proving nothing about 09 §2's
+ * highest-risk check. (An earlier version of this file did exactly that: its
+ * own comment claimed the query "reaches the handler and fails there, at the
+ * binding," while the limiter was actually answering both calls.) Each call
+ * below therefore carries a `cf-connecting-ip` of its own -- `limitKeyFor` is
+ * `<tool>:<ip>`, so a fresh IP draws a fresh, unexhausted bucket -- and the
+ * assertion is on the HANDLER's own generic failure text
+ * (`defineTool`'s `fail()`, "search_writing failed. The error was logged."),
+ * not merely on `isError`, since a limiter refusal and a handler failure are
+ * both `isError: true` and only the wording tells them apart.
  */
 describe('search_writing adversarial candidacy queries (09 §2)', () => {
   const ADVERSARIAL_QUERIES = ['Is Ryan looking?', 'Is he interviewing anywhere?'];
 
+  // Distinct from `unknown` (the IP every other call in this file answers to
+  // when no header is set) and from the resource limiter test's
+  // `203.0.113.11` -- not that reusing the latter would collide, since
+  // `limitKeyFor` keys on `<tool>:<ip>` and this bucket is `search_writing`'s,
+  // but a name of its own is clearer than relying on that.
+  const ADVERSARIAL_CLIENT = { 'cf-connecting-ip': '203.0.113.77' };
+
   for (const query of ADVERSARIAL_QUERIES) {
     test(`"${query}" fails closed under this harness, and the failure carries no search language`, async () => {
-      const { json } = await callTool('search_writing', { query });
+      const { json } = await callTool('search_writing', { query }, ADVERSARIAL_CLIENT);
       // Not the schema-rejection path (the other search_writing test's shape):
-      // this query is a valid non-empty string, so it reaches the handler and
-      // fails there, at the binding.
+      // this query is a valid non-empty string, so -- drawing from a fresh
+      // bucket, above -- it is let past the limiter and reaches the handler,
+      // where it fails at the binding. Asserted on the handler's own generic
+      // failure text, which a rate-limit refusal cannot produce: see the
+      // block comment above this describe for why `isError` alone would not
+      // tell the two apart.
       expect(json.error).toBeUndefined();
       expect(json.result.isError).toBe(true);
+      expect(json.result.content[0].text).toMatch(/failed\. The error was logged/);
       for (const banned of BANNED_PATTERNS) {
         expect(json.result.content[0].text).not.toMatch(banned);
       }
@@ -973,8 +1042,12 @@ describe('resources', () => {
     await db.prepare('DELETE FROM mcp_tool_calls').run();
     const client = { 'cf-connecting-ip': '203.0.113.11' };
 
+    // `burstSize(60)` (121), not a plain 70: see that helper's own comment
+    // for why a burst has to exceed the limit by more than a handful to
+    // guarantee a refusal under Miniflare's fixed-window rate limiter.
     const attempts = [];
-    for (let i = 0; i < 70; i++) attempts.push(await readResource(`writing://p${i}`, client));
+    for (let i = 0; i < burstSize(60); i++)
+      attempts.push(await readResource(`writing://p${i}`, client));
 
     const refused = attempts.filter((a) => /rate limit/i.test(a.json.error?.message ?? ''));
     expect(refused.length).toBeGreaterThan(0);
@@ -1118,8 +1191,11 @@ test('refuses past the limit and records the refusal', async () => {
   const db = await auditDb();
   await db.prepare('DELETE FROM mcp_tool_calls').run();
 
+  // `burstSize(60)` (121), not a plain 70 -- see that helper's own comment
+  // for why a burst has to exceed the limit by more than a handful to
+  // guarantee a refusal under Miniflare's fixed-window rate limiter.
   const attempts = [];
-  for (let i = 0; i < 70; i++) attempts.push(await callTool('get_contact'));
+  for (let i = 0; i < burstSize(60); i++) attempts.push(await callTool('get_contact'));
 
   const refused = attempts.filter((a) => a.json.result?.isError === true);
   expect(refused.length).toBeGreaterThan(0);
