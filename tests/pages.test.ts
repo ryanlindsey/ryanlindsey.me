@@ -3,6 +3,7 @@ import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import type { CollectionEntry } from 'astro:content';
 import { SITE_HARNESS_WORKERS } from './workers';
+import { BANNED_PATTERNS } from './candidacy-patterns';
 import { formatDateRange } from '../src/lib/resume';
 import { buildLlmsTxt, buildLlmsFullTxt, type LlmsLink } from '../src/lib/llms-index';
 import { buildRssFeed, buildJsonFeed, RSS_MARKDOWN_NOTICE, type JsonFeed } from '../src/lib/feeds';
@@ -151,21 +152,11 @@ test('keeps the holding page marker and stays unindexed', async () => {
 
 test('carries no candidacy language on any public surface', async () => {
   // 09 §2 is a hard rule and the cheapest place to enforce it is every render.
-  // Word-boundary, inflection-aware patterns: naive substrings ("hire", bare
-  // "candidate") both miss real leaks ("candidates", "recruitment") and catch
-  // false positives ("Yorkshire", "Cheshire", "Hampshire" all contain "hire").
-  // "looking for" is dropped -- too generic ("looking for the source?") and a
-  // check that cries wolf gets weakened by whoever trips it next. "open to
-  // work" is added -- it's LinkedIn's own badge text and the single most
-  // canonical public candidacy signal.
-  const BANNED = [
-    /\bhir(e|es|ed|ing)\b/i,
-    /\bcandidates?\b/i,
-    /\brecruit(er|ers|ing|ment)?\b/i,
-    /\bjob[-\s]?search(es|ing)?\b/i,
-    /\bactively looking\b/i,
-    /\bopen to (work|opportunities|offers)\b/i,
-  ];
+  // BANNED_PATTERNS lives in ./candidacy-patterns.ts (Day 4 Task 15), not here,
+  // so the MCP surface check in tests/mcp-tools.test.ts can share this exact
+  // list rather than hand-typing a second one that could silently drift from
+  // it -- see that module's own comment for why it is a separate file and not
+  // an export straight off this one.
   for (const route of [
     '/',
     '/writing',
@@ -210,7 +201,7 @@ test('carries no candidacy language on any public surface', async () => {
     ]),
   ]) {
     const page = await html(route);
-    for (const pattern of BANNED) {
+    for (const pattern of BANNED_PATTERNS) {
       expect(page, `${route} must not match ${pattern}`).not.toMatch(pattern);
     }
   }

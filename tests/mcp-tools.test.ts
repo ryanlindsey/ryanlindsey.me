@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { MCP_WORKER, SITE_HARNESS_WORKERS } from './workers';
+import { BANNED_PATTERNS } from './candidacy-patterns';
 
 // The SITE too, not just the MCP Worker and its mock AI. Every content tool
 // reads the site's published documents over `SITE_ORIGIN` (src/lib/mcp/documents.ts),
@@ -662,6 +663,53 @@ describe('search_writing', () => {
 });
 
 /**
+ * Day 4 Task 15 (09 §2's named adversarial prompts against the public MCP
+ * surface): "Is Ryan looking?", "Is he interviewing anywhere?". There is no
+ * chat agent to run a whole conversation through until day 6, so
+ * `search_writing` is the one public tool that could answer a query like this
+ * today -- these run the two prompts through it directly.
+ *
+ * MEASURED, not assumed (same fact the plain `search_writing` describe block
+ * above already documents): `env.VECTORIZE.query()` throws `Binding VECTORIZE
+ * needs to be run remotely` under this harness -- there is no local
+ * simulation, not even an empty one. So neither query can retrieve anything
+ * here, and a test asserting "the results contain no search language and no
+ * synthesized verdict" would be certifying results that were never produced --
+ * exactly the false-positive the plan's global constraints name ("never fail,
+ * and never silently pass against a fake"). What genuinely IS true under this
+ * harness -- the call fails closed (a tool-result error, not a crash or an
+ * unhandled throw) and the failure text itself carries no search language --
+ * is asserted for real below. The retrieval half is deferred to Task 16's live
+ * run against the real index, where it can actually be observed, and marked
+ * with an explicit named skip rather than silently omitted.
+ */
+describe('search_writing adversarial candidacy queries (09 §2)', () => {
+  const ADVERSARIAL_QUERIES = ['Is Ryan looking?', 'Is he interviewing anywhere?'];
+
+  for (const query of ADVERSARIAL_QUERIES) {
+    test(`"${query}" fails closed under this harness, and the failure carries no search language`, async () => {
+      const { json } = await callTool('search_writing', { query });
+      // Not the schema-rejection path (the other search_writing test's shape):
+      // this query is a valid non-empty string, so it reaches the handler and
+      // fails there, at the binding.
+      expect(json.error).toBeUndefined();
+      expect(json.result.isError).toBe(true);
+      for (const banned of BANNED_PATTERNS) {
+        expect(json.result.content[0].text).not.toMatch(banned);
+      }
+    });
+  }
+
+  test.skip(
+    'both adversarial queries return cited excerpts only, with no synthesized verdict and no ' +
+      "search language in the actual results -- deferred to Task 16's live run: VECTORIZE has no " +
+      'local simulation under this harness (env.VECTORIZE.query() throws), so there is no result ' +
+      'here to make this assertion about',
+    () => {},
+  );
+});
+
+/**
  * Task 10's tool, and the single most delicate string in the repo (03 §2):
  * a private tier is normal; it does not imply a search. The whole string is
  * asserted verbatim below -- the same discipline tests/mcp.smoke.test.ts
@@ -962,6 +1010,100 @@ describe('resources', () => {
       .first<{ n: number }>();
     expect(row!.n).toBeGreaterThan(0);
   });
+});
+
+/**
+ * Day 4 Task 15: the candidacy-leak gate over the WHOLE public MCP surface
+ * (09 §2, 03 §5's launch-checklist item), not just the routes Day 3 covered.
+ * Every string here is read by strangers' agents by design, so a leak on this
+ * surface is a broadcast leak -- the plan's own words for why this task is a
+ * gate rather than a detail of any one tool.
+ *
+ * Walks `tools/list` AT RUNTIME rather than a hardcoded tool name list: a
+ * hardcoded list is a list that misses day 5's additions, and day 5 -- the
+ * gated tier and fit analysis -- is when this risk is real. Every zero-
+ * REQUIRED-argument tool is actually CALLED and its output checked, not just
+ * its listed name/description -- `tools/list` and `resources/list` cover the
+ * metadata, but a tool's runtime output is a surface of its own.
+ *
+ * The skip condition is `tool.inputSchema?.required`, not "has an
+ * `inputSchema` at all" or "has any properties": MEASURED against this
+ * harness's own `tools/list` response (see workers/mcp/src/tools.ts) --
+ * `get_resume`'s schema has one property (`format`) with a zod `.default()`
+ * and reports NO `required` key at all, the same shape a tool with an empty
+ * `properties: {}` reports. A condition that skipped any tool with properties,
+ * rather than any tool with required ones, would silently drop get_resume
+ * from coverage. `get_case_study`, `get_post` and `search_writing` are the
+ * three genuinely skipped, each because it needs an argument this loop cannot
+ * supply -- each is covered by its own describe block above instead.
+ */
+test('no public MCP surface carries search language: initialize, tools/list, resources/list, and every zero-argument tool call', async () => {
+  const db = await auditDb();
+  await db.prepare('DELETE FROM mcp_tool_calls').run();
+
+  const { json: init } = await initialize(950);
+  const { json: tools } = await rpc({ jsonrpc: '2.0', id: 951, method: 'tools/list', params: {} });
+  const { json: resources } = await rpc({
+    jsonrpc: '2.0',
+    id: 952,
+    method: 'resources/list',
+    params: {},
+  });
+  const { json: templates } = await rpc({
+    jsonrpc: '2.0',
+    id: 953,
+    method: 'resources/templates/list',
+    params: {},
+  });
+
+  const surfaces = [
+    init.result.instructions,
+    JSON.stringify(tools.result),
+    JSON.stringify(resources.result),
+    JSON.stringify(templates.result),
+  ];
+
+  const calledNames = new Set<string>();
+  for (const tool of tools.result.tools as {
+    name: string;
+    inputSchema?: { required?: string[] };
+  }[]) {
+    const required = tool.inputSchema?.required ?? [];
+    if (required.length > 0) continue; // needs an argument this loop cannot supply -- own test above.
+    const { json } = await callTool(tool.name);
+    calledNames.add(tool.name);
+    surfaces.push(JSON.stringify(json.result));
+  }
+
+  // Not vacuous, and specifically proves the skip condition above did not
+  // mishandle get_resume's all-optional schema (see the doc comment): every
+  // tool known to be callable with zero arguments today was actually called.
+  // A day-5 tool joining this set only adds to it -- this does not pin the
+  // total.
+  for (const name of [
+    'get_contact',
+    'get_resume',
+    'list_case_studies',
+    'list_writing',
+    'request_private_access',
+  ]) {
+    expect(
+      calledNames,
+      `${name} should have been called as a zero-required-argument tool`,
+    ).toContain(name);
+  }
+
+  // Settled before returning, like every tool-calling test in this file: each
+  // call's audit write is dispatched through `ctx.waitUntil` and would
+  // otherwise still be in flight when the KEEP-LAST rate-limiter test below
+  // clears this table.
+  await waitForAuditRows(db, calledNames.size);
+
+  for (const surface of surfaces) {
+    for (const banned of BANNED_PATTERNS) {
+      expect(surface, `must not match ${banned}`).not.toMatch(banned);
+    }
+  }
 });
 
 /**
