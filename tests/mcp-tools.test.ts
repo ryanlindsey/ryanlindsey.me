@@ -744,7 +744,12 @@ describe('request_private_access', () => {
   // It covers the RESOURCE surface as well as the tools, because 09 §2 binds
   // resource names, titles and descriptions the same way it binds a tool's --
   // they are read by strangers' agents by design, so a leak in either is a
-  // broadcast leak, and one list checking both is one list to keep current.
+  // broadcast leak. BANNED_PATTERNS (./candidacy-patterns.ts) rather than a
+  // second, inline list of its own: this test used to hand-type one, and Day 4
+  // Task 15's fix round unified it into the one shared list every other
+  // candidacy check in this repo now uses -- see that module's own comment for
+  // the one deliberate difference from what used to be hand-typed here
+  // (`available for` was dropped, not carried forward).
   test('nothing on the published surface carries search language', async () => {
     const { json } = await rpc({ jsonrpc: '2.0', id: 99, method: 'tools/list', params: {} });
     const { json: listed } = await rpc({
@@ -764,14 +769,7 @@ describe('request_private_access', () => {
       JSON.stringify(listed.result.resources) +
       JSON.stringify(templates.result.resourceTemplates) +
       PRIVATE_ACCESS_TEXT;
-    for (const banned of [
-      /\bhir(e|ing)\b/i,
-      /\bcandidat/i,
-      /\brecruit/i,
-      /\bjob[ -]?search/i,
-      /\bopen to (work|offers)\b/i,
-      /\bavailab(le|ility) for\b/i,
-    ]) {
+    for (const banned of BANNED_PATTERNS) {
       expect(surface).not.toMatch(banned);
     }
   });

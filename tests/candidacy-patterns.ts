@@ -16,6 +16,22 @@
  * LinkedIn's own badge text and the single most canonical public candidacy
  * signal.
  *
+ * NOT included, on the same "too generic" reasoning as "looking for": Task
+ * 10's original inline copy of this check (tests/mcp-tools.test.ts, before
+ * this list was unified) also banned `/\bavailab(le|ility) for\b/i`
+ * ("available for" / "availability for"). Deliberately dropped rather than
+ * carried forward when the two lists were unified (Day 4 Task 15 fix round):
+ * every other pattern here has one fixed idiomatic reading, but "available
+ * for ___" does not -- "available for hire" is a leak, while "available for
+ * download", "available for review" and "available for reference" are
+ * ordinary technical-writing phrases this site's own case studies and posts
+ * are exactly the kind of content to use for something that has nothing to do
+ * with candidacy. The one case that actually matters, "available for hire",
+ * is already caught by `hir(e|es|ed|ing)` above without that added risk --
+ * this pattern's only unique catch would be a phrase like "available for new
+ * opportunities" that names no other banned word, which is a narrower, real
+ * gap this list accepts in exchange for not crying wolf on generic prose.
+ *
  * This lives in its own module rather than inside tests/pages.test.ts (where
  * it was first written) because a `.test.ts` file's `beforeAll`/`test()` calls
  * all run again for whichever suite imports it -- MEASURED (Day 4 Task 15):
