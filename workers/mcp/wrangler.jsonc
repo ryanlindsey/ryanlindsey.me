@@ -128,17 +128,37 @@
   // Vectors go in pre-normalised (|v| = 1.0 straight from the model), so cosine
   // and dot product coincide and nothing has to normalise before upserting.
   //
-  // No `remote`, and that cuts the OPPOSITE way from the `ai` binding above --
-  // the two defaults are not the same and the difference is easy to lose.
-  // Wrangler defaults an unset `remote` to remote for `ai` (no local emulator
-  // exists) but to LOCAL SIMULATION for `vectorize`. So under `wrangler dev` and
-  // under the test harness, `env.VECTORIZE` is a local simulated index, NOT
-  // ryanlindsey-me-corpus. An embedding job run that way reports success and
-  // leaves the real index at vectorCount 0. It is left local on purpose:
-  // `remote: true` would open the very proxy session this whole move exists to
-  // avoid. Anything that must write to the real index should say so deliberately
-  // -- `wrangler vectorize insert`, the deployed Worker, or a temporary
-  // `remote: true` -- rather than assuming this binding points at production.
+  // No `remote`, and what that means was CORRECTED 2026-09-07 by day 4 Task 9.
+  // This comment used to say that wrangler defaults an unset `remote` to LOCAL
+  // SIMULATION for `vectorize` (as against remote for `ai`, which has no local
+  // emulator), and therefore that `env.VECTORIZE` under `wrangler dev` and
+  // under the test harness was an empty local index. The second half is false,
+  // and it fails in the direction that wastes the most time: the wrong belief
+  // predicts a green run returning zero matches, so what a test author actually
+  // meets is a thrown binding where they expected an empty result, with nothing
+  // in the message pointing back at this line. MEASURED under
+  // `createTestHarness` (tests/workers.ts), twice -- through `getEnv()`, and
+  // from inside the Worker by wrapping the call and reading the message off the
+  // JSON-RPC response:
+  //   env.VECTORIZE.query(vector, {...})
+  //   -> Error: Binding VECTORIZE needs to be run remotely
+  // So this binding is REMOTE-ONLY as far as the test harness is concerned:
+  // there is no simulated index there, empty or otherwise, and every call
+  // throws. `wrangler dev` was not re-measured and may still simulate; do not
+  // read this note as a claim about it either way.
+  //
+  // The consequence for tests is the important part, and it is stronger than
+  // the old note implied: nothing that touches `env.VECTORIZE` can run in
+  // credential-free CI at all. Day 3's embedding job does not run there
+  // (`CORPUS_REFRESH: 'off'`), and day 4's `search_writing` cannot complete
+  // there -- both are verified by hand against the live index instead, and
+  // both say so in their tests rather than asserting against a fake.
+  //
+  // It is left without `remote` on purpose: `remote: true` would open the very
+  // proxy session this whole move exists to avoid. Anything that must reach the
+  // real index should say so deliberately -- `wrangler vectorize insert`, the
+  // deployed Worker, or a temporary `remote: true` -- rather than assuming this
+  // binding points at production.
   "vectorize": [{ "binding": "VECTORIZE", "index_name": "ryanlindsey-me-corpus" }],
 
   // 05:32 UTC daily: the corpus embedding refresh (src/lib/corpus.ts), invoked

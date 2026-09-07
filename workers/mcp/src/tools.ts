@@ -19,8 +19,8 @@ import {
   type DocumentSummary,
 } from '../../../src/lib/mcp/documents';
 import {
+  citationFor,
   embedQuery,
-  excerptFor,
   parseChunkId,
   UNKNOWN_CHUNK_COUNT,
   type Citation,
@@ -357,8 +357,11 @@ export function registerTools(server: McpServer, tc: ToolContext): void {
     {
       name: 'search_writing',
       title: 'Search the writing',
+      // The `exact` flag is named in the description because a caller cannot
+      // act on a field it does not know to read, and the whole point of
+      // surfacing it is that a degraded excerpt is not quoted as a passage.
       description:
-        'Semantic search across the published posts, case studies and résumé. Returns matching passages with the URL each one is published at.',
+        'Semantic search across the published posts, case studies and résumé. Each result is a passage, the URL it is published at, and an "exact" flag saying whether the excerpt is the passage that matched.',
       // The only `inference` tool: it spends a Workers AI embedding call per
       // query, so it draws from RATE_LIMITER_SEARCH rather than the document
       // reads' bucket (src/lib/mcp/limits.ts).
@@ -428,32 +431,27 @@ export function registerTools(server: McpServer, tc: ToolContext): void {
         // call `listDocuments` makes for the same case.
         if (markdown === null) continue;
 
-        // Destructured under a different name: `text` is a module-level helper
-        // in this file (`summaryOf` uses it), and shadowing it here would be a
-        // trap for the next edit rather than a nuisance for this one.
-        const { text: excerpt, exact } = excerptFor(
+        const citation = citationFor({
+          type: parsed.type,
+          slug: parsed.slug,
+          chunk: parsed.chunk,
+          score: match.score,
+          url: pageUrlFor(source, tc.env.SITE_ORIGIN),
           markdown,
-          parsed.chunk,
-          manifest[key]?.chunks ?? UNKNOWN_CHUNK_COUNT,
-        );
-        if (!exact) {
-          // Logged rather than swallowed: an inexact excerpt is still honest
-          // (it is the cited document's opening, under the document's own
-          // URL) but it means the index and the chunker have drifted apart,
-          // and the fix is a re-embed, not a smaller excerpt.
+          expectedChunks: manifest[key]?.chunks ?? UNKNOWN_CHUNK_COUNT,
+        });
+
+        // The caller is told through `citation.exact`; this is for us. A
+        // degraded citation means the index and the chunker have drifted
+        // apart, and the fix is a re-embed rather than anything in this file,
+        // so the vector id has to reach the logs to be actionable.
+        if (!citation.exact) {
           console.warn(
             `mcp/search: ${match.id} did not line up with the manifest; citing the document lead`,
           );
         }
 
-        citations.push({
-          type: parsed.type,
-          slug: parsed.slug,
-          chunk: parsed.chunk,
-          url: pageUrlFor(source, tc.env.SITE_ORIGIN),
-          score: match.score,
-          excerpt,
-        });
+        citations.push(citation);
       }
 
       return citations;

@@ -79,16 +79,23 @@ export const SITE_WORKER = {
  * Any harness that lists this Worker must therefore list MOCK_AI_WORKER too.
  *
  * `CORPUS_REFRESH: 'off'` (day 3 Task 15) follows from that AI override and from
- * one more fact: an unset `remote` resolves the OPPOSITE way for `vectorize`
- * than it does for `ai`, so `env.VECTORIZE` under this harness is a LOCAL
- * SIMULATION rather than `ryanlindsey-me-corpus`. Running the embedding job here
- * would therefore need a stub embedder feeding a simulated index, and would
+ * one more fact about `env.VECTORIZE` here: whatever it is, it is not
+ * `ryanlindsey-me-corpus`. Running the embedding job here would therefore need
+ * a stub embedder feeding something that is not the real index, and would
  * report success while the real corpus stayed empty -- a green run that proves
  * nothing, which is the specific failure this repo has now been bitten by often
  * enough to name. So the job does not run here. Its pure half (the chunker, the
  * source list, the hash, the refresh plan) is covered directly in
  * tests/corpus.test.ts with no bindings at all; its embed/upsert/query round
  * trip is verified by hand against the live index.
+ *
+ * Day 3 wrote that sentence as "`env.VECTORIZE` is a LOCAL SIMULATION", from
+ * workers/mcp/wrangler.jsonc's note on `vectorize` defaulting to local. Day 4
+ * Task 9 MEASURED it and it is not: `env.VECTORIZE.query(...)` under this
+ * harness throws `Binding VECTORIZE needs to be run remotely`, from inside the
+ * Worker as well as through `getEnv()`. There is no index here at all, empty or
+ * otherwise. That strengthens the conclusion above rather than changing it, and
+ * the correction is written out in full in wrangler.jsonc beside the binding.
  *
  * `MCP_SEARCH_EMBEDDER: 'stub'` (day 4 Task 9) is the same seam pointed at the
  * read side of that corpus. `search_writing` is a tool rather than a cron job,
@@ -97,18 +104,12 @@ export const SITE_WORKER = {
  * and `env.AI.run()` is a TypeError rather than a response. Under the stub the
  * tool skips the embedding call and queries with a fixed vector.
  *
- * MEASURED under this harness, and it is NOT what the day-4 plan assumed:
- * `env.VECTORIZE.query(...)` throws `Binding VECTORIZE needs to be run
- * remotely`, from inside the Worker as well as through `getEnv()`. So this
- * harness has no Vectorize at all -- not an empty simulated index, which is
- * what the wrangler.jsonc note about `vectorize` defaulting to a local
- * simulation under `wrangler dev` had led the plan to expect. `search_writing`
- * therefore cannot complete here at any setting of this var, and tests
- * asserting on retrieved citations would be asserting on a thrown binding.
- * What the stub still buys is that the failure lands at the Vectorize call
- * with a well-formed query rather than one step earlier at a TypeError on
- * `env.AI`, so the query-shaping code is on the executed path and the tool
- * goes green with no test edit the day a local Vectorize exists.
+ * Given the throw, `search_writing` cannot complete here at ANY setting of this
+ * var, and a test asserting on retrieved citations would be asserting on a
+ * thrown binding. What the stub still buys is that the failure lands at the
+ * Vectorize call with a well-formed query rather than one step earlier at a
+ * TypeError on `env.AI`, so the query-shaping code is on the executed path and
+ * the tool goes green with no test edit the day a usable Vectorize exists here.
  *
  * The query-side embedding call is asserted at the call site in
  * tests/mcp-search.test.ts with a stub `Ai`, which is what workers/mock-ai's

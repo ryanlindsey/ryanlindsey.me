@@ -21,12 +21,37 @@ import { CORPUS_EMBEDDING_MODEL, chunkMarkdown, type CorpusType } from '../corpu
 export interface Citation {
   type: CorpusType;
   slug: string;
-  /** The chunk index within the document -- the `<n>` of the vector's id. */
-  chunk: number;
+  /**
+   * The chunk index within the document -- the `<n>` of the vector's id.
+   *
+   * PRESENT ONLY WHEN `exact` IS TRUE, and that is the whole point of it being
+   * optional. When the excerpt could not be reproduced (see `exact` below) the
+   * text handed back is the document's opening rather than the passage the
+   * vector was built from, so an index sitting beside it would be describing a
+   * different piece of text than the one on screen. A caller that ignores
+   * `exact` would then read "chunk 7 of this post says <the document's
+   * opening>" -- a specific claim nobody made. Dropped rather than kept, so
+   * the worst available misreading of a degraded citation is "this document
+   * is relevant, here is its opening", which is true.
+   */
+  chunk?: number;
   /** The page the document is published at, so the claim can be checked at source. */
   url: string;
   score: number;
   excerpt: string;
+  /**
+   * Whether `excerpt` is the passage that actually matched.
+   *
+   * `true` is the ordinary case: the excerpt is byte-for-byte the text that
+   * produced the matched vector. `false` means the index and the published
+   * document have drifted apart (see `excerptFor`), so the tool fell back to
+   * the document's opening; the document, the URL and the score are all still
+   * accurate, but the excerpt is no longer the matched passage.
+   *
+   * Always emitted, never optional: a caller has to be able to tell the two
+   * apart by reading a field, not by noticing that another field is missing.
+   */
+  exact: boolean;
 }
 
 /**
@@ -99,6 +124,52 @@ export function excerptFor(
   const text = chunks[chunk];
   if (text === undefined) return { text: lead, exact: false };
   return { text, exact: true };
+}
+
+/**
+ * One match, assembled into the citation a caller sees.
+ *
+ * Pure, and here rather than inline in the tool for one reason: `VECTORIZE` is
+ * unavailable under the test harness (it throws `Binding VECTORIZE needs to be
+ * run remotely`), so the tool's handler cannot execute there and anything left
+ * inside it is untestable until Task 16 runs the tool by hand. The rule this
+ * function carries -- an excerpt the tool could not reproduce is labelled and
+ * loses its chunk index -- is exactly the rule that must not be got wrong on
+ * the one tool whose requirement is that citations be exactly right, so it
+ * lives where a test with no bindings can hold it.
+ *
+ * Everything the caller is told is therefore either checked (`excerpt` against
+ * `expectedChunks`) or copied from something that was: `url` from the live
+ * published index, `score` from the match itself.
+ */
+export function citationFor(match: {
+  type: CorpusType;
+  slug: string;
+  /** The chunk index from the vector's id. */
+  chunk: number;
+  score: number;
+  /** The page the document is published at. */
+  url: string;
+  /** The document's markdown, as published right now. */
+  markdown: string;
+  /** The manifest's chunk count for this document, or `UNKNOWN_CHUNK_COUNT`. */
+  expectedChunks: number;
+}): Citation {
+  const { text, exact } = excerptFor(match.markdown, match.chunk, match.expectedChunks);
+  return {
+    type: match.type,
+    slug: match.slug,
+    // Spread rather than `chunk: exact ? match.chunk : undefined`: the field
+    // has to be ABSENT, not present-and-undefined. Same "omit, don't null"
+    // contract `summarize` follows in ../mcp/documents.ts for metadata a
+    // document does not declare, and for the same reason -- a null reads as a
+    // claim about the value rather than as the absence of one.
+    ...(exact ? { chunk: match.chunk } : {}),
+    url: match.url,
+    score: match.score,
+    excerpt: text,
+    exact,
+  };
 }
 
 /**

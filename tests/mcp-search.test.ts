@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { CORPUS_EMBEDDING_MODEL, chunkMarkdown } from '../src/lib/corpus';
-import { embedQuery, excerptFor, parseChunkId } from '../src/lib/mcp/search';
+import { citationFor, embedQuery, excerptFor, parseChunkId } from '../src/lib/mcp/search';
 
 // Task 9's pure half. No bindings, no index, no credentials -- the same split
 // tests/corpus.test.ts draws for the same reason: `env.VECTORIZE` under the
@@ -48,6 +48,58 @@ test('reports inexact rather than returning a mismatched excerpt', () => {
   const markdown = '# One\n\nshort\n';
   const { exact } = excerptFor(markdown, 0, 7);
   expect(exact).toBe(false);
+});
+
+test('an exact citation carries the chunk index it matched', () => {
+  const markdown = ['# One', 'a'.repeat(8000), '# Two', 'b'.repeat(8000)].join('\n\n');
+  const chunks = chunkMarkdown(markdown);
+
+  const citation = citationFor({
+    type: 'post',
+    slug: 'a-post',
+    chunk: 1,
+    score: 0.42,
+    url: 'https://ryanlindsey.me/writing/a-post/',
+    markdown,
+    expectedChunks: chunks.length,
+  });
+
+  expect(citation.exact).toBe(true);
+  expect(citation.chunk).toBe(1);
+  expect(citation.excerpt).toBe(chunks[1]);
+});
+
+/**
+ * The degraded citation, and the two things that must both be true of it.
+ *
+ * It has to SAY it is degraded (`exact: false`), and it must not keep the
+ * chunk index next to an excerpt that is not that chunk -- a caller that
+ * ignores `exact` would otherwise read "chunk 5 of this case study says
+ * <the document's opening>", which is a claim nobody made. Dropping the
+ * index leaves the worst available misreading at "this document is
+ * relevant, here is its opening", which is true.
+ */
+test('a degraded citation says so and drops the chunk index it cannot stand behind', () => {
+  const markdown = '# One\n\nshort\n';
+
+  const citation = citationFor({
+    type: 'case-study',
+    slug: 'silent-failure',
+    chunk: 5,
+    score: 0.9,
+    url: 'https://ryanlindsey.me/work/silent-failure/',
+    markdown,
+    expectedChunks: 7,
+  });
+
+  expect(citation.exact).toBe(false);
+  // ABSENT, not null and not undefined -- the same "omit, don't null" contract
+  // the document tools follow for metadata a document does not declare.
+  expect(citation).not.toHaveProperty('chunk');
+  // The property that holds no matter what: the excerpt is still text from the
+  // cited document, under the cited document's own URL.
+  expect(markdown).toContain(citation.excerpt);
+  expect(citation.url).toBe('https://ryanlindsey.me/work/silent-failure/');
 });
 
 test('embeds the query query-side, with the plural schema key', async () => {

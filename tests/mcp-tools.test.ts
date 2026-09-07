@@ -579,11 +579,11 @@ describe('get_post', () => {
  * otherwise: `env.VECTORIZE.query(...)` under this harness throws `Binding
  * VECTORIZE needs to be run remotely`, from inside the Worker as well as
  * through `getEnv()`. There is no Vectorize here at all -- not an empty local
- * index, which is what workers/mcp/wrangler.jsonc's note on `vectorize`
- * defaulting to a local simulation under `wrangler dev` had suggested to
- * expect. `env.AI` is a mock service binding for the reason that file also
- * gives, which is why `MCP_SEARCH_EMBEDDER: 'stub'` (tests/workers.ts) skips
- * the embedding call.
+ * index, which is what the plan had expected. The measurement and what it
+ * corrects are written out beside the binding in workers/mcp/wrangler.jsonc.
+ * `env.AI` is a mock service binding for the reason that file also gives,
+ * which is why `MCP_SEARCH_EMBEDDER: 'stub'` (tests/workers.ts) skips the
+ * embedding call.
  *
  * So `search_writing` CANNOT complete under this harness, and nothing here
  * pretends it can. There is no "returns no matches" test: an empty result
