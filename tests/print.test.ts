@@ -13,17 +13,28 @@ const tokensCss = readFileSync(new URL('../src/styles/tokens.css', import.meta.u
  * contains several nested rule blocks, so a naive `indexOf('}', open)` (as
  * tests/tokens.test.ts's single-level `block()` helper does) would only
  * capture the first nested rule and silently drop the rest.
+ *
+ * ANCHORED ON THE AT-RULE, NOT ON THE STRING (fix round 2). This used to be
+ * `source.indexOf('@media print')` followed by the next `{`, and in tokens.css
+ * the first `@media print` in the file is inside the DOC COMMENT above the
+ * block ("...lives in global.css's own `@media print` block"), not the at-rule
+ * itself. It landed on the right block only because no `{` appears between
+ * that sentence and the real rule -- one more character of prose away from
+ * extracting the wrong thing, in a helper three assertions depend on. Comments
+ * are stripped first and the match now has to be a real at-rule (`@media
+ * print` followed by `{`), so neither accident is load-bearing any more.
  */
 function extractMediaPrintBlock(source: string): string {
-  const start = source.indexOf('@media print');
-  expect(start, '@media print block not found').toBeGreaterThan(-1);
-  const open = source.indexOf('{', start);
+  const css = source.replace(/\/\*[\s\S]*?\*\//g, '');
+  const match = /@media\s+print\s*\{/.exec(css);
+  expect(match, '@media print block not found').not.toBeNull();
+  const open = match!.index + match![0].length - 1;
   let depth = 0;
-  for (let i = open; i < source.length; i++) {
-    if (source[i] === '{') depth++;
-    else if (source[i] === '}') {
+  for (let i = open; i < css.length; i++) {
+    if (css[i] === '{') depth++;
+    else if (css[i] === '}') {
       depth--;
-      if (depth === 0) return source.slice(open + 1, i);
+      if (depth === 0) return css.slice(open + 1, i);
     }
   }
   throw new Error('unbalanced @media print block');
