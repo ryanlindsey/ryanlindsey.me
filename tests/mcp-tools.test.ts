@@ -490,6 +490,89 @@ describe('get_case_study', () => {
 });
 
 /**
+ * Task 8's tools, copying the `list_case_studies`/`get_case_study` group's
+ * shape. Unlike case studies, `src/content/posts/` has exactly one entry
+ * (`type-specimen.mdx`) and it is `draft: true`, so there is no published
+ * post on this branch today -- `list_writing` genuinely returns `[]` and
+ * `get_post` has no published slug to fetch. The tests below say so directly
+ * rather than guarding an empty list with an early `return`: a `return` before
+ * any assertion would make the "full markdown, not a summary" test (the one
+ * enforcing 03 §2's "Full markdown of any published piece") pass without
+ * checking anything, which is exactly what a credential-free CI with no real
+ * content must not do (global constraints: a test needing absent content must
+ * skip cleanly and say so, never silently pass against a fake).
+ */
+describe('list_writing', () => {
+  async function callAudited(name: string, args?: Record<string, unknown>) {
+    const db = await auditDb();
+    await db.prepare('DELETE FROM mcp_tool_calls').run();
+    const call = await callTool(name, args);
+    await waitForAuditRows(db, 1);
+    return call;
+  }
+
+  test('lists exactly the published posts', async () => {
+    const { json } = await callAudited('list_writing');
+    const listed = JSON.parse(json.result.content[0].text);
+    // A real assertion about real state, not a skip: no post is published on
+    // this branch today, so the correct answer is the empty list, and this
+    // goes green against a populated one automatically once a post ships,
+    // with nothing here to edit.
+    expect(listed).toEqual([]);
+  });
+});
+
+describe('get_post', () => {
+  async function callAudited(name: string, args?: Record<string, unknown>) {
+    const db = await auditDb();
+    await db.prepare('DELETE FROM mcp_tool_calls').run();
+    const call = await callTool(name, args);
+    await waitForAuditRows(db, 1);
+    return call;
+  }
+
+  test('points at the other tool when the slug is a case study', async () => {
+    // LIVE, not guarded: case studies genuinely are published on this branch
+    // (`delivery-forecasting`, `silent-failure` -- see the note above
+    // `list_case_studies`), so this exercises the redirect branch for real.
+    const { json: list } = await callAudited('list_case_studies');
+    const studies = JSON.parse(list.result.content[0].text);
+    expect(studies.length).toBeGreaterThan(0);
+
+    const { json: miss } = await callAudited('get_post', { slug: studies[0].slug });
+    expect(miss.result.isError).toBe(true);
+    expect(miss.result.content[0].text).toMatch(/get_case_study/);
+  });
+
+  test('answers an unknown slug with a readable error', async () => {
+    const { json } = await callAudited('get_post', { slug: 'nope' });
+    expect(json.result.isError).toBe(true);
+  });
+
+  /**
+   * Dormant until a post is published. This is the test 03 §2's "Full
+   * markdown of any published piece" actually rests on, so it must be seen
+   * to be skipped rather than seen to silently pass: `ctx.skip(note)`
+   * (vitest's dynamic per-test skip) marks the test SKIPPED in the run
+   * output with the reason below attached, which is what tells a reader this
+   * checked nothing -- a plain early `return` would report as a pass instead.
+   * No edit is needed here the day a post ships: `posts.length` then reads
+   * greater than zero and the skip is never reached.
+   */
+  test('returns full markdown, not a summary, for a published post', async (ctx) => {
+    const { json } = await callAudited('list_writing');
+    const posts = JSON.parse(json.result.content[0].text);
+    if (posts.length === 0) {
+      ctx.skip(
+        'no published post exists yet -- src/content/posts/type-specimen.mdx is the only post and it is draft: true',
+      );
+    }
+    const { json: post } = await callAudited('get_post', { slug: posts[0].slug });
+    expect(post.result.content[0].text.length).toBeGreaterThan(posts[0].description.length);
+  });
+});
+
+/**
  * KEEP THIS TEST LAST, and append new tests ABOVE it.
  *
  * It deliberately exhausts the `get_contact:unknown` bucket, and the bucket's

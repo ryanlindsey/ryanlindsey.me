@@ -246,4 +246,56 @@ export function registerTools(server: McpServer, tc: ToolContext): void {
       };
     },
   );
+
+  defineTool(
+    server,
+    tc,
+    {
+      name: 'list_writing',
+      title: 'List writing',
+      description: 'Published posts with their descriptions and citation URLs.',
+      cost: 'cheap',
+    },
+    async (_args, tc) => await listDocuments(tc, 'post'),
+  );
+
+  defineTool(
+    server,
+    tc,
+    {
+      name: 'get_post',
+      title: 'Get a post',
+      description: 'The full markdown of one published post, by slug.',
+      cost: 'cheap',
+      inputSchema: z.object({ slug: z.string().min(1).describe('The slug from list_writing.') }),
+    },
+    async ({ slug }: { slug: string }, tc) => {
+      const documents = documentsEnv(tc.env);
+      const index = await fetchDocumentIndex(documents);
+      const source = index.find((s) => s.type === 'post' && s.slug === slug);
+
+      if (!source) {
+        // A client that found a slug in /llms.txt or a search citation does not
+        // necessarily know which collection it belongs to. Answering "not found"
+        // when the document exists under the other tool would be true and
+        // useless, so check before saying it.
+        const asCaseStudy = index.find((s) => s.type === 'case-study' && s.slug === slug);
+        if (asCaseStudy) {
+          throw new ToolError(`"${slug}" is a case study — call get_case_study with that slug.`);
+        }
+        const published = index.filter((s) => s.type === 'post').map((s) => s.slug);
+        throw new ToolError(
+          `Post "${slug}" not found. Published slugs: ${published.join(', ') || '(none yet)'}`,
+        );
+      }
+
+      const markdown = await fetchDocument(documents, source);
+      if (markdown === null) throw new ToolError(`Post "${slug}" is indexed but did not fetch.`);
+      return {
+        slug,
+        url: pageUrlFor(source, tc.env.SITE_ORIGIN),
+        markdown: parseFrontmatter(markdown).body,
+      };
+    },
+  );
 }
