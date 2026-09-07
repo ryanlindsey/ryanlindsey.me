@@ -129,15 +129,34 @@ export function parseFrontmatter(markdown: string): {
   return { data, body };
 }
 
-/** Strips one layer of matching surrounding quotes (`"..."` or `'...'`), unescaping `yamlString`'s double-quoted form. */
+/** What each of `yamlString`'s four escape sequences decodes back to. */
+const DOUBLE_QUOTE_ESCAPES: Record<string, string> = { n: '\n', r: '\r', '"': '"', '\\': '\\' };
+
+/**
+ * Strips one layer of matching surrounding quotes (`"..."` or `'...'`),
+ * unescaping `yamlString`'s double-quoted form.
+ *
+ * The double-quoted branch MUST be one coordinated pass over `\X` pairs, not
+ * four independent, sequential `.replace()` calls -- `yamlString` escapes
+ * `\` FIRST, then `"`, `\r`, `\n`, so a plaintext value containing a literal
+ * backslash immediately followed by `n`, `r` or `"` encodes that backslash
+ * doubled, right before a character a later independent pass also matches
+ * on. A sequential decode re-matches the leftover half of that doubled
+ * backslash as a fresh escape (e.g. the encoded `\\n` for plaintext `\n`
+ * gets its SECOND backslash consumed by an `\n`-decoding pass, producing a
+ * real newline and stranding the first backslash) and silently corrupts the
+ * value instead of decoding it. Consuming both characters of every `\X`
+ * pair in a single left-to-right scan is what makes that impossible: each
+ * backslash can only ever start (or be swallowed by) one substitution.
+ */
 function unquote(value: string): string {
   if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
     return value
       .slice(1, -1)
-      .replace(/\\r/g, '\r')
-      .replace(/\\n/g, '\n')
-      .replace(/\\"/g, '"')
-      .replace(/\\\\/g, '\\');
+      .replace(
+        /\\(.)/g,
+        (whole: string, escaped: string) => DOUBLE_QUOTE_ESCAPES[escaped] ?? whole,
+      );
   }
   if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
     return value.slice(1, -1);

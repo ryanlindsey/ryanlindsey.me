@@ -73,6 +73,24 @@ describe('parseFrontmatter', () => {
     parseFrontmatter(POST_MD);
     expect(POST_MD).toBe(before);
   });
+
+  // `yamlString` (src/lib/markdown-export.ts) escapes `\` FIRST, then `"`,
+  // `\r`, `\n` -- so a plaintext value containing a literal backslash
+  // immediately followed by `n` (exactly what a post about JS string escapes
+  // would write) encodes its backslash as a doubled `\\` ahead of that `n`.
+  // Undoing the four escapes as independent, sequential passes is unsound
+  // for input like this: a pass that matches `\n` fires on the SECOND half
+  // of the doubled backslash plus the following `n`, producing a real
+  // newline and leaving the first backslash stranded, rather than the
+  // literal two-character `\n` the author wrote. The decoder must be one
+  // coordinated pass, not four independent ones.
+  test('decodes a double-quoted value through the escaping yamlString actually produces', () => {
+    const plaintext = 'Escaping \\n in JS strings'; // a literal backslash then `n`, not a newline
+    const encoded = plaintext.replace(/\\/g, '\\\\'); // yamlString's own first escaping pass
+    const markdown = ['---', `title: "${encoded}"`, '---', '', 'Body.', ''].join('\n');
+
+    expect(parseFrontmatter(markdown).data.title).toBe(plaintext);
+  });
 });
 
 describe('fetchDocumentIndex', () => {
