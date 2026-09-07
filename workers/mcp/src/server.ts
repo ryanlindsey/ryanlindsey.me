@@ -9,6 +9,12 @@ import type { z } from 'zod';
 import { hashArgs, recordToolCall, type AuditRow } from '../../../src/lib/mcp/audit';
 import { limiterFor, limitKeyFor, type ToolCost } from '../../../src/lib/mcp/limits';
 import type { McpEnv } from './env';
+// A deliberate import cycle: ./tools.ts imports `defineTool` back from here.
+// It is the shape the plan asks for -- one seam module, one tool module -- and
+// it is safe because neither module touches the other at module scope: this
+// one calls `registerTools` from inside `createServer`, and that one calls
+// `defineTool` from inside `registerTools`.
+import { registerTools } from './tools';
 
 /**
  * What a tool handler is given besides its arguments.
@@ -173,7 +179,19 @@ export function defineTool<A>(
       const output = await handler(args, tc);
       audit('ok');
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify(output, null, 2) }],
+        // A STRING handler result is already text and is passed through
+        // verbatim; anything else is serialised as JSON. Not a convenience:
+        // `JSON.stringify` of a string returns a quoted JSON literal with its
+        // newlines escaped, so a tool answering with a markdown document would
+        // hand the caller `"# Ryan Lindsey\n\n..."` -- one line, in quotes,
+        // with backslash-n where the blank lines were. Measured in Task 6
+        // against `get_resume`'s markdown format before this line existed.
+        content: [
+          {
+            type: 'text' as const,
+            text: typeof output === 'string' ? output : JSON.stringify(output, null, 2),
+          },
+        ],
         ...(spec.outputSchema ? { structuredContent: output as Record<string, unknown> } : {}),
       };
     } catch (error) {
@@ -238,6 +256,8 @@ export function createServer(tc: ToolContext): McpServer {
       timezone: 'America/Los_Angeles',
     }),
   );
+
+  registerTools(server, tc);
 
   return server;
 }

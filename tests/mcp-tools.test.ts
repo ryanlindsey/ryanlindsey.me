@@ -1,27 +1,78 @@
-import { afterAll, beforeAll, expect, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
-import { MCP_WORKER, MOCK_AI_WORKER } from './workers';
+import { MCP_WORKER, SITE_HARNESS_WORKERS } from './workers';
 
-const server = createTestHarness({ workers: [MCP_WORKER, MOCK_AI_WORKER] });
+// The SITE too, not just the MCP Worker and its mock AI. Every content tool
+// reads the site's published documents over `SITE_ORIGIN` (src/lib/mcp/documents.ts),
+// so a suite that boots the MCP Worker alone can only test those tools against a
+// host that resolves nowhere. The site is FIRST because `SITE_HARNESS_WORKERS`
+// puts it first, which makes it the primary Worker -- see `beforeAll` for why
+// that matters and `rpc` for what it costs.
+const server = createTestHarness({ workers: SITE_HARNESS_WORKERS });
 
-// The harness starts this Worker on EMPTY storage rather than on the
-// `workers/mcp/.wrangler/state` directory `wrangler d1 migrations apply --local`
-// writes to -- measured: `SELECT name FROM sqlite_master` returns nothing before
-// this call and `mcp_tool_calls` after it. So the migration has to be applied
-// here, which is also what keeps this suite credential-free: `applyD1Migrations`
-// runs migrations/0001_mcp_audit.sql against the local simulation and never
-// contacts the account.
+/**
+ * Two things happen here, and the second is the interesting one.
+ *
+ * The harness starts this Worker on EMPTY storage rather than on the
+ * `workers/mcp/.wrangler/state` directory `wrangler d1 migrations apply --local`
+ * writes to -- measured: `SELECT name FROM sqlite_master` returns nothing before
+ * this call and `mcp_tool_calls` after it. So the migration has to be applied
+ * here, which is also what keeps this suite credential-free: `applyD1Migrations`
+ * runs migrations/0001_mcp_audit.sql against the local simulation and never
+ * contacts the account.
+ *
+ * Then `SITE_ORIGIN`. `workers/mcp/wrangler.jsonc` sets it to
+ * https://ryanlindsey.me, and leaving it there would point every document read
+ * in this suite at the live production site. So it is overridden to the
+ * harness's OWN address -- MEASURED from `listen()` rather than assumed,
+ * because the port is assigned at boot and there is no option to pin it. That
+ * is why the override cannot be a static entry in tests/workers.ts and has to
+ * arrive through `update()` after the server is up.
+ *
+ * What makes this work at all is that the harness address is a real loopback
+ * origin: the MCP Worker's global `fetch` reaches it exactly as it would reach
+ * ryanlindsey.me in production, the request matches no Worker's routes (the two
+ * custom domains are `ryanlindsey.me` and `mcp.ryanlindsey.me`, neither of
+ * which is 127.0.0.1), and it therefore lands on the PRIMARY Worker -- the
+ * site. So the code path under test is the deployed one, over HTTP, with no
+ * service binding and no stub in it.
+ */
 beforeAll(async () => {
-  await server.listen();
+  const { url } = await server.listen();
+
+  await server.update({
+    workers: SITE_HARNESS_WORKERS.map((worker) =>
+      worker === MCP_WORKER
+        ? { ...MCP_WORKER, vars: { ...MCP_WORKER.vars, SITE_ORIGIN: url.origin } }
+        : worker,
+    ),
+  });
+
+  // `update()` reloads the running Workers rather than restarting the session,
+  // so the address measured above should still be the address. Checked rather
+  // than trusted: if it ever moves, every document read fails against a dead
+  // port and nothing in the failure would point back here.
+  const { url: reloaded } = await server.listen();
+  if (reloaded.origin !== url.origin) {
+    throw new Error(`harness moved from ${url.origin} to ${reloaded.origin} across update()`);
+  }
+
   await server.getWorker('ryanlindsey-me-mcp').applyD1Migrations('DB');
 });
 afterAll(async () => {
   await server.close();
 });
 
-/** One JSON-RPC round trip. Streamable HTTP may answer as JSON or one SSE frame. */
+/**
+ * One JSON-RPC round trip. Streamable HTTP may answer as JSON or one SSE frame.
+ *
+ * Dispatched at the MCP Worker BY NAME rather than through `server.fetch()`.
+ * The relative-URL form resolves against the harness address and is routed by
+ * route patterns, which now means the primary Worker -- and the primary Worker
+ * has to be the site for the `SITE_ORIGIN` override above to reach anything.
+ */
 export async function rpc(body: unknown, headers: Record<string, string> = {}) {
-  const response = await server.fetch('/mcp', {
+  const response = await server.getWorker('ryanlindsey-me-mcp').fetch('/mcp', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -248,6 +299,63 @@ test('audits the client identity a call genuinely carries, and no more', async (
       protocol_version: '2026-07-28',
     },
   ]);
+});
+
+/**
+ * Task 6's tool, and the first one registered through `registerTools`.
+ *
+ * Grouped under the tool's name so `vitest -t get_resume` selects exactly
+ * these: the test names below describe a FORMAT, and none of them contains the
+ * tool's name.
+ *
+ * The audit assertion comes first on purpose. It is the only one here that
+ * asserts over the whole table, and the tests above it settle their own audit
+ * writes before returning, so at this point the table is quiet. Put it last
+ * instead and the four `waitUntil` writes from the format tests would still be
+ * in flight over its `DELETE`.
+ */
+describe('get_resume', () => {
+  test('joins the audit trail without asking to, like every tool', async () => {
+    const db = await auditDb();
+    await db.prepare('DELETE FROM mcp_tool_calls').run();
+
+    await callTool('get_resume', { format: 'summary' });
+    await waitForAuditRows(db, 1);
+
+    const { results } = await db
+      .prepare('SELECT tool, COUNT(*) AS n FROM mcp_tool_calls GROUP BY tool')
+      .all();
+    expect(results).toEqual([{ tool: 'get_resume', n: 1 }]);
+  });
+
+  test('returns JSON Resume for format=json', async () => {
+    const { json } = await callTool('get_resume', { format: 'json' });
+    const parsed = JSON.parse(json.result.content[0].text);
+    expect(parsed.basics.name).toBe('Ryan Lindsey');
+    expect(Array.isArray(parsed.work)).toBe(true);
+  });
+
+  test('returns the published markdown for format=markdown', async () => {
+    const { json } = await callTool('get_resume', { format: 'markdown' });
+    expect(json.result.content[0].text).toMatch(/^# Ryan Lindsey/m);
+  });
+
+  test('summary is short, prose, and cites where the full copy lives', async () => {
+    const { json } = await callTool('get_resume', { format: 'summary' });
+    const text = json.result.content[0].text;
+    expect(text.length).toBeLessThan(2000);
+    expect(text).toContain('https://ryanlindsey.me/resume');
+  });
+
+  test('defaults to json when format is omitted', async () => {
+    const { json } = await callTool('get_resume');
+    expect(() => JSON.parse(json.result.content[0].text)).not.toThrow();
+  });
+
+  test('rejects an unknown format at the schema, before the handler runs', async () => {
+    const { json } = await callTool('get_resume', { format: 'pdf' });
+    expect(json.result?.isError ?? json.error).toBeTruthy();
+  });
 });
 
 /**
