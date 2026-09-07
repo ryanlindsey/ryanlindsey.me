@@ -1,4 +1,4 @@
-// The MCP rate limiter's seam (03 §3). `defineTool` (workers/mcp/src/server.ts)
+// The MCP rate limiter's seam (03 §3). `defineTool` (workers/mcp/src/define.ts)
 // draws every tool call through `limiterFor` and `limitKeyFor`, so nothing here
 // is optional for a tool: there is one registration path and it always limits.
 

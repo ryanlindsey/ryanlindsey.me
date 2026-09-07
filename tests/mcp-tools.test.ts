@@ -57,7 +57,18 @@ beforeAll(async () => {
     throw new Error(`harness moved from ${url.origin} to ${reloaded.origin} across update()`);
   }
 
-  await server.getWorker('ryanlindsey-me-mcp').applyD1Migrations('DB');
+  // The override ARRIVED, asserted where it is visible. Nothing further down
+  // this file can tell the harness apart from the live site: `basics.name`,
+  // `/^# Ryan Lindsey/m` and the résumé's own `basics.url` are all equally
+  // true of production. So if this override ever silently stopped applying,
+  // every one of those tests would keep passing while reaching out over the
+  // public internet, and the property this wiring exists for -- that the tools
+  // read the local `dist/client` build -- would be gone with nothing to say so.
+  // This line is the only thing standing between those two worlds.
+  const mcp = server.getWorker<{ DB: D1Database; SITE_ORIGIN: string }>('ryanlindsey-me-mcp');
+  expect((await mcp.getEnv()).SITE_ORIGIN).toBe(url.origin);
+
+  await mcp.applyD1Migrations('DB');
 });
 afterAll(async () => {
   await server.close();
@@ -307,51 +318,63 @@ test('audits the client identity a call genuinely carries, and no more', async (
  * Grouped under the tool's name so `vitest -t get_resume` selects exactly
  * these: the test names below describe a FORMAT, and none of them contains the
  * tool's name.
- *
- * The audit assertion comes first on purpose. It is the only one here that
- * asserts over the whole table, and the tests above it settle their own audit
- * writes before returning, so at this point the table is quiet. Put it last
- * instead and the four `waitUntil` writes from the format tests would still be
- * in flight over its `DELETE`.
  */
 describe('get_resume', () => {
-  test('joins the audit trail without asking to, like every tool', async () => {
+  /**
+   * `callTool`, plus the audit row it leaves behind.
+   *
+   * Every test in this file that calls a tool settles its own `waitUntil`
+   * audit write before returning -- see the note on `waitForAuditRows`. Four
+   * of the six tests below are the same shape, so the clearing and the
+   * settling live here rather than three lines at a time in each of them.
+   * Tasks 7-10 copy this group; a helper is one thing to copy correctly.
+   */
+  async function callAudited(name: string, args?: Record<string, unknown>) {
     const db = await auditDb();
     await db.prepare('DELETE FROM mcp_tool_calls').run();
-
-    await callTool('get_resume', { format: 'summary' });
+    const call = await callTool(name, args);
     await waitForAuditRows(db, 1);
+    return call;
+  }
 
-    const { results } = await db
+  test('joins the audit trail without asking to, like every tool', async () => {
+    await callAudited('get_resume', { format: 'summary' });
+
+    const { results } = await (
+      await auditDb()
+    )
       .prepare('SELECT tool, COUNT(*) AS n FROM mcp_tool_calls GROUP BY tool')
       .all();
     expect(results).toEqual([{ tool: 'get_resume', n: 1 }]);
   });
 
   test('returns JSON Resume for format=json', async () => {
-    const { json } = await callTool('get_resume', { format: 'json' });
+    const { json } = await callAudited('get_resume', { format: 'json' });
     const parsed = JSON.parse(json.result.content[0].text);
     expect(parsed.basics.name).toBe('Ryan Lindsey');
     expect(Array.isArray(parsed.work)).toBe(true);
   });
 
   test('returns the published markdown for format=markdown', async () => {
-    const { json } = await callTool('get_resume', { format: 'markdown' });
+    const { json } = await callAudited('get_resume', { format: 'markdown' });
     expect(json.result.content[0].text).toMatch(/^# Ryan Lindsey/m);
   });
 
   test('summary is short, prose, and cites where the full copy lives', async () => {
-    const { json } = await callTool('get_resume', { format: 'summary' });
+    const { json } = await callAudited('get_resume', { format: 'summary' });
     const text = json.result.content[0].text;
     expect(text.length).toBeLessThan(2000);
     expect(text).toContain('https://ryanlindsey.me/resume');
   });
 
   test('defaults to json when format is omitted', async () => {
-    const { json } = await callTool('get_resume');
+    const { json } = await callAudited('get_resume');
     expect(() => JSON.parse(json.result.content[0].text)).not.toThrow();
   });
 
+  // Plain `callTool`, and that is the point: a call the SDK refuses at the
+  // input schema never reaches `defineTool`, so there is no audit row to
+  // settle. `callAudited` would wait out its 2 seconds and then fail.
   test('rejects an unknown format at the schema, before the handler runs', async () => {
     const { json } = await callTool('get_resume', { format: 'pdf' });
     expect(json.result?.isError ?? json.error).toBeTruthy();

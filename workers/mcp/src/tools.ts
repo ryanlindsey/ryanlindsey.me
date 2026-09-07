@@ -9,7 +9,7 @@ import {
   type DocumentsEnv,
 } from '../../../src/lib/mcp/documents';
 import type { McpEnv } from './env';
-import { defineTool, ToolError, type ToolContext } from './server';
+import { defineTool, ToolError, type ToolContext } from './define';
 
 /**
  * The published documents, as this Worker reads them.
@@ -132,23 +132,32 @@ export function registerTools(server: McpServer, tc: ToolContext): void {
         "Ryan Lindsey's résumé: JSON Resume data, the published markdown document, or a short prose summary.",
       cost: 'cheap',
       inputSchema: RESUME_FORMAT,
-      // NO `outputSchema`, and this is a measurement rather than an omission.
+      // NO `outputSchema`, and this is a decision rather than an omission.
+      //
       // 04's step 3 asks for `structuredContent` on `format=json`, and
       // `defineTool` emits that only for a tool that declares an
-      // `outputSchema`. But @modelcontextprotocol/server 2.0.0 then requires
-      // structured content on EVERY non-error result of the tool
-      // (`validateToolOutput`, dist/mcp-DXXb3Vv3.mjs:1439) and validates it
-      // against that schema -- and this tool's other two formats answer with a
-      // string. Declaring one was tried and measured; `format=markdown` came
-      // back as:
+      // `outputSchema`. Declaring one binds ALL THREE formats: the SDK
+      // requires structured content on every non-error result of a tool that
+      // advertises a schema, and validates it against that schema
+      // (`validateToolOutput`, @modelcontextprotocol/server 2.0.0,
+      // dist/mcp-DXXb3Vv3.mjs:1439). Two of this tool's formats answer with a
+      // string, so a `z.ZodObject` schema rejects them -- measured, with
+      // `z.looseObject({})`, the loosest object schema there is:
       //   "Output validation error: Invalid structured content for tool
       //    get_resume: Invalid input: expected object, received string"
-      // The ways out are all worse: an object schema loose enough to admit a
-      // string does not exist for a `z.ZodObject`, and wrapping the résumé in
-      // an envelope so every format is an object would mean `format=json` no
-      // longer answers with JSON Resume verbatim, which 02 §1 forbids. So the
-      // JSON format's object goes out as the `content` text -- valid JSON a
-      // client parses -- and the tool advertises no output schema at all.
+      //
+      // NOT an SDK limitation, and worth being exact about: the SDK accepts
+      // any standard schema and handles a non-object root deliberately
+      // (`isNonObjectJsonSchemaRoot`). It is `defineTool`'s own
+      // `outputSchema?: z.ZodObject<z.ZodRawShape>` that narrows to objects.
+      // The reason not to widen it is the behaviour on the other side: a
+      // non-object root makes the SDK wrap structured content as
+      // `{ result: <value> }` for 2025-era clients -- which is exactly the
+      // envelope around JSON Resume that 02 §1 forbids -- and it would also
+      // duplicate every markdown document into the response twice, once as
+      // text and once as structured content. So the JSON format's object goes
+      // out as the `content` text, valid JSON a client parses in one step, and
+      // this tool advertises no output schema at all.
     },
     async ({ format }, { env }) => {
       const documents = documentsEnv(env);
