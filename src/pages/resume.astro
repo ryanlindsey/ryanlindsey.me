@@ -102,6 +102,54 @@ const workGroups = groupWorkByCompany(resume.work);
     </section>
 
     {
+      // Work Ryan owns outright, kept out of `work` deliberately -- see the
+      // `projects` comment in content.config.ts. Same no-empty-scaffolding
+      // rule as Education and Skills below.
+      resume.projects.length > 0 && (
+        <section class="mt-16" aria-labelledby="projects">
+          <h2 id="projects" class="border-b border-rule pb-3 font-display text-heading text-ink">
+            Projects
+          </h2>
+          <div class="mt-8 space-y-10">
+            {resume.projects.map((project) => (
+              <div>
+                <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <h3 class="font-display text-subheading text-ink">
+                    {project.url ? (
+                      <a href={project.url} class="hover:text-accent">
+                        {project.name}
+                      </a>
+                    ) : (
+                      project.name
+                    )}
+                  </h3>
+                  {project.startDate && (
+                    <p class="font-mono text-micro text-ink-muted" data-numeric>
+                      {formatDateRange(project.startDate, project.endDate)}
+                    </p>
+                  )}
+                </div>
+                {project.roles.length > 0 && (
+                  <p class="mt-1 font-mono text-micro uppercase text-ink-muted">
+                    {project.roles.join(', ')}
+                  </p>
+                )}
+                <p class="mt-2 text-ink-muted">{project.description}</p>
+                {project.highlights.length > 0 && (
+                  <ul class="mt-2 list-disc space-y-1 pl-5 text-ink-muted">
+                    {project.highlights.map((highlight) => (
+                      <li>{highlight}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )
+    }
+
+    {
       // No empty scaffolding on any surface, HTML included (fix round 1):
       // an empty array means the whole section -- heading included -- is
       // omitted, not just its contents. Comes back on its own once the

@@ -178,7 +178,22 @@ const resumeFixture: Resume = {
     { name: 'Platform and delivery', keywords: ['CI/CD', 'Blue/green deployment'] },
     { name: 'Languages and runtimes', keywords: ['TypeScript', 'Ruby', 'Node.js'] },
   ],
-  meta: { version: '0.2.0', lastModified: '2026-09-07' },
+  projects: [
+    {
+      name: 'Pixelsonly Racing',
+      description: 'A sim racing coaching platform that turns raw telemetry into driver goals.',
+      url: 'https://pixelsonly.racing',
+      roles: ['Founder'],
+      x_artifacts: ['silent-failure'],
+      highlights: [
+        'Built and run solo on Cloudflare Workers, D1, R2, Durable Objects, Queues and Workflows',
+        'Per-driver isolation by object addressing rather than query filtering',
+        'Two eval harnesses, property-based rather than string-matching',
+        'Cost tracked per unit of work from a spend ledger',
+      ],
+    },
+  ],
+  meta: { version: '0.3.0', lastModified: '2026-09-07' },
 };
 
 describe('workHistoryIssues', () => {
@@ -307,22 +322,33 @@ describe('unresolvedArtifactSlugs', () => {
     expect(unresolvedArtifactSlugs(work, ['shape-specimen'])).toEqual(['never-published']);
   });
 
-  // The résumé's own artifact link, checked against the case studies that
-  // actually exist. `delivery-forecasting` is the case study written from the
-  // same work as the Senior Engineering Manager entry's forecasting highlight.
+  // The résumé's own artifact links, checked against the case studies that
+  // actually exist. BOTH sections are passed: `work` carries
+  // `delivery-forecasting` and `projects` carries `silent-failure`. Checking
+  // only `work` is what let the Pixelsonly Racing case study sit unlinked.
   test("resolves the real résumé's artifact links against the published case studies", () => {
     expect(
-      unresolvedArtifactSlugs(resumeFixture.work, [
-        'delivery-forecasting',
-        'silent-failure',
-        'shape-specimen',
-      ]),
+      unresolvedArtifactSlugs(
+        [...resumeFixture.work, ...resumeFixture.projects],
+        ['delivery-forecasting', 'silent-failure', 'shape-specimen'],
+      ),
     ).toEqual([]);
   });
 
   test("flags the résumé's artifact links when the case study is absent", () => {
-    expect(unresolvedArtifactSlugs(resumeFixture.work, ['shape-specimen'])).toEqual([
-      'delivery-forecasting',
+    expect(
+      unresolvedArtifactSlugs(
+        [...resumeFixture.work, ...resumeFixture.projects],
+        ['shape-specimen'],
+      ),
+    ).toEqual(['delivery-forecasting', 'silent-failure']);
+  });
+
+  // Regression guard for the bug this section was added to fix: a project's
+  // artifact link must be checked, not silently ignored.
+  test('flags an unpublished artifact declared by a project rather than a job', () => {
+    expect(unresolvedArtifactSlugs(resumeFixture.projects, ['delivery-forecasting'])).toEqual([
+      'silent-failure',
     ]);
   });
 });
@@ -385,6 +411,7 @@ describe('resumeGaps', () => {
       },
       work: [workEntry({ name: 'A', position: 'Role', startDate: '2020-01' })],
       education: [],
+      projects: [],
     };
     expect(resumeGaps(stripped)).toEqual([
       'A — Role (2020-01) has no highlights',
@@ -533,6 +560,10 @@ describe('/resume.json and /resume.md over HTTP', () => {
     // assertions used to cover: a heading rendered over nothing.
     expect(markdown).toContain('## Education');
     expect(markdown).toContain('## Skills');
+    expect(markdown).toContain('## Projects');
+    // The project's name links out, and its case study is reachable from the
+    // résumé rather than orphaned.
+    expect(markdown).toContain('[Pixelsonly Racing](https://pixelsonly.racing)');
   });
 
   test('/resume.json, /resume.md and /resume name the same companies and date ranges', async () => {

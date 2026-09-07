@@ -58,12 +58,12 @@ const caseStudies = defineCollection({
 // which would be a second source of truth.
 const yearMonth = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'expected a YYYY-MM date');
 
-// Education is the one place a bare year is the honest value. A degree is
+// Education and projects are where a bare year is the honest value. A degree is
 // remembered and stated by year ("2003-2007"), not by the month the registrar
-// recorded, so demanding YYYY-MM here would force a made-up month into the
-// data -- the same error as coercing a day onto a YYYY-MM string, which the
-// comment above refuses to make. Work dates stay strict: a job does start in a
-// known month.
+// recorded, and a side project rarely has a month anyone would defend, so
+// demanding YYYY-MM would force a made-up month into the data -- the same error
+// as coercing a day onto a YYYY-MM string, which the comment above refuses to
+// make. Work dates stay strict: a job does start in a known month.
 const yearOrYearMonth = z
   .string()
   .regex(/^\d{4}(-(0[1-9]|1[0-2]))?$/, 'expected a YYYY or YYYY-MM date');
@@ -128,6 +128,38 @@ export const resumeSchema = z.object({
       keywords: z.array(z.string()),
     }),
   ),
+  // Work Ryan owns outright, kept deliberately separate from `work`. Two
+  // reasons, and the second is the structural one:
+  //
+  // 1. `work` is employment history. A business he founded is not employment,
+  //    and filing it as though it were would blur a distinction a reader cares
+  //    about.
+  // 2. `workHistoryIssues()` requires exactly one `work` entry without an
+  //    `endDate`, because exactly one job is current. An ongoing side business
+  //    is a genuine second concurrent commitment, so putting it in `work` would
+  //    force that invariant to be relaxed for a case it was never about. A
+  //    separate section keeps the invariant meaning what it says.
+  //
+  // `projects` is a standard JSON Resume section, so machine consumers already
+  // understand it. Defaults to [] on the same reasoning as `profiles` above:
+  // absence is valid data, not a build error.
+  projects: z
+    .array(
+      z.object({
+        name: z.string(),
+        description: z.string(),
+        url: z.string().optional(),
+        roles: z.array(z.string()).default([]),
+        startDate: yearOrYearMonth.optional(),
+        endDate: yearOrYearMonth.optional(),
+        highlights: z.array(z.string()).default([]),
+        // Same `x_` extension as `work[].x_artifacts`, and the reason this
+        // section needed one: the Pixelsonly Racing case study had no entry to
+        // hang off while `work` was the only place artifacts could be declared.
+        x_artifacts: z.array(z.string()).optional(),
+      }),
+    )
+    .default([]),
   meta: z.object({
     version: z.string(),
     lastModified: isoDate,

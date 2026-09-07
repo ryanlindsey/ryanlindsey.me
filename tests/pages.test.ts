@@ -292,6 +292,7 @@ test('serves a resume page with a section structure', async () => {
   expect(page).toContain('Experience');
   const yaml = readFileSync(resumeYamlPath, 'utf8');
   for (const [key, heading] of [
+    ['projects', 'Projects'],
     ['education', 'Education'],
     ['skills', 'Skills'],
   ] as const) {
@@ -318,7 +319,16 @@ test('renders every company name and date range from the real résumé data', as
   // ever threw, `npm test`'s `astro build` step -- which runs before this
   // file even starts -- would fail outright, before any test could run.
   const yaml = readFileSync(resumeYamlPath, 'utf8');
-  const workBlock = yaml.slice(yaml.indexOf('\nwork:'), yaml.indexOf('\neducation:'));
+  // Bounded by the NEXT top-level key rather than by `education:` by name.
+  // This slice used to run work -> education and broke the day a `projects:`
+  // section landed between the two: every project was parsed as a work entry
+  // and threw on the missing startDate. Any future top-level section now ends
+  // the block correctly without touching this test.
+  const workStart = yaml.indexOf('\nwork:');
+  const nextTopLevelKey = /\n[a-z][a-zA-Z]*:/g;
+  nextTopLevelKey.lastIndex = workStart + 1;
+  const workEnd = nextTopLevelKey.exec(yaml)?.index ?? yaml.length;
+  const workBlock = yaml.slice(workStart, workEnd);
   const entries = workBlock
     .split(/\n {2}- name: /)
     .slice(1)

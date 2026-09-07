@@ -222,6 +222,55 @@ work:
         communities, and custom content management systems for local
         businesses, independent films, and bands.
 
+# Work Ryan owns outright. Deliberately NOT in `work`: that section is
+# employment history, and `workHistoryIssues()` requires exactly one entry
+# without an `endDate` because exactly one job is current. See the `projects`
+# comment in content.config.ts for the full reasoning.
+#
+# `startDate` is omitted because no verified founding date exists yet. Same rule
+# as everywhere else in this file: an unknown date is left out, not guessed.
+# Ryan can supply one and it renders automatically.
+#
+# Scope of claims follows Ryan's own IP line from the 2026-09-06 technical
+# brief: the primitive composition, the isolation model, the eval architecture
+# including its unmet gate, and cost per unit of work are all publishable in
+# full. The hold-back list (loss-attribution parameters, corner classification
+# vocabulary, prompt corpus, glossary and coaching-style contents, catalog build
+# pipeline) appears nowhere here, and the other drivers are not named.
+projects:
+  - name: Pixelsonly Racing
+    description: >-
+      A sim racing coaching platform that turns raw telemetry into driver
+      development goals, with a personal AI race engineer for every driver, plus
+      a products line for the sim racing community.
+    url: https://pixelsonly.racing
+    roles:
+      - Founder
+    x_artifacts:
+      - silent-failure
+    highlights:
+      - >-
+        Built and run solo on Cloudflare Workers, D1, R2, Durable Objects,
+        Queues and Workflows, with Anthropic's Claude routed through AI Gateway.
+        Workflows because CPU time excludes time awaiting I/O, which is what
+        makes a minutes-long model call affordable inside a request-shaped
+        runtime.
+      - >-
+        Per-driver isolation by object addressing rather than query filtering:
+        the Durable Object instance name is the verified token slug, so each
+        driver's working memory is a physically separate SQLite instance and no
+        shared table exists for a bug to leak across. Asserted per tool inside
+        workerd against real storage, not against a mock.
+      - >-
+        Two eval harnesses, property-based rather than string-matching, one of
+        which reports its own replay gate as unmet because the bar was written
+        before any numbers existed. A run that measures nothing is a failure,
+        not a pass.
+      - >-
+        Cost tracked per unit of work from a spend ledger, with per-driver
+        budgets and delivery observability gated into the roadmap before the
+        driver count grows rather than after.
+
 # Years confirmed by Ryan 2026-09-07. They are bare years on purpose: the
 # schema's `yearOrYearMonth` accepts `YYYY` for education specifically, so no
 # invented month is needed to satisfy a regex. See content.config.ts.
@@ -276,5 +325,5 @@ skills:
       - '*nix shell'
 
 meta:
-  version: 0.2.0
+  version: 0.3.0
   lastModified: '2026-09-07'

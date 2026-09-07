@@ -65,6 +65,30 @@ function renderEducation(education: Resume['education']): string | null {
   return `## Education\n\n${entries.join('\n\n')}`;
 }
 
+/**
+ * `null` while `projects` is `[]`, same "no empty scaffolding" rule as
+ * Education and Skills. A project renders its name (linked when it carries a
+ * `url`), then roles and dates where present, then its highlights.
+ */
+function renderProjects(projects: Resume['projects']): string | null {
+  if (projects.length === 0) return null;
+  const entries = projects.map((project) => {
+    const name = escapeMarkdown(project.name);
+    const heading = project.url ? `**[${name}](${project.url})**` : `**${name}**`;
+    const meta = [
+      project.roles.map(escapeMarkdown).join(', '),
+      project.startDate ? formatDateRange(project.startDate, project.endDate) : '',
+    ].filter(Boolean);
+    const lines = [meta.length > 0 ? `${heading} · ${meta.join(' · ')}` : heading];
+    lines.push(escapeMarkdown(project.description));
+    if (project.highlights.length > 0) {
+      lines.push(project.highlights.map((h) => `- ${escapeMarkdown(h)}`).join('\n'));
+    }
+    return lines.join('\n\n');
+  });
+  return `## Projects\n\n${entries.join('\n\n')}`;
+}
+
 /** `null` while `skills` is `[]`, so the whole section -- heading included -- is omitted. */
 function renderSkills(skills: Resume['skills']): string | null {
   if (skills.length === 0) return null;
@@ -81,6 +105,7 @@ export function renderResumeMarkdown(resume: Resume): string {
     escapeMarkdown(resume.basics.label),
     escapeMarkdown(resume.basics.summary),
     renderExperience(resume.work),
+    renderProjects(resume.projects),
     renderEducation(resume.education),
     renderSkills(resume.skills),
   ].filter((section): section is string => section !== null);

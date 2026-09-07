@@ -165,20 +165,31 @@ export function groupWorkByCompany(work: readonly ResumeWorkEntry[]): WorkGroup[
 }
 
 /**
+ * Anything that may declare `x_artifacts`: a `work` entry or a `projects`
+ * entry. Structural rather than a union of the two concrete types, so this
+ * guard keeps working if a third section ever declares artifact links.
+ */
+export type ArtifactBearing = { x_artifacts?: readonly string[] };
+
+/**
  * `x_artifacts` slugs that do not match any of the given case-study slugs --
  * this is what stops the résumé linking to a case study that was never
  * published. `[]` means every artifact link resolves. The caller supplies
  * the known slugs (e.g. read from the `caseStudies` collection, or off disk
  * the way tests/case-studies.test.ts does) rather than this module reading
  * them itself, so it stays free of any `astro:content` import.
+ *
+ * Callers pass every artifact-bearing section, e.g.
+ * `[...resume.work, ...resume.projects]` -- checking only `work` would let a
+ * project link to a case study that was never published.
  */
 export function unresolvedArtifactSlugs(
-  work: readonly ResumeWorkEntry[],
+  entries: readonly ArtifactBearing[],
   knownCaseStudySlugs: readonly string[],
 ): string[] {
   const known = new Set(knownCaseStudySlugs);
   const unresolved = new Set<string>();
-  for (const entry of work) {
+  for (const entry of entries) {
     for (const slug of entry.x_artifacts ?? []) {
       if (!known.has(slug)) unresolved.add(slug);
     }
