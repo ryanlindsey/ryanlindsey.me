@@ -631,6 +631,21 @@ test('/llms.txt links the résumé in all four formats and the MCP endpoint, and
   );
 });
 
+test('/llms.txt describes the MCP server current tool map, not the stale one-tool description', async () => {
+  // Task 12 (03 §1): tools/list grew to eight tools across Tasks 6-11, and
+  // this file's own MCP description still said "One tool today: get_contact"
+  // -- false since Task 6. The MCP Worker's registrations are not reachable
+  // from Astro at build time (astro:content and the Worker's own module
+  // graph are two separate builds -- see src/pages/llms.txt.ts's module
+  // doc), so MCP_LINKS' description is written literally rather than
+  // generated. This assertion is what stops the two from drifting apart
+  // silently again: it fails the moment either the stale line comes back or
+  // a real tool name goes missing from this hand-written copy.
+  const page = await html('/llms.txt');
+  expect(page).not.toContain('One tool today');
+  expect(page).toContain('search_writing');
+});
+
 test('buildLlmsTxt omits a heading entirely when its link list is empty', () => {
   // The pure-function version of the "today's real state" assertion above --
   // proves the omission rule itself, independent of what is actually

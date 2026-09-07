@@ -3,11 +3,32 @@ import { defineTool, type ToolContext } from './define';
 import { registerResources } from './resources';
 import { registerTools } from './tools';
 
+/**
+ * Sent on every `initialize` (03 §1), so this is a tool MAP rather than
+ * prose on purpose: tests/mcp.smoke.test.ts's "the instructions name every
+ * registered tool" enumerates `tools/list` at runtime and fails the moment a
+ * later task adds a tool without a matching line here. Under ~1200
+ * characters, per that same spec section.
+ *
+ * Candidacy-language discipline (09 §2/§4) applies to this string exactly as
+ * it does to `request_private_access`'s copy in ./tools.ts: never `hire`,
+ * `candidate`, `job-search`, `recruiter`. The vocabulary here is *audience
+ * tiers*, *private tier*, *scoped tokens*.
+ */
 const INSTRUCTIONS = [
-  "Ryan Lindsey's professional corpus, exposed as MCP tools.",
-  'Public tools cover portfolio exploration. A private tier exists for scoped tokens;',
-  'ask Ryan for access if you need it.',
-].join(' ');
+  "Ryan Lindsey's professional corpus, exposed as MCP tools across audience tiers.",
+  '',
+  'get_contact: how to reach Ryan, and his working timezone.',
+  'get_resume: JSON Resume, published markdown, or a short prose summary.',
+  'list_case_studies: published case studies with descriptions and citation URLs.',
+  'get_case_study: full markdown of one case study, by slug.',
+  'list_writing: published posts with descriptions and citation URLs.',
+  'get_post: full markdown of one post, by slug.',
+  'search_writing: semantic search over the corpus; each result is a passage with a real, fetchable citation URL.',
+  'request_private_access: explains the private tier and how to request a scoped token.',
+  '',
+  'A private tier exists beyond these public tools, for scoped tokens; call request_private_access to learn how to request one.',
+].join('\n');
 
 /**
  * The server one HTTP request is served by.

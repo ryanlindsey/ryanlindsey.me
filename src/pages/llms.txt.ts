@@ -78,18 +78,22 @@ const MCP_LINKS: LlmsLink[] = [
   {
     title: 'MCP server',
     url: MCP_ENDPOINT,
-    // Fix round 2 (task-9-report.md): the previous wording ("...and other
-    // portfolio tools") overclaimed. Verified live against the deployed
-    // server's own `tools/list` (matches `workers/mcp/src/server.ts`'s single
-    // `defineTool` call): exactly one tool exists today, `get_contact`.
-    // `/llms.txt` is a machine-facing index an agent acts on directly -- a
-    // tool it cannot find after being told to expect it is worse for this
-    // file's credibility than a terse, accurate line. No date promised here
-    // (the day-4 plan is this repo's own scheduling, not a fact this public
-    // file should assert); this description is expected to change again
-    // when the tool set actually grows, which is exactly why no test below
-    // pins its exact wording.
-    description: 'Model Context Protocol server. One tool today: get_contact.',
+    // Task 12 (03 §1): the previous line ("One tool today: get_contact") was
+    // accurate at Task 9 and false since Task 6 -- tools/list grew to eight
+    // tools across Tasks 6-11 and nothing here followed. Written literally
+    // rather than generated from workers/mcp/src/server.ts's own
+    // registrations: that tool map lives in a separate Worker with its own
+    // module graph, and `astro:content` (this file's own build, per the
+    // module doc above) cannot import it. tests/pages.test.ts's
+    // "/llms.txt describes the MCP server current tool map" assertion is
+    // what stops this hand-written copy drifting from the real registrations
+    // silently a second time -- keep the two in step by hand on every task
+    // that changes either one.
+    description:
+      'Model Context Protocol server with eight tools (get_contact, get_resume, ' +
+      'list_case_studies, get_case_study, list_writing, get_post, search_writing, ' +
+      'request_private_access) and two resources (resume://json, writing://{slug}). ' +
+      'A private tier exists for scoped tokens; request_private_access explains how to ask.',
   },
 ];
 

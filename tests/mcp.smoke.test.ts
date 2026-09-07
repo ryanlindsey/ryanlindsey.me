@@ -6,10 +6,20 @@ import { MCP_WORKER, MOCK_AI_WORKER } from './workers';
 // whole string — rather than scanning it for a list of disallowed words — is
 // what keeps the server's self-description under review: any edit to it fails
 // this test and has to be made deliberately.
-const EXPECTED_INSTRUCTIONS =
-  "Ryan Lindsey's professional corpus, exposed as MCP tools. " +
-  'Public tools cover portfolio exploration. A private tier exists for scoped tokens; ' +
-  'ask Ryan for access if you need it.';
+const EXPECTED_INSTRUCTIONS = [
+  "Ryan Lindsey's professional corpus, exposed as MCP tools across audience tiers.",
+  '',
+  'get_contact: how to reach Ryan, and his working timezone.',
+  'get_resume: JSON Resume, published markdown, or a short prose summary.',
+  'list_case_studies: published case studies with descriptions and citation URLs.',
+  'get_case_study: full markdown of one case study, by slug.',
+  'list_writing: published posts with descriptions and citation URLs.',
+  'get_post: full markdown of one post, by slug.',
+  'search_writing: semantic search over the corpus; each result is a passage with a real, fetchable citation URL.',
+  'request_private_access: explains the private tier and how to request a scoped token.',
+  '',
+  'A private tier exists beyond these public tools, for scoped tokens; call request_private_access to learn how to request one.',
+].join('\n');
 
 // The MCP Worker plus the Workers AI stand-in its `ai` binding is overridden to.
 // mock-ai is not optional here even though nothing in this file touches AI: the
@@ -78,6 +88,14 @@ test('advertises exactly the reviewed server instructions', async () => {
 
   // Top level of the result, per the spec — not nested inside serverInfo.
   expect(json.result.instructions).toBe(EXPECTED_INSTRUCTIONS);
+});
+
+test('the instructions name every registered tool', async () => {
+  const { json: listed } = await rpc({ jsonrpc: '2.0', id: 300, method: 'tools/list', params: {} });
+  const { json: init } = await initialize(301);
+  for (const tool of listed.result.tools) {
+    expect(init.result.instructions).toContain(tool.name);
+  }
 });
 
 test('accepts a browser client on a third-party origin', async () => {
