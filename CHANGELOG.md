@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.4.0...ryanlindsey-me-v1.4.1) (2026-09-07)
+
+
+### Dependencies
+
+* bump the all group with 4 updates ([#24](https://github.com/ryanlindsey/ryanlindsey.me/issues/24)) ([8640867](https://github.com/ryanlindsey/ryanlindsey.me/commit/8640867590755ad6ebccd1955196de1b7c3fe7ee))
+
 ## [1.4.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.3.0...ryanlindsey-me-v1.4.0) (2026-09-07)
 
 

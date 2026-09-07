@@ -57,7 +57,7 @@ function createServer() {
   // advertises over MCP in step with package.json. Moving the version off this line, or letting
   // a formatter split it across lines, silently strands it at whatever it says today.
   const server = new McpServer(
-    { name: 'ryanlindsey-me', version: '1.4.0' }, // x-release-please-version
+    { name: 'ryanlindsey-me', version: '1.4.1' }, // x-release-please-version
     { instructions: INSTRUCTIONS },
   );
 
