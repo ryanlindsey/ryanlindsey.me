@@ -72,6 +72,16 @@ export const CORPUS_TIER = 'public';
 /** Vectorize's string-metadata-index prefix limit. */
 export const METADATA_INDEX_BYTE_LIMIT = 64;
 
+/**
+ * Vectorize's documented maximum vector-id length, in bytes
+ * (developers.cloudflare.com/vectorize/platform/limits -- "Maximum vector ID
+ * length: 64 bytes", the same figure for V1 and V2 indexes). Numerically equal
+ * to `METADATA_INDEX_BYTE_LIMIT` and completely unrelated to it, so it is its
+ * own constant: they are two different limits on two different things, and
+ * collapsing them would make a future change to one silently move the other.
+ */
+export const VECTOR_ID_BYTE_LIMIT = 64;
+
 export type CorpusType = 'post' | 'case-study' | 'resume';
 
 // --- Chunk sizing -------------------------------------------------------
@@ -195,7 +205,9 @@ export function documentKey(source: CorpusSource): string {
 }
 
 export function chunkId(source: CorpusSource, index: number): string {
-  return `${documentKey(source)}:${index}`;
+  const id = `${documentKey(source)}:${index}`;
+  assertShortVectorId(id);
+  return id;
 }
 
 /** The ids `key` expands to for a document that chunked into `count` pieces. */
@@ -225,6 +237,36 @@ export function assertShortMetadataValue(name: string, value: string): void {
     throw new Error(
       `corpus: metadata ${name}=${JSON.stringify(value)} is ${bytes} bytes; string metadata ` +
         `indexes only cover the first ${METADATA_INDEX_BYTE_LIMIT}`,
+    );
+  }
+}
+
+/**
+ * Guards Vectorize's 64-byte vector-id limit, and it is the guard in this
+ * module most likely to actually fire (fix round 2).
+ *
+ * `assertShortMetadataValue` above protects two short constants that cannot
+ * overflow; this protects the one value in the module that is DERIVED FROM
+ * AUTHOR INPUT. A chunk id is `<type>:<slug>:<n>`, and `slug` is a content
+ * filename: `case-study:` alone is 11 bytes, so a 52-character slug -- an
+ * ordinary length for a descriptive case-study filename -- overflows, Vectorize
+ * rejects the upsert, and the whole refresh throws in the middle of the embed
+ * loop. Failing here instead means the failure names the document and the
+ * length, at the moment the id is built, rather than arriving as an API error
+ * about a request the caller cannot see.
+ *
+ * Called from `chunkId` rather than only from the job, so the check cannot be
+ * bypassed by a new call site. Deliberately NOT called from `chunkIdsFor`:
+ * that expands ids a previous run already stored, and refusing to name an id
+ * for DELETION because it is too long would strand exactly the vectors that
+ * most need removing.
+ */
+export function assertShortVectorId(id: string): void {
+  const bytes = new TextEncoder().encode(id).length;
+  if (bytes > VECTOR_ID_BYTE_LIMIT) {
+    throw new Error(
+      `corpus: vector id ${JSON.stringify(id)} is ${bytes} bytes; Vectorize ids are limited ` +
+        `to ${VECTOR_ID_BYTE_LIMIT} -- shorten the document's slug`,
     );
   }
 }
@@ -821,9 +863,15 @@ export async function refreshCorpus(
     const metadata = metadataFor(document.source);
     for (const [name, value] of Object.entries(metadata)) assertShortMetadataValue(name, value);
 
+    // Ids are built BEFORE the embedding call, not inline at the upsert (fix
+    // round 2): `chunkId` asserts Vectorize's 64-byte id limit, and doing it
+    // here means an over-long slug fails before any neurons are billed for a
+    // document the upsert was going to reject anyway.
+    const ids = chunks.map((_chunk, index) => chunkId(document.source, index));
+
     const values = await embedChunks(env, chunks);
     const vectors: VectorizeVector[] = values.map((vector, index) => ({
-      id: chunkId(document.source, index),
+      id: ids[index],
       values: vector,
       metadata,
     }));

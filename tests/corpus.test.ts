@@ -7,7 +7,9 @@ import {
   METADATA_INDEX_BYTE_LIMIT,
   MODEL_INPUT_TOKEN_LIMIT,
   RESUME_SOURCE,
+  VECTOR_ID_BYTE_LIMIT,
   assertShortMetadataValue,
+  assertShortVectorId,
   corpusRefreshEnabled,
   chunkId,
   chunkIdsFor,
@@ -206,6 +208,39 @@ describe('chunk ids', () => {
       'post:a-post:2',
     ]);
     expect(chunkIdsFor('post:a-post', 0)).toEqual([]);
+  });
+
+  test("refuse to build an id past Vectorize's 64-byte limit, rather than letting the upsert reject it", () => {
+    // FIX ROUND 2. This is the module's one value derived from AUTHOR INPUT --
+    // `slug` is a content filename -- and it was the one with no guard, while
+    // two short constants that cannot overflow had a meticulous one. `case-study:`
+    // is 11 bytes and `:0` is 2, so 51 characters of slug is the last one that
+    // fits and 52 is the first that does not: an ordinary length for a
+    // descriptive case-study filename.
+    const fits = source({ type: 'case-study', slug: 'a'.repeat(51) });
+    const overflows = source({ type: 'case-study', slug: 'a'.repeat(52) });
+
+    expect(chunkId(fits, 0)).toHaveLength(VECTOR_ID_BYTE_LIMIT);
+    expect(() => chunkId(fits, 0)).not.toThrow();
+    expect(() => chunkId(overflows, 0)).toThrow(/65 bytes/);
+    expect(() => chunkId(overflows, 0)).toThrow(/shorten the document's slug/);
+
+    // The index is part of the id, so the SAME slug can fit at one chunk and
+    // overflow at another: a document that chunks into eleven pieces trips on
+    // its eleventh (`:10` is one byte longer than `:9`). This is why the job
+    // checks the highest index, not the first, before it embeds anything.
+    expect(() => chunkId(fits, 9)).not.toThrow();
+    expect(() => chunkId(fits, 10)).toThrow(/65 bytes/);
+
+    // Bytes, not characters -- same rule assertShortMetadataValue follows.
+    expect(() => assertShortVectorId('€'.repeat(22))).toThrow(/66 bytes/);
+  });
+
+  test('chunkIdsFor still expands an over-long id, because deletion must not be blocked by it', () => {
+    // The deliberate asymmetry: the guard is on the WRITE path only. These ids
+    // address vectors a previous run already stored, and refusing to name one
+    // for deletion would strand exactly the vectors that most need removing.
+    expect(chunkIdsFor(`case-study:${'a'.repeat(80)}`, 1)).toHaveLength(1);
   });
 });
 
@@ -668,6 +703,31 @@ describe('refreshCorpus', () => {
       corpus.committedManifest(),
       'and the removal must be committed, so the next run does not re-delete blind',
     ).toEqual({});
+  });
+
+  test('refuses an over-long slug before it embeds anything, rather than after paying for it', async () => {
+    // The other half of the id guard (see "chunk ids" above): it has to fire
+    // early enough to matter. `chunkId` is called before `embedChunks`, so a
+    // slug Vectorize would reject costs nothing -- the run throws with the
+    // document named, and no chunk ever reaches AI.run.
+    const longSlug = 'a'.repeat(52);
+    const corpus = fakeCorpus({
+      assets: {
+        '/llms.txt': `${LLMS_TXT_TODAY}
+## Case studies
+
+- [Long](https://ryanlindsey.me/work/${longSlug}.md): Too long by one byte.
+`,
+        '/resume.md': RESUME_MARKDOWN,
+        [`/work/${longSlug}.md`]: '# A Case Study\n\nBody.\n',
+      },
+    });
+
+    await expect(refreshCorpus(corpus.env)).rejects.toThrow(/Vectorize ids are limited to 64/);
+    expect(
+      corpus.embedded.filter((chunk) => chunk.includes('A Case Study')),
+      'the rejected document must not have been embedded (billed) first',
+    ).toEqual([]);
   });
 
   test('keeps what it already embedded when a later document fails, so a retry re-bills nothing', async () => {
