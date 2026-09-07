@@ -241,6 +241,33 @@ describe('toMarkdown', () => {
     expect(rendered).not.toContain('domain');
     expect(rendered).not.toContain('outcomes');
   });
+
+  // Fix round 2 (post-review): frontmatterFor deliberately treats a
+  // declared-but-falsy value as still declared (`!== undefined`, not a
+  // truthy check) -- but frontmatterYaml used to use a truthy check one layer
+  // down, silently dropping it again at serialization. These two tests cover
+  // the two falsy shapes the schema allows: an empty string (orgScale,
+  // domain) and an empty array (outcomes), which get DIFFERENT, deliberate
+  // treatment -- see frontmatterYaml's FIX ROUND 2 comment for why.
+  test('emits orgScale and domain as empty strings when declared falsy, rather than dropping them', () => {
+    const entry = caseStudy({ id: 'c', orgScale: '', domain: '' });
+    expect(frontmatterFor(entry)).toMatchObject({ orgScale: '', domain: '' });
+    const rendered = toMarkdown(entry);
+    expect(rendered).toContain('orgScale: ""');
+    expect(rendered).toContain('domain: ""');
+  });
+
+  test('omits outcomes when declared as an empty array -- a documented exception, not a silent drop', () => {
+    // frontmatterFor still treats `outcomes: []` as declared, matching
+    // orgScale/domain above. frontmatterYaml omits it anyway: an empty block
+    // list has no shape parseFrontmatter can tell apart from "key absent" (its
+    // reader needs at least one `- ` item to recognise a list at all), so a
+    // bare `outcomes:` stub would buy no round-trip fidelity over omitting it
+    // -- this is the one place the two layers disagree on purpose.
+    const entry = caseStudy({ id: 'c', outcomes: [] });
+    expect(frontmatterFor(entry)).toHaveProperty('outcomes', []);
+    expect(toMarkdown(entry)).not.toContain('outcomes');
+  });
 });
 
 // The component-stripping fixture. Neither src/content specimen uses a

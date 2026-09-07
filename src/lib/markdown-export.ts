@@ -175,6 +175,33 @@ function yamlString(value: string): string {
  * rendered page, AND in `list_case_studies`'/`get_case_study`'s tool output --
  * the three are the same document read three ways, not three chances to
  * drift.
+ *
+ * FIX ROUND 2 (post-review): `orgScale`/`domain`/`outcomes` are checked here
+ * with `!== undefined`, matching `frontmatterFor`'s check -- NOT a truthy
+ * check. This module previously used `if (frontmatter.orgScale)` etc., which
+ * silently dropped a declared-but-falsy value (`orgScale: ""`) at this layer
+ * even though `frontmatterFor` had correctly kept it as declared one level
+ * up -- the two layers disagreed, and the disagreement was invisible: the
+ * exported document simply had no trace of a field its own source data did
+ * declare, reading back through `parseFrontmatter` as fully absent. That is
+ * exactly the "an omitted field is absent, never null" contract turned
+ * against itself -- absence is supposed to mean "never declared," not "the
+ * serializer dropped it."
+ *
+ * `outcomes` gets ONE deliberate, commented exception: a declared EMPTY array
+ * (`outcomes: []`) is still omitted here, on purpose, not by accident. Unlike
+ * a falsy scalar, an empty block list has no representation `parseFrontmatter`
+ * can read back as "declared" -- its reader requires at least one `  - ` line
+ * to recognise the key as a list at all; zero such lines falls through to the
+ * nested-map skip, identically to the key never appearing. So a bare
+ * `outcomes:` line with nothing under it would buy no round-trip fidelity
+ * over omitting it entirely -- both read back as absent -- while leaving a
+ * stub key with no children sitting in a real exported document, which reads
+ * as a broken export to a human or an agent, not a deliberate declaration.
+ * Omitting is the honest rendering of "nothing further to say" here; it is
+ * `frontmatterFor` and `frontmatterYaml` disagreeing on purpose about the
+ * empty-array case specifically, not the silent, unconsidered gap this fix
+ * closes for the falsy-scalar case.
  */
 function frontmatterYaml(frontmatter: ExportedFrontmatter): string {
   const lines = [
@@ -196,13 +223,16 @@ function frontmatterYaml(frontmatter: ExportedFrontmatter): string {
     lines.push(`  name: ${yamlString(frontmatter.series.name)}`);
     lines.push(`  order: ${frontmatter.series.order}`);
   }
-  if (frontmatter.orgScale) {
+  if (frontmatter.orgScale !== undefined) {
     lines.push(`orgScale: ${yamlString(frontmatter.orgScale)}`);
   }
-  if (frontmatter.domain) {
+  if (frontmatter.domain !== undefined) {
     lines.push(`domain: ${yamlString(frontmatter.domain)}`);
   }
-  if (frontmatter.outcomes) {
+  // Declared-but-empty is omitted here specifically -- see the FIX ROUND 2
+  // note above for why that is a deliberate, documented choice rather than
+  // the silent falsy-check gap this fix closes for the two scalars above.
+  if (frontmatter.outcomes !== undefined && frontmatter.outcomes.length > 0) {
     lines.push('outcomes:');
     for (const outcome of frontmatter.outcomes) {
       lines.push(`  - ${yamlString(outcome)}`);
