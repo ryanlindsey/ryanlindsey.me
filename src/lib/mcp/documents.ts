@@ -11,15 +11,31 @@ import { corpusSources, type CorpusSource, type CorpusType } from '../corpus';
 
 /**
  * The bindings this module needs, narrower than `McpEnv`
- * (workers/mcp/src/env.ts) -- `SITE` is not a binding this Worker declares
- * and could not come from one.
+ * (workers/mcp/src/env.ts).
  *
  * `Pick<Fetcher, 'fetch'>`, not `Fetcher`, for the same reason
  * `CorpusEnv.SITE` is typed that way: this module only ever calls `.fetch`,
  * so the narrower type is satisfied by an asset binding, a service binding,
- * or a thin wrapper over global `fetch` alike. Callers assemble this exactly
- * as `corpusEnv()` does today in workers/mcp/src/index.ts --
- * `{ SITE: { fetch: (input, init) => fetch(input, init) }, SITE_ORIGIN: env.SITE_ORIGIN }`.
+ * or a thin wrapper over global `fetch` alike.
+ *
+ * WHAT THE DEPLOYED WORKER PASSES IS A SERVICE BINDING to `ryanlindsey-me`, and
+ * this doc used to prescribe the other thing -- as a line a caller was invited
+ * to copy:
+ *
+ *   SITE: { fetch: (input, init) => fetch(input, init) }   // DO NOT REVIVE
+ *
+ * That wrapper is what issue #28 was: a global `fetch` at `SITE_ORIGIN` returns
+ * 522 when the request being served arrived on that same hostname, which is
+ * exactly what `ryanlindsey.me/mcp` does. It is quoted rather than deleted so
+ * the next reader recognises it on sight, but it is no longer the instruction:
+ * `documentsEnv` (workers/mcp/src/tools.ts) is the one shape to copy. The narrow
+ * type is still deliberate and still correct -- it is what let the transport
+ * change three times without a line of this module moving.
+ *
+ * NOTE WHAT `SITE_ORIGIN` MEANS HERE NOW. It is no longer where the bytes come
+ * from; a service binding ignores the hostname and reads only the path. It is
+ * the address documents are CITED at (`pageUrlFor`, `summarize` below), so a
+ * wrong value produces correct content under wrong URLs rather than a failure.
  */
 export interface DocumentsEnv {
   SITE: Pick<Fetcher, 'fetch'>;

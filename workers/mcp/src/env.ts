@@ -26,6 +26,14 @@ export interface McpEnv {
   RATE_LIMITER_SEARCH: RateLimit;
   /** Day 5's, bound already. Nothing in day 4 may read it. */
   RLME_TOKEN_SIGNING_KEY: SecretsStoreSecret;
+  /**
+   * The site Worker (`ryanlindsey-me`), over a service binding -- how every
+   * published document is read. See workers/mcp/wrangler.jsonc for why this
+   * exists (issue #28) and `DocumentsEnv.SITE` in src/lib/mcp/documents.ts for
+   * what is done with it. `Fetcher` is what a service binding types as; the two
+   * consumers narrow it to `Pick<Fetcher, 'fetch'>` themselves.
+   */
+  SITE: Fetcher;
   RLME_AI_GATEWAY_ID: string;
   SITE_ORIGIN: string;
   /** Test-only seam; see `CorpusEnv.CORPUS_REFRESH` in src/lib/corpus.ts. */
@@ -70,6 +78,7 @@ export const MCP_BINDING_NAMES = [
   'RATE_LIMITER',
   'RATE_LIMITER_SEARCH',
   'RLME_TOKEN_SIGNING_KEY',
+  'SITE',
   'RLME_AI_GATEWAY_ID',
   'SITE_ORIGIN',
 ] as const;

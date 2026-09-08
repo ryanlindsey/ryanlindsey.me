@@ -627,9 +627,20 @@ export interface CorpusEnv {
    * `Pick<Fetcher, 'fetch'>` rather than `Fetcher`, and that is the point of the
    * type rather than a weakening of it: this module only ever calls `.fetch`, so
    * the narrower type is satisfied by an asset binding, by a service binding,
-   * and by a thin wrapper over global `fetch` -- which is what the MCP Worker
-   * passes. Requiring the full `Fetcher` would have ruled out the last of those
-   * for no reason this module cares about.
+   * and by a thin wrapper over global `fetch`. Requiring the full `Fetcher`
+   * would have ruled some of those out for no reason this module cares about --
+   * and the type earned that generality in practice, twice: this started as the
+   * site's `ASSETS` binding, became a global-`fetch` wrapper when the job moved
+   * here, and is now a SERVICE binding to `ryanlindsey-me`, all without a line
+   * of this module changing.
+   *
+   * The last of those moves was issue #28, and it was a bug fix rather than a
+   * tidy-up. The wrapper form fetched `SITE_ORIGIN` over the public internet;
+   * `ryanlindsey.me` is a Cloudflare custom domain for the site Worker, and a
+   * Worker fetching the hostname the request it is serving arrived on gets a
+   * 522 (Cloudflare's own Error 522 page). Once `ryanlindsey.me/mcp` began
+   * forwarding into the MCP Worker, that was every request on the primary
+   * endpoint. See workers/mcp/wrangler.jsonc's `services` entry.
    */
   SITE: Pick<Fetcher, 'fetch'>;
   AI: Ai;
@@ -637,11 +648,19 @@ export interface CorpusEnv {
   KV_CACHE: KVNamespace;
   /**
    * The origin `SITE` is asked for -- `https://ryanlindsey.me`, from the MCP
-   * Worker's `vars`. It used to be needed only to give an asset binding an
-   * absolute URL, where the host never left the Worker; now that the fetch is a
-   * real one it is load-bearing, and pointing it at the wrong host would embed
-   * the wrong site. The test harness overrides it to a sentinel that resolves
-   * nowhere (tests/workers.ts).
+   * Worker's `vars`.
+   *
+   * CORRECTED by issue #28. This said "now that the fetch is a real one it is
+   * load-bearing, and pointing it at the wrong host would embed the wrong site",
+   * which was true of the global-`fetch` era and is not true now: `SITE` is a
+   * service binding again, so the host never leaves the Worker and only the path
+   * is read -- exactly the situation the sentence's own first half describes
+   * from the `ASSETS` era. What a wrong value would do today is give the
+   * embedded documents wrong `url`/`markdownUrl` metadata, not fetch the wrong
+   * site. The test harness still overrides it to a sentinel that resolves
+   * nowhere (tests/workers.ts), and that sentinel is now PROOF rather than
+   * caution: a read that succeeds against an unroutable origin is a read that
+   * never touched the network.
    */
   SITE_ORIGIN: string;
   /**
