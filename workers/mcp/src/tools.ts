@@ -386,8 +386,8 @@ export function registerTools(server: McpServer, tc: ToolContext): void {
       description:
         'Semantic search across the published posts, case studies and résumé. Each result is a passage, the URL it is published at, and an "exact" flag saying whether the excerpt is the passage that matched.',
       // The only `inference` tool: it spends a Workers AI embedding call per
-      // query, so it draws from RATE_LIMITER_SEARCH rather than the document
-      // reads' bucket (src/lib/mcp/limits.ts).
+      // query, so it draws from the tighter of the two allowances in `LIMITS`
+      // (src/lib/mcp/limits.ts) rather than the document reads' one.
       cost: 'inference',
       inputSchema: SEARCH_INPUT,
     },

@@ -153,9 +153,33 @@
   // Email Routing, and the owner's private address must not appear in a public repo.
   "send_email": [{ "name": "EMAIL" }],
 
-  "ratelimits": [
-    { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } },
-  ],
+  // NO RATE LIMITER HERE, and the absence is the point rather than an
+  // oversight. This config used to declare `ratelimits` with `RATE_LIMITER` at
+  // namespace 1001, 60/60s -- the SAME namespace_id the MCP Worker used. Two
+  // facts made it worth deleting rather than leaving:
+  //
+  // It was never read. `src/worker.ts` has no reference to `env.RATE_LIMITER`;
+  // the only limited surface this Worker serves is `/mcp`, and that is
+  // forwarded to the MCP Worker over the `MCP` service binding below and
+  // limited there, on the request's own `CF-Connecting-IP` (MEASURED
+  // 2026-09-08: a `User-Agent` sent to https://ryanlindsey.me/mcp arrives
+  // intact in `mcp_tool_calls.user_agent`, so the forwarded request is the
+  // client's, headers and all).
+  //
+  // And the shared namespace_id was a live trap for whoever read it next.
+  // Cloudflare's docs: "Two rate limiting bindings that share the same
+  // namespace_id -- even across different Workers on the same account -- share
+  // the same rate limit counters for a given key." So this entry did not
+  // define a second, independent 60/60s allowance; it silently joined the MCP
+  // Worker's. It is not what broke #29 (sharing is the STRICTER direction, and
+  // nothing here ever called `limit()`), but a future author who wired this
+  // binding up would have got a bucket entangled with another Worker's and no
+  // hint of it anywhere.
+  //
+  // The MCP Worker no longer uses `ratelimits` at all -- see
+  // workers/mcp/src/rate-limiter.ts for the measurement that replaced it with
+  // a Durable Object. If this Worker ever needs limiting of its own, it needs
+  // the same mechanism, not this one.
 
   "services": [{ "binding": "MCP", "service": "ryanlindsey-me-mcp" }],
 

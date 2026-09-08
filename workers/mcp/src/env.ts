@@ -1,3 +1,5 @@
+import type { RateLimiterObject } from '../../../src/lib/mcp/limits';
+
 /**
  * The bindings THIS Worker declares, from workers/mcp/wrangler.jsonc.
  *
@@ -21,9 +23,15 @@ export interface McpEnv {
   AE: AnalyticsEngineDataset;
   AI: Ai;
   VECTORIZE: VectorizeIndex;
-  RATE_LIMITER: RateLimit;
-  /** The `inference` bucket; see `limiterFor` in src/lib/mcp/limits.ts. */
-  RATE_LIMITER_SEARCH: RateLimit;
+  /**
+   * The rate limiter (03 §3), a Durable Object namespace rather than the
+   * `RateLimit` binding it was until #29 -- see workers/mcp/src/rate-limiter.ts
+   * for the production measurement that forced the change. `RATE_LIMITER_SEARCH`
+   * is GONE rather than renamed: two bindings existed only because a
+   * `ratelimits` binding carries its limit in its own config, and a Durable
+   * Object separates buckets by NAME, which `limitKeyFor` was already doing.
+   */
+  RATE_LIMITER: DurableObjectNamespace<RateLimiterObject>;
   /** Day 5's, bound already. Nothing in day 4 may read it. */
   RLME_TOKEN_SIGNING_KEY: SecretsStoreSecret;
   RLME_AI_GATEWAY_ID: string;
@@ -68,7 +76,6 @@ export const MCP_BINDING_NAMES = [
   'AI',
   'VECTORIZE',
   'RATE_LIMITER',
-  'RATE_LIMITER_SEARCH',
   'RLME_TOKEN_SIGNING_KEY',
   'RLME_AI_GATEWAY_ID',
   'SITE_ORIGIN',

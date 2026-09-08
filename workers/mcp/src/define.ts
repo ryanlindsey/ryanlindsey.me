@@ -12,7 +12,7 @@ import {
 } from '@modelcontextprotocol/server';
 import type { z } from 'zod';
 import { hashArgs, recordToolCall, type AuditRow } from '../../../src/lib/mcp/audit';
-import { limiterFor, limitKeyFor, type ToolCost } from '../../../src/lib/mcp/limits';
+import { checkLimit, type ToolCost } from '../../../src/lib/mcp/limits';
 import type { McpEnv } from './env';
 
 // The registration seam, in its own module so the tool modules and the server
@@ -209,8 +209,9 @@ async function guarded<C, R>(
   };
 
   // ONE try around the whole body, deliberately: everything before the
-  // handler can throw too -- a limiter binding that rejects, a misconfigured
-  // deploy missing RATE_LIMITER_SEARCH -- and a throw that escapes here
+  // handler can throw too -- a limiter object that rejects, a deploy whose
+  // `migrations` never created the `RateLimiter` class so `env.RATE_LIMITER`
+  // resolves to nothing -- and a throw that escapes here
   // breaks both of this seam's guarantees at once. The call would go
   // unaudited, so the table would under-report exactly the failures worth
   // seeing; and the SDK answers an escaped throw by copying its message
@@ -227,10 +228,15 @@ async function guarded<C, R>(
     const call = contract.read(params);
     argsHash = await hashArgs(contract.hashable(call));
 
-    const { success } = await limiterFor(tc.env, contract.cost).limit({
-      key: limitKeyFor(tc.request, contract.auditName),
-    });
-    if (success) {
+    // One `await` on the limiter object, before the handler and before
+    // anything the handler would spend. See src/lib/mcp/limits.ts and
+    // workers/mcp/src/rate-limiter.ts: this used to be a `ratelimits` binding
+    // and is now a Durable Object, because the binding did not enforce in
+    // production (#29). The seam did not move -- this line is still the only
+    // place a call is limited, and it is still checked BEFORE the handler
+    // runs, which is what makes a refusal cost nothing.
+    const allowed = await checkLimit(tc.env, contract.cost, tc.request, contract.auditName);
+    if (allowed) {
       const answer = await contract.run(call);
       audit('ok');
       return answer;

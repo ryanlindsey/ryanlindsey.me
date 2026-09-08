@@ -177,22 +177,48 @@
   // and one KV read, and a daily cron over unchanged content bills no neurons.
   "triggers": { "crons": ["32 5 * * *"] },
 
-  // Two buckets, because the tools do not cost the same thing (03 §3).
-  // RATE_LIMITER covers the document reads: they are asset fetches against
-  // the site origin, so 60/minute is generous on purpose -- an agent
-  // exploring the portfolio should never meet a limit.
-  // RATE_LIMITER_SEARCH covers search_writing, which spends a Workers AI
-  // embedding call per query. Cheap (24 prompt tokens, measured day 3) but
-  // not free, and the only tool here whose cost scales with a stranger's
-  // enthusiasm. `namespace_id` must differ or the two share one bucket.
-  "ratelimits": [
-    { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } },
-    {
-      "name": "RATE_LIMITER_SEARCH",
-      "namespace_id": "1002",
-      "simple": { "limit": 10, "period": 60 },
-    },
-  ],
+  // The rate limiter (03 §3). This USED TO BE two `ratelimits` bindings --
+  // RATE_LIMITER at namespace 1001, 60/60s, for document reads, and
+  // RATE_LIMITER_SEARCH at 1002, 10/60s, for search_writing's Workers AI
+  // spend. That block's comment explained the two-bucket design as though it
+  // worked. It did not, and the correction is kept here rather than deleted
+  // because the config looked RIGHT the whole time it was enforcing nothing:
+  //
+  // MEASURED 2026-09-08 against deployed version f7634c05, whose bindings
+  // `wrangler versions view` reported as `env.RATE_LIMITER (60 requests/60s)`
+  // and `env.RATE_LIMITER_SEARCH (10 requests/60s)` -- so the config was
+  // valid, Workers Builds applied it exactly as `wrangler deploy` would, and
+  // both bindings were live. 150 STRICTLY SEQUENTIAL get_contact calls, 22s,
+  // one 60s window, 120 of them in a single Cloudflare location (SJC, read
+  // off `cf-ray`), against the 60/60s bucket: ZERO refusals, all 150 audited
+  // `ok`. #29's own 140-parallel burst and a 90-sequential run: also zero.
+  //
+  // Cloudflare's Rate Limiting docs say why, and say it as a design property
+  // rather than a caveat: the API is "permissive, eventually consistent, and
+  // intentionally designed to not be used as an accurate accounting system",
+  // its counters are "cached on the same machine that your Worker runs in,
+  // and updated asynchronously in the background", and every limit is per
+  // Cloudflare location. That is a fine shield in front of a busy origin. It
+  // is not the guarantee 03 §3 asks for.
+  //
+  // Two further things that block settled, so nobody re-opens them: the
+  // `namespace_id` values did NOT need registering -- the docs define one as
+  // "a string containing a positive integer that uniquely defines this rate
+  // limiting namespace within your Cloudflare account", so "1001" was always
+  // legal -- and sharing 1001 with the SITE Worker's own (unused) binding
+  // would have made the two SHARE counters, which is documented, intentional,
+  // and in the STRICTER direction. Neither could have caused zero refusals.
+  //
+  // So the mechanism is a Durable Object now: one object per `<tool>:<ip>`
+  // (workers/mcp/src/rate-limiter.ts), single-threaded, strongly consistent,
+  // with the limits themselves in `LIMITS` in src/lib/mcp/limits.ts where a
+  // test can read them. `new_sqlite_classes` rather than `new_classes`: the
+  // SQLite backend is the only one available on the Workers Free plan and is
+  // what Cloudflare recommends for all new classes.
+  "durable_objects": {
+    "bindings": [{ "name": "RATE_LIMITER", "class_name": "RateLimiter" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RateLimiter"] }],
 
   "secrets_store_secrets": [
     {
