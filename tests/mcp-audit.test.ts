@@ -52,9 +52,12 @@ test('produces a fixed-width hex digest for a large input', async () => {
  * see that file's own note on why the branches are identical). A new call
  * site anywhere else fails this test by construction, regardless of what the day-5 tool is named.
  *
- * Cheap on purpose: no harness, no bindings, plain source text over 81
- * repo files (measured -- see the walk below), matching this file's own
- * no-bindings, no-index style.
+ * Cheap on purpose: no harness, no bindings, plain source text over 83
+ * repo files (measured 2026-09-08, was 81 -- see the walk below), matching
+ * this file's own no-bindings, no-index style. With `.claude` skipped the
+ * walk now lands on exactly the repo's tracked source files, no more and no
+ * fewer, which is what makes that number worth writing down: `git ls-files |
+ * grep -cE '\.(ts|tsx|js|mjs|cjs|astro)$'` checks it.
  */
 test('server.registerTool and server.registerResource are called only from define.ts', () => {
   const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -64,7 +67,33 @@ test('server.registerTool and server.registerResource are called only from defin
   // literally in the doc comment above and in `CALLS` itself, which would
   // otherwise flag this test as its own offender.
   const SELF = 'tests/mcp-audit.test.ts';
-  const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '.astro', '.wrangler', '.vercel']);
+  // `.claude` is in this list for a reason the others are not: it is not
+  // build output, it is ANOTHER CHECKOUT OF THIS REPO. Claude Code puts agent
+  // worktrees under `.claude/worktrees/<name>`, which .gitignore has excluded
+  // since #34, and a worktree is a full copy -- including its own
+  // `workers/mcp/src/define.ts`. The walk below compares paths against
+  // `DEFINE_TS` as a single literal, so the copy's define.ts is not define.ts
+  // and every registration in it reads as an offender.
+  //
+  // MEASURED 2026-09-08: two idle worktrees left in a working copy turned
+  // this test red locally with 10 offenders, 6 of them `define.ts` lines that
+  // are the invariant rather than a breach of it. CI never saw it -- a fresh
+  // checkout has no `.claude` -- so this is a test that fails only on the
+  // machine of whoever is using worktrees, which is the worst place for it to
+  // fail and the last place anyone looks.
+  //
+  // Skipping the whole directory rather than just `worktrees` costs nothing:
+  // no `.claude` file is tracked (checked, not assumed), so nothing under it
+  // is repo source this invariant should be policing.
+  const SKIP_DIRS = new Set([
+    'node_modules',
+    '.git',
+    'dist',
+    '.astro',
+    '.wrangler',
+    '.vercel',
+    '.claude',
+  ]);
   const CALLS = ['server.registerTool(', 'server.registerResource('];
 
   function sourceFiles(dir: string, out: string[] = []): string[] {
