@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import type { LimitsEnv } from '../src/lib/mcp/limits';
-import { MCP_WORKER, MOCK_AI_WORKER } from './workers';
+import { MCP_WORKER, MOCK_AI_WORKER, MOCK_BROWSER_WORKER, SITE_WORKER } from './workers';
 
 /**
  * The rate limiter's own guarantee, tested against the object that carries it
@@ -21,7 +21,31 @@ import { MCP_WORKER, MOCK_AI_WORKER } from './workers';
  * single-threaded object either way. See src/lib/mcp/limits.ts for why the
  * binding could not be that object.
  */
-const server = createTestHarness({ workers: [MCP_WORKER, MOCK_AI_WORKER] });
+/**
+ * The site Worker and its own mock-browser dependency are booted here even
+ * though nothing in this file reads a document, and that is not defensive
+ * padding -- it is a hard requirement of the harness the moment #28's fix
+ * lands alongside this one. That change gives the MCP Worker a `SITE` service
+ * binding naming `ryanlindsey-me`, and workerd refuses to START a Worker whose
+ * service binding names a service the harness has not defined:
+ *
+ *   Worker "core:user:ryanlindsey-me-mcp"'s binding "SITE" refers to a service
+ *   "core:user:ryanlindsey-me", but no such service is defined.
+ *
+ * MEASURED 2026-09-07 by merging the two branches and running this suite: it
+ * is a runtime start-up failure of the whole file, not a failed assertion, so
+ * it takes every test here down at once. Listing them is correct with or
+ * without that binding present -- an unused Worker in the list only costs a
+ * boot -- which is what keeps this file independent of the order the two
+ * fixes merge in. MOCK_BROWSER_WORKER comes along because `SITE_WORKER`'s
+ * `bindingOverrides` names it.
+ *
+ * The MCP Worker stays first so it remains the primary one, though this suite
+ * does not rely on that: it reaches its Worker by name below.
+ */
+const server = createTestHarness({
+  workers: [MCP_WORKER, SITE_WORKER, MOCK_BROWSER_WORKER, MOCK_AI_WORKER],
+});
 
 beforeAll(async () => {
   await server.listen();
