@@ -65,6 +65,16 @@
       // silently unreachable while `mcp.ryanlindsey.me` kept working: the
       // asymmetric-origin failure this whole task exists to close, reopened
       // by asset config instead of code. Do not delete this as redundant.
+      //
+      // What listing it here does NOT do, measured 2026-09-07 while closing
+      // issue #28: it does not cost `/mcp` the `public/_headers` courtesy
+      // headers. It has none (`X-MCP-Server` and `X-For-AI-Agents` are both
+      // absent from a HEAD and from a POST to it), but `/resume` and
+      // `/work/<slug>/` are in this same list and DO carry them -- so
+      // `run_worker_first` is not what drops them. Those rules are applied by
+      // the asset server to asset responses, and `/mcp` has no asset behind it.
+      // The full measurement and the decision not to inject them in code are
+      // written up beside the `/*` rule in public/_headers.
       "/mcp",
     ],
   },
