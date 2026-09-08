@@ -218,6 +218,35 @@
   "durable_objects": {
     "bindings": [{ "name": "RATE_LIMITER", "class_name": "RateLimiter" }],
   },
+  // `new_sqlite_classes` rather than `new_classes`: SQLite is the only backend
+  // a new namespace may use on an account without an existing key-value one
+  // (Cloudflare's 2026-07-09 changelog), and `consume` needs `ctx.storage.sql`
+  // anyway.
+  //
+  // THIS ENTRY MAKES THE PR-BRANCH BUILD CHECK FAIL, EXACTLY ONCE, AND THAT IS
+  // EXPECTED RATHER THAN A DEFECT. Workers Builds runs a non-production branch
+  // through `wrangler versions upload`, and a version upload cannot carry a
+  // Durable Object migration. MEASURED on the #29 pull request, 2026-09-08 --
+  // the build compiled and resolved every binding (`env.RATE_LIMITER
+  // (RateLimiter) Durable Object`) and then failed on the final API call:
+  //
+  //   Version upload failed. You attempted to upload a version of a Worker that
+  //   includes a Durable Object migration, but migrations must be fully applied
+  //   via a non-versioned deployment.  [code: 10211]
+  //
+  // Cloudflare's deployment-management doc states the rule: any change that
+  // creates, deletes, renames or transfers a Durable Object class "must be
+  // applied through `wrangler deploy`", because migrations are atomic and
+  // cannot be gradually deployed. The production branch DOES run `wrangler
+  // deploy` (verified: the 2026-09-08T14:09Z deployment applied #28's `SITE`
+  // service binding), so merging is what applies this -- the red check on the
+  // pull request is the system working as documented, not a broken build.
+  //
+  // Once applied, later branch builds go green again: an upload only fails
+  // while a migration is still UNAPPLIED, and this entry then describes state
+  // the deployed Worker already has. So do not "fix" this by deleting the
+  // migration, and do not point the branch build at `wrangler deploy` -- that
+  // would deploy every pull request to production.
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RateLimiter"] }],
 
   "secrets_store_secrets": [
