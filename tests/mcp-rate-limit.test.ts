@@ -122,20 +122,38 @@ test('keeps a separate bucket per key', async () => {
  * whole period -- and the reason the tool tests no longer need the
  * `2 * limit + 1` fudge that a fixed, wall-clock-aligned window forced on them.
  *
- * The numbers are chosen so the wait is short and the margin is wide: a
- * capacity of 1 refilling at 100/second needs 10ms to recover one token, and
- * the test waits 150ms. A refill rate this test could plausibly race is a
- * refill rate the assertion would not be measuring.
+ * THE REFILL RATE IS SLOW ON PURPOSE, and the first version of this test got
+ * that backwards. It used `refillPerSecond: 100` against a capacity of 1,
+ * reasoning that a 10ms recovery let the test wait a comfortable 150ms. The
+ * wait was comfortable; the REFUSAL was not. A bucket that recovers a full
+ * token in 10ms is empty for 10ms, so the second call had to complete its RPC
+ * round trip inside that window or find the bucket full again -- and the
+ * assertion that it would be refused was really an assertion about how fast
+ * the harness is.
+ *
+ * MEASURED 2026-09-08 on CI run 34238740033, which failed here with `expected
+ * true to be false`: the sibling capacity test spent 362ms on 6 consume calls,
+ * so a round trip on that runner is ~60ms against a 10ms window -- not a race
+ * it could lose, a race it could not win. Locally the first call took 9ms of
+ * the 10ms, which is why it passed here and only here. Reproduced on this
+ * machine by putting a 15ms sleep between the two calls: `true`, the CI
+ * failure exactly.
+ *
+ * So both margins are stated in the same unit now, and both are wide. At
+ * `refillPerSecond: 2` one token takes 500ms, which is the budget the second
+ * call has to arrive within -- ~8x the round trip CI just measured. Recovery
+ * needs at most that same 500ms, and the test waits 1000ms. Neither number is
+ * near anything this suite has been observed to do.
  */
 test('refills the bucket over time', async () => {
   const stub = (await limiter()).getByName('refill-test');
 
-  expect((await stub.consume(1, 100)).success).toBe(true);
-  expect((await stub.consume(1, 100)).success).toBe(false);
+  expect((await stub.consume(1, 2)).success).toBe(true);
+  expect((await stub.consume(1, 2)).success).toBe(false);
 
-  await new Promise((resolve) => setTimeout(resolve, 150));
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 
-  expect((await stub.consume(1, 100)).success).toBe(true);
+  expect((await stub.consume(1, 2)).success).toBe(true);
 });
 
 /**
