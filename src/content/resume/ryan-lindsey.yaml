@@ -2,83 +2,328 @@
 # -- 02 §1). One commit here is meant to update all of them atomically, so
 # nothing in this file should exist only for one format's benefit.
 #
-# Every structural fact below (company, title, dates, location) is verified
-# from the 2026-09-05 role inventory. `highlights` is deliberately [] for all
-# eight roles and `education` is deliberately [] -- see docs/plan 02 §1 and
-# the day-3 build plan's Task 1: this is content-track work, not a gap to be
-# helpfully filled in here.
+# Structural facts (company, title, dates, location) come from the 2026-09-05
+# role inventory. `highlights`, `education` and `skills` were filled on
+# 2026-09-07 from résumé interview session 2, which combined Ryan's own career
+# archive (~/Documents/Career/, 2013-2022) with a live interview covering the
+# Weedmaps decade. Every claim below traces to that session record:
+# ryanlindsey.me.docs/docs/content/resume-interviews/2026-09-07-session-02.md
+#
+# Editorial rules this file is held to (02 §4, and session 1's case-study
+# review): no em dashes, American spelling, no quantified org-wide throughput
+# or productivity figure anywhere, and no company name in `basics.summary`
+# (00 §5 -- the résumé names the employer in `work`, positioning surfaces do
+# not). Role scope is stated as it actually was; see the session record on why
+# understating the title is the stronger claim here.
 basics:
   name: Ryan Lindsey
-  # No verified positioning headline exists yet, so this is the current
-  # role's title (below), not an invented tagline.
   label: Senior Engineering Manager
   summary: >-
     Agentic engineering is making engineers dramatically faster. I build the
-    instruments that let the organization around them keep pace.
+    instruments that let the organization around them keep pace. Nineteen years
+    in software, a decade of it leading engineering teams: I own incident
+    management for an entire engineering organization, I build the agentic
+    tooling that other managers choose to adopt, and I still ship the code. The
+    habit underneath all of it is to measure a process before improving it,
+    because the constraint is rarely where everyone assumes it is.
   email: hello@ryanlindsey.me
   url: https://ryanlindsey.me
   location:
     city: Laguna Niguel
     region: CA
     countryCode: US
-  # phone and profiles omitted: no verified value exists, and a résumé is the
-  # wrong place to guess one. resumeGaps() reports both.
+  # Ryan ruled on 2026-09-07: publish it. His read is that the number is
+  # effectively public already, having appeared on every résumé he has sent out
+  # since 2014. This closes the last content-track gap resumeGaps() reported.
+  phone: (714) 330-6251
+  profiles:
+    - network: GitHub
+      username: ryanlindsey
+      url: https://github.com/ryanlindsey
+    - network: LinkedIn
+      username: ryanclindsey
+      url: https://www.linkedin.com/in/ryanclindsey
 
 work:
   - name: Weedmaps
     position: Senior Engineering Manager
     location: Irvine, CA
     startDate: 2021-02
-    highlights: []
+    x_artifacts:
+      - delivery-forecasting
+    highlights:
+      - >-
+        Own incident management for the entire engineering organization: the
+        process itself, the communication strategy, service integrations, data
+        reporting, and training. Data Engineering and InfoSec run their own
+        incident processes on the same tooling. Accountable for the area's OKRs
+        and report on them to the executive team monthly.
+      - >-
+        Measured the inherited process before changing it, and found response
+        and resolution times were already at or better than industry standard,
+        a reading corroborated independently by a vendor in the space. The real
+        weakness was time to detect, so that became the focus: a service-level
+        observability initiative run with DevOps and SRE now surfaces issues
+        before customers report them, across both web and native applications.
+      - >-
+        Risky changes are reviewed in advance by a change advisory board and
+        ship with documented rollback plans. Post-incident review is blameless
+        and every analysis carries linked action items. Incident commanders
+        investigate alerts using agents and connected MCP servers over live
+        telemetry, which has raised root-cause-analysis quality while sharply
+        reducing the time it takes to produce one.
+      - >-
+        Designed and built a delivery-forecasting toolchain for engineering
+        managers, beginning as a set of Claude Skills and migrating to an
+        internal MCP server as adoption outgrew that packaging. Adopted by more
+        than 80% of engineering managers and absorbed into the org-wide
+        roadmapping and reporting process.
+      - >-
+        Publish agentic tooling as Claude Skills in a shared repository open to
+        every engineering manager, running on scheduled cloud routines,
+        including a daily digest covering incident-response concerns.
+      - >-
+        Took on an advertising technology platform to raise its engineering
+        rigor: documented its critical paths, built a test coverage strategy
+        integrated with CI and improved it over time, moved it to blue/green
+        deployments for zero downtime with DevOps, and added bot mitigation and
+        payload verification with InfoSec to protect metric integrity against
+        junk traffic.
+      - >-
+        Delivered an off-marketplace e-commerce platform for cannabis
+        retailers, still in production and contributing to platform GMV, built
+        to meet marketplace regulatory requirements across the United States
+        and Canada.
   - name: Weedmaps
     position: Engineering Manager
     location: Irvine, CA
     startDate: 2017-09
     endDate: 2021-02
-    highlights: []
+    highlights:
+      - >-
+        Managed 12 to 19 engineers, from junior through staff level, across
+        several cross-functional product delivery teams on a consumer platform
+        serving more than 8 million monthly active users. Reports spanned
+        backend, front-end, iOS, and Android.
+      - >-
+        Decoupled deployment from feature release, so the product and
+        go-to-market teams could control launch timing independently of
+        engineering deploys. This removed a standing coupling between shipping
+        software and announcing it.
+      - >-
+        Introduced global edge caching across the primary web applications on
+        both client and server, through a Fastly CDN integration and an API
+        caching strategy keyed on surrogate keys, so caches invalidate by
+        content association rather than by URL.
+      - >-
+        Tripled overall test coverage and reduced escape defects by making code
+        quality standards something the teams practiced rather than something
+        they were handed.
+      - >-
+        Led image processing pipeline work spanning millions of unique assets,
+        improving engineering efficiency, cost, and time to market, and
+        improved inter-service communication for business-critical APIs with a
+        publish-subscribe message queue pattern.
+      - >-
+        Sat several hundred interviews and grew the engineering team by dozens
+        across multiple growth cycles. Promoted a dozen or more, a few onto the
+        management track and the majority further along the technical one.
+      - >-
+        Founded and ran a public monthly engineering meetup that passed 250
+        members inside a year, coached other engineering managers on one-to-one
+        practice and situational management, and built a repeatable onboarding
+        process for new engineers.
   - name: Weedmaps
     position: Manager, Front End Engineering
     location: Irvine, CA
     startDate: 2016-05
     endDate: 2017-09
-    highlights: []
+    highlights:
+      - >-
+        The company's first engineering manager below the executive level.
+        Before this team existed, every engineer reported to the same VP or
+        CTO.
+      - >-
+        Chartered to develop front-end developers into front-end engineers,
+        which is where the department's technical rigor and its cultural shift
+        started.
+      - >-
+        Began the front-end re-architecture. Shipping a single roadmap feature
+        meant changing three separate code bases to reach every user and
+        device, a legacy of the pre-responsive mobile subdomain era. The work
+        cut time to market and became the foundation for the company's later
+        front-end architecture, including a shared UI library built with
+        Design.
+      - >-
+        Defined and delivered the front-end staffing roadmap, and rebuilt the
+        front-end technical exercise with the talent team.
   - name: Weedmaps
     position: Sr. Front End Engineer
     location: Irvine, CA
     startDate: 2016-03
     endDate: 2016-05
-    highlights: []
+    highlights:
+      - >-
+        Built and maintained features across the company's web applications,
+        mentored other engineers, reviewed code, and provided technical input
+        to Product. Moved into engineering management within three months.
   - name: RED Digital Cinema
     position: Sr. Front End Developer
     location: Irvine, CA
     startDate: 2011-10
     endDate: 2016-02
-    highlights: []
+    highlights:
+      - >-
+        Architected and implemented user-interface features for the company's
+        e-commerce, marketing, and customer support websites, serving a global
+        customer base.
+      - >-
+        Drove the adoption of a new UI component library and design language
+        across those applications, working closely with the design and
+        marketing departments.
   - name: Innocean Worldwide
     position: Sr. Front End Developer
     location: Huntington Beach, CA
     startDate: 2011-02
     endDate: 2011-10
-    highlights: []
+    highlights:
+      - >-
+        Led development of interactive experiences for Hyundai USA, including
+        hyundaiusa.com, a set of microsites, Facebook games, and a custom
+        YouTube channel built entirely in HTML5, CSS3, and JavaScript.
+      - >-
+        Worked with the creative team from the conceptual phase onward,
+        providing technical advisement, research, and prototyping. Also built
+        and maintained the agency's own website.
   - name: Y&R Brands / Wunderman
     position: Front End Developer
     location: Irvine, CA
     startDate: 2007-06
     endDate: 2011-02
-    highlights: []
+    highlights:
+      - >-
+        Delivered award-winning interactive experiences for Land Rover,
+        Southwest Airlines, Toshiba, and Hilton, and provided technical
+        assessment during the conceptual phase of new work.
+      - >-
+        Recognized with Lester Wunderman awards for the Southwest Airlines "A
+        new form of free media" campaign (2009) and the Toshiba "Gamer
+        Preparedness" (2009) and "Boring vs Normal" (2008) campaigns, and with
+        a 38th Annual Creativity Award for Toshiba "Fusion Finish" (2008).
   - name: Freelance
     position: Web design & development
     location: Orange County, CA
     startDate: 2001-01
     endDate: 2007-06
-    highlights: []
+    highlights:
+      - >-
+        Ran every part of the business: client relationships, project
+        management, design, and development. Built marketing sites, online
+        communities, and custom content management systems for local
+        businesses, independent films, and bands.
 
-# No education section on the LinkedIn profile; the interview record lists it
-# as an open question. resumeGaps() reports this too.
-education: []
+# Work Ryan owns outright. Deliberately NOT in `work`: that section is
+# employment history, and `workHistoryIssues()` requires exactly one entry
+# without an `endDate` because exactly one job is current. See the `projects`
+# comment in content.config.ts for the full reasoning.
+#
+# `startDate` is omitted because no verified founding date exists yet. Same rule
+# as everywhere else in this file: an unknown date is left out, not guessed.
+# Ryan can supply one and it renders automatically.
+#
+# Scope of claims follows Ryan's own IP line from the 2026-09-06 technical
+# brief: the primitive composition, the isolation model, the eval architecture
+# including its unmet gate, and cost per unit of work are all publishable in
+# full. The hold-back list (loss-attribution parameters, corner classification
+# vocabulary, prompt corpus, glossary and coaching-style contents, catalog build
+# pipeline) appears nowhere here, and the other drivers are not named.
+projects:
+  - name: Pixelsonly Racing
+    description: >-
+      A sim racing coaching platform that turns raw telemetry into driver
+      development goals, with a personal AI race engineer for every driver, plus
+      a products line for the sim racing community.
+    url: https://pixelsonly.racing
+    roles:
+      - Founder
+    x_artifacts:
+      - silent-failure
+    highlights:
+      - >-
+        Built and run solo on Cloudflare Workers, D1, R2, Durable Objects,
+        Queues and Workflows, with Anthropic's Claude routed through AI Gateway.
+        Workflows because CPU time excludes time awaiting I/O, which is what
+        makes a minutes-long model call affordable inside a request-shaped
+        runtime.
+      - >-
+        Per-driver isolation by object addressing rather than query filtering:
+        the Durable Object instance name is the verified token slug, so each
+        driver's working memory is a physically separate SQLite instance and no
+        shared table exists for a bug to leak across. Asserted per tool inside
+        workerd against real storage, not against a mock.
+      - >-
+        Two eval harnesses, property-based rather than string-matching, one of
+        which reports its own replay gate as unmet because the bar was written
+        before any numbers existed. A run that measures nothing is a failure,
+        not a pass.
+      - >-
+        Cost tracked per unit of work from a spend ledger, with per-driver
+        budgets and delivery observability gated into the roadmap before the
+        driver count grows rather than after.
 
-skills: []
+# Years confirmed by Ryan 2026-09-07. They are bare years on purpose: the
+# schema's `yearOrYearMonth` accepts `YYYY` for education specifically, so no
+# invented month is needed to satisfy a regex. See content.config.ts.
+education:
+  - institution: The Art Institute of California
+    area: Interactive Media (HCI)
+    studyType: B.S.
+    startDate: '2003'
+    endDate: '2007'
+  - institution: Golden West College
+    area: Business Administration
+    studyType: A.A.
+    startDate: '2001'
+    endDate: '2003'
+
+skills:
+  - name: Engineering leadership
+    keywords:
+      - Incident management
+      - Change management
+      - Observability practice
+      - Team growth and promotion
+      - Coaching engineering managers
+      - Org process design
+      - Performance management
+  - name: Agentic engineering
+    keywords:
+      - MCP servers
+      - Claude Skills
+      - Agent design
+      - Evals and golden fixtures
+      - Human-in-the-loop disclosure controls
+      - AI Gateway
+  - name: Platform and delivery
+    keywords:
+      - CI/CD
+      - Blue/green deployment
+      - CDN and edge caching
+      - Bot defense and mitigation
+      - API design
+      - High availability
+      - Serverless
+      - Infrastructure as code
+      - Containerization
+  - name: Languages and runtimes
+    keywords:
+      - TypeScript
+      - JavaScript, ESNext
+      - Ruby
+      - Node.js
+      - Python
+      - '*nix shell'
 
 meta:
-  version: 0.1.0
-  lastModified: '2026-09-06'
+  version: 0.3.0
+  lastModified: '2026-09-07'
