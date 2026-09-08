@@ -1,8 +1,8 @@
 node_modules
-dist/
-.astro/
-.wrangler/
-.claude/worktrees/
+dist
+.astro
+.wrangler
+.claude/worktrees
 .dev.vars*
 .env*
 !.env.example
