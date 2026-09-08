@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.5.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.4.1...ryanlindsey-me-v1.5.0) (2026-09-08)
+
+
+### Features
+
+* **resume:** fill the Weedmaps decade and close the content-track gate ([#26](https://github.com/ryanlindsey/ryanlindsey.me/issues/26)) ([63dbb9f](https://github.com/ryanlindsey/ryanlindsey.me/commit/63dbb9fb9691dd2a29ab0fab65ea28eab2637491))
+
+
+### Bug Fixes
+
+* **mcp:** enforce rate limits in a Durable Object, not the ratelimits binding ([#31](https://github.com/ryanlindsey/ryanlindsey.me/issues/31)) ([444a636](https://github.com/ryanlindsey/ryanlindsey.me/commit/444a63640cee635e09143a71a5a3c659234b6501))
+* **mcp:** read published documents over a SITE service binding ([#30](https://github.com/ryanlindsey/ryanlindsey.me/issues/30)) ([9bcbb0a](https://github.com/ryanlindsey/ryanlindsey.me/commit/9bcbb0ada8274fc5d1f387a385c573f71b6bc6ce)), closes [#28](https://github.com/ryanlindsey/ryanlindsey.me/issues/28)
+
 ## [1.4.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.4.0...ryanlindsey-me-v1.4.1) (2026-09-07)
 
 

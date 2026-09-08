@@ -50,7 +50,7 @@ const INSTRUCTIONS = [
  */
 export function createServer(tc: ToolContext): McpServer {
   const server = new McpServer(
-    { name: 'ryanlindsey-me', version: '1.4.1' }, // x-release-please-version
+    { name: 'ryanlindsey-me', version: '1.5.0' }, // x-release-please-version
     { instructions: INSTRUCTIONS },
   );
 
