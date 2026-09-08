@@ -115,10 +115,29 @@ export const SITE_WORKER = {
  * tests/mcp-search.test.ts with a stub `Ai`, which is what workers/mock-ai's
  * doc comment asks for instead of teaching that Worker to impersonate Workers
  * AI. The retrieval round trip is verified by hand against the live index.
+ *
+ * `SITE_ORIGIN: TEST_SITE_ORIGIN` is overridden here as of issue #28, and it was
+ * NOT before -- measured while writing that fix, not inferred:
+ * tests/mcp.smoke.test.ts booted this Worker and `getEnv().SITE_ORIGIN` read
+ * `https://ryanlindsey.me`, straight out of workers/mcp/wrangler.jsonc. It never
+ * mattered, because no suite that booted this Worker WITHOUT overriding the var
+ * also read a document -- the one that does (tests/mcp-tools.test.ts) sets it to
+ * the harness's own measured address in `beforeAll`, and still does. But "it
+ * never mattered" was a property of which tests happened to exist, and the
+ * failure it was one test away from is the worst kind: a suite quietly reading
+ * the LIVE PRODUCTION SITE and passing because production agrees with the
+ * fixture. The sentinel makes that impossible by default and leaves any
+ * deliberate override to say so out loud. Since #28 it does a second job in
+ * tests/mcp.smoke.test.ts: a document read that succeeds against an origin
+ * resolving nowhere is the proof that the read is a binding and not a fetch.
  */
 export const MCP_WORKER = {
   configPath: './workers/mcp/wrangler.jsonc',
-  vars: { CORPUS_REFRESH: 'off', MCP_SEARCH_EMBEDDER: 'stub' },
+  vars: {
+    CORPUS_REFRESH: 'off',
+    MCP_SEARCH_EMBEDDER: 'stub',
+    SITE_ORIGIN: TEST_SITE_ORIGIN,
+  },
   bindingOverrides: { AI: 'mock-ai' },
 };
 
@@ -134,3 +153,27 @@ export const MOCK_AI_WORKER = { configPath: './workers/mock-ai/wrangler.jsonc' }
  * `server.getWorker()` returns unnamed.
  */
 export const SITE_HARNESS_WORKERS = [SITE_WORKER, MCP_WORKER, MOCK_BROWSER_WORKER, MOCK_AI_WORKER];
+
+/**
+ * The same four Workers with the MCP Worker FIRST, for a suite whose subject is
+ * the MCP Worker and which therefore wants it as the primary one.
+ *
+ * The list used to be `[MCP_WORKER, MOCK_AI_WORKER]` in tests/mcp.smoke.test.ts,
+ * and the site's absence there was not an oversight -- nothing in that suite
+ * read a document. Day 4 issue #28's fix makes the site MANDATORY for every
+ * harness that boots the MCP Worker: `workers/mcp/wrangler.jsonc` now declares a
+ * `SITE` service binding naming `ryanlindsey-me`, and workerd refuses to start a
+ * Worker whose service binding names an undefined service. That is the exact
+ * mirror of the constraint the `MCP_WORKER` comment above already records in the
+ * other direction, and the two together are a deliberate binding CYCLE (site ->
+ * MCP for the `/mcp` forward, MCP -> site for document reads). Cycles are legal:
+ * a service binding is resolved when it is called rather than when the Worker is
+ * defined, so the graph never has to be topologically sorted. Measured here --
+ * this harness boots both Workers with the cycle in place. There is no runtime
+ * loop either: the MCP Worker only ever asks the site for `/llms.txt`,
+ * `/resume.json` and `/{writing,work}/*.md`, never `/mcp`.
+ *
+ * MOCK_BROWSER_WORKER comes along because SITE_WORKER's `bindingOverrides` names
+ * it, by the same rule.
+ */
+export const MCP_HARNESS_WORKERS = [MCP_WORKER, SITE_WORKER, MOCK_BROWSER_WORKER, MOCK_AI_WORKER];

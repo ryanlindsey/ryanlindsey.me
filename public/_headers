@@ -115,10 +115,41 @@
   Content-Type: application/json; charset=utf-8
 
 # Day 4 Task 14 (08 v1 item 2): the two discovery headers, verbatim, on
-# every response this origin serves. `/*` is the broadest pattern in this
-# file and sets no header any rule above also sets, so there is nothing for
-# it to be comma-joined with -- see the file-header note for why that would
-# matter if there were.
+# every response this origin serves FROM A STATIC ASSET. `/*` is the broadest
+# pattern in this file and sets no header any rule above also sets, so there is
+# nothing for it to be comma-joined with -- see the file-header note for why
+# that would matter if there were.
+#
+# "EVERY RESPONSE" IS NOT LITERALLY TRUE, and the exception is /mcp. This was
+# the open question deferred from Day 4 Task 14 and closed by issue #28; the
+# answer is no, and the reason is not the one it looks like. MEASURED against
+# production 2026-09-07:
+#
+#   curl -sI https://ryanlindsey.me/                    -> X-MCP-Server present
+#   curl -sI https://ryanlindsey.me/llms.txt            -> present
+#   curl -sI https://ryanlindsey.me/resume              -> present
+#   curl -sI https://ryanlindsey.me/work/silent-failure/ -> present
+#   curl -sI https://ryanlindsey.me/mcp                 -> ABSENT (405)
+#   POST   https://ryanlindsey.me/mcp                   -> ABSENT (200)
+#
+# The obvious explanation -- "/mcp is routed by `run_worker_first`, so the
+# asset server never sees it" -- IS WRONG, and the third and fourth lines above
+# are the control that disproves it: /resume and /work/* are in that same
+# `run_worker_first` list (./wrangler.jsonc) and carry the headers fine. What
+# actually decides it is whether the response BODY came from a static asset.
+# These rules are applied by Cloudflare's asset server, so they attach to any
+# asset response -- including one src/worker.ts fetched itself through the
+# `ASSETS` binding after running first. /mcp has no asset behind it at all: the
+# response is synthesised by the MCP Worker and forwarded back, and there is
+# nothing for the asset server to decorate.
+#
+# Left as-is deliberately. The header exists so a crawler landing on a PAGE
+# learns the endpoint exists, and every page it can land on is an asset and does
+# carry it; an MCP client that has already reached /mcp is speaking the protocol
+# and has no use for a header advertising /mcp. Injecting these in the Worker
+# would mean src/worker.ts growing header logic that duplicates this file, which
+# is the thing that file-header note exists to warn about. Recorded here so it is
+# not rediscovered a third time.
 /*
   X-For-AI-Agents: You're welcome here. Start at /llms.txt
   X-MCP-Server: https://ryanlindsey.me/mcp

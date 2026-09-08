@@ -15,23 +15,42 @@ export { RateLimiter } from './rate-limiter';
 
 /**
  * The corpus job's view of this Worker, assembled explicitly rather than spread
- * from `env` -- `SITE` is not a binding and could not come from one.
+ * from `env` -- it is a deliberate subset, and `refreshCorpus` should not be
+ * handed bindings it has no business touching.
  *
- * The site Worker used to hand `refreshCorpus` its own `ASSETS` binding. This
- * Worker has no assets, and giving it a copy of the site's would mean uploading
- * the whole site twice and rebuilding it before every MCP deploy, so the
- * documents are read over the public origin instead. `mcp.ryanlindsey.me` and
- * `ryanlindsey.me` are different hostnames on different Workers, so this is an
- * ordinary subrequest to the site rather than a fetch that could loop back into
- * this Worker.
+ * THE DAY-3 COMMENT THAT USED TO BE HERE WAS WRONG BY THE TIME IT SHIPPED, and
+ * it is worth writing out what it said rather than quietly replacing it, because
+ * it was wrong in the way comments usually are -- true when written, falsified
+ * by a change nobody thought to re-read it against. It said:
  *
- * Wrapped in an arrow rather than passed as `{ fetch }`: global `fetch` is not
- * a method of anything here, and handing it over as a bare reference is the kind
- * of unbound-`this` hazard that costs an hour when it does bite.
+ *   "`mcp.ryanlindsey.me` and `ryanlindsey.me` are different hostnames on
+ *    different Workers, so this is an ordinary subrequest to the site rather
+ *    than a fetch that could loop back into this Worker."
+ *
+ * Day 4 Task 13 then made the SITE forward `ryanlindsey.me/mcp` into this Worker
+ * over its `MCP` service binding, with the request's URL and `Host` untouched.
+ * From that deploy on, a request could arrive here already bearing
+ * `Host: ryanlindsey.me` -- and the global `fetch('https://ryanlindsey.me/...')`
+ * this function used to build was then a fetch to the hostname of the request
+ * being served. `ryanlindsey.me` is a Cloudflare CUSTOM DOMAIN for the site
+ * Worker, and Cloudflare's Error 522 page says exactly that case returns 522.
+ * Issue #28: seven of eight tools and `resources/list` failed on the endpoint
+ * 03 §1 calls PRIMARY, while `mcp.ryanlindsey.me` -- where the target really is
+ * a different hostname -- kept working, which is what made it look like a site
+ * outage rather than a routing rule. Nothing re-read this comment for two days
+ * because nothing had to.
+ *
+ * `env.SITE` is a service binding to `ryanlindsey-me` (workers/mcp/wrangler.jsonc),
+ * and it is not merely a fix for that arrival path -- it removes the class. A
+ * service-binding dispatch never reaches Cloudflare's edge, so there is no
+ * hostname for it to collide with and no arrival path that can change its
+ * behaviour. The site is still the source of truth for what is published
+ * (this Worker has no assets and must not grow a copy of them), so the corpus
+ * still embeds exactly what a reader is served; only the transport changed.
  */
 function corpusEnv(env: McpEnv): CorpusEnv {
   return {
-    SITE: { fetch: (input, init) => fetch(input, init) },
+    SITE: env.SITE,
     AI: env.AI,
     VECTORIZE: env.VECTORIZE,
     KV_CACHE: env.KV_CACHE,

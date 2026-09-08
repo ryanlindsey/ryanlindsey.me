@@ -5,11 +5,14 @@ import { MCP_WORKER, SITE_HARNESS_WORKERS } from './workers';
 import { BANNED_PATTERNS } from './candidacy-patterns';
 
 // The SITE too, not just the MCP Worker and its mock AI. Every content tool
-// reads the site's published documents over `SITE_ORIGIN` (src/lib/mcp/documents.ts),
-// so a suite that boots the MCP Worker alone can only test those tools against a
-// host that resolves nowhere. The site is FIRST because `SITE_HARNESS_WORKERS`
-// puts it first, which makes it the primary Worker -- see `beforeAll` for why
-// that matters and `rpc` for what it costs.
+// reads the site's published documents (src/lib/mcp/documents.ts), so a suite
+// without the site cannot test those tools at all. Since issue #28 that is no
+// longer merely inconvenient but structural: the MCP Worker's `SITE` service
+// binding names `ryanlindsey-me`, and workerd refuses to start a Worker whose
+// service binding names an undefined service -- so EVERY harness that boots the
+// MCP Worker now boots the site as well. The site is FIRST because
+// `SITE_HARNESS_WORKERS` puts it first, which makes it the primary Worker --
+// see `beforeAll` for why that matters and `rpc` for what it costs.
 const server = createTestHarness({ workers: SITE_HARNESS_WORKERS });
 
 /**
@@ -31,13 +34,27 @@ const server = createTestHarness({ workers: SITE_HARNESS_WORKERS });
  * is why the override cannot be a static entry in tests/workers.ts and has to
  * arrive through `update()` after the server is up.
  *
- * What makes this work at all is that the harness address is a real loopback
- * origin: the MCP Worker's global `fetch` reaches it exactly as it would reach
- * ryanlindsey.me in production, the request matches no Worker's routes (the two
- * custom domains are `ryanlindsey.me` and `mcp.ryanlindsey.me`, neither of
- * which is 127.0.0.1), and it therefore lands on the PRIMARY Worker -- the
- * site. So the code path under test is the deployed one, over HTTP, with no
- * service binding and no stub in it.
+ * WHAT THAT OVERRIDE IS FOR CHANGED UNDER THIS COMMENT, and the old version is
+ * worth keeping visible because it described a mechanism that no longer exists.
+ * It said the harness address being a real loopback origin was "what makes this
+ * work at all" -- the MCP Worker's global `fetch` reaching it exactly as it
+ * would reach ryanlindsey.me in production, matching no Worker's routes, and
+ * therefore landing on the primary Worker, the site. True at the time. Issue #28
+ * then replaced that global `fetch` with a `SITE` service binding
+ * (workers/mcp/wrangler.jsonc), because fetching `SITE_ORIGIN` over the public
+ * internet returned 522 whenever the request being served had itself arrived on
+ * that hostname -- which is what `ryanlindsey.me/mcp` does.
+ *
+ * So the reads below no longer travel over HTTP at all, and would now succeed
+ * against ANY value of this var. What the override still buys is narrower and
+ * still real: `SITE_ORIGIN` is what every citation URL is built from, so
+ * overriding it keeps this suite's `url`/`markdownUrl` assertions pointed at an
+ * address this harness owns. Note the consequence for coverage, since it is the
+ * kind of thing that quietly rots: because this origin is REACHABLE, a revert of
+ * #28 back to global `fetch` would not fail this suite. The suite that would is
+ * tests/mcp.smoke.test.ts, whose `SITE_ORIGIN` resolves nowhere on purpose --
+ * that is where #28's regression guard lives, and this comment is the pointer to
+ * it.
  */
 beforeAll(async () => {
   const { url } = await server.listen();

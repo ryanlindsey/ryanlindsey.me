@@ -31,19 +31,25 @@ import { defineTool, ToolError, type ToolContext } from './define';
 /**
  * The published documents, as this Worker reads them.
  *
- * Assembled explicitly for the same reason `corpusEnv` is in ./index.ts, whose
- * doc comment is the long version: `SITE` is not a binding this Worker
- * declares, the documents are read over the public origin rather than from a
- * second copy of the site's assets, and global `fetch` is wrapped in an arrow
- * rather than passed as a bare reference.
+ * `SITE` IS A BINDING NOW, and this comment used to say the opposite. Day 4
+ * Task 3 wrote "`SITE` is not a binding this Worker declares" and assembled a
+ * global-`fetch` wrapper over `SITE_ORIGIN` here, which was true and worked
+ * until `ryanlindsey.me/mcp` started forwarding into this Worker -- after which
+ * every document read on the primary endpoint returned 522. The correction is
+ * issue #28's; workers/mcp/wrangler.jsonc's `services` entry carries the full
+ * mechanism and `corpusEnv` in ./index.ts is the other half of the same fix.
+ *
+ * Two lines, both straight off `env`, so there is nothing left here to get
+ * wrong: no wrapper, no unbound-`this` hazard, and no way for this to differ
+ * from what the cron job reads.
  *
  * Exported for ./resources.ts, which reads the same published documents and
- * must read them the same way. A second copy of these four lines would be a
- * second place for `SITE_ORIGIN` and the fetch wrapper to drift.
+ * must read them the same way. A second copy of these two lines would be a
+ * second place for the binding and the origin to drift apart.
  */
 export function documentsEnv(env: McpEnv): DocumentsEnv {
   return {
-    SITE: { fetch: (input, init) => fetch(input, init) },
+    SITE: env.SITE,
     SITE_ORIGIN: env.SITE_ORIGIN,
   };
 }
