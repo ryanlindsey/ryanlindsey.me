@@ -3,6 +3,7 @@ import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import type { CollectionEntry } from 'astro:content';
 import { SITE_HARNESS_WORKERS } from './workers';
+import { BANNED_PATTERNS } from './candidacy-patterns';
 import { formatDateRange } from '../src/lib/resume';
 import { buildLlmsTxt, buildLlmsFullTxt, type LlmsLink } from '../src/lib/llms-index';
 import { buildRssFeed, buildJsonFeed, RSS_MARKDOWN_NOTICE, type JsonFeed } from '../src/lib/feeds';
@@ -151,21 +152,11 @@ test('keeps the holding page marker and stays unindexed', async () => {
 
 test('carries no candidacy language on any public surface', async () => {
   // 09 §2 is a hard rule and the cheapest place to enforce it is every render.
-  // Word-boundary, inflection-aware patterns: naive substrings ("hire", bare
-  // "candidate") both miss real leaks ("candidates", "recruitment") and catch
-  // false positives ("Yorkshire", "Cheshire", "Hampshire" all contain "hire").
-  // "looking for" is dropped -- too generic ("looking for the source?") and a
-  // check that cries wolf gets weakened by whoever trips it next. "open to
-  // work" is added -- it's LinkedIn's own badge text and the single most
-  // canonical public candidacy signal.
-  const BANNED = [
-    /\bhir(e|es|ed|ing)\b/i,
-    /\bcandidates?\b/i,
-    /\brecruit(er|ers|ing|ment)?\b/i,
-    /\bjob[-\s]?search(es|ing)?\b/i,
-    /\bactively looking\b/i,
-    /\bopen to (work|opportunities|offers)\b/i,
-  ];
+  // BANNED_PATTERNS lives in ./candidacy-patterns.ts (Day 4 Task 15), not here,
+  // so the MCP surface check in tests/mcp-tools.test.ts can share this exact
+  // list rather than hand-typing a second one that could silently drift from
+  // it -- see that module's own comment for why it is a separate file and not
+  // an export straight off this one.
   for (const route of [
     '/',
     '/writing',
@@ -210,7 +201,7 @@ test('carries no candidacy language on any public surface', async () => {
     ]),
   ]) {
     const page = await html(route);
-    for (const pattern of BANNED) {
+    for (const pattern of BANNED_PATTERNS) {
       expect(page, `${route} must not match ${pattern}`).not.toMatch(pattern);
     }
   }
@@ -631,6 +622,31 @@ test('/llms.txt links the résumé in all four formats and the MCP endpoint, and
   );
 });
 
+test('/llms.txt describes the MCP server current tool map, not the stale one-tool description', async () => {
+  // Task 12 (03 §1): tools/list grew to eight tools across Tasks 6-11, and
+  // this file's own MCP description still said "One tool today: get_contact"
+  // -- false since Task 6. The MCP Worker's registrations are not reachable
+  // from Astro at build time (astro:content and the Worker's own module
+  // graph are two separate builds -- see src/pages/llms.txt.ts's module
+  // doc), so MCP_LINKS' description is written literally rather than
+  // generated.
+  //
+  // NARROW guard, deliberately: this only proves the specific regression
+  // above is fixed (the stale line is gone, `search_writing` is named) --
+  // it says nothing about a NINTH tool added later with no matching update
+  // here, and would stay green if that happened. The guard that actually
+  // covers every tool is tests/mcp-tools.test.ts's "/llms.txt names every
+  // registered tool": this harness (SITE_HARNESS_WORKERS) boots the MCP Worker
+  // too, so that assertion COULD live here, but mcp-tools.test.ts already
+  // exports an `rpc` helper for talking to the MCP Worker by name and already
+  // asserts (in its own `beforeAll`) that this harness's MCP Worker reads the
+  // SAME build this site serves -- reusing that rather than re-deriving the
+  // same JSON-RPC/SSE plumbing a second time here.
+  const page = await html('/llms.txt');
+  expect(page).not.toContain('One tool today');
+  expect(page).toContain('search_writing');
+});
+
 test('buildLlmsTxt omits a heading entirely when its link list is empty', () => {
   // The pure-function version of the "today's real state" assertion above --
   // proves the omission rule itself, independent of what is actually
@@ -753,6 +769,76 @@ test('footer links /llms.txt and the MCP endpoint, and never links /llms-full.tx
   // the footer must not link it a second time (task-9-brief.md Step 3).
   expect(page, 'no page should link /llms-full.txt from its footer').not.toContain(
     '/llms-full.txt',
+  );
+});
+
+// Day 4 Task 13 (03 §1): `https://ryanlindsey.me/mcp` is the PRIMARY MCP
+// endpoint, `mcp.ryanlindsey.me` the vanity alias -- so this origin must
+// serve the protocol rather than 404. `server.fetch()` in this file always
+// addresses the site Worker (SITE_HARNESS_WORKERS lists it first, making it
+// the harness's primary), so these two exercise the forward over the `MCP`
+// service binding end to end, not the MCP Worker directly the way
+// tests/mcp-tools.test.ts and tests/mcp.smoke.test.ts do.
+
+test('/mcp on the site origin completes the MCP handshake', async () => {
+  const response = await server.fetch('/mcp', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'site', version: '0' },
+      },
+    }),
+  });
+  expect(response.status).toBe(200);
+  expect(await response.text()).toContain('ryanlindsey-me');
+  // CORS parity between the two origins is the point of Task 2's opened
+  // policy (workers/mcp/src/index.ts's HANDLER_OPTIONS), and every response
+  // the MCP Worker returns -- this one included -- is wrapped in `withCors`
+  // unconditionally from that config, regardless of the request's own Origin
+  // (node_modules/agents' handler-stateless.ts). So these are assertable
+  // proof that the forward carries CORS behavior across the service-binding
+  // hop intact, not just that *some* response came back: a browser client at
+  // https://ryanlindsey.me/mcp must see the same CORS posture a client at
+  // mcp.ryanlindsey.me/mcp does.
+  expect(response.headers.get('access-control-allow-origin')).toBe('*');
+  expect(response.headers.get('access-control-allow-headers')).toBe(
+    'content-type, accept, mcp-session-id, mcp-protocol-version, authorization',
+  );
+});
+
+test('/mcp is not swallowed by the SPA 404 page', async () => {
+  const response = await server.fetch('/mcp');
+  expect(response.headers.get('content-type') ?? '').not.toContain('text/html');
+});
+
+test('/mcp on the site origin answers a CORS preflight, Origin and requested headers included', async () => {
+  // The transport's OPTIONS branch (node_modules/agents' handler-stateless.ts)
+  // answers before any JSON-RPC handling runs, so this exercises a different
+  // code path than the POST handshake above -- and it is exactly the request
+  // a real browser MCP client sends before its actual call, which is why
+  // Task 2 (03 §1) and this task's own constraints both single preflights out
+  // by name. Reaching this response at all already proves the OPTIONS method
+  // and the Origin/Access-Control-Request-* headers survived the forward: the
+  // route-matching check ahead of this branch would 404 first otherwise.
+  const response = await server.fetch('/mcp', {
+    method: 'OPTIONS',
+    headers: {
+      origin: 'https://claude.ai',
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': 'content-type,mcp-protocol-version',
+    },
+  });
+  expect(response.status).toBe(200);
+  expect(response.headers.get('access-control-allow-origin')).toBe('*');
+  expect(response.headers.get('access-control-allow-methods')).toBe('GET, POST, OPTIONS');
+  expect(response.headers.get('access-control-allow-headers')).toBe(
+    'content-type, accept, mcp-session-id, mcp-protocol-version, authorization',
   );
 });
 

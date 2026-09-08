@@ -41,6 +41,14 @@ const caseStudies = defineCollection({
     publishedAt: z.coerce.date(),
     updatedAt: z.coerce.date().optional(),
     draft: z.boolean().default(false),
+    // 03 §2 asks list_case_studies for org scale, domain and outcomes.
+    // Optional, because the MCP tool is shipping before the content that
+    // fills them and a required field would either block the tool or invite
+    // a placeholder. An entry that omits one omits it in the tool output
+    // too -- the gap is visible rather than papered over.
+    orgScale: z.string().optional(),
+    domain: z.string().optional(),
+    outcomes: z.array(z.string()).optional(),
   }),
 });
 

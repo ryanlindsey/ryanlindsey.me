@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
+import { buildMcpDiscovery } from '../src/lib/mcp/discovery';
 import { SITE_HARNESS_WORKERS } from './workers';
 
 // Day 3 Task 13 (02 §3): the launch gate over every agent-publishing surface
@@ -295,4 +296,29 @@ test('detail routes serve every entry including drafts; aggregation surfaces ser
       ).not.toContain(slugPath);
     }
   }
+});
+
+// Day 4 Task 14 (roadmap "/.well-known + discovery"; 03 §5; 08 v1 item 2):
+// the discovery document on the site's own origin, and the two courtesy
+// headers 08 v1 item 2 specifies verbatim, on every response this origin
+// serves.
+test('/.well-known/mcp.json describes the endpoint', async () => {
+  const response = await server.fetch('/.well-known/mcp.json');
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toContain('application/json');
+  // Cast to the shape `buildMcpDiscovery` actually returns, the same
+  // as-cast convention tests/resume.test.ts (`as Resume`) and
+  // tests/pages.test.ts (`as JsonFeed`) already use for `response.json()`,
+  // which types as `unknown` -- tied to the source of truth rather than a
+  // duplicated ad hoc shape, since nothing here has its own named type.
+  const doc = (await response.json()) as ReturnType<typeof buildMcpDiscovery>;
+  expect(doc.endpoint).toBe('https://ryanlindsey.me/mcp');
+  expect(doc.transport).toBe('streamable-http');
+  expect(doc.authentication).toBe('none');
+});
+
+test('every page carries the agent courtesy headers', async () => {
+  const response = await server.fetch('/');
+  expect(response.headers.get('x-for-ai-agents')).toBe("You're welcome here. Start at /llms.txt");
+  expect(response.headers.get('x-mcp-server')).toBe('https://ryanlindsey.me/mcp');
 });

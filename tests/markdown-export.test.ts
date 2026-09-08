@@ -35,6 +35,9 @@ const caseStudy = (overrides: {
   id?: string;
   body?: string;
   updatedAt?: Date;
+  orgScale?: string;
+  domain?: string;
+  outcomes?: string[];
 }): CollectionEntry<'caseStudies'> =>
   ({
     id: overrides.id ?? 'a-case-study',
@@ -45,6 +48,9 @@ const caseStudy = (overrides: {
       description: 'A case study about something.',
       publishedAt: new Date('2026-09-06T00:00:00Z'),
       updatedAt: overrides.updatedAt,
+      orgScale: overrides.orgScale,
+      domain: overrides.domain,
+      outcomes: overrides.outcomes,
       draft: false,
     },
   }) as unknown as CollectionEntry<'caseStudies'>;
@@ -100,6 +106,45 @@ describe('frontmatterFor', () => {
       publishedAt: '2026-09-06',
       canonical: `${SITE_ORIGIN}/work/c/`,
     });
+  });
+
+  // Task 7 (03 §2): org scale, domain and outcomes, case studies only.
+  test('carries orgScale, domain and outcomes for a case study that declares all three', () => {
+    const entry = caseStudy({
+      id: 'c',
+      orgScale: '~200-engineer department',
+      domain: 'cannabis-tech marketplace',
+      outcomes: ['Replaced guessed delivery dates with calibrated forecasts', 'Adopted org-wide'],
+    });
+    expect(frontmatterFor(entry)).toEqual({
+      title: 'A Case Study',
+      description: 'A case study about something.',
+      publishedAt: '2026-09-06',
+      orgScale: '~200-engineer department',
+      domain: 'cannabis-tech marketplace',
+      outcomes: ['Replaced guessed delivery dates with calibrated forecasts', 'Adopted org-wide'],
+      canonical: `${SITE_ORIGIN}/work/c/`,
+    });
+  });
+
+  test('omits orgScale, domain and outcomes for a case study that declares none, rather than nulling them', () => {
+    // Assert absence, not `undefined` -- a "declares none" entry produces
+    // frontmatter with no trace of the key at all (see content.config.ts's
+    // schema comment and summarize's matching read-side rule).
+    const frontmatter = frontmatterFor(caseStudy({ id: 'c' }));
+    expect(frontmatter).not.toHaveProperty('orgScale');
+    expect(frontmatter).not.toHaveProperty('domain');
+    expect(frontmatter).not.toHaveProperty('outcomes');
+  });
+
+  test('a post frontmatter has no orgScale, domain or outcomes keys at all', () => {
+    // The mirror of the case-study assertion above: posts never carry these
+    // three, and this module must not invent them for a collection 03 §2
+    // asks nothing of.
+    const frontmatter = frontmatterFor(post({ id: 'p' }));
+    expect(frontmatter).not.toHaveProperty('orgScale');
+    expect(frontmatter).not.toHaveProperty('domain');
+    expect(frontmatter).not.toHaveProperty('outcomes');
   });
 });
 
@@ -161,6 +206,67 @@ describe('toMarkdown', () => {
     expect(rendered).toContain('title: "Line one\\nLine two"');
     const [frontmatterBlock] = rendered.split('\n---\n');
     expect(frontmatterBlock).not.toMatch(/title: "[^"]*\n[^"]*"/);
+  });
+
+  test('emits orgScale, domain and outcomes for a case study that declares them, as a YAML block list', () => {
+    const entry = caseStudy({
+      id: 'c',
+      orgScale: 'Team of 12',
+      domain: 'B2B fintech',
+      outcomes: ['Shipped in six weeks', 'Zero incidents since launch'],
+    });
+    expect(toMarkdown(entry)).toBe(
+      [
+        '---',
+        'title: "A Case Study"',
+        'description: "A case study about something."',
+        'publishedAt: "2026-09-06"',
+        'orgScale: "Team of 12"',
+        'domain: "B2B fintech"',
+        'outcomes:',
+        '  - "Shipped in six weeks"',
+        '  - "Zero incidents since launch"',
+        `canonical: "${SITE_ORIGIN}/work/c/"`,
+        '---',
+        '',
+        'Body text.',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  test('a case study declaring none of the three has no trace of them in the rendered frontmatter', () => {
+    const rendered = toMarkdown(caseStudy({ id: 'c' }));
+    expect(rendered).not.toContain('orgScale');
+    expect(rendered).not.toContain('domain');
+    expect(rendered).not.toContain('outcomes');
+  });
+
+  // Fix round 2 (post-review): frontmatterFor deliberately treats a
+  // declared-but-falsy value as still declared (`!== undefined`, not a
+  // truthy check) -- but frontmatterYaml used to use a truthy check one layer
+  // down, silently dropping it again at serialization. These two tests cover
+  // the two falsy shapes the schema allows: an empty string (orgScale,
+  // domain) and an empty array (outcomes), which get DIFFERENT, deliberate
+  // treatment -- see frontmatterYaml's FIX ROUND 2 comment for why.
+  test('emits orgScale and domain as empty strings when declared falsy, rather than dropping them', () => {
+    const entry = caseStudy({ id: 'c', orgScale: '', domain: '' });
+    expect(frontmatterFor(entry)).toMatchObject({ orgScale: '', domain: '' });
+    const rendered = toMarkdown(entry);
+    expect(rendered).toContain('orgScale: ""');
+    expect(rendered).toContain('domain: ""');
+  });
+
+  test('omits outcomes when declared as an empty array -- a documented exception, not a silent drop', () => {
+    // frontmatterFor still treats `outcomes: []` as declared, matching
+    // orgScale/domain above. frontmatterYaml omits it anyway: an empty block
+    // list has no shape parseFrontmatter can tell apart from "key absent" (its
+    // reader needs at least one `- ` item to recognise a list at all), so a
+    // bare `outcomes:` stub would buy no round-trip fidelity over omitting it
+    // -- this is the one place the two layers disagree on purpose.
+    const entry = caseStudy({ id: 'c', outcomes: [] });
+    expect(frontmatterFor(entry)).toHaveProperty('outcomes', []);
+    expect(toMarkdown(entry)).not.toContain('outcomes');
   });
 });
 

@@ -54,6 +54,12 @@ export interface ExportedFrontmatter {
   pillar?: string;
   /** Posts only, and only when the entry declares one. */
   series?: { name: string; order: number };
+  /** Case studies only (03 §2), and only when the entry declares it. */
+  orgScale?: string;
+  /** Case studies only, and only when the entry declares it. */
+  domain?: string;
+  /** Case studies only, and only when the entry declares it. */
+  outcomes?: string[];
   canonical: string;
 }
 
@@ -79,6 +85,15 @@ export function canonicalUrlFor(entry: ExportableEntry): string {
  * carries. Deliberately not the full collection schema -- `draft` is the
  * consuming route's concern (see the module doc above), not a fact a portable
  * document needs to assert about itself.
+ *
+ * `orgScale`, `domain` and `outcomes` (case studies only, Task 7, 03 §2) are
+ * the one addition to that smallness since this comment was written, and they
+ * earn their place by the same test the rest of the set already passes: a
+ * machine consumer (`list_case_studies`) asked for them BY NAME. They stay
+ * optional and are emitted only when the entry declares them -- see
+ * `content.config.ts`'s schema comment for why a required field would have
+ * been the wrong call, and `summarize` in `src/lib/mcp/documents.ts` for the
+ * matching rule on the read side (an omitted field is absent, never `null`).
  */
 export function frontmatterFor(entry: ExportableEntry): ExportedFrontmatter {
   const frontmatter: ExportedFrontmatter = {
@@ -102,6 +117,16 @@ export function frontmatterFor(entry: ExportableEntry): ExportedFrontmatter {
     if (entry.data.series) {
       frontmatter.series = entry.data.series;
     }
+  } else {
+    // caseStudies: the mirror image of the branch above. Posts have no
+    // `orgScale`/`domain`/`outcomes` (02 §2 asks nothing of posts either), and
+    // each of these three is copied ONLY when the entry declares it -- an
+    // `undefined` here must not become a key on `frontmatter`, the same
+    // reason `summarize`'s `OPTIONAL_KEYS` loop checks presence explicitly
+    // rather than assigning unconditionally.
+    if (entry.data.orgScale !== undefined) frontmatter.orgScale = entry.data.orgScale;
+    if (entry.data.domain !== undefined) frontmatter.domain = entry.data.domain;
+    if (entry.data.outcomes !== undefined) frontmatter.outcomes = entry.data.outcomes;
   }
 
   return frontmatter;
@@ -136,9 +161,47 @@ function yamlString(value: string): string {
  * Serializes `ExportedFrontmatter` to the YAML body of the frontmatter block
  * (no `---` fences -- `toMarkdown` adds those). Key order is fixed and matches
  * the brief exactly: `title, description, publishedAt, updatedAt?, pillar?,
- * series?, canonical`. Fixed order is what "small, stable" means here -- a
- * document a model re-reads on every request should not reshuffle its own
- * frontmatter from one build to the next.
+ * series?, orgScale?, domain?, outcomes?, canonical`. Fixed order is what
+ * "small, stable" means here -- a document a model re-reads on every request
+ * should not reshuffle its own frontmatter from one build to the next.
+ *
+ * `outcomes` is the one array in this shape, and it is written as a YAML
+ * block list (`- "item"` per line, two-space indented) -- not a flow-style
+ * `[...]`. That specific shape is deliberate, not cosmetic:
+ * `src/lib/mcp/documents.ts`'s hand-rolled `parseFrontmatter` reads exactly
+ * this block-list grammar back into a real array (Task 7 fix round 1), the
+ * one nested shape besides `series`'s bare-map form it understands. A case
+ * study that declares `outcomes` is therefore visible in this export, in the
+ * rendered page, AND in `list_case_studies`'/`get_case_study`'s tool output --
+ * the three are the same document read three ways, not three chances to
+ * drift.
+ *
+ * FIX ROUND 2 (post-review): `orgScale`/`domain`/`outcomes` are checked here
+ * with `!== undefined`, matching `frontmatterFor`'s check -- NOT a truthy
+ * check. This module previously used `if (frontmatter.orgScale)` etc., which
+ * silently dropped a declared-but-falsy value (`orgScale: ""`) at this layer
+ * even though `frontmatterFor` had correctly kept it as declared one level
+ * up -- the two layers disagreed, and the disagreement was invisible: the
+ * exported document simply had no trace of a field its own source data did
+ * declare, reading back through `parseFrontmatter` as fully absent. That is
+ * exactly the "an omitted field is absent, never null" contract turned
+ * against itself -- absence is supposed to mean "never declared," not "the
+ * serializer dropped it."
+ *
+ * `outcomes` gets ONE deliberate, commented exception: a declared EMPTY array
+ * (`outcomes: []`) is still omitted here, on purpose, not by accident. Unlike
+ * a falsy scalar, an empty block list has no representation `parseFrontmatter`
+ * can read back as "declared" -- its reader requires at least one `  - ` line
+ * to recognise the key as a list at all; zero such lines falls through to the
+ * nested-map skip, identically to the key never appearing. So a bare
+ * `outcomes:` line with nothing under it would buy no round-trip fidelity
+ * over omitting it entirely -- both read back as absent -- while leaving a
+ * stub key with no children sitting in a real exported document, which reads
+ * as a broken export to a human or an agent, not a deliberate declaration.
+ * Omitting is the honest rendering of "nothing further to say" here; it is
+ * `frontmatterFor` and `frontmatterYaml` disagreeing on purpose about the
+ * empty-array case specifically, not the silent, unconsidered gap this fix
+ * closes for the falsy-scalar case.
  */
 function frontmatterYaml(frontmatter: ExportedFrontmatter): string {
   const lines = [
@@ -159,6 +222,21 @@ function frontmatterYaml(frontmatter: ExportedFrontmatter): string {
     lines.push('series:');
     lines.push(`  name: ${yamlString(frontmatter.series.name)}`);
     lines.push(`  order: ${frontmatter.series.order}`);
+  }
+  if (frontmatter.orgScale !== undefined) {
+    lines.push(`orgScale: ${yamlString(frontmatter.orgScale)}`);
+  }
+  if (frontmatter.domain !== undefined) {
+    lines.push(`domain: ${yamlString(frontmatter.domain)}`);
+  }
+  // Declared-but-empty is omitted here specifically -- see the FIX ROUND 2
+  // note above for why that is a deliberate, documented choice rather than
+  // the silent falsy-check gap this fix closes for the two scalars above.
+  if (frontmatter.outcomes !== undefined && frontmatter.outcomes.length > 0) {
+    lines.push('outcomes:');
+    for (const outcome of frontmatter.outcomes) {
+      lines.push(`  - ${yamlString(outcome)}`);
+    }
   }
   lines.push(`canonical: ${yamlString(frontmatter.canonical)}`);
 

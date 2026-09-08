@@ -2,7 +2,7 @@
   "packages": {
     ".": {
       "release-type": "node",
-      "extra-files": [{ "type": "generic", "path": "workers/mcp/src/index.ts" }],
+      "extra-files": [{ "type": "generic", "path": "workers/mcp/src/server.ts" }],
       "changelog-sections": [
         { "type": "feat", "section": "Features" },
         { "type": "fix", "section": "Bug Fixes" },

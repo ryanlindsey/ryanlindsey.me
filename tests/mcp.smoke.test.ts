@@ -1,15 +1,28 @@
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
+import { buildMcpDiscovery } from '../src/lib/mcp/discovery';
 import { MCP_WORKER, MOCK_AI_WORKER } from './workers';
 
 // The exact instructions the server is expected to advertise. Asserting the
 // whole string — rather than scanning it for a list of disallowed words — is
 // what keeps the server's self-description under review: any edit to it fails
 // this test and has to be made deliberately.
-const EXPECTED_INSTRUCTIONS =
-  "Ryan Lindsey's professional corpus, exposed as MCP tools. " +
-  'Public tools cover portfolio exploration. A private tier exists for scoped tokens; ' +
-  'ask Ryan for access if you need it.';
+const EXPECTED_INSTRUCTIONS = [
+  "Ryan Lindsey's professional corpus, exposed as MCP tools across audience tiers.",
+  '',
+  'get_contact: how to reach Ryan, and his working timezone.',
+  'get_resume: JSON Resume, published markdown, or a short prose summary.',
+  'list_case_studies: published case studies with descriptions and citation URLs.',
+  'get_case_study: full markdown of one case study, by slug.',
+  'list_writing: published posts with descriptions and citation URLs.',
+  'get_post: full markdown of one post, by slug.',
+  'search_writing: semantic search over the corpus; each result is a passage with a real, fetchable citation URL.',
+  'request_private_access: explains the private tier and how to request a scoped token.',
+  '',
+  'Two MCP resources serve the same documents for clients that prefer resource attachment over tool calls: resume://json and writing://{slug}.',
+  '',
+  'A private tier exists beyond these public tools, for scoped tokens; call request_private_access to learn how to request one.',
+].join('\n');
 
 // The MCP Worker plus the Workers AI stand-in its `ai` binding is overridden to.
 // mock-ai is not optional here even though nothing in this file touches AI: the
@@ -78,4 +91,89 @@ test('advertises exactly the reviewed server instructions', async () => {
 
   // Top level of the result, per the spec — not nested inside serverInfo.
   expect(json.result.instructions).toBe(EXPECTED_INSTRUCTIONS);
+});
+
+test('the instructions name every registered tool', async () => {
+  const { json: listed } = await rpc({ jsonrpc: '2.0', id: 300, method: 'tools/list', params: {} });
+  const { json: init } = await initialize(301);
+  for (const tool of listed.result.tools) {
+    expect(init.result.instructions).toContain(tool.name);
+  }
+});
+
+test('accepts a browser client on a third-party origin', async () => {
+  const response = await server.fetch('/mcp', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+      origin: 'https://claude.ai',
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-06-18',
+        capabilities: {},
+        clientInfo: { name: 'b', version: '0' },
+      },
+    }),
+  });
+
+  expect(response.status).toBe(200);
+  expect(response.headers.get('access-control-allow-origin')).toBe('*');
+});
+
+test('answers the CORS preflight a browser client sends first', async () => {
+  const response = await server.fetch('/mcp', {
+    method: 'OPTIONS',
+    headers: { origin: 'https://claude.ai', 'access-control-request-method': 'POST' },
+  });
+
+  expect(response.status).toBe(200);
+  expect(response.headers.get('access-control-allow-origin')).toBe('*');
+  // Without this, a browser client cannot send the session header the
+  // Streamable HTTP transport uses, and the preflight silently wins.
+  expect(response.headers.get('access-control-allow-headers')).toContain('mcp-session-id');
+});
+
+// Day 4 Task 14 (roadmap "/.well-known + discovery"; 03 §5): the day-3 owner
+// decision deferred this origin's own robots.txt to here -- robots.txt is
+// per-origin (RFC 9309 §2.3), so the site's own file (which explicitly says
+// so) has no effect on mcp.ryanlindsey.me. HANDLER_OPTIONS answers exactly
+// `route: '/mcp'` and 404s everything else, so these two surfaces and the
+// unrouted-404 case all have to be proven here, not assumed from the site
+// suite's own coverage.
+test('the MCP origin serves its own robots.txt, permissive and unrestricted', async () => {
+  const response = await server.fetch('/robots.txt');
+  expect(response.status).toBe(200);
+  const body = await response.text();
+  expect(body).toMatch(/User-agent:/);
+  // The posture that actually matters for a published document, checked
+  // directly rather than left to a `/User-agent:/` match that would pass
+  // just as happily against a file that disallows everything: no
+  // `Disallow` DIRECTIVE anywhere (line-anchored and case-insensitive, so a
+  // mention of the word inside a `#` comment -- this file's own doc comment
+  // has one -- can never trip this), and at least one `Allow: /` present. A
+  // future edit that quietly added a real restriction here would cut agent
+  // access to this origin; this is what makes that edit fail the suite
+  // instead of only a human re-reading the file.
+  expect(body).not.toMatch(/^Disallow:/im);
+  expect(body).toMatch(/^Allow: \/$/m);
+});
+
+test('the MCP origin serves its own discovery document', async () => {
+  const response = await server.fetch('/.well-known/mcp.json');
+  expect(response.status).toBe(200);
+  // Cast to the shape `buildMcpDiscovery` actually returns -- same
+  // as-cast convention `response.json()` (typed `unknown`) already gets
+  // elsewhere in this suite (tests/resume.test.ts's `as Resume`,
+  // tests/pages.test.ts's `as JsonFeed`).
+  const doc = (await response.json()) as ReturnType<typeof buildMcpDiscovery>;
+  expect(doc.endpoint).toBe('https://mcp.ryanlindsey.me/mcp');
+});
+
+test('an unrouted path on the MCP origin is a 404, not the MCP handler', async () => {
+  expect((await server.fetch('/anything-else')).status).toBe(404);
 });
