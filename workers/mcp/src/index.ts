@@ -4,6 +4,15 @@ import { buildMcpDiscovery, buildMcpRobotsTxt } from '../../../src/lib/mcp/disco
 import { type McpEnv } from './env';
 import { createServer } from './server';
 
+// The rate limiter's Durable Object (03 §3), re-exported from this module
+// because a DO class has to be exported from the Worker's ENTRYPOINT to be
+// instantiable -- `class_name` in wrangler.jsonc is looked up on the module
+// `main` names, not on the file that happens to define it. Defining it in
+// ./rate-limiter.ts and forgetting this line is a deploy that fails on "Class
+// RateLimiter not found", which is at least loud; the quiet failure it
+// replaces is #29's, so see that file for why the limiter is an object at all.
+export { RateLimiter } from './rate-limiter';
+
 /**
  * The corpus job's view of this Worker, assembled explicitly rather than spread
  * from `env` -- it is a deliberate subset, and `refreshCorpus` should not be

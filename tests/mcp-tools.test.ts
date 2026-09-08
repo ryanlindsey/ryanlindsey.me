@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
+import { LIMITS } from '../src/lib/mcp/limits';
 import { MCP_WORKER, SITE_HARNESS_WORKERS } from './workers';
 import { BANNED_PATTERNS } from './candidacy-patterns';
 
@@ -180,30 +181,47 @@ async function waitForAuditRows(db: D1Database, atLeast: number) {
 }
 
 /**
- * How big a burst has to be to guarantee at least one refusal from
- * Miniflare's rate limiter, which simulates a FIXED, wall-clock-aligned
- * window rather than a sliding one:
+ * How big a burst has to be to guarantee at least one refusal.
  *
- *   epoch = Math.floor(Date.now() / (period * 1e3))
- *   … count >= limit ? {success:false} : putBucket({…, count: count + 1})
+ * The SIZE is unchanged from when this helper was written; the REASON is not,
+ * and the old reason is recorded here rather than deleted because it was a
+ * correct description of a mechanism this repo no longer uses. Until #29 the
+ * limiter was Cloudflare's `ratelimits` binding, simulated locally by a FIXED,
+ * wall-clock-aligned window (`epoch = Math.floor(Date.now() / (period * 1e3))`).
+ * A burst of exactly `limit` calls could straddle a minute boundary and be
+ * allowed twice over -- zero refusals, on roughly 1-4% of runs -- so the burst
+ * was sized to exceed what two adjacent windows could jointly allow.
  *
- * A burst of exactly `limit` calls can straddle a window boundary -- some in
- * the closing window, some in the fresh one the roll wipes the counter for --
- * with EVERY call allowed and zero refusals. That is not a corner case: it
- * happens whenever a minute boundary falls anywhere inside the burst, which
- * measured out to roughly 1-4% of runs and is exactly the intermittent this
- * suite used to see.
+ * The limiter is a token bucket in a Durable Object now
+ * (workers/mcp/src/rate-limiter.ts), and a bucket has no boundary to straddle:
+ * from full, exactly `limit` calls succeed. What it does instead is REFILL
+ * while the burst is in flight, at `limit / periodSeconds` per second -- so a
+ * burst of exactly `limit + 1` could still see zero refusals if the harness
+ * took long enough to hand back one token. `2 * limit + 1` clears that by a
+ * mile: at 60/60s it would take a full minute of refill to absorb, and these
+ * bursts run in seconds.
  *
- * `2 * limit + 1` calls closes that gap regardless of where a single boundary
- * falls: window A can absorb at most `limit` of them and window B at most
- * `limit` of the rest, and `2 * limit + 1` exceeds the total the two windows
- * can jointly allow -- so at least one call is refused no matter which side
- * of the boundary the burst splits on. Sized arithmetically rather than
- * worked around with fake timers or a sleep to the next boundary: this stays
- * deterministic and needs no clock control at all.
+ * `allowedCeiling` below is the assertion this margin costs, and it is the one
+ * that matters: a generous burst proves a refusal happened, but only a bound
+ * on the SUCCESSES proves the limiter limited.
  */
 function burstSize(limit: number): number {
   return 2 * limit + 1;
+}
+
+/**
+ * The most successes a burst of any size may honestly produce.
+ *
+ * `limit` from a full bucket, plus whatever refilled while the burst ran, plus
+ * one for the partial token at either end. THIS is the assertion #29 was
+ * missing. The old limiter tests asserted only that refusals were greater than
+ * zero, which a limiter that refuses one call in a hundred also satisfies --
+ * and production was refusing none at all while these tests stayed green. A
+ * ceiling on the allowed count fails against a limiter that has stopped
+ * counting, which is the failure that actually shipped.
+ */
+function allowedCeiling(limit: number, periodSeconds: number, elapsedMs: number): number {
+  return limit + Math.ceil((elapsedMs / 1000) * (limit / periodSeconds)) + 1;
 }
 
 // The payload `get_contact` answered with BEFORE it moved onto `defineTool`,
@@ -671,14 +689,17 @@ describe('search_writing', () => {
   });
 
   /**
-   * The routing `cost: 'inference'` buys, and it discriminates: RATE_LIMITER
-   * is 60/minute and RATE_LIMITER_SEARCH is 10/minute
-   * (workers/mcp/wrangler.jsonc), so `burstSize(10)` (21) calls cross the
-   * search bucket and would not come close to the cheap one. A
-   * `search_writing` registered as `cheap` fails this test rather than
-   * passing it quietly. 21, not a smaller number that would merely exceed 10:
-   * see `burstSize`'s own comment for why a plain burst of the limit can
-   * produce zero refusals under Miniflare's fixed-window simulation.
+   * The routing `cost: 'inference'` buys, and it discriminates: `LIMITS` in
+   * src/lib/mcp/limits.ts puts `cheap` at 60/minute and `inference` at
+   * 10/minute, so `burstSize(10)` (21) calls cross the search bucket and would
+   * not come close to the cheap one. A `search_writing` registered as `cheap`
+   * fails this test rather than passing it quietly. The limits are read from
+   * `LIMITS` rather than repeated here, which they could not be while they
+   * lived in wrangler.jsonc -- the old version of this comment had to quote
+   * two numbers out of a config file and trust they had not moved.
+   *
+   * 21, not a smaller number that would merely exceed 10: see `burstSize`'s
+   * own comment for the refill that a burst of exactly the limit can outrun.
    *
    * It runs without the index because `defineTool` checks the limit BEFORE
    * calling the handler, so the refusals are real refusals; the calls that
@@ -690,8 +711,10 @@ describe('search_writing', () => {
     const db = await auditDb();
     await db.prepare('DELETE FROM mcp_tool_calls').run();
 
-    const burst = burstSize(10);
+    const burst = burstSize(LIMITS.inference.limit);
+    const started = Date.now();
     for (let i = 0; i < burst; i++) await callTool('search_writing', { query: `q${i}` });
+    const elapsedMs = Date.now() - started;
 
     // Every one of the burst is audited -- refusals included, or the table
     // would under-report exactly the traffic worth looking at.
@@ -702,6 +725,13 @@ describe('search_writing', () => {
       )
       .first<{ n: number }>();
     expect(row!.n).toBeGreaterThan(0);
+
+    // And the other half of the same fact: the calls that got THROUGH are
+    // bounded by the bucket. See `allowedCeiling` for why "some were refused"
+    // on its own is the assertion that let #29 ship.
+    expect(burst - row!.n).toBeLessThanOrEqual(
+      allowedCeiling(LIMITS.inference.limit, LIMITS.inference.periodSeconds, elapsedMs),
+    );
 
     // The whole point of two buckets: exhausting search leaves reading intact.
     const { json } = await callTool('get_contact');
@@ -1059,11 +1089,11 @@ describe('resources', () => {
     await db.prepare('DELETE FROM mcp_tool_calls').run();
     const client = { 'cf-connecting-ip': '203.0.113.11' };
 
-    // `burstSize(60)` (121), not a plain 70: see that helper's own comment
-    // for why a burst has to exceed the limit by more than a handful to
-    // guarantee a refusal under Miniflare's fixed-window rate limiter.
+    // `burstSize(LIMITS.cheap.limit)` (121), not a plain 70: see that helper's
+    // own comment for why a burst has to exceed the limit by more than a
+    // handful to guarantee a refusal against a bucket that refills as it runs.
     const attempts = [];
-    for (let i = 0; i < burstSize(60); i++)
+    for (let i = 0; i < burstSize(LIMITS.cheap.limit); i++)
       attempts.push(await readResource(`writing://p${i}`, client));
 
     const refused = attempts.filter((a) => /rate limit/i.test(a.json.error?.message ?? ''));
@@ -1208,14 +1238,26 @@ test('refuses past the limit and records the refusal', async () => {
   const db = await auditDb();
   await db.prepare('DELETE FROM mcp_tool_calls').run();
 
-  // `burstSize(60)` (121), not a plain 70 -- see that helper's own comment
-  // for why a burst has to exceed the limit by more than a handful to
-  // guarantee a refusal under Miniflare's fixed-window rate limiter.
+  // `burstSize(LIMITS.cheap.limit)` (121), not a plain 70 -- see that helper's
+  // own comment for why a burst has to exceed the limit by more than a handful
+  // to guarantee a refusal against a bucket that refills as it runs.
   const attempts = [];
-  for (let i = 0; i < burstSize(60); i++) attempts.push(await callTool('get_contact'));
+  const started = Date.now();
+  for (let i = 0; i < burstSize(LIMITS.cheap.limit); i++)
+    attempts.push(await callTool('get_contact'));
+  const elapsedMs = Date.now() - started;
 
   const refused = attempts.filter((a) => a.json.result?.isError === true);
   expect(refused.length).toBeGreaterThan(0);
+
+  // The assertion #29 was missing, and the reason this test is worth more than
+  // it was: not merely that SOMETHING was refused, but that no more than a
+  // bucketful got through. A limiter that has stopped counting -- which is
+  // exactly what production was doing while this file stayed green -- passes
+  // the line above and fails this one. See `allowedCeiling`.
+  expect(attempts.length - refused.length).toBeLessThanOrEqual(
+    allowedCeiling(LIMITS.cheap.limit, LIMITS.cheap.periodSeconds, elapsedMs),
+  );
 
   // A refusal is a tool result, not a transport error: the client should see
   // a readable message rather than a broken connection.
