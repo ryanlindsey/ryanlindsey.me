@@ -9,3 +9,4 @@ dist
 worker-configuration.d.ts.bak
 .DS_Store
 *.log
+.superpowers
