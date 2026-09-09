@@ -28,20 +28,29 @@ const fixture = (over: Partial<CampaignConfig> = {}): CampaignConfig => ({
 
 /** A KV stand-in: `list` + `get`, which is all this module uses. */
 function kv(entries: Record<string, unknown>): { KV_CONFIG: KVNamespace } {
+  // Store entries as JSON strings to match real KV behaviour: get(…, 'json')
+  // parses the stored string and throws on invalid JSON.
+  const stored = Object.entries(entries).reduce(
+    (acc, [key, value]) => {
+      acc[key] = typeof value === 'string' ? value : JSON.stringify(value);
+      return acc;
+    },
+    {} as Record<string, string>,
+  );
+
   return {
     KV_CONFIG: {
       list: async ({ prefix }: { prefix: string }) => ({
-        keys: Object.keys(entries)
+        keys: Object.keys(stored)
           .filter((name) => name.startsWith(prefix))
           .map((name) => ({ name })),
         list_complete: true,
       }),
-      get: async (name: string, type?: string) =>
-        entries[name] === undefined
-          ? null
-          : type === 'json'
-            ? entries[name]
-            : JSON.stringify(entries[name]),
+      get: async (name: string, type?: string) => {
+        if (stored[name] === undefined) return null;
+        if (type === 'json') return JSON.parse(stored[name]);
+        return stored[name];
+      },
     } as unknown as KVNamespace,
   };
 }
@@ -127,6 +136,21 @@ test('readCampaignForAudience matches on token_audience, not on id', async () =>
   });
   expect((await readCampaignForAudience(env, 'audience-label'))!.id).toBe('one');
   expect(await readCampaignForAudience(env, 'one')).toBeNull();
+});
+
+test('listCampaigns drops malformed JSON, does not throw', async () => {
+  // Campaign entries are hand-typed by an operator in the private repo. A
+  // single JSON typo (e.g. trailing comma) throws when KV parses it. The
+  // module must catch that error and skip the bad entry, letting valid ones
+  // through. Without the try/catch in listCampaigns, one operator typo hides
+  // every campaign.
+  const validOne = toStored(fixture({ id: 'valid', tokenAudience: 'valid' }));
+  const env = kv({
+    [`${CAMPAIGN_PREFIX}valid`]: validOne,
+    [`${CAMPAIGN_PREFIX}malformed`]: '{"id": "bad",', // Incomplete JSON
+  });
+  const found = await listCampaigns(env);
+  expect(found.map((c) => c.id)).toEqual(['valid']);
 });
 
 /** The reverse of `parseCampaign`, for fixtures only. */

@@ -86,12 +86,25 @@ export function parseCampaign(raw: unknown): CampaignConfig | null {
  * Every parseable campaign. Unparseable entries are DROPPED rather than
  * failing the listing: one malformed entry must not make every other campaign
  * disappear, and the dropped one is logged where an operator will see it.
+ *
+ * Reads only the first page of KV list results (caps at 1,000 keys per call).
+ * No practical risk at campaign volumes, but worth noting for future scales.
  */
 export async function listCampaigns(env: CampaignEnv): Promise<CampaignConfig[]> {
   const { keys } = await env.KV_CONFIG.list({ prefix: CAMPAIGN_PREFIX });
   const found: CampaignConfig[] = [];
   for (const key of keys) {
-    const parsed = parseCampaign(await env.KV_CONFIG.get(key.name, 'json'));
+    let parsed: CampaignConfig | null = null;
+    try {
+      // get(…, 'json') throws SyntaxError on invalid JSON. Campaign entries
+      // are hand-typed by an operator running `wrangler kv key put`, so a
+      // single JSON typo takes down the entire listing. Treat it like a failed
+      // parse: warn and skip this entry, letting other campaigns through.
+      parsed = parseCampaign(await env.KV_CONFIG.get(key.name, 'json'));
+    } catch (error) {
+      console.warn(`campaigns: ${key.name} did not parse; ignoring it`);
+      continue;
+    }
     if (parsed === null) console.warn(`campaigns: ${key.name} did not parse; ignoring it`);
     else found.push(parsed);
   }
