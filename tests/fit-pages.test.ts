@@ -389,3 +389,147 @@ test('POST /fit/run with a grant reaches the engine and reports its refusal', as
   expect(location.searchParams.get('t')).toBe(token);
   expect([...location.searchParams.keys()].sort()).toEqual(['error', 't']);
 });
+
+// `/fit/r/<id>` (04 §2): the report permalink. THE ID IS THE CAPABILITY --
+// unlike every other `/fit` route above, these tests send no token at all,
+// because requiring one here would make the permalink the same gated thing
+// it exists to replace.
+
+/** A stored report, inserted directly -- the render path is what is under test. */
+async function storeReport(id: string) {
+  await db
+    .prepare(
+      `INSERT INTO fit_reports (id, created_at, audience, model, target_description,
+         report_json, citations_checked, citations_dropped)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      id,
+      '2026-09-08T00:00:00.000Z',
+      'web',
+      'anthropic/claude-opus-5',
+      'A generic description of a role.',
+      JSON.stringify({
+        overall_read: 'A generic read of the comparison.',
+        requirement_map: [
+          {
+            requirement: 'Runs platform teams',
+            strength: 'strong',
+            evidence: [
+              { claim: 'Led a platform group', citation_url: 'https://ryanlindsey.me/resume' },
+            ],
+          },
+        ],
+        gaps: [{ requirement: 'Field service', why: 'Not evidenced in the corpus.' }],
+        questions_to_ask: ['How is the on-call rotation staffed?'],
+      }),
+      1,
+      0,
+    )
+    .run();
+}
+
+test('a stored report renders at its permalink with no token', async () => {
+  // The id IS the capability (04 §2): the permalink is meant to be circulated
+  // by whoever received it, so it must not require the token they were given.
+  await storeReport('fixture-report-id');
+  const response = await server.fetch('/fit/r/fixture-report-id');
+  expect(response.status).toBe(200);
+  const html = await response.text();
+  expect(html).toContain('A generic read of the comparison.');
+  expect(html).toContain('Runs platform teams');
+  expect(html).toContain('Field service');
+  expect(html).toContain('https://ryanlindsey.me/resume');
+});
+
+test('an unknown id is a 404', async () => {
+  expect((await server.fetch('/fit/r/never-stored')).status).toBe(404);
+});
+
+test('an unknown permalink id is indistinguishable from a path that does not exist', async () => {
+  // The status-only assertion above is not the whole guarantee (mirrors the
+  // reasoning in "an un-granted /fit is indistinguishable..." above): this
+  // route sits under src/worker.ts's `/fit` prefix match, so its 404 is
+  // supposed to be REPLACED by the site's own 404 page rather than answered
+  // by this route at all. That is only true because the page returns a BARE
+  // `new Response(null, { status: 404 })` -- no body, no headers -- leaving
+  // nothing for the worker to flatten around. Compared here against the same
+  // control the `/fit` test uses, so a regression in either surface shows up
+  // as a mismatch rather than a passing status check.
+  const control = await server.fetch('/definitely-not-a-route', { redirect: 'manual' });
+  const observed = await server.fetch('/fit/r/never-stored', { redirect: 'manual' });
+  expect(observed.status).toBe(control.status);
+  expect(await observed.text()).toBe(await control.text());
+  expect(Object.fromEntries([...observed.headers.entries()].sort())).toEqual(
+    Object.fromEntries([...control.headers.entries()].sort()),
+  );
+});
+
+test('the permalink carries noindex and no-referrer too', async () => {
+  await storeReport('fixture-headers-id');
+  const response = await server.fetch('/fit/r/fixture-headers-id');
+  expect(response.headers.get('x-robots-tag')).toMatch(/noindex/);
+  expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+});
+
+test('the report page states its provenance, dropped citations included', async () => {
+  // 03 §4's honesty contract is only verifiable by a reader if the reader can
+  // see the numbers. A report that silently dropped a fabricated citation
+  // must say it did.
+  await storeReport('fixture-provenance-id');
+  const html = await (await server.fetch('/fit/r/fixture-provenance-id')).text();
+  expect(html).toContain('anthropic/claude-opus-5');
+  expect(html).toMatch(/1 citation/i);
+});
+
+test('a stored report that no longer matches the schema renders a notice, not a crash', async () => {
+  await db
+    .prepare(
+      `INSERT INTO fit_reports (id, created_at, audience, model, target_description,
+         report_json, citations_checked, citations_dropped)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind('fixture-stale-id', '2026-09-08T00:00:00.000Z', 'web', 'm', 'd', '{"nope":true}', 0, 0)
+    .run();
+  const response = await server.fetch('/fit/r/fixture-stale-id');
+  expect(response.status).toBe(200);
+  expect(await response.text()).toMatch(/cannot be displayed/i);
+});
+
+test('a stored report whose JSON will not even parse renders the same notice', async () => {
+  // Adjacent to the stale-schema case above but a different failure mode:
+  // `JSON.parse` itself throwing rather than merely producing something
+  // `FitReport.safeParse` rejects. The rule that binds this task (task-14
+  // brief, adjustment 2) is that a reader-actionable failure must render as
+  // 200, never throw into the worker's 500-to-404 flattening -- and an
+  // uncaught SyntaxError here would do exactly that, silently.
+  await db
+    .prepare(
+      `INSERT INTO fit_reports (id, created_at, audience, model, target_description,
+         report_json, citations_checked, citations_dropped)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      'fixture-unparseable-id',
+      '2026-09-08T00:00:00.000Z',
+      'web',
+      'm',
+      'd',
+      'not json at all',
+      0,
+      0,
+    )
+    .run();
+  const response = await server.fetch('/fit/r/fixture-unparseable-id');
+  expect(response.status).toBe(200);
+  expect(await response.text()).toMatch(/cannot be displayed/i);
+});
+
+test('the permalink page copy carries no search language', async () => {
+  // 09 §2's discipline applies to every user-facing surface, not only the
+  // gated form -- this page is reachable with no token at all, so it is
+  // read by more strangers than /fit itself.
+  await storeReport('fixture-candidacy-id');
+  const html = await (await server.fetch('/fit/r/fixture-candidacy-id')).text();
+  for (const pattern of BANNED_PATTERNS) expect(html).not.toMatch(pattern);
+});
