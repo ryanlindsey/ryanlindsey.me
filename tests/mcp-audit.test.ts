@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
-import { hashArgs } from '../src/lib/mcp/audit';
+import { hashArgs, recordToolCall } from '../src/lib/mcp/audit';
 
 test('hashes equal argument objects identically regardless of key order', async () => {
   expect(await hashArgs({ a: 1, b: 2 })).toBe(await hashArgs({ b: 2, a: 1 }));
@@ -125,4 +125,37 @@ test('server.registerTool and server.registerResource are called only from defin
   // of either call in define.ts would do exactly that).
   expect(matchesInDefineTs).toBeGreaterThan(0);
   expect(offenders).toEqual([]);
+});
+
+test('an audit row records the private tier, its audience and the granting token', async () => {
+  const rows: unknown[][] = [];
+  const db = {
+    prepare: (sql: string) => ({
+      bind: (...args: unknown[]) => {
+        rows.push([sql, ...args]);
+        return { run: async () => ({}) };
+      },
+    }),
+  } as unknown as D1Database;
+
+  await recordToolCall(db, {
+    calledAt: '2026-09-08T00:00:00.000Z',
+    tool: 'get_availability',
+    argsHash: 'a'.repeat(64),
+    tier: 'private',
+    audience: 'fixture-audience',
+    grantJti: 'jti-fixture',
+    clientName: null,
+    clientVersion: null,
+    userAgent: null,
+    protocolVersion: null,
+    outcome: 'ok',
+    durationMs: 3,
+  });
+
+  const [sql, ...bound] = rows[0] as [string, ...unknown[]];
+  expect(sql, 'the insert must name the new column').toContain('grant_jti');
+  expect(bound, 'tier, audience and grant_jti must all be bound').toEqual(
+    expect.arrayContaining(['private', 'fixture-audience', 'jti-fixture']),
+  );
 });

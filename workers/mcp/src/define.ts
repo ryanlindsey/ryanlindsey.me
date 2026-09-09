@@ -196,11 +196,12 @@ async function guarded<C, R>(
         calledAt: new Date().toISOString(),
         tool: contract.auditName,
         argsHash,
-        // Day 5 resolves these two from the request's token. Hard-coded here
-        // so the public tier cannot accidentally write an audience -- and
-        // here ONLY, so day 5 cannot change one surface and miss the other.
+        // Day 5 resolves these three from the request's token. Hard-coded here
+        // so the public tier cannot accidentally write an audience or token --
+        // and here ONLY, so day 5 cannot change one surface and miss the other.
         tier: 'public',
         audience: null,
+        grantJti: null,
         ...identity,
         outcome,
         durationMs: Date.now() - started,
