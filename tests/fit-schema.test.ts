@@ -133,3 +133,87 @@ test('citation_url still accepts an ordinary https corpus URL', () => {
   ok.requirement_map[0]!.evidence[0]!.citation_url = 'https://ryanlindsey.me/writing/some-post';
   expect(FitReport.safeParse(ok).success).toBe(true);
 });
+
+/**
+ * A report with THREE requirements, and the reason it exists rather than a
+ * fourth variation on the one-requirement fixture above.
+ *
+ * Deferred minor L688: every `enforceCitations` assertion in this file ran
+ * against a `requirement_map` of length one, so `checked` and `dropped` --
+ * which are accumulated across the whole map -- were indistinguishable from
+ * counters reset on each entry. MEASURED before this fixture was added:
+ * moving `let checked = 0; let dropped = 0;` inside the `.map()` callback
+ * left all eleven tests in this file green.
+ *
+ * That is not a cosmetic gap. The two counters are what `/fit/r/<id>` prints
+ * in its footer as the evidence for the honesty contract, so the regression
+ * would have made a report state "2 checked, 0 dropped" while silently having
+ * dropped citations from every requirement but the last.
+ */
+const wideReport = () => ({
+  overall_read: 'A generic summary across several requirements.',
+  requirement_map: [
+    {
+      requirement: 'First requirement',
+      strength: 'strong' as const,
+      evidence: [
+        { claim: 'Kept', citation_url: 'https://ryanlindsey.me/resume' },
+        { claim: 'Dropped', citation_url: 'https://invented.example/one' },
+      ],
+    },
+    {
+      requirement: 'Second requirement',
+      strength: 'partial' as const,
+      evidence: [{ claim: 'Dropped', citation_url: 'https://invented.example/two' }],
+    },
+    {
+      requirement: 'Third requirement',
+      strength: 'strong' as const,
+      evidence: [{ claim: 'Kept', citation_url: 'https://ryanlindsey.me/writing' }],
+    },
+  ],
+  gaps: [],
+  questions_to_ask: ['A question.'],
+});
+
+test('enforceCitations counts across the whole requirement map, not per requirement', () => {
+  const allowed = new Set(['https://ryanlindsey.me/resume', 'https://ryanlindsey.me/writing']);
+  const { report: cleaned, audit } = enforceCitations(FitReport.parse(wideReport()), allowed);
+
+  // 4 pieces of evidence across 3 requirements, 2 of them unresolvable. Both
+  // totals are only reachable by accumulating across entries: a per-entry
+  // reset would leave the LAST requirement's numbers here (1 checked, 0
+  // dropped), which is the exact shape of the regression this pins.
+  expect(audit).toEqual({ checked: 4, dropped: 2 });
+
+  // The middle requirement lost its only evidence and is demoted -- asserted
+  // alongside the counts because a demotion in the MIDDLE of the map is the
+  // other thing a one-entry fixture could never show.
+  expect(cleaned.requirement_map[1].strength).toBe('none');
+  expect(cleaned.requirement_map[1].evidence).toHaveLength(0);
+  expect(cleaned.requirement_map[0].strength).toBe('strong');
+  expect(cleaned.requirement_map[2].strength).toBe('strong');
+});
+
+test('describe strings survive at every nesting level, including inside evidence', () => {
+  // Deferred minor L686: the existing survival test asserts levels 0 and 1,
+  // and `Evidence`'s own fields sit one deeper -- so a `describe` lost from
+  // `citation_url`, the field whose description carries the https rule the
+  // model is steered by, was unchecked.
+  const props = (FIT_REPORT_JSON_SCHEMA as { properties: Record<string, unknown> }).properties;
+  const evidence = (
+    (
+      (props.requirement_map as { items: { properties: Record<string, unknown> } }).items.properties
+        .evidence as { items: { properties: Record<string, { description?: string }> } }
+    ).items as { properties: Record<string, { description?: string }> }
+  ).properties;
+
+  expect(evidence.claim!.description, 'Evidence.claim lost its description').toBeTruthy();
+  expect(
+    evidence.citation_url!.description,
+    'Evidence.citation_url lost its description',
+  ).toBeTruthy();
+  // The https rule specifically -- it is the only place the model is told,
+  // since z.toJSONSchema emits no pattern for the protocol constraint.
+  expect(evidence.citation_url!.description).toMatch(/https/i);
+});

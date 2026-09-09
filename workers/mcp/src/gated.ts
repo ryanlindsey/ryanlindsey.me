@@ -495,6 +495,22 @@ const GATED_TOOLS: readonly GatedTool[] = [
 ];
 
 /**
+ * Every gated tool's name, DERIVED from `GATED_TOOLS` rather than retyped.
+ *
+ * Exported for the tests (deferred minor L963). tests/mcp-gated.test.ts kept
+ * its own hand-maintained copy of this list, which could not go stale loudly:
+ * a seventh tool added to `GATED_TOOLS` and not to that copy was invisible to
+ * BOTH tests that used it -- the one asserting no gated name appears without a
+ * grant, and the one asserting every gated name appears with a full one. A
+ * tool could therefore ship with neither of its two central properties tested,
+ * which is the opposite of what those tests exist to promise.
+ *
+ * Deriving it here rather than exporting `GATED_TOOLS` itself keeps the tool
+ * definitions -- handlers, schemas, scopes -- inside this module.
+ */
+export const GATED_TOOL_NAMES: readonly string[] = GATED_TOOLS.map((tool) => tool.name);
+
+/**
  * Every private-tier tool, registered against the scopes the grant carries.
  *
  * The scope is checked HERE for registration and by `defineTool` again at call

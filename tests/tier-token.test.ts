@@ -90,14 +90,21 @@ describe('refusals', () => {
   test('re-labelling the scheme segment cannot survive verification', async () => {
     // The scheme is inside the signed bytes -- `mintToken` signs
     // `${scheme}.${payload}`, not just `payload` -- so relabelling it breaks
-    // the signature on its own and this test would still pass with the
-    // scheme-equality check deleted. It is worth keeping anyway: the
-    // property being pinned is "relabelling the scheme cannot survive", and
-    // the equality check below is only the FIRST of the two reasons that
-    // holds. It is also the cheaper one -- `verifyToken` rejects on a string
-    // compare here, before any crypto runs -- so this test also documents
-    // that a relabelled token fails fast rather than paying for a signature
-    // check it cannot pass anyway.
+    // the signature on its own, and the scheme-equality check in
+    // `verifyToken` is the SECOND of two independent reasons this token
+    // cannot verify.
+    //
+    // This test nevertheless pins the equality check, and the correction
+    // matters because the previous version of this comment claimed the
+    // opposite ("would still pass with the scheme-equality check deleted").
+    // MEASURED, by deleting that line: the test goes RED with
+    // `reason: 'bad_signature'` against the `'malformed'` asserted below. The
+    // assertion is on the exact verdict, so it discriminates WHICH of the two
+    // reasons fired -- which is the point, since only the equality check is
+    // the cheap one that rejects on a string compare before any crypto runs.
+    // A false counterfactual in a repo whose comments are the primary
+    // documentation is the rot the rest of these comments warn about (this is
+    // deferred minor L262).
     const token = await mintToken(KEY, claims());
     const [, payload, signature] = token.split('.');
     const relabelled = `rlme2.${payload}.${signature}`;

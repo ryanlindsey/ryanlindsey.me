@@ -8,7 +8,7 @@ import { TEST_SIGNING_KEY, type Grant } from '../src/lib/tier/grant';
 import { PROFILE_KEYS } from '../src/lib/tier/private-docs';
 import { CAMPAIGN_PREFIX } from '../src/lib/tier/campaigns';
 import { defineTool, ToolError, type ToolContext } from '../workers/mcp/src/define';
-import { fitEnvelope, fitToolError } from '../workers/mcp/src/gated';
+import { fitEnvelope, fitToolError, GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
 import { FitUnavailable, type FitResult } from '../src/lib/fit/engine';
 import type { McpEnv } from '../workers/mcp/src/env';
 import { LIMITS } from '../src/lib/mcp/limits';
@@ -249,14 +249,14 @@ const callTool = async (name: string, args: object | undefined, token?: string) 
     )
   ).json;
 
-const GATED = [
-  'get_availability',
-  'get_references',
-  'get_compensation_expectations',
-  'get_case_study_details',
-  'get_application_narrative',
-  'analyze_fit',
-];
+// DERIVED, not retyped (deferred minor L963). A hand-maintained copy could
+// not go stale loudly: a seventh tool added to `GATED_TOOLS` and not here was
+// invisible to both tests below -- the one proving no gated name leaks without
+// a grant, and the one proving every gated name appears with a full one. The
+// length assertion is the tripwire for the derivation itself silently
+// emptying.
+const GATED = [...GATED_TOOL_NAMES];
+expect(GATED.length, 'the gated tool list must not be empty').toBeGreaterThan(5);
 
 /**
  * A description long enough for `analyze_fit`'s own schema to accept.
@@ -917,11 +917,18 @@ describe('analyze_fit', () => {
     // `FIT_DESCRIPTION` above exists to satisfy -- without this test, a
     // future edit dropping the minimum would leave that constant looking like
     // an arbitrary length.
-    const result = await callTool(
-      'analyze_fit',
-      { target_description: 'Too short.' },
-      await tokenFor(['fit']),
-    );
+    const token = await tokenFor(['fit']);
+
+    // THE TOOL MUST BE THERE FIRST (deferred minor L965). Without this line
+    // the test passed with `analyze_fit` not registered at all: an unknown
+    // tool answers `result.error` too, so the refusal assertion below cannot
+    // tell "the schema rejected a short description" from "there is no such
+    // tool". One of those is the property this test claims; the other is its
+    // exact negation.
+    const names = (await listTools(token)).map((tool) => tool.name);
+    expect(names, 'analyze_fit must be registered for a fit-scoped grant').toContain('analyze_fit');
+
+    const result = await callTool('analyze_fit', { target_description: 'Too short.' }, token);
     expect(result.error ?? result.result?.isError).toBeTruthy();
     expect(JSON.stringify(result)).not.toMatch(/not available/i);
   });
@@ -969,13 +976,25 @@ describe('analyze_fit', () => {
     // alone it would be satisfied by whatever an earlier test in this file
     // left behind -- a mistake this plan has already found twice.
     for (let attempt = 0; attempt < 40; attempt += 1) {
+      // `outcome='rate_limited'` stays in the WHERE because it is the POLL
+      // PREDICATE -- the audit write is asynchronous, and this loop is
+      // waiting for that specific row to land. What changed (deferred minor
+      // L965) is what gets asserted once it does: `expect(row.outcome).toBe(
+      // 'rate_limited')` restated the WHERE clause and could not fail. The
+      // columns below are the ones the query does NOT pin, so they are the
+      // ones worth reading back.
       const row = await env.DB.prepare(
-        "SELECT outcome FROM mcp_tool_calls WHERE tool='analyze_fit' AND grant_jti = ? AND outcome='rate_limited' LIMIT 1",
+        "SELECT tier, audience, outcome FROM mcp_tool_calls WHERE tool='analyze_fit' AND grant_jti = ? AND outcome='rate_limited' LIMIT 1",
       )
         .bind(jti)
-        .first<{ outcome: string }>();
+        .first<{ tier: string; audience: string; outcome: string }>();
       if (row) {
-        expect(row.outcome).toBe('rate_limited');
+        // A limiter refusal is still a PRIVATE-TIER event, attributed to the
+        // grant that spent the budget. Recording it as public, or with a null
+        // audience, would make the row useless to the `/ops` question it
+        // exists to answer -- telling a probe from a caller who ran out.
+        expect(row.tier).toBe('private');
+        expect(row.audience).toBe(AUDIENCE);
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, 50));

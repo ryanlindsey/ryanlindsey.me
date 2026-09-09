@@ -50,7 +50,18 @@ function d1(sql) {
   return JSON.parse(out)[0].results;
 }
 
-/** SQL string literal. Every value this script binds is operator-supplied. */
+/**
+ * SQL string literal.
+ *
+ * Applied UNIFORMLY to every value this script interpolates, which is what
+ * makes the distinction below not matter for correctness -- but the comment
+ * that used to sit here said "every value this script binds is
+ * operator-supplied", and that is simply false (deferred minor L304): `jti`
+ * comes from the CSPRNG and the `issued_at`/`expires_at` timestamps are
+ * `toISOString()` output. Both are script-generated. Recorded accurately
+ * because the false version read as a justification for quoting less
+ * carefully somewhere, which is the edit it would have licensed.
+ */
 function quote(value) {
   if (value === null || value === undefined) return 'NULL';
   return `'${String(value).replace(/'/g, "''")}'`;
@@ -123,7 +134,21 @@ function list() {
   }
   for (const row of rows) {
     const state = row.revoked_at ? `revoked ${row.revoked_at}` : `expires ${row.expires_at}`;
-    process.stdout.write(`${row.jti}  ${row.audience}  [${row.scopes}]  ${state}\n`);
+    // `row.scopes` arrives from `wrangler d1 execute --json` as JSON TEXT
+    // (`["fit","profile"]`), so wrapping it in another pair of brackets
+    // printed `[["fit","profile"]]` (deferred minor L301). Parsed and
+    // re-joined instead, which is also what makes the column readable at a
+    // glance. Falls back to the raw value rather than throwing: this is
+    // owner tooling, and a listing that dies on one odd row is worse than
+    // one that shows it verbatim.
+    let scopes = row.scopes;
+    try {
+      const parsed = JSON.parse(row.scopes);
+      if (Array.isArray(parsed)) scopes = parsed.join(', ');
+    } catch {
+      // keep the raw value
+    }
+    process.stdout.write(`${row.jti}  ${row.audience}  [${scopes}]  ${state}\n`);
   }
 }
 
