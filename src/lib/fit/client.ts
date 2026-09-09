@@ -94,7 +94,7 @@ export async function grantedToolNames(env: McpClientEnv, token: string): Promis
  * That is a convincing phish on precisely the page an audience was told to
  * trust, which is the leaked-link threat this tier is built around.
  */
-export type AnalyzeFailure = 'unreachable' | 'refused';
+export type AnalyzeFailure = 'unreachable' | 'refused' | 'unusable';
 
 export type AnalyzeOutcome =
   | { ok: true; payload: Record<string, unknown> }
@@ -161,12 +161,17 @@ export async function callAnalyzeFit(
     return { ok: true, payload: result.structuredContent as Record<string, unknown> };
   }
   const text = result.content?.[0]?.text;
+  // `unusable` rather than `unreachable`, and the distinction is worth a
+  // third code: the engine ANSWERED, and the answer did not parse. That is a
+  // protocol or prompt bug on our side, where `unreachable` is an outage --
+  // they want different things done about them, and the audit log is where
+  // the difference has to be visible.
   if (typeof text !== 'string')
-    return { ok: false, message: 'The fit engine returned nothing usable.' };
+    return { ok: false, code: 'unusable', message: 'The fit engine returned nothing usable.' };
   try {
     return { ok: true, payload: JSON.parse(text) as Record<string, unknown> };
   } catch {
-    return { ok: false, message: 'The fit engine returned nothing usable.' };
+    return { ok: false, code: 'unusable', message: 'The fit engine returned nothing usable.' };
   }
 }
 

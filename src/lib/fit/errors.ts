@@ -34,6 +34,10 @@ export const FIT_ERROR_COPY: Record<FitErrorCode, string> = {
   // one -- rate limited, breaker tripped, description too short -- is in the
   // Worker log; see the `console.warn` in src/pages/fit/run.ts.
   refused: 'The fit engine could not complete that run. Try again shortly.',
+  // The engine answered and the answer did not parse. The visitor's options
+  // are the same as for `refused`, so the copy is too; the codes stay
+  // distinct because the operator's are not.
+  unusable: 'The fit engine could not complete that run. Try again shortly.',
   'not-saved': 'The report was generated but could not be saved. Try again shortly.',
 };
 
