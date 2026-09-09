@@ -137,6 +137,19 @@ export const MCP_WORKER = {
     CORPUS_REFRESH: 'off',
     MCP_SEARCH_EMBEDDER: 'stub',
     SITE_ORIGIN: TEST_SITE_ORIGIN,
+    /**
+     * Day 5's signing-key seam (src/lib/tier/grant.ts's `signingKey`). Same
+     * shape and the same reasoning as `CORPUS_REFRESH` and
+     * `MCP_SEARCH_EMBEDDER` above: no deployed config declares this var, an
+     * unrecognised value throws, and `'test'` selects a committed constant
+     * that says in its own name it is not a secret.
+     *
+     * It exists because miniflare simulates `secrets_store_secrets` against a
+     * LOCAL store that credential-free CI has never populated, so
+     * `env.RLME_TOKEN_SIGNING_KEY.get()` throws here. Without this, no gated
+     * test could run without account access.
+     */
+    RLME_TOKEN_KEY_SOURCE: 'test',
   },
   bindingOverrides: { AI: 'mock-ai' },
 };

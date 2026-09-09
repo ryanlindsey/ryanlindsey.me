@@ -1,6 +1,7 @@
 import { createMcpHandler } from 'agents/mcp/server';
 import { corpusRefreshEnabled, refreshCorpus, type CorpusEnv } from '../../../src/lib/corpus';
 import { buildMcpDiscovery, buildMcpRobotsTxt } from '../../../src/lib/mcp/discovery';
+import { resolveGrant } from '../../../src/lib/tier/grant';
 import { type McpEnv } from './env';
 import { createServer } from './server';
 
@@ -80,10 +81,18 @@ function corpusEnv(env: McpEnv): CorpusEnv {
  * authority; there is none to borrow, so a cross-origin fetch obtains exactly
  * what the attacker's own server could have fetched.
  *
- * DAY 5 MUST RE-READ THIS. Scoped tokens arrive then. The property that keeps
- * this safe is that a token is supplied EXPLICITLY by the client on each
- * call. If a token is ever accepted from a cookie, or cached per-origin, this
- * setting becomes a real cross-origin read of gated data and must change.
+ * DAY 5 RE-READ THIS, as the paragraph above told it to, and it still holds --
+ * but only because of a choice made to keep it holding. Scoped tokens have
+ * arrived. `bearerFrom` (src/lib/tier/grant.ts) reads a token from the
+ * `Authorization` header and from NOWHERE else -- not a cookie, not a query
+ * parameter -- and `resolveGrant` runs per request with no cache keyed on the
+ * origin or on the token string. So the property this opening rests on is
+ * unchanged: a token is presented EXPLICITLY by a client that already had it,
+ * and there is still no ambient credential for a hostile page to borrow.
+ *
+ * The obligation transfers rather than expires. The day anything here accepts
+ * a credential the browser would attach on its own, this setting stops being
+ * safe and has to change in the same commit.
  */
 const HANDLER_OPTIONS = {
   route: '/mcp',
@@ -143,7 +152,39 @@ export default {
     }
 
     return createMcpHandler(
-      (mcpCtx) => createServer({ env, ctx, request: mcpCtx.requestInfo ?? request }),
+      // ASYNC, and the factory's contract permits it: `McpServerFactory` is
+      // `(ctx) => McpServer | Server | Promise<McpServer | Server>` -- READ
+      // from @modelcontextprotocol/server 2.0.0's own declaration, the type
+      // agents@0.22.0's `createMcpHandler` takes, and exercised end to end in
+      // tests/tier-grant.test.ts rather than trusted.
+      //
+      // The grant is resolved HERE, once per HTTP request, rather than inside
+      // a tool -- so every tool and every resource in one request sees the
+      // same tier, and one D1 read serves the whole batch. That factory doc
+      // is explicit about the unit and about the one exception, which is not
+      // ours: "one serving unit: one HTTP request under createMcpHandler, or
+      // one connection (or one discarded `server/discover` probe) under
+      // serveStdio" (createMcpHandler-CLhGwQTn.d.mts:3801-3808). The probe
+      // belongs to `serveStdio`; this Worker serves HTTP and never calls it.
+      async (mcpCtx) => {
+        const httpRequest = mcpCtx.requestInfo ?? request;
+        const { grant, refusal } = await resolveGrant(
+          env,
+          httpRequest,
+          Math.floor(Date.now() / 1000),
+        );
+        if (refusal !== null) {
+          // Logged, not answered with an error: a stale token should still get
+          // the public tier rather than a broken connection. What the caller
+          // is told is one line in `instructions` (./server.ts) -- which is
+          // Task 7's work, and until it lands this log is the only place a
+          // refusal is visible. That is enough for a revocation drill to
+          // observe the refusal and not enough to help anyone probe for valid
+          // tokens.
+          console.warn(`mcp/grant: refused a presented token (${refusal})`);
+        }
+        return createServer({ env, ctx, request: httpRequest, grant });
+      },
       HANDLER_OPTIONS,
     )(request, env, ctx);
   },

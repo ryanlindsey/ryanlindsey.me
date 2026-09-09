@@ -13,6 +13,8 @@ import {
 import type { z } from 'zod';
 import { hashArgs, recordToolCall, type AuditRow } from '../../../src/lib/mcp/audit';
 import { checkLimit, type ToolCost } from '../../../src/lib/mcp/limits';
+import { hasScope, type Grant } from '../../../src/lib/tier/grant';
+import type { Scope } from '../../../src/lib/tier/token';
 import type { McpEnv } from './env';
 
 // The registration seam, in its own module so the tool modules and the server
@@ -40,6 +42,13 @@ export interface ToolContext {
   env: McpEnv;
   ctx: ExecutionContext;
   request: Request | undefined;
+  /**
+   * The resolved grant, or `null` for a public caller. Resolved ONCE per HTTP
+   * request in ./index.ts, before the server is built -- not per tool call,
+   * because a single request's tier must not be able to change between two
+   * tools in the same batch.
+   */
+  grant: Grant | null;
 }
 
 /** A failure whose message is safe to show the caller. Anything else is not. */
@@ -154,12 +163,13 @@ interface CallContract<C, R> {
  * thin adapters over this function, not two copies of it.
  *
  * The sharpest reason it is one function rather than two similar ones is four
- * lines down: `tier` and `audience` are hard-coded to the public tier, and
- * day 5 replaces both with values resolved from the request's token. Written
- * twice, day 5 can change one and miss the other, and the miss is silent --
- * an audit trail that records `public` for a scoped call is worse than one
- * that records nothing, because it reads as evidence. There is one row
- * builder to change, and this is it.
+ * lines down, and day 5 is where it paid: `tier`, `audience` and `grantJti`
+ * WERE hard-coded to the public tier and are now resolved from the request's
+ * token. Written twice, that change could have landed on one surface and
+ * missed the other, and the miss would have been silent -- an audit trail
+ * that records `public` for a scoped call is worse than one that records
+ * nothing, because it reads as evidence. There was one row builder to change,
+ * and this is it. It stays one.
  */
 async function guarded<C, R>(
   tc: ToolContext,
@@ -196,12 +206,13 @@ async function guarded<C, R>(
         calledAt: new Date().toISOString(),
         tool: contract.auditName,
         argsHash,
-        // Day 5 resolves these three from the request's token. Hard-coded here
-        // so the public tier cannot accidentally write an audience or token --
-        // and here ONLY, so day 5 cannot change one surface and miss the other.
-        tier: 'public',
-        audience: null,
-        grantJti: null,
+        // Day 5: resolved from the request's token, in ONE place, exactly as
+        // this function's own comment promised. `tier` is derived from the
+        // grant's presence rather than passed alongside it, so a caller
+        // cannot hand this builder a grant and a mismatched tier.
+        tier: tc.grant ? 'private' : 'public',
+        audience: tc.grant?.audience ?? null,
+        grantJti: tc.grant?.jti ?? null,
         ...identity,
         outcome,
         durationMs: Date.now() - started,
@@ -236,7 +247,13 @@ async function guarded<C, R>(
     // production (#29). The seam did not move -- this line is still the only
     // place a call is limited, and it is still checked BEFORE the handler
     // runs, which is what makes a refusal cost nothing.
-    const allowed = await checkLimit(tc.env, contract.cost, tc.request, contract.auditName);
+    const allowed = await checkLimit(
+      tc.env,
+      contract.cost,
+      tc.request,
+      contract.auditName,
+      tc.grant,
+    );
     if (allowed) {
       const answer = await contract.run(call);
       audit('ok');
@@ -279,6 +296,13 @@ export function defineTool<A>(
     title: string;
     description: string;
     cost: ToolCost;
+    /**
+     * The scope a grant must carry for this tool to run at all. Absent means
+     * public -- every day-3 and day-4 tool, unchanged. Enforced inside
+     * `guarded` (see `run` below), so a refusal is audited and limited like
+     * any other call rather than answered off to the side.
+     */
+    scope?: Scope;
     inputSchema?: z.ZodObject<z.ZodRawShape>;
     outputSchema?: z.ZodObject<z.ZodRawShape>;
   },
@@ -309,6 +333,32 @@ export function defineTool<A>(
         // them, and `undefined` and `{}` deliberately hash the same.
         hashable: (args) => args,
         run: async (args) => {
+          // The SECOND of two independent mechanisms. The first is
+          // registration: ./server.ts does not register a gated tool at all
+          // unless the grant carries its scope, so a caller without one cannot
+          // see this tool in `tools/list` or name it in `tools/call`. This
+          // check is what makes that true even if a future edit registers a
+          // tool unconditionally by mistake -- "structural, not filtered"
+          // (09 §3) is worth more than one guarantee.
+          //
+          // INSIDE the guard, not before it, and that placement is the whole
+          // point. An early return in `invoke` would answer the same sentence
+          // while writing no audit row and spending no limiter budget -- and
+          // this is the one call an operator most needs to see, because
+          // reaching it means either someone is probing for gated tool names
+          // or mechanism 1 has regressed. Neither event may be silent, and
+          // src/lib/mcp/limits.ts's own opening comment ("nothing here is
+          // optional for a tool") would have become false the moment one tool
+          // could route around `checkLimit`.
+          //
+          // So a refusal costs limiter budget, deliberately: an unscoped
+          // caller hammering a gated name is exactly who should meet a bucket.
+          // A `ToolError` because that is the only class whose message
+          // `fail` copies to the caller -- the sentence is unchanged, and the
+          // row it now leaves behind reads `outcome: 'error'`.
+          if (spec.scope !== undefined && !hasScope(tc.grant, spec.scope)) {
+            throw new ToolError(`${spec.name} requires a scoped token.`);
+          }
           const output = await handler(args, tc);
           return {
             // A STRING handler result is already text and is passed through

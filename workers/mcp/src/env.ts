@@ -32,7 +32,7 @@ export interface McpEnv {
    * Object separates buckets by NAME, which `limitKeyFor` was already doing.
    */
   RATE_LIMITER: DurableObjectNamespace<RateLimiterObject>;
-  /** Day 5's, bound already. Nothing in day 4 may read it. */
+  /** Read only through `signingKey` in src/lib/tier/grant.ts. */
   RLME_TOKEN_SIGNING_KEY: SecretsStoreSecret;
   /**
    * The site Worker (`ryanlindsey-me`), over a service binding -- how every
@@ -66,13 +66,30 @@ export interface McpEnv {
    * against the live index is verified by hand.
    */
   MCP_SEARCH_EMBEDDER?: string;
+  /**
+   * Test-only seam, the third of the same shape: it selects where
+   * `signingKey` (src/lib/tier/grant.ts) gets the token signing key from.
+   * ABSENT is the deployed behaviour -- read `RLME_TOKEN_SIGNING_KEY` out of
+   * Secrets Store -- and `'test'` is the only other accepted value, selecting
+   * a committed constant whose own name says it is not a secret. Anything
+   * else throws rather than guessing.
+   *
+   * `'test'` is set on this Worker by tests/workers.ts, and it exists because
+   * miniflare simulates `secrets_store_secrets` against a LOCAL store that
+   * credential-free CI has never populated: `RLME_TOKEN_SIGNING_KEY.get()`
+   * throws `Secret "RLME_TOKEN_SIGNING_KEY" not found` under the harness
+   * (MEASURED, day 5 Task 2). tests/mcp-env.test.ts asserts that no
+   * wrangler.jsonc declares this var, which is what keeps the deployed
+   * behaviour coming from its absence.
+   */
+  RLME_TOKEN_KEY_SOURCE?: string;
 }
 
 /**
- * The same list as runtime data, for the drift test. `CORPUS_REFRESH` and
- * `MCP_SEARCH_EMBEDDER` are excluded deliberately: they are test-only vars
- * that no deployed environment and no config declares, so `wrangler types`
- * will never emit them.
+ * The same list as runtime data, for the drift test. `CORPUS_REFRESH`,
+ * `MCP_SEARCH_EMBEDDER` and `RLME_TOKEN_KEY_SOURCE` are excluded
+ * deliberately: they are test-only vars that no deployed environment and no
+ * config declares, so `wrangler types` will never emit them.
  */
 export const MCP_BINDING_NAMES = [
   'DB',

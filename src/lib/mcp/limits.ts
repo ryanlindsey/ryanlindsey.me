@@ -6,9 +6,11 @@
  * The bucket a tool draws from. `cheap` reads a published document; the site
  * origin would serve the same bytes to an anonymous GET, so the limit exists
  * to bound abuse rather than to ration the content. `inference` spends a
- * Workers AI call.
+ * Workers AI call. `expensive` spends a frontier-model call through AI
+ * Gateway -- day 5's private tier, and the only bucket here whose overspend
+ * costs real money rather than quota.
  */
-export type ToolCost = 'cheap' | 'inference';
+export type ToolCost = 'cheap' | 'inference' | 'expensive';
 
 /**
  * What each cost class is allowed.
@@ -32,6 +34,16 @@ export type ToolCost = 'cheap' | 'inference';
 export const LIMITS: Record<ToolCost, { limit: number; periodSeconds: number }> = {
   cheap: { limit: 60, periodSeconds: 60 },
   inference: { limit: 10, periodSeconds: 60 },
+  /**
+   * One Opus call per invocation, through AI Gateway, over the whole public
+   * corpus (04 §2's "tight caps (Opus calls)"). Six per five minutes is
+   * deliberately not per-minute: a fit report is read, not skimmed, and a
+   * person iterating on a description does so in minutes rather than seconds.
+   * A tighter per-minute cap would refuse a legitimate second attempt while a
+   * looser one would let a leaked link spend real money before the daily
+   * breaker (src/lib/fit/engine.ts) noticed.
+   */
+  expensive: { limit: 6, periodSeconds: 300 },
 };
 
 /**
@@ -95,8 +107,20 @@ export interface LimitsEnv {
  * reason that is specific to this tier and should be re-read the day it stops
  * being true: the public tier is unauthenticated by design (03 §1), so there
  * is no user id, tenant id or API key to key on instead -- the choice is an
- * IP or nothing. Day 5's scoped tokens introduce a real identity; a token'd
- * call should key on the token, and only the anonymous remainder on the IP.
+ * IP or nothing.
+ *
+ * Day 5 introduced the real identity that paragraph anticipated. A granted
+ * call keys on the token's `jti`, not the IP: the whole reason Cloudflare's
+ * own guidance argues against IP keys is that one address fronts many users,
+ * and a token names exactly one holder. Two consequences worth stating,
+ * because both are choices:
+ *
+ *   - A token holder behind a shared IP is no longer starved by strangers.
+ *   - A token holder cannot escape their own bucket by changing networks,
+ *     which is what makes the `expensive` cap on `analyze_fit` mean anything.
+ *
+ * The anonymous remainder still keys on the IP, unchanged, because there is
+ * still nothing else to key it on.
  *
  * MEASURED 2026-09-08, because #29 suspected the apex origin lost this header
  * across the site Worker's `env.MCP.fetch(request)` hop and collapsed every
@@ -111,7 +135,12 @@ export interface LimitsEnv {
  * note in tests/mcp-rate-limit.test.ts about what a deploy still has to
  * confirm.
  */
-export function limitKeyFor(request: Request | undefined, tool: string): string {
+export function limitKeyFor(
+  request: Request | undefined,
+  tool: string,
+  grant: { jti: string } | null,
+): string {
+  if (grant !== null) return `${tool}:g:${grant.jti}`;
   const ip = request?.headers.get('cf-connecting-ip') ?? 'unknown';
   return `${tool}:${ip}`;
 }
@@ -129,9 +158,10 @@ export async function checkLimit(
   cost: ToolCost,
   request: Request | undefined,
   tool: string,
+  grant: { jti: string } | null,
 ): Promise<boolean> {
   const { limit, periodSeconds } = LIMITS[cost];
-  const { success } = await env.RATE_LIMITER.getByName(limitKeyFor(request, tool)).consume(
+  const { success } = await env.RATE_LIMITER.getByName(limitKeyFor(request, tool, grant)).consume(
     limit,
     limit / periodSeconds,
   );
