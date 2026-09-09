@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.5.0...ryanlindsey-me-v1.6.0) (2026-09-09)
+
+
+### Features
+
+* **tier:** ship the scoped-token private tier and the fit engine ([#37](https://github.com/ryanlindsey/ryanlindsey.me/issues/37)) ([0128846](https://github.com/ryanlindsey/ryanlindsey.me/commit/0128846d46618d7b2da312a71247d6bf4b2b1983))
+
 ## [1.5.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.4.1...ryanlindsey-me-v1.5.0) (2026-09-08)
 
 
