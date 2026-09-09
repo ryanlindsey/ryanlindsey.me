@@ -1,0 +1,145 @@
+import { describe, expect, test } from 'vitest';
+import type { DocumentsEnv } from '../src/lib/mcp/documents';
+import {
+  buildCorpusContext,
+  CONTEXT_CHAR_BUDGET,
+  renderContext,
+} from '../src/lib/fit/corpus-context';
+
+const block = (n: number, size = 20) => ({
+  url: `https://ryanlindsey.me/writing/post-${n}/`,
+  title: `Post ${n}`,
+  markdown: 'x'.repeat(size),
+});
+
+test('each block is fenced and labelled with the URL that may cite it', () => {
+  const { text } = renderContext([block(1)]);
+  expect(text).toContain('https://ryanlindsey.me/writing/post-1/');
+  expect(text).toContain('Post 1');
+  // Fenced, so pasted content cannot be read as instructions -- the same
+  // defence 04 §1 asks for on the chat path, applied here because a target
+  // description is also text a stranger supplies.
+  expect(text).toMatch(/```/);
+});
+
+test('the budget is respected and the shortfall is reported', () => {
+  const { text, truncated } = renderContext([block(1, 500), block(2, 500)], 600);
+  expect(text.length).toBeLessThanOrEqual(900); // body plus per-block framing
+  expect(truncated).toBe(true);
+});
+
+test('nothing is truncated when everything fits', () => {
+  expect(renderContext([block(1), block(2)], CONTEXT_CHAR_BUDGET).truncated).toBe(false);
+});
+
+test('a truncated context still contains whole documents, never half of one', () => {
+  // A half-document is worse than a missing one: the model would cite a URL
+  // for a passage it never saw the end of, and the citation would validate.
+  const { text } = renderContext([block(1, 400), block(2, 400)], 500);
+  const bodies = text.match(/x+/g) ?? [];
+  expect(bodies.every((body) => body.length === 400)).toBe(true);
+});
+
+test('an empty corpus renders an explicit statement rather than an empty string', () => {
+  // The prompt's honesty rule leans on the context saying something. An empty
+  // string would leave the model to invent what it could not see.
+  const { text } = renderContext([]);
+  expect(text.trim().length).toBeGreaterThan(0);
+  expect(text).toMatch(/no documents/i);
+});
+
+// buildCorpusContext has no coverage in the brief -- only renderContext, the
+// pure formatter it wraps, is tested above. buildCorpusContext is the part
+// that talks to the corpus (index, fetch, and the allowedUrls recomputation
+// enforceCitations trusts completely), so it is the part that matters most
+// to get right. tests/fit-engine.test.ts (a later task) stubs DocumentsEnv
+// the same way; this is where that shape is established.
+describe('buildCorpusContext', () => {
+  const ORIGIN = 'https://ryanlindsey.me';
+
+  /** Same stub shape as tests/mcp-documents.test.ts: a routes map over paths. */
+  function stubSite(routes: Record<string, string>): DocumentsEnv {
+    return {
+      SITE_ORIGIN: ORIGIN,
+      SITE: {
+        fetch: async (input: RequestInfo | URL) => {
+          const path = new URL(typeof input === 'string' ? input : input.toString()).pathname;
+          const body = routes[path];
+          return body === undefined
+            ? new Response('not found', { status: 404 })
+            : new Response(body, { status: 200 });
+        },
+      },
+    } as DocumentsEnv;
+  }
+
+  const LLMS_TXT = [
+    `- [Post One](${ORIGIN}/writing/post-one.md): One line.`,
+    `- [Post Two](${ORIGIN}/writing/post-two.md): Another line.`,
+  ].join('\n');
+
+  test('a /llms.txt listing two documents produces a context holding both', async () => {
+    // /resume.md is deliberately unserved. fetchDocumentIndex always
+    // prepends RESUME_SOURCE (src/lib/corpus.ts), so leaving it a 404 here
+    // exercises the ordinary skip path and keeps this test's count at
+    // exactly the two documents /llms.txt lists, per the brief addition.
+    const env = stubSite({
+      '/llms.txt': LLMS_TXT,
+      '/writing/post-one.md': 'Body of post one.',
+      '/writing/post-two.md': 'Body of post two.',
+    });
+
+    const context = await buildCorpusContext(env);
+
+    expect(context.text).toContain(`${ORIGIN}/writing/post-one/`);
+    expect(context.text).toContain(`${ORIGIN}/writing/post-two/`);
+    expect(context.documents).toBe(2);
+    expect(context.allowedUrls).toEqual(
+      new Set([`${ORIGIN}/writing/post-one/`, `${ORIGIN}/writing/post-two/`]),
+    );
+  });
+
+  test('a document the index lists but that will not fetch is skipped, not fatal', async () => {
+    // post-two.md 404s, standing in for a broken deploy or a doc pulled
+    // after /llms.txt was generated. The other document must still make it
+    // through -- a broken deploy should narrow the evidence, not refuse to
+    // produce a report.
+    const env = stubSite({
+      '/llms.txt': LLMS_TXT,
+      '/writing/post-one.md': 'Body of post one.',
+    });
+
+    const context = await buildCorpusContext(env);
+
+    expect(context.text).toContain(`${ORIGIN}/writing/post-one/`);
+    expect(context.text).not.toContain(`${ORIGIN}/writing/post-two/`);
+    expect(context.documents).toBe(1);
+    expect(context.allowedUrls).toEqual(new Set([`${ORIGIN}/writing/post-one/`]));
+  });
+
+  test('a document dropped by the budget loses its citation licence', async () => {
+    // The load-bearing case: allowedUrls is recomputed from what was
+    // actually rendered, not from what was fetched. If that recomputation
+    // regressed, the model could cite a URL for a document it was never
+    // shown, and enforceCitations (src/lib/fit/schema.ts) would validate the
+    // citation anyway, because the URL is real. Sizes and budget match the
+    // renderContext truncation test above, which already establishes that a
+    // 400-char body under a 500-char budget fits one block and not two.
+    const env = stubSite({
+      '/llms.txt': LLMS_TXT,
+      '/writing/post-one.md': 'x'.repeat(400),
+      '/writing/post-two.md': 'y'.repeat(400),
+    });
+
+    // buildCorpusContext's second parameter exists only so this test can
+    // force a shortfall -- see the comment on its signature in
+    // corpus-context.ts. Production code never passes it.
+    const context = await buildCorpusContext(env, 500);
+
+    expect(context.text).toContain(`${ORIGIN}/writing/post-one/`);
+    expect(context.text).not.toContain(`${ORIGIN}/writing/post-two/`);
+    expect(context.allowedUrls.has(`${ORIGIN}/writing/post-one/`)).toBe(true);
+    expect(context.allowedUrls.has(`${ORIGIN}/writing/post-two/`)).toBe(false);
+    expect(context.truncated).toBe(true);
+  });
+});
