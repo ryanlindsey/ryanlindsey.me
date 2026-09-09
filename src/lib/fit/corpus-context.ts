@@ -37,7 +37,15 @@ export interface CorpusContext {
   text: string;
   /** Exactly the URLs a citation may name. `enforceCitations` takes this set. */
   allowedUrls: Set<string>;
+  /**
+   * How many documents survived into `text` -- after the budget drops any,
+   * not how many `/llms.txt` listed or how many fetched successfully. Equal
+   * to `allowedUrls.size`. Fix round 1, finding 3: the ordinary happy-path
+   * and skip-path tests never distinguish this from the fetched count, only
+   * a budget-drop case does.
+   */
   documents: number;
+  /** True when the budget forced at least one whole document out of `text`; never true because a document merely failed to fetch. */
   truncated: boolean;
 }
 
@@ -53,30 +61,52 @@ export interface CorpusContext {
  * The fences are a prompt-injection boundary as much as a formatting choice.
  * Corpus text is Ryan's own, but the same renderer's shape is what the target
  * description gets in ./engine.ts, and there the text is a stranger's.
+ *
+ * Also returns `includedUrls` -- exactly the `block.url` of every block this
+ * call kept, recorded in the same loop that decides what to keep. Fix round
+ * 1, finding 1: `buildCorpusContext` used to recompute its citation set by
+ * searching the returned `text` for each candidate URL, and that is unsound
+ * -- a KEPT document's own markdown can contain a link to a DROPPED
+ * document's URL (an ordinary thing for a résumé or case study to do), which
+ * would make the URL appear as a substring of `text` even though the model
+ * was never shown that document. Reporting membership from the loop that
+ * decided it is precise in a way searching the output never can be.
  */
 export function renderContext(
   blocks: CorpusBlock[],
   budget: number = CONTEXT_CHAR_BUDGET,
-): { text: string; truncated: boolean } {
+): { text: string; truncated: boolean; includedUrls: Set<string> } {
   if (blocks.length === 0) {
-    return { text: 'There are no documents in the corpus.', truncated: false };
+    return {
+      text: 'There are no documents in the corpus.',
+      truncated: false,
+      includedUrls: new Set(),
+    };
   }
 
   const parts: string[] = [];
+  const includedUrls = new Set<string>();
   let used = 0;
   let truncated = false;
 
   for (const block of blocks) {
     const rendered = `## ${block.title}\nSource: ${block.url}\n\n\`\`\`markdown\n${block.markdown}\n\`\`\`\n`;
-    if (used + rendered.length > budget) {
+    // The returned text is `parts.join('\n')`, which inserts one '\n'
+    // between this block and the previous one -- charged here, before
+    // deciding whether the block fits, so `used` never undercounts the
+    // actual text.length by parts.length - 1 (fix round 1, finding 4). The
+    // first included block pays no separator.
+    const separator = parts.length > 0 ? 1 : 0;
+    if (used + separator + rendered.length > budget) {
       truncated = true;
       continue;
     }
     parts.push(rendered);
-    used += rendered.length;
+    includedUrls.add(block.url);
+    used += separator + rendered.length;
   }
 
-  return { text: parts.join('\n'), truncated };
+  return { text: parts.join('\n'), truncated, includedUrls };
 }
 
 /**
@@ -111,11 +141,15 @@ export async function buildCorpusContext(
     allowedUrls.add(url);
   }
 
-  const { text, truncated } = renderContext(blocks, budget);
+  const { text, truncated, includedUrls } = renderContext(blocks, budget);
   // A DROPPED document must lose its citation licence too, or the model could
-  // cite a URL for a document that is not in front of it. Recomputed from
-  // what was actually rendered rather than from what was fetched.
-  const rendered = new Set([...allowedUrls].filter((url) => text.includes(url)));
+  // cite a URL for a document that is not in front of it. Intersected against
+  // `includedUrls` -- the membership `renderContext` itself decided, in its
+  // own loop -- rather than by searching `text` for each fetched URL (fix
+  // round 1, finding 1: that search was unsound, because a kept document's
+  // own markdown can link to a dropped document's URL and reappear as a
+  // substring of `text` even though the model never saw that document).
+  const rendered = new Set([...allowedUrls].filter((url) => includedUrls.has(url)));
 
   return { text, allowedUrls: rendered, documents: rendered.size, truncated };
 }

@@ -37,6 +37,11 @@ test('a truncated context still contains whole documents, never half of one', ()
   // for a passage it never saw the end of, and the citation would validate.
   const { text } = renderContext([block(1, 400), block(2, 400)], 500);
   const bodies = text.match(/x+/g) ?? [];
+  // Fix round 1, finding 2: `.every()` on an empty array is vacuously true,
+  // so a regression that dropped BOTH blocks (not just the one that should
+  // be dropped) would have passed the length check below undetected. This
+  // pins the count too: exactly one body survived, and it is whole.
+  expect(bodies).toHaveLength(1);
   expect(bodies.every((body) => body.length === 400)).toBe(true);
 });
 
@@ -138,6 +143,36 @@ describe('buildCorpusContext', () => {
 
     expect(context.text).toContain(`${ORIGIN}/writing/post-one/`);
     expect(context.text).not.toContain(`${ORIGIN}/writing/post-two/`);
+    expect(context.allowedUrls.has(`${ORIGIN}/writing/post-one/`)).toBe(true);
+    expect(context.allowedUrls.has(`${ORIGIN}/writing/post-two/`)).toBe(false);
+    // Fix round 1, finding 3: tests 1 and 2 above never distinguish
+    // `documents` from `blocks.length`/the fetched count, because nothing
+    // was dropped in either of them. This is the one case that can tell
+    // "what survived truncation" apart from "what was fetched".
+    expect(context.documents).toBe(1);
+    expect(context.truncated).toBe(true);
+  });
+
+  // Fix round 1, finding 1. The previous recomputation searched the whole
+  // rendered `text` for each fetched URL (`text.includes(url)`), which a
+  // KEPT document's own markdown can defeat: a résumé or case study linking
+  // to a related post is ordinary content on this site. post-one's body
+  // below links to post-two's canonical URL; post-two is dropped by the
+  // budget, but its URL still appears in `text` as a substring of
+  // post-one's link -- so a text search wrongly re-admits it, while the
+  // model was never shown post-two at all.
+  test('a rendered document linking to a dropped document does not re-admit its URL', async () => {
+    const env = stubSite({
+      '/llms.txt': LLMS_TXT,
+      '/writing/post-one.md': `See also [Post Two](${ORIGIN}/writing/post-two/).`,
+      '/writing/post-two.md': 'y'.repeat(400),
+    });
+
+    const context = await buildCorpusContext(env, 300);
+
+    // The URL genuinely is present in `text` -- inside post-one's own link
+    // -- which is exactly what makes a substring search unsound here.
+    expect(context.text).toContain(`${ORIGIN}/writing/post-two/`);
     expect(context.allowedUrls.has(`${ORIGIN}/writing/post-one/`)).toBe(true);
     expect(context.allowedUrls.has(`${ORIGIN}/writing/post-two/`)).toBe(false);
     expect(context.truncated).toBe(true);
