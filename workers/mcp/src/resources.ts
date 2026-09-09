@@ -44,22 +44,29 @@ import { documentsEnv, RESUME_UNAVAILABLE } from './tools';
 // and deliberately not taken here, and it belongs with day 5/6's work on this
 // surface rather than to Task 11. Reads are limited; the menu is not.
 //
-// The day-5 consequence of that, stated plainly so it does not have to be
-// rediscovered: a `ResourceTemplate`'s `list` callback -- the `writing`
-// template's, below -- is invoked by the SDK straight from its own
-// `resources/list` request handler. It never passes through `defineResource`,
-// and cannot: `guarded` wraps a REGISTERED resource's READ, and `list` is not
-// a read of a registered resource, it is metadata the template contributes to
-// a request this module's own registration call never sees. On the public
-// tier that is harmless -- this template's `list` only ever enumerates
-// already-public slugs from the published index. On day 5's gated tier, a
-// template whose `list` enumerates non-public documents would bypass the
-// limiter, the audit trail, AND any token check, because there is no point
-// anywhere in that call path where a token would be read at all -- leaking
-// the existence and slugs of gated documents to a caller who was never
-// authenticated. Day 5 must treat a template's `list` as a surface needing
-// its OWN guard; `defineResource` covering `resources/read` is not evidence
-// that `resources/list` is covered too.
+// DAY 5 DISCHARGED THIS, and the way it did is worth reading before adding a
+// resource. The obligation was: a `ResourceTemplate`'s `list` callback -- the
+// `writing` template's, below -- is invoked by the SDK straight from its own
+// `resources/list` request handler, never through `defineResource`, and cannot
+// be (`guarded` wraps a REGISTERED resource's READ, and `list` is metadata the
+// template contributes to a request this module's own registration call never
+// sees). So it passes through no limiter, no audit trail and -- once the
+// private tier existed -- no token check either. A template whose `list`
+// enumerated private documents would leak their existence and slugs to a
+// caller who was never authenticated, and there is no point in that call path
+// where a token would even be read.
+//
+// Day 5's answer was NOT to build a guard for that path. It was to register no
+// private-tier resource at all: every private-tier surface is a TOOL
+// (workers/mcp/src/gated.ts), and tools go through `defineTool`, which is
+// limited, audited and scope-checked. The resource surface is therefore
+// identical with and without a grant, which tests/mcp-gated.test.ts asserts
+// directly by diffing the two listings.
+//
+// SO THE OBLIGATION TRANSFERS RATHER THAN EXPIRES. The moment someone adds a
+// resource whose `list` can see anything a public caller cannot, that test
+// fails -- and the guard this comment has always been asking for has to be
+// built before it can pass again.
 
 /**
  * The published index, with a message a stranger's agent can be shown.

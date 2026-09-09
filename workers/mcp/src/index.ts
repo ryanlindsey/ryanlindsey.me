@@ -175,15 +175,24 @@ export default {
         );
         if (refusal !== null) {
           // Logged, not answered with an error: a stale token should still get
-          // the public tier rather than a broken connection. What the caller
-          // is told is one line in `instructions` (./server.ts) -- which is
-          // Task 7's work, and until it lands this log is the only place a
-          // refusal is visible. That is enough for a revocation drill to
-          // observe the refusal and not enough to help anyone probe for valid
-          // tokens.
+          // the public tier rather than a broken connection.
+          //
+          // The log line names the REASON (`expired`, `revoked`, `unknown`,
+          // `bad_signature`, `unavailable`); what the caller is told does not.
+          // That asymmetry is the whole design: an operator running a
+          // revocation drill (09 §3 item 6) reads this line and knows exactly
+          // which check bit, while the holder gets one unspecific sentence
+          // that is no use for probing which of those four states a token
+          // string is in.
           console.warn(`mcp/grant: refused a presented token (${refusal})`);
         }
-        return createServer({ env, ctx, request: httpRequest, grant });
+        // `refusal` is passed rather than dropped, and that second argument is
+        // the only thing that makes a refusal visible to the CALLER rather
+        // than only in the log above -- `buildInstructions` (./server.ts) has
+        // no other source for it, because the grant it would otherwise infer
+        // from is `null` for a refused token and for an ordinary public caller
+        // alike. Those two must not be told the same thing.
+        return createServer({ env, ctx, request: httpRequest, grant }, refusal);
       },
       HANDLER_OPTIONS,
     )(request, env, ctx);

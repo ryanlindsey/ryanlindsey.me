@@ -1,5 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/server';
+import type { Grant, GrantRefusal } from '../../../src/lib/tier/grant';
+import { SCOPES, type Scope } from '../../../src/lib/tier/token';
 import { defineTool, type ToolContext } from './define';
+import { registerGatedTools } from './gated';
 import { registerResources } from './resources';
 import { registerTools } from './tools';
 
@@ -17,8 +20,14 @@ import { registerTools } from './tools';
  * it does to `request_private_access`'s copy in ./tools.ts: never `hire`,
  * `candidate`, `job-search`, `recruiter`. The vocabulary here is *audience
  * tiers*, *private tier*, *scoped tokens*.
+ *
+ * ASSERTED VERBATIM in tests/mcp.smoke.test.ts, and day 5 kept it that way on
+ * purpose: an untokened connection is served exactly this string and nothing
+ * appended, so the private tier is invisible in the handshake as well as in
+ * `tools/list`. Everything day 5 adds is in `buildInstructions` below, which
+ * reaches this constant only through the branches a token opens.
  */
-const INSTRUCTIONS = [
+const PUBLIC_INSTRUCTIONS = [
   "Ryan Lindsey's professional corpus, exposed as MCP tools across audience tiers.",
   '',
   'get_contact: how to reach Ryan, and his working timezone.',
@@ -36,6 +45,67 @@ const INSTRUCTIONS = [
 ].join('\n');
 
 /**
+ * The line a caller sees when they presented a token that was not honoured.
+ *
+ * Deliberately unspecific. A revocation drill (09 §3 item 6) needs to be able
+ * to OBSERVE that a revoked token stopped working, which this provides; a
+ * stranger probing for valid tokens must learn nothing about which of
+ * expired, revoked, unknown or forged they hit, which naming the reason would
+ * hand them. One sentence serves both.
+ */
+const REFUSED_LINE =
+  'The scoped token presented with this request was not accepted; the public tools below are what this connection has.';
+
+/**
+ * The tool map a GRANTED connection is sent, built from the scopes actually
+ * registered rather than from a fixed list.
+ *
+ * 03 §1 asks for exactly this -- per-token MCP `initialize` instructions that
+ * enumerate the tools the grant unlocks -- and building it from the same
+ * `scopes` array that decided registration is what keeps the two from
+ * disagreeing: a tool map that advertises a tool the server did not register
+ * is worse than no map.
+ */
+const SCOPE_LINES: Record<Scope, string[]> = {
+  profile: [
+    'get_availability: current working status and engagement timing.',
+    'get_references: reference contacts and the context for each.',
+    'get_compensation_expectations: compensation range and structure preferences.',
+  ],
+  documents: ['get_case_study_details: the unredacted layer of one case study, by slug.'],
+  narrative: ["get_application_narrative: the narrative written for this token's audience."],
+  fit: [], // Task 11 fills this in with `analyze_fit`.
+};
+
+/**
+ * What one connection is told it has.
+ *
+ * Three states, and the first is the one with a test on it: NO token at all
+ * gets `PUBLIC_INSTRUCTIONS` byte for byte, which is what
+ * tests/mcp.smoke.test.ts asserts and what keeps the private tier absent from
+ * an unauthenticated handshake. A REFUSED token gets one added sentence. A
+ * grant gets the map of what its scopes opened.
+ *
+ * `SCOPES` orders the map rather than `grant.scopes` doing it, so two tokens
+ * carrying the same scopes in a different order are told the same thing.
+ */
+export function buildInstructions(grant: Grant | null, refusal: GrantRefusal | null): string {
+  if (grant === null) {
+    return refusal === null ? PUBLIC_INSTRUCTIONS : `${PUBLIC_INSTRUCTIONS}\n\n${REFUSED_LINE}`;
+  }
+  const granted = SCOPES.filter((scope) => grant.scopes.includes(scope)).flatMap(
+    (scope) => SCOPE_LINES[scope],
+  );
+  return [
+    PUBLIC_INSTRUCTIONS,
+    '',
+    `This connection carries a scoped token for the audience "${grant.audience}". It also has:`,
+    '',
+    ...granted,
+  ].join('\n');
+}
+
+/**
  * The server one HTTP request is served by.
  *
  * `instructions` belongs to ServerOptions (the second argument), not to the
@@ -47,11 +117,16 @@ const INSTRUCTIONS = [
  * a formatter split it across lines, silently strands it at whatever it says today. The path
  * release-please looks in is `extra-files` in release-please-config.json, and it names THIS
  * file -- moving this line to another one means editing that entry in the same commit.
+ *
+ * `refusal` defaults to `null` so every existing call site keeps its meaning
+ * ("no token was presented"). ./index.ts passes the real value, and that
+ * parameter is the ONLY way a refusal becomes visible to the caller rather
+ * than only to the operator log.
  */
-export function createServer(tc: ToolContext): McpServer {
+export function createServer(tc: ToolContext, refusal: GrantRefusal | null = null): McpServer {
   const server = new McpServer(
     { name: 'ryanlindsey-me', version: '1.5.0' }, // x-release-please-version
-    { instructions: INSTRUCTIONS },
+    { instructions: buildInstructions(tc.grant, refusal) },
   );
 
   defineTool(
@@ -73,9 +148,15 @@ export function createServer(tc: ToolContext): McpServer {
   );
 
   registerTools(server, tc);
+  // The private tier (03 §2). A no-op without a grant -- and a no-op is
+  // stronger than a refusal here: the tools are not registered, so there is
+  // no name in `tools/list` and nothing for `tools/call` to reach.
+  registerGatedTools(server, tc);
   // The same documents, for clients that prefer resource attachment over tool
   // calls (03 §2). Registered through `defineResource`, which limits and
-  // audits a read exactly as `defineTool` does a call.
+  // audits a read exactly as `defineTool` does a call. NOT per grant, and
+  // never per grant: see that module's own comment for why day 5's answer to
+  // the `resources/list` hole was to add no gated resource at all.
   registerResources(server, tc);
 
   return server;
