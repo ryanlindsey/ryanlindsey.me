@@ -83,13 +83,33 @@ export interface McpEnv {
    * behaviour coming from its absence.
    */
   RLME_TOKEN_KEY_SOURCE?: string;
+  /**
+   * Test-only seam, the fourth of the same shape, and declared here because
+   * `fitEnv` (./gated.ts) hands it to `analyzeFit` (src/lib/fit/engine.ts),
+   * whose own `FitEnv` is where the accepted values are written down. ABSENT
+   * is the deployed behaviour -- run the engine -- and `'off'` is the only
+   * other accepted value, making `analyzeFit` refuse before it reads KV, the
+   * corpus or the model. Anything else throws rather than guessing.
+   *
+   * `'off'` is set on this Worker by tests/workers.ts, for the same reason
+   * `MCP_SEARCH_EMBEDDER` is `'stub'` there: the harness overrides `AI` to a
+   * service Worker, so `env.AI.run` is a TypeError here by design. Under the
+   * seam, `analyze_fit` exercises everything AROUND the model call -- the
+   * scope gate, the argument schema, the limiter, the audit row and the error
+   * shape -- and the call itself is covered with a stub `Ai` in
+   * tests/fit-engine.test.ts.
+   */
+  FIT_ENGINE?: string;
 }
 
 /**
  * The same list as runtime data, for the drift test. `CORPUS_REFRESH`,
- * `MCP_SEARCH_EMBEDDER` and `RLME_TOKEN_KEY_SOURCE` are excluded
- * deliberately: they are test-only vars that no deployed environment and no
- * config declares, so `wrangler types` will never emit them.
+ * `MCP_SEARCH_EMBEDDER`, `RLME_TOKEN_KEY_SOURCE` and `FIT_ENGINE` are
+ * excluded deliberately: they are test-only vars that no deployed environment
+ * and no config declares, so `wrangler types` will never emit them. This list
+ * is the CONFIG's bindings, and tests/mcp-env.test.ts fails in both
+ * directions if it drifts -- so adding a seam here would break that test
+ * rather than document the seam.
  */
 export const MCP_BINDING_NAMES = [
   'DB',

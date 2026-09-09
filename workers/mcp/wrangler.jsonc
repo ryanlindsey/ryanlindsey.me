@@ -295,19 +295,34 @@
   // single-character wildcard to the glob, which matches the literal `?`.
   //
   // Scoped to a `prompts/` directory rather than a blanket `**/*.md` on
-  // principle rather than on a measured saving: today the two emit an IDENTICAL
-  // bundle (1995.11 KiB either way), because nothing else in this Worker's
-  // module graph imports a `.md` at all. The scoping is what keeps that true --
-  // the day someone imports a README or a doc fixture, a blanket rule would
-  // quietly ship it.
+  // principle rather than on a measured saving: measured 2026-09-08, the two
+  // emitted an IDENTICAL bundle (1995.11 KiB either way), because nothing else
+  // in this Worker's module graph imports a `.md` at all. The scoping is what
+  // keeps that true -- the day someone imports a README or a doc fixture, a
+  // blanket rule would quietly ship it.
   //
   // WHAT THE CHECK ACTUALLY SHOWS, because the obvious version of it fails for
   // an innocent reason: `grep -c 'Fit analysis prompt' <outdir>/*.js` finds
   // ZERO. Wrangler does not inline a text module into `index.js`; it emits it
   // as a sibling module and imports it by a hashed name. So the real evidence,
-  // from `wrangler deploy --dry-run --outdir`, is both halves of that:
-  //   index.js: import FIT_PROMPT from "./832fda82…-fit.md"
-  //   832fda82…-fit.md: the prompt, byte for byte
+  // from `wrangler deploy --dry-run --outdir`, is both halves of that.
+  //
+  // RE-MEASURED 2026-09-09 (day 5 Task 11), and the re-run is the one that
+  // counts: the 2026-09-08 measurement was taken while NOTHING in this Worker's
+  // module graph imported the engine, so the rule was being exercised against
+  // an import that esbuild reached only through a temporary edit. Registering
+  // `analyze_fit` in ./src/gated.ts made it a real edge of the graph, and the
+  // bundle now says so:
+  //   index.js          `import FIT_PROMPT from "./01998436…-fit.md"`, and
+  //                     `system: FIT_PROMPT` at the model call
+  //   01998436…-fit.md  emitted beside it, byte for byte the prompt (equal
+  //                     sha256 against prompts/fit.md, and `diff` silent)
+  //   *.js              zero matches for the prompt's own text, as above
+  //   Total Upload      2000.91 KiB, against 1995.11 KiB before the tool
+  // The emitted name is CONTENT-derived, not build-derived, which is why
+  // quoting it here is safe: it is `shasum -a 1 prompts/fit.md` exactly
+  // (measured -- two dry runs produced the same name, and it equals that
+  // digest), so it moves when the prompt does and never otherwise.
   // A rule that silently did not apply is the failure this is guarding against
   // -- the import would resolve to something that is not the prompt, and every
   // test would still pass, because they all stub the model.

@@ -150,6 +150,25 @@ export const MCP_WORKER = {
      * test could run without account access.
      */
     RLME_TOKEN_KEY_SOURCE: 'test',
+    /**
+     * Day 5's fit engine (src/lib/fit/engine.ts's `analyzeFit`), off. Same
+     * shape as the three seams above, and the same cause as
+     * `MCP_SEARCH_EMBEDDER: 'stub'`: the `AI` override below is a SERVICE
+     * binding, so `env.AI` is a `Fetcher` here and `env.AI.run()` is a
+     * TypeError rather than a response. The engine spends a frontier-model
+     * call through AI Gateway, so there is a second reason as well -- a test
+     * suite must not be one edit away from spending real money.
+     *
+     * Unlike the embedder stub, this one does not shape a call it cannot
+     * complete: `analyzeFit` refuses on the seam before it reads the breaker,
+     * the corpus or the model. That is deliberate and it is what makes
+     * tests/mcp-gated.test.ts's limiter test affordable -- seven calls that
+     * each cost a round trip and nothing else. Everything AROUND the model
+     * call is exercised there; the call itself is exercised with a stub `Ai`
+     * at the call site in tests/fit-engine.test.ts, which is what
+     * workers/mock-ai's own doc comment asks for.
+     */
+    FIT_ENGINE: 'off',
   },
   bindingOverrides: { AI: 'mock-ai' },
 };

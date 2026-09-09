@@ -1,8 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import type { Grant, GrantRefusal } from '../../../src/lib/tier/grant';
-import { SCOPES, type Scope } from '../../../src/lib/tier/token';
 import { defineTool, type ToolContext } from './define';
-import { registerGatedTools } from './gated';
+import { gatedToolLines, registerGatedTools } from './gated';
 import { registerResources } from './resources';
 import { registerTools } from './tools';
 
@@ -65,41 +64,6 @@ const REFUSED_LINE =
   'The scoped token presented with this request was not accepted; the public tools below are what this connection has.';
 
 /**
- * The tool map a GRANTED connection is sent, keyed by the scope that unlocks
- * each group rather than written out as one fixed list.
- *
- * 03 §1 asks for exactly this -- per-token MCP `initialize` instructions that
- * enumerate the tools the grant unlocks.
- *
- * WHAT THIS STRUCTURE GUARANTEES, AND WHAT IT DOES NOT, because the difference
- * is easy to overclaim and a comment that overclaims it is worse than none.
- * Driving the map off the same `scopes` array that decided registration means
- * the SCOPE SET cannot disagree: a scope the grant lacks contributes no lines,
- * so no caller is ever told about a group of tools their token did not open.
- * That much is structural.
- *
- * The tool NAMES inside each array are a hand-maintained duplicate of
- * ./gated.ts, and nothing detects a mismatch between them. Rename a tool there
- * and forget this table, and a granted caller is handed a map naming a tool
- * `tools/list` does not contain -- which is exactly the failure the structure
- * above prevents at the coarser grain, at the finer grain still possible.
- * tests/mcp-gated.test.ts pins the profile group's three lines against the
- * profile grant's own listing, which catches the case that matters most; it is
- * a spot check, not a proof, and a general one would mean deriving these lines
- * from the registrations themselves.
- */
-const SCOPE_LINES: Record<Scope, string[]> = {
-  profile: [
-    'get_availability: current working status and engagement timing.',
-    'get_references: reference contacts and the context for each.',
-    'get_compensation_expectations: compensation range and structure preferences.',
-  ],
-  documents: ['get_case_study_details: the unredacted layer of one case study, by slug.'],
-  narrative: ["get_application_narrative: the narrative written for this token's audience."],
-  fit: [], // Task 11 fills this in with `analyze_fit`.
-};
-
-/**
  * What one connection is told it has.
  *
  * Three states, and the first is the one with a test on it: NO token at all
@@ -108,25 +72,33 @@ const SCOPE_LINES: Record<Scope, string[]> = {
  * an unauthenticated handshake. A REFUSED token gets one added sentence. A
  * grant gets the map of what its scopes opened.
  *
- * `SCOPES` orders the map rather than `grant.scopes` doing it, so two tokens
- * carrying the same scopes in a different order are told the same thing.
+ * 03 §1 asks for exactly that -- per-token MCP `initialize` instructions
+ * enumerating the tools the grant unlocks -- and `gatedToolLines` (./gated.ts)
+ * is where the enumeration comes from. THAT IS THE POINT, and it is worth
+ * saying what it replaced: this module used to keep its own table of tool
+ * names per scope, parallel to the registrations in ./gated.ts and checked by
+ * nothing. Renaming a gated tool there and forgetting the table here handed
+ * every granted caller a map naming a tool `tools/list` does not carry --
+ * silently, on the one surface whose job is to tell a holder what their token
+ * is for. There is one list now, it lives beside the registrations, and this
+ * function's whole contribution is the framing around it.
  */
 export function buildInstructions(grant: Grant | null, refusal: GrantRefusal | null): string {
   if (grant === null) {
     return refusal === null ? PUBLIC_INSTRUCTIONS : `${PUBLIC_INSTRUCTIONS}\n\n${REFUSED_LINE}`;
   }
-  const granted = SCOPES.filter((scope) => grant.scopes.includes(scope)).flatMap(
-    (scope) => SCOPE_LINES[scope],
-  );
+  const granted = gatedToolLines(grant);
   const header = `This connection carries a scoped token for the audience "${grant.audience}".`;
-  // A grant that opens NO tool in this build still gets the header, and gets
-  // it without the colon. `SCOPE_LINES.fit` is empty until Task 11 registers
-  // `analyze_fit`, so a `fit`-only token minted before then would otherwise be
-  // sent "It also has:" followed by nothing at all -- a dangling colon on the
-  // one surface whose job is to tell a holder what their token is for, which
-  // reads as a broken server rather than as an unfinished build. The header
-  // itself is kept because it is true and useful: it confirms the token WAS
-  // accepted, which is the other half of what the refusal line above says.
+  // A grant that opens NO tool still gets the header, and gets it without the
+  // colon. Every scope opens a tool in this build, so the state is now reached
+  // by a grant carrying NO scope -- which is not hypothetical: a grant's scopes
+  // come from its REGISTRY ROW rather than from its claim (src/lib/tier/grant.ts),
+  // so narrowing a live token to nothing is one operator edit away, and it is
+  // the natural shape of a soft revoke. Such a caller would otherwise be sent
+  // "It also has:" followed by nothing at all -- a dangling colon that reads as
+  // a broken server rather than as a shut door. The header itself is kept
+  // because it is true and useful: it confirms the token WAS accepted, which is
+  // the other half of what the refusal line above says.
   if (granted.length === 0) return [PUBLIC_INSTRUCTIONS, '', header].join('\n');
   return [PUBLIC_INSTRUCTIONS, '', `${header} It also has:`, '', ...granted].join('\n');
 }

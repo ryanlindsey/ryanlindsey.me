@@ -38,16 +38,23 @@ test('McpEnv lists exactly the bindings workers/mcp/wrangler.jsonc declares', ()
   expect(declared).toEqual([...MCP_BINDING_NAMES].sort());
 });
 
-test('no wrangler config declares the signing-key seam', async () => {
-  // The seam's first safety property (src/lib/tier/grant.ts's `signingKey`):
-  // the deployed behaviour comes from the var being ABSENT. This is the test
-  // that keeps it absent -- a `vars` entry added to either config, for any
-  // reason, would make production sign with a constant committed to a public
-  // repo.
-  for (const path of ['wrangler.jsonc', 'workers/mcp/wrangler.jsonc']) {
-    const source = await readFile(path, 'utf8');
-    expect(source, `${path} must not declare RLME_TOKEN_KEY_SOURCE`).not.toContain(
-      'RLME_TOKEN_KEY_SOURCE',
-    );
+test('no wrangler config declares a day-5 test-only seam', async () => {
+  // Each of these seams has the same first safety property: the deployed
+  // behaviour comes from the var being ABSENT, so nothing has to remember to
+  // set it correctly in production. This is the test that keeps them absent.
+  //
+  // `RLME_TOKEN_KEY_SOURCE` (src/lib/tier/grant.ts's `signingKey`): a `vars`
+  // entry added to either config, for any reason, would make production sign
+  // tokens with a constant committed to a public repo.
+  //
+  // `FIT_ENGINE` (src/lib/fit/engine.ts's `analyzeFit`): the only value it
+  // accepts is `'off'`, so a `vars` entry could only ever turn the fit engine
+  // off in production -- silently, since the tool would keep answering a
+  // polite sentence about being unavailable and every test would stay green.
+  for (const name of ['RLME_TOKEN_KEY_SOURCE', 'FIT_ENGINE']) {
+    for (const path of ['wrangler.jsonc', 'workers/mcp/wrangler.jsonc']) {
+      const source = await readFile(path, 'utf8');
+      expect(source, `${path} must not declare ${name}`).not.toContain(name);
+    }
   }
 });

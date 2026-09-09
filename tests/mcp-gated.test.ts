@@ -9,6 +9,7 @@ import { PROFILE_KEYS } from '../src/lib/tier/private-docs';
 import { CAMPAIGN_PREFIX } from '../src/lib/tier/campaigns';
 import { defineTool, type ToolContext } from '../workers/mcp/src/define';
 import type { McpEnv } from '../workers/mcp/src/env';
+import { LIMITS } from '../src/lib/mcp/limits';
 import { BANNED_PATTERNS } from './candidacy-patterns';
 
 const server = createTestHarness({ workers: SITE_HARNESS_WORKERS });
@@ -171,7 +172,7 @@ type ListedTool = {
   name: string;
   description: string;
   inputSchema?: {
-    properties?: Record<string, { type?: string; enum?: unknown[] }>;
+    properties?: Record<string, { type?: string; enum?: unknown[]; minLength?: number }>;
     required?: string[];
   };
 };
@@ -213,7 +214,22 @@ function minimalArgs(tool: ListedTool): Record<string, unknown> | undefined {
     else if (property.type === 'boolean') args[name] = true;
     else if (property.type === 'array') args[name] = ['x'];
     else if (property.type === 'object') args[name] = {};
-    else args[name] = 'x';
+    // `minLength` is honoured for the same reason the required list is: it is
+    // the second way a listed schema can reject a call before `defineTool`'s
+    // wrapper runs, and `analyze_fit` declares `.min(200)`. A bare 'x' against
+    // it would put the sweep below straight back in the blind spot this
+    // function exists to close -- a schema error looks nothing like a scope
+    // refusal, so the assertion would pass while proving nothing.
+    //
+    // MEASURED (Task 11) rather than assumed, in both halves. The listed
+    // schema does carry the floor -- `{"type":"string","minLength":200,
+    // "maxLength":60000}` -- and calling `analyze_fit` over the wire with 'x'
+    // answers "Input validation error: Invalid arguments for tool
+    // analyze_fit", while the same call with 200 characters reaches the
+    // handler and answers the engine's own "Fit analysis is not available in
+    // this environment." Only the second of those passes through the guard
+    // this sweep is watching.
+    else args[name] = 'x'.repeat(Math.max(1, property.minLength ?? 1));
   }
   return args;
 }
@@ -237,7 +253,26 @@ const GATED = [
   'get_compensation_expectations',
   'get_case_study_details',
   'get_application_narrative',
+  'analyze_fit',
 ];
+
+/**
+ * A description long enough for `analyze_fit`'s own schema to accept.
+ *
+ * The tool declares `.min(200)`, and the SDK validates `inputSchema` BEFORE
+ * `defineTool`'s wrapper runs -- so a short string is answered with a schema
+ * error and never reaches the tool at all. Every `analyze_fit` test below
+ * would then be asserting on zod's message rather than on the engine, the
+ * limiter or the audit row.
+ *
+ * Deliberately generic, like every other fixture in this file: no company, no
+ * role, nothing a banned pattern could match. It also never reaches a model --
+ * the harness sets `FIT_ENGINE: 'off'` (tests/workers.ts).
+ */
+const FIT_DESCRIPTION =
+  'A generic description of the work, written out at enough length that the tool accepts it. '.repeat(
+    4,
+  );
 
 describe('invisibility without a grant', () => {
   test('tools/list contains no gated tool', async () => {
@@ -600,11 +635,17 @@ async function instructionsFor(token?: string): Promise<string> {
 }
 
 test('the granted instructions map exactly the scopes the grant carries', async () => {
-  // The one surface day 5 makes TOKEN-DEPENDENT, and until now the only one
-  // with no test on it. tests/mcp.smoke.test.ts pins the public string
-  // verbatim, but it sends no `authorization` header, so it can only ever
-  // compare the public map against public tools -- nothing there can see
-  // `SCOPE_LINES` at all.
+  // The one surface day 5 makes TOKEN-DEPENDENT. tests/mcp.smoke.test.ts pins
+  // the public string verbatim, but it sends no `authorization` header, so it
+  // can only ever compare the public map against public tools -- nothing there
+  // can see a granted line at all.
+  //
+  // The LINES THEMSELVES are what this pins, verbatim, and that is its job now
+  // that the test below proves the derivation. `gatedToolLines`
+  // (workers/mcp/src/gated.ts) can guarantee that every advertised name is a
+  // registered name; it cannot guarantee that the prose after the colon still
+  // describes the tool. Prose is not derivable, so it is reviewed instead --
+  // an edit to one of these summaries has to come here and say so.
   const { token } = await grantFor(['profile']);
   const instructions = await instructionsFor(token);
 
@@ -622,23 +663,66 @@ test('the granted instructions map exactly the scopes the grant carries', async 
   expect(instructions).not.toContain('get_case_study_details');
   expect(instructions).not.toContain('get_application_narrative');
 
-  // Every mapped line names a tool this same grant can actually see, which is
-  // the spot check `SCOPE_LINES`' own comment points at: the scope SET is
-  // structurally consistent, the tool names inside each array are not.
+  // Every mapped line names a tool this same grant can actually see. A spot
+  // check of what the test below asserts in general, kept because it is the
+  // one that reads as a worked example: these three literal strings, this one
+  // grant, this one listing.
   const names = (await listTools(token)).map((t) => t.name);
   for (const name of ['get_availability', 'get_references', 'get_compensation_expectations']) {
     expect(names, `${name} is mapped, so it must be registered`).toContain(name);
   }
 });
 
+test('the granted instructions and tools/list agree, scope by scope', async () => {
+  /**
+   * THE GENERAL FORM of the spot check above, and the reason Task 11 could
+   * write it: the granted lines are no longer a hand-maintained table of tool
+   * names in workers/mcp/src/server.ts parallel to what
+   * workers/mcp/src/gated.ts registers. Both now read the same
+   * `GATED_TOOLS` entries, so a rename moves the name in `tools/list` and in
+   * the instruction map together.
+   *
+   * That is a claim about a mechanism, so this asserts the property rather
+   * than the mechanism, in both directions and for every scope: every gated
+   * tool a grant can SEE is mapped, and no line mentions a gated tool it
+   * cannot. Delete the derivation and hard-code a list again, and this stays
+   * green only for exactly as long as the two copies agree -- which is the
+   * failure it is here to catch.
+   */
+  for (const scope of SCOPES) {
+    const { token } = await grantFor([scope]);
+    const names = (await listTools(token)).map((t) => t.name);
+    const instructions = await instructionsFor(token);
+
+    const visible = GATED.filter((name) => names.includes(name));
+    // Not vacuous: every scope opens at least one tool, so an empty listing
+    // would otherwise satisfy the loop below without asserting anything.
+    expect(visible.length, `a ${scope} grant should open at least one tool`).toBeGreaterThan(0);
+    for (const name of visible) {
+      expect(instructions, `${name} is registered, so it must be mapped`).toContain(`${name}: `);
+    }
+    for (const name of GATED.filter((n) => !names.includes(n))) {
+      expect(instructions, `${name} is not registered, so it must not be mapped`).not.toContain(
+        name,
+      );
+    }
+  }
+});
+
 test('a grant that opens no tool is told so without a dangling colon', async () => {
-  // `SCOPE_LINES.fit` is empty until Task 11 registers `analyze_fit`, so a
-  // `fit`-only token minted before then is a real state a holder can reach --
-  // and the naive build sent it "It also has:" with nothing under it, on the
-  // one surface whose job is to say what the token is for. The header stays
+  // The naive build sent such a grant "It also has:" with nothing under it, on
+  // the one surface whose job is to say what a token is for. The header stays
   // (the token WAS accepted, which is worth confirming); the promise of a list
   // does not.
-  const instructions = await instructionsFor(await tokenFor(['fit']));
+  //
+  // Reached through a SCOPELESS grant, which is a real state rather than a
+  // contrived one and is the only one left. Until Task 11 this test used a
+  // `fit`-only token, because the `fit` scope opened no tool yet; every scope
+  // opens one now, so that door is shut. A grant carries the scopes of its
+  // REGISTRY ROW rather than of its claim (src/lib/tier/grant.ts), so
+  // narrowing a live token to nothing is one operator edit away -- a soft
+  // revoke that leaves the token valid and gives it nothing to do.
+  const instructions = await instructionsFor(await tokenFor([]));
   expect(instructions).toContain(`scoped token for the audience "${AUDIENCE}"`);
   expect(instructions).not.toContain('It also has:');
   expect(instructions.trimEnd()).toBe(instructions);
@@ -651,8 +735,9 @@ test('no gated tool NAME or DESCRIPTION carries search language', async () => {
   // are runtime data and are deliberately not scanned -- that is where
   // audience-specific meaning is allowed to live.
   //
-  // The INSTRUCTIONS are scanned here too, and they were the gap: `SCOPE_LINES`
-  // and `REFUSED_LINE` (workers/mcp/src/server.ts) are code-resident strings a
+  // The INSTRUCTIONS are scanned here too, and they were the gap: the granted
+  // lines (the `summary` on each entry in workers/mcp/src/gated.ts) and
+  // `REFUSED_LINE` (workers/mcp/src/server.ts) are code-resident strings a
   // granted caller reads on connect and can screenshot exactly as they can
   // `tools/list`, and no suite looked at either -- tests/mcp-tools.test.ts's
   // public scan covers the untokened `initialize` only. All three token states
@@ -725,4 +810,125 @@ test('the resource surface is identical with and without a grant', async () => {
       .result;
     expect(granted, `${method} must not change with a grant`).toEqual(anonymous);
   }
+});
+
+describe('analyze_fit', () => {
+  test('it is absent without the fit scope and present with it', async () => {
+    expect((await listTools(await tokenFor(['profile']))).map((t) => t.name)).not.toContain(
+      'analyze_fit',
+    );
+    expect((await listTools(await tokenFor(['fit']))).map((t) => t.name)).toContain('analyze_fit');
+  });
+
+  test('its description names no target and no search', async () => {
+    const [tool] = (await listTools(await tokenFor(['fit']))).filter(
+      (t) => t.name === 'analyze_fit',
+    );
+    for (const pattern of BANNED_PATTERNS) expect(tool!.description).not.toMatch(pattern);
+  });
+
+  test('it refuses cleanly when the engine is off, and says so in a sentence', async () => {
+    // The harness sets FIT_ENGINE: 'off' (tests/workers.ts) because there is
+    // no usable `Ai` here -- the binding is overridden to a service Worker, so
+    // `env.AI.run` is a TypeError by design. What this test proves is
+    // everything AROUND the model call: the scope gate, the argument schema,
+    // the limiter, the audit row and the error shape. The model call itself is
+    // covered in tests/fit-engine.test.ts with a stub `Ai`, and end to end by
+    // hand against the deployed Worker (Task 17).
+    const result = await callTool(
+      'analyze_fit',
+      { target_description: FIT_DESCRIPTION },
+      await tokenFor(['fit']),
+    );
+    expect(result.result.isError).toBe(true);
+    const text = result.result.content[0].text as string;
+    expect(text).toMatch(/not available/i);
+    expect(text, 'a refusal must not leak internals').not.toMatch(/TypeError|\.ts:|Fetcher/);
+  });
+
+  test('a description too short to analyse is refused by the schema, before the tool', async () => {
+    // The `.min(200)` on the argument, asserted where it is cheap to assert:
+    // the SDK validates `inputSchema` before `defineTool`'s wrapper runs, so
+    // this costs no limiter budget and reaches no engine. It is also what
+    // `FIT_DESCRIPTION` above exists to satisfy -- without this test, a
+    // future edit dropping the minimum would leave that constant looking like
+    // an arbitrary length.
+    const result = await callTool(
+      'analyze_fit',
+      { target_description: 'Too short.' },
+      await tokenFor(['fit']),
+    );
+    expect(result.error ?? result.result?.isError).toBeTruthy();
+    expect(JSON.stringify(result)).not.toMatch(/not available/i);
+  });
+
+  test('it draws from the expensive bucket: the seventh rapid call is refused', async () => {
+    /**
+     * THIS REPLACES an assertion that read `LIMITS.expensive.limit <
+     * LIMITS.inference.limit`, which is a fact about two constants: it would
+     * have passed unchanged with `analyze_fit` registered as `cheap`, which
+     * is the one thing its name claimed to establish.
+     *
+     * Exhausting the bucket is affordable here precisely because the engine is
+     * off: `analyzeFit` refuses on the seam before it reads KV, the corpus or
+     * the model, so each call is a round trip and nothing else. The whole loop
+     * runs in well under the ~50 seconds a single token would take to refill
+     * at 0.02/s, so the seventh call meets an empty bucket rather than a
+     * replenished one.
+     */
+    const { limit } = LIMITS.expensive;
+    // The discrimination, asserted rather than assumed: `limit + 1` calls must
+    // exhaust `expensive` and NO other bucket, or a tool mis-registered as
+    // `cheap` (60) or `inference` (10) would pass this test.
+    expect(limit).toBeLessThan(LIMITS.inference.limit);
+    expect(limit).toBeLessThan(LIMITS.cheap.limit);
+
+    const { token, jti } = await grantFor(['fit']);
+    const answers: string[] = [];
+    for (let call = 0; call <= limit; call += 1) {
+      const result = await callTool('analyze_fit', { target_description: FIT_DESCRIPTION }, token);
+      answers.push(result.result.content[0].text as string);
+    }
+
+    // The first `limit` calls got through to the engine, which is what makes
+    // the last one's refusal a LIMIT rather than any other failure.
+    for (const answer of answers.slice(0, limit)) expect(answer).toMatch(/not available/i);
+    expect(answers[limit]).toMatch(/^Rate limit reached for analyze_fit/);
+
+    // And the row, bound to THIS grant's `jti`. Filtered on the tool name
+    // alone it would be satisfied by whatever an earlier test in this file
+    // left behind -- a mistake this plan has already found twice.
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const row = await env.DB.prepare(
+        "SELECT outcome FROM mcp_tool_calls WHERE tool='analyze_fit' AND grant_jti = ? AND outcome='rate_limited' LIMIT 1",
+      )
+        .bind(jti)
+        .first<{ outcome: string }>();
+      if (row) {
+        expect(row.outcome).toBe('rate_limited');
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error('no rate_limited audit row for this run of analyze_fit');
+  });
+
+  test('a refused run is still audited, as private and as an error', async () => {
+    const { token, jti } = await grantFor(['fit']);
+    await callTool('analyze_fit', { target_description: FIT_DESCRIPTION }, token);
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const row = await env.DB.prepare(
+        "SELECT tier, outcome FROM mcp_tool_calls WHERE tool='analyze_fit' AND grant_jti = ? ORDER BY id DESC LIMIT 1",
+      )
+        .bind(jti)
+        .first<{ tier: string; outcome: string }>();
+      if (row) {
+        expect(row.tier).toBe('private');
+        expect(row.outcome).toBe('error');
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error('no audit row for analyze_fit');
+  });
 });
