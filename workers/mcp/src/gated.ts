@@ -293,6 +293,13 @@ export function fitEnvelope(result: FitResult, audience: string): Record<string,
     model: result.model,
     generated_at: result.generatedAt,
     corpus_documents: result.corpusDocuments,
+    // Alongside `corpus_documents` rather than instead of it: the count says
+    // how many documents were compared, this says whether that count is the
+    // whole published corpus or only as much of it as fit the budget. A
+    // caller reading `corpus_documents: 7` cannot otherwise tell the two
+    // apart, and the difference decides whether a stated gap means "no
+    // evidence" or "the evidence was not in the room".
+    corpus_truncated: result.corpusTruncated,
     citations_checked: result.citations.checked,
     citations_dropped: result.citations.dropped,
   };

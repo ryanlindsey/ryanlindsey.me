@@ -361,7 +361,31 @@ export default {
     // `/fit`-prefixed route on this site, and a future one that is not part of
     // this surface would need to be excluded here.
     if (new URL(request.url).pathname.startsWith('/fit')) {
-      const response = await handle(request, env, ctx);
+      let response: Response;
+      try {
+        response = await handle(request, env, ctx);
+      } catch (error) {
+        // A REJECTED promise, not a 500 `Response` -- a different shape from
+        // the one `REFUSAL_STATUSES` below flattens, and the one that used to
+        // escape this branch entirely (final-review Important 3). Anything
+        // that reaches the runtime's own error page renders a body no other
+        // path on this site produces, which reopens exactly the
+        // route-existence oracle the flattening exists to close: a stranger
+        // probing `/fit` would see a crash where an unrouted path shows a
+        // 404.
+        //
+        // LOGGED FIRST, and this is the half that keeps the seam contract
+        // honest. `verifyTurnstile` throws a plain `Error` on an unrecognised
+        // `RLME_TURNSTILE_MODE`, and every day-5 seam is documented as
+        // failing loudly on a bad value -- but "loudly" cannot mean "to the
+        // caller" on a surface engineered to be indistinguishable from a dead
+        // route. So the operator gets the stack in Workers observability and
+        // the caller gets the site 404, which is the only split that serves
+        // both properties. tests/mcp-env.test.ts pins the config guard that
+        // keeps the value from being set in the first place.
+        console.error('fit: the request threw before producing a response', error);
+        return siteNotFound(request, env, ctx);
+      }
       // Every refusal leaves as the site's own 404 and undecorated; only a
       // response that required a valid grant (the 200, the 303) is decorated
       // below. A browser submitting this form always sends `Origin`, so the

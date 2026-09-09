@@ -147,6 +147,18 @@ export interface FitResult {
   /** ISO 8601. The envelope's, not the model's -- a model does not know the time. */
   generatedAt: string;
   corpusDocuments: number;
+  /**
+   * Whether the corpus did not fit `CONTEXT_CHAR_BUDGET` and whole documents
+   * were dropped before the model saw them.
+   *
+   * Surfaced rather than left internal (final-review Important 6): the flag
+   * was computed by `renderContext`, returned by `buildCorpusContext` and
+   * asserted by tests, and then read by nothing -- so a corpus crossing the
+   * budget would have quietly thinned every report, dropping documents from
+   * `allowedUrls` as well as from the prompt, with no signal to the operator
+   * or the reader. It rides in the envelope as `corpus_truncated`.
+   */
+  corpusTruncated: boolean;
 }
 
 /**
@@ -271,6 +283,17 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
   if (corpus.documents === 0) {
     throw new FitUnavailable('The corpus is empty right now, so there is nothing to compare.');
   }
+  if (corpus.truncated) {
+    // WARN, not throw: a truncated corpus still produces an honest report of
+    // what the model was shown, and refusing would take the feature down for
+    // a condition that degrades rather than breaks. But it must not be
+    // silent -- the dropped documents leave `allowedUrls` too, so their
+    // absence reads to a citation-checked report as "no evidence exists"
+    // rather than "the evidence was not in the room".
+    console.warn(
+      `fit: the corpus exceeded the context budget and was truncated to ${corpus.documents} documents`,
+    );
+  }
 
   // The description is FENCED, like every corpus document, and the prompt
   // tells the model to treat fenced content as data. It is text a stranger
@@ -359,5 +382,6 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
     model: FIT_MODEL,
     generatedAt: new Date().toISOString(),
     corpusDocuments: corpus.documents,
+    corpusTruncated: corpus.truncated,
   };
 }

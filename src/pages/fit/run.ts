@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { callAnalyzeFit, grantedToolNames, newReportId } from '../../lib/fit/client';
+import type { FitErrorCode } from '../../lib/fit/errors';
 import { verifyTurnstile } from '../../lib/turnstile';
 
 /**
@@ -17,9 +18,22 @@ import { verifyTurnstile } from '../../lib/turnstile';
  */
 export const prerender = false;
 
-/** Back to the form, carrying the token and one sentence. */
-function back(token: string, message: string): Response {
-  const query = new URLSearchParams({ t: token, error: message });
+/**
+ * Back to the form, carrying the token and one REASON CODE.
+ *
+ * A code, not a sentence (final-review Important 7). What lands in the URL
+ * lands in the page, and this URL is one an audience is handed and encouraged
+ * to forward: with a sentence here, anyone holding a `/fit?t=...` link could
+ * append `&error=Your+token+expired,+write+to+...` and have the real origin
+ * render it above the form. The page maps the code to fixed copy it owns, so
+ * the worst a forged value can do is show nothing.
+ *
+ * `reason` is logged by the callers that have a specific sentence to log --
+ * the tool's own refusal text is the breaker's or the limiter's wording, and
+ * losing it entirely would trade a phish for an unobservable failure.
+ */
+function back(token: string, code: FitErrorCode): Response {
+  const query = new URLSearchParams({ t: token, error: code });
   return new Response(null, { status: 303, headers: { Location: `/fit?${query}` } });
 }
 
@@ -81,13 +95,19 @@ export const POST: APIRoute = async ({ request }) => {
   );
   if (!turnstile.ok) {
     console.warn(`fit: turnstile refused (${turnstile.codes.join(', ')})`);
-    return back(token, 'That bot check did not pass. Reload the page and try again.');
+    return back(token, 'bot-check');
   }
 
   const outcome = await callAnalyzeFit(env, token, description);
-  // The tool's own sentence, verbatim -- it is the breaker's message, or the
-  // limiter's, or the engine's, and each was written to be read.
-  if (!outcome.ok) return back(token, outcome.message);
+  if (!outcome.ok) {
+    // The tool's own sentence goes to the LOG, not to the URL. It is the
+    // breaker's message, or the limiter's, or the engine's, and each was
+    // written to be read -- but the reader it can safely reach is the
+    // operator, because the redirect that would carry it to the page is
+    // forgeable by anyone holding the link.
+    console.warn(`fit: the tool refused the run (${outcome.code}): ${outcome.message}`);
+    return back(token, outcome.code);
+  }
 
   /**
    * The GRANT'S audience, out of the tool's own envelope.
@@ -108,7 +128,7 @@ export const POST: APIRoute = async ({ request }) => {
   const audience = typeof outcome.payload.audience === 'string' ? outcome.payload.audience : '';
   if (audience === '') {
     console.error('fit: the tool envelope carried no audience; refusing to store a report');
-    return back(token, 'The report was generated but could not be saved. Try again shortly.');
+    return back(token, 'not-saved');
   }
 
   const id = newReportId();
@@ -134,7 +154,7 @@ export const POST: APIRoute = async ({ request }) => {
     // The report exists but could not be stored. Say so rather than losing it
     // silently behind a permalink that will 404.
     console.error('fit: could not store the report', error);
-    return back(token, 'The report was generated but could not be saved. Try again shortly.');
+    return back(token, 'not-saved');
   }
 
   return new Response(null, { status: 303, headers: { Location: `/fit/r/${id}` } });

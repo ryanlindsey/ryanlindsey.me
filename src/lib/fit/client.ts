@@ -80,15 +80,35 @@ export async function grantedToolNames(env: McpClientEnv, token: string): Promis
   }
 }
 
+/**
+ * Why a run did not produce a report.
+ *
+ * A CLOSED SET, and it is what `/fit/run` puts in the redirect rather than the
+ * sentence itself (final-review Important 7). The sentence still exists and is
+ * still written to be read -- it is logged for the operator and, for the
+ * tool's own refusals, it is the only place the breaker's or the limiter's
+ * wording survives. What changed is that it no longer travels through a query
+ * parameter, because anything that does is attacker-supplied: a `/fit?t=...`
+ * link is designed to be forwarded, and a holder of one could previously
+ * append `&error=<any text>` and have ryanlindsey.me render it above the form.
+ * That is a convincing phish on precisely the page an audience was told to
+ * trust, which is the leaked-link threat this tier is built around.
+ */
+export type AnalyzeFailure = 'unreachable' | 'refused';
+
 export type AnalyzeOutcome =
-  { ok: true; payload: Record<string, unknown> } | { ok: false; message: string };
+  | { ok: true; payload: Record<string, unknown> }
+  | { ok: false; code: AnalyzeFailure; message: string };
 
 /**
  * Runs the tool. The refusal path is as important as the success one: the tool
  * answers a refusal as a RESULT with `isError` (see `defineTool`), not as a
  * transport error, and that result's text is a sentence written to be shown --
- * the breaker's message, the limiter's, or the engine's. It is passed through
- * verbatim rather than replaced with something vaguer.
+ * the breaker's message, the limiter's, or the engine's. It is carried back
+ * verbatim in `message`, which is what an MCP caller reads and what `/fit/run`
+ * logs; the PAGE renders fixed copy keyed on `code` instead, because the
+ * redirect that reaches it is forgeable and the sentence is not worth a phish
+ * (see `AnalyzeFailure`).
  *
  * `instanceof` is no help on this side of the binding: a `FitUnavailable`
  * thrown in the MCP Worker never crosses as an instance, which is why the
@@ -108,19 +128,28 @@ export async function callAnalyzeFit(
     });
   } catch (error) {
     console.error('fit: the tool call failed in transport', error);
-    return { ok: false, message: 'The fit engine could not be reached. Try again shortly.' };
+    return {
+      ok: false,
+      code: 'unreachable',
+      message: 'The fit engine could not be reached. Try again shortly.',
+    };
   }
 
   const result = body.result as
     { isError?: boolean; content?: { text?: unknown }[]; structuredContent?: unknown } | undefined;
 
   if (body.error || result === undefined) {
-    return { ok: false, message: 'The fit engine could not be reached. Try again shortly.' };
+    return {
+      ok: false,
+      code: 'unreachable',
+      message: 'The fit engine could not be reached. Try again shortly.',
+    };
   }
   if (result.isError) {
     const text = result.content?.[0]?.text;
     return {
       ok: false,
+      code: 'refused',
       message: typeof text === 'string' ? text : 'The fit engine refused the request.',
     };
   }

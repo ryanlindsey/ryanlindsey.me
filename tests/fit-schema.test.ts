@@ -102,3 +102,34 @@ test('describe strings survive in the derived JSON Schema', () => {
   const strength = itemsProperties.strength as Record<string, unknown>;
   expect(strength.description).toContain('How well the subject meets this requirement');
 });
+
+test('citation_url refuses a non-https scheme, including the ones z.string().url() admits', () => {
+  // Deferred minor L691 and final-review Important 5, pinned together: this
+  // is the second fence behind `enforceCitations`, and it is the ONLY one on
+  // the permalink read path, where `parseStoredReport` re-validates a stored
+  // row with this schema and renders `citation_url` into an anchor's `href`.
+  //
+  // The three hostile values are not hypothetical shapes -- each was measured
+  // as `true` against a bare `z.string().url()` on the installed zod (4.5.4),
+  // which is what this field used to be.
+  for (const url of [
+    'javascript:alert(1)',
+    'data:text/html,<script>alert(1)</script>',
+    'vbscript:msgbox(1)',
+    // Not hostile, but outside what any corpus URL can be: every one is built
+    // from SITE_ORIGIN, which is https in both wrangler configs and in the
+    // fit fixtures. Admitting http would widen the rule for nothing.
+    'http://ryanlindsey.me/resume',
+    'not-a-url-at-all',
+  ]) {
+    const hostile = report();
+    hostile.requirement_map[0]!.evidence[0]!.citation_url = url;
+    expect(FitReport.safeParse(hostile).success, `${url} must be refused`).toBe(false);
+  }
+});
+
+test('citation_url still accepts an ordinary https corpus URL', () => {
+  const ok = report();
+  ok.requirement_map[0]!.evidence[0]!.citation_url = 'https://ryanlindsey.me/writing/some-post';
+  expect(FitReport.safeParse(ok).success).toBe(true);
+});

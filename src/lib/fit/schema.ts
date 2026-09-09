@@ -18,11 +18,33 @@ export const STRENGTHS = ['strong', 'partial', 'none'] as const;
 
 const Evidence = z.object({
   claim: z.string().min(1).describe('One specific claim about the subject, in your own words.'),
+  // SCHEME-CONSTRAINED, and the constraint is the security control rather
+  // than a tidiness one. MEASURED against the installed zod (4.5.4): a bare
+  // `z.string().url()` returns `true` for `javascript:alert(1)`,
+  // `data:text/html,...` and `vbscript:...`. This value is rendered as
+  // `<a href={item.citation_url}>` by src/pages/fit/r/[id].astro, so a
+  // permissive schema puts the scheme of an anchor on ryanlindsey.me under
+  // the control of whatever produced the report.
+  //
+  // Today `enforceCitations` (../fit/engine.ts) already drops any URL outside
+  // `allowedUrls`, so no current path can reach that anchor with a hostile
+  // scheme. This is the SECOND fence, and it exists because the two paths are
+  // not the same path: `parseStoredReport` in [id].astro re-validates a row
+  // read back from D1 with this schema and renders it WITHOUT re-running
+  // `enforceCitations`. A permalink is designed to be forwarded to people
+  // holding no token, so one future writer that skips the filter would be
+  // stored XSS on the apex domain. Constraining the scheme here covers both
+  // paths with one rule.
+  //
+  // `https` only, not `https?`: every corpus URL is built from `SITE_ORIGIN`,
+  // which is `https://ryanlindsey.me` in both wrangler configs and
+  // `https://site.test` in the fit fixtures. Nothing in this repo produces an
+  // `http:` citation, so admitting one would widen the rule past anything it
+  // needs to accept.
   citation_url: z
-    .string()
-    .url()
+    .url({ protocol: /^https$/ })
     .describe(
-      'The URL of the corpus document that supports this claim. Must be one of the URLs supplied in the context.',
+      'The URL of the corpus document that supports this claim. Must be one of the URLs supplied in the context, and must be https.',
     ),
 });
 

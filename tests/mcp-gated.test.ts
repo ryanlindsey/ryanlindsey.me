@@ -1027,6 +1027,7 @@ describe('analyze_fit', () => {
       model: 'a-fixture-model',
       generatedAt: '2026-09-09T00:00:00.000Z',
       corpusDocuments: 7,
+      corpusTruncated: false,
     };
 
     const envelope = fitEnvelope(result, AUDIENCE);
@@ -1040,9 +1041,19 @@ describe('analyze_fit', () => {
       model: 'a-fixture-model',
       generated_at: '2026-09-09T00:00:00.000Z',
       corpus_documents: 7,
+      corpus_truncated: false,
       citations_checked: 3,
       citations_dropped: 1,
     });
+
+    // Asserted as a VALUE, not just a key. `toEqual` treats an `undefined`
+    // property as equal to an absent one, so before `corpusTruncated` was a
+    // required member of `FitResult` this whole assertion passed with the
+    // field missing from both sides -- which is the shape of the gap
+    // final-review Important 6 named: computed, returned, and read by
+    // nothing. Flipping it here proves the envelope carries the value rather
+    // than a hole where it should be.
+    expect(fitEnvelope({ ...result, corpusTruncated: true }, AUDIENCE).corpus_truncated).toBe(true);
   });
 
   test('fitToolError shows a FitUnavailable message and quarantines anything else', () => {

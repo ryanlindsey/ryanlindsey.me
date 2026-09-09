@@ -6,6 +6,7 @@ import { recordIssue } from '../src/lib/tier/registry';
 import { TEST_SIGNING_KEY } from '../src/lib/tier/grant';
 import { BANNED_PATTERNS } from './candidacy-patterns';
 import { NOT_FOUND_PROBE } from '../src/lib/not-found-probe';
+import { fitErrorCopy, FIT_ERROR_COPY } from '../src/lib/fit/errors';
 
 // `/fit` (04 §2, 09 §1): the unlisted, grant-gated page.
 //
@@ -374,7 +375,10 @@ test('POST /fit/run without a bot-check response never reaches the engine', asyn
   expect(response.status).toBe(303);
   const location = new URL(response.headers.get('location')!, 'https://ryanlindsey.me');
   expect(location.pathname).toBe('/fit');
-  expect(location.searchParams.get('error')).toMatch(/bot check/i);
+  // The CODE, not the sentence (final-review Important 7). `fitErrorCopy` is
+  // what turns it into the sentence, on the page, from a table the page owns.
+  expect(location.searchParams.get('error')).toBe('bot-check');
+  expect(fitErrorCopy('bot-check')).toMatch(/bot check/i);
   expect(location.searchParams.get('t')).toBe(token);
 });
 
@@ -397,18 +401,22 @@ test('POST /fit/run with a grant reaches the engine and reports its refusal', as
   expect(response.status).toBe(303);
   const location = new URL(response.headers.get('location')!, 'https://ryanlindsey.me');
   expect(location.pathname).toBe('/fit');
-  // The ENGINE'S OWN SENTENCE, verbatim. Asserting only that `error=` is
-  // present would be satisfied by every `back()` call in the route -- the
-  // bot-check refusal above, the storage failure, a transport error -- so the
-  // test would pass with the engine never reached, which is the one thing its
-  // name claims. This string is `FitUnavailable`'s, thrown by `analyzeFit` on
-  // the `FIT_ENGINE` seam, carried through `fitToolError` as an `isError`
-  // RESULT, read out of the result text by `callAnalyzeFit` (`instanceof` does
-  // not survive the service binding) and put on the query string unaltered.
-  // Its arrival here is the proof that the whole path ran.
-  expect(location.searchParams.get('error')).toBe(
-    'Fit analysis is not available in this environment.',
-  );
+  // `refused` is the code ONLY the tool-refusal branch produces, and keeping
+  // that discrimination is the point of asserting it rather than merely
+  // asserting `error=` is present: the bot-check refusal above, the storage
+  // failure and a transport error each carry a different code, so a test that
+  // accepted any of them would pass with the engine never reached -- the one
+  // thing this test's name claims.
+  //
+  // What it no longer proves, deliberately: that `FitUnavailable`'s own
+  // sentence ("Fit analysis is not available in this environment.", thrown by
+  // `analyzeFit` on the `FIT_ENGINE` seam) survives to the page. It no longer
+  // does, and must not -- the query string is forgeable by anyone holding a
+  // `/fit?t=...` link. The sentence still crosses the service binding as an
+  // `isError` result and is read by `callAnalyzeFit` into `outcome.message`,
+  // where `/fit/run` logs it; `tests/fit-client.test.ts` is where that half is
+  // pinned.
+  expect(location.searchParams.get('error')).toBe('refused');
   // The token is carried back so the page still renders; nothing else is.
   expect(location.searchParams.get('t')).toBe(token);
   expect([...location.searchParams.keys()].sort()).toEqual(['error', 't']);
@@ -656,4 +664,42 @@ test('the permalink page copy carries no search language', async () => {
   await storeReport('fixture-scan-fixture-id');
   const html = await (await server.fetch('/fit/r/fixture-scan-fixture-id')).text();
   for (const pattern of BANNED_PATTERNS) expect(html).not.toMatch(pattern);
+});
+
+test('a forged ?error= renders nothing on the form', async () => {
+  // The phish final-review Important 7 named, run end to end: a `/fit?t=...`
+  // link is handed out and meant to be forwarded, so whoever holds one can
+  // append whatever they like. Before the code table, the page rendered it.
+  const token = await grant();
+  const phish = 'Your token expired. Send your details to someone-else.example to renew.';
+  const response = await server.fetch(
+    `/fit?t=${encodeURIComponent(token)}&error=${encodeURIComponent(phish)}`,
+    { headers: { origin } },
+  );
+  expect(response.status).toBe(200);
+  const html = await response.text();
+  // Neither the sentence nor any fragment a reader would act on. Checked on
+  // the rendered HTML rather than on `fitErrorCopy` alone, because the page
+  // is the surface that mattered -- a second reader of the query parameter
+  // added later would fail this and pass a unit test of the lookup.
+  expect(html).not.toContain('someone-else.example');
+  expect(html).not.toContain('Your token expired');
+});
+
+test('every code /fit/run can emit has copy, and the page renders it', async () => {
+  // The two halves cannot drift: `FitErrorCode` is what `back()` accepts and
+  // `FIT_ERROR_COPY` is what the page can show, so a code added to one and
+  // not the other would either be unrenderable or unreachable. TypeScript
+  // pins the table's completeness (`Record<FitErrorCode, string>`); this pins
+  // that the page actually reaches the table.
+  const token = await grant();
+  for (const [code, copy] of Object.entries(FIT_ERROR_COPY)) {
+    expect(fitErrorCopy(code)).toBe(copy);
+    const response = await server.fetch(
+      `/fit?t=${encodeURIComponent(token)}&error=${encodeURIComponent(code)}`,
+      { headers: { origin } },
+    );
+    expect(response.status, `${code} must still render the form`).toBe(200);
+    expect(await response.text()).toContain(copy);
+  }
 });

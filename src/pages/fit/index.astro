@@ -4,6 +4,7 @@ import Base from '../../layouts/Base.astro';
 import Turnstile from '../../components/Turnstile.astro';
 import { grantedToolNames } from '../../lib/fit/client';
 import { activeCampaign } from '../../lib/tier/campaigns';
+import { fitErrorCopy } from '../../lib/fit/errors';
 
 /**
  * The fit analyser (04 §2). UNLISTED: absent from nav, from the sitemap and
@@ -55,16 +56,21 @@ const campaign = await activeCampaign(env);
 const preload = campaign?.jdText ?? '';
 
 /**
- * NOT `decodeURIComponent(...)`, which is what a first draft of this page did.
- * `back()` in ./run.ts builds the query with `URLSearchParams`, and
- * `searchParams.get` has ALREADY decoded what it returns -- so a second decode
- * is at best a no-op and at worst a 500: a refusal sentence containing a
- * literal `%` (the limiter's and the breaker's are runtime text, so this is
- * not hypothetical) decodes once to `%`, and `decodeURIComponent('%')` throws
- * a URIError. The page whose job is to show a refusal legibly must not be the
- * thing that crashes on one.
+ * The refusal to show, LOOKED UP rather than read out of the URL.
+ *
+ * `?error=` carries a reason CODE (see src/lib/fit/errors.ts), and this page
+ * renders only copy it owns. The parameter is attacker-controlled -- a
+ * `/fit?t=...` link is meant to be forwarded, so whoever holds one can put
+ * anything after `&error=` -- and it used to be rendered verbatim, which made
+ * the real origin a delivery mechanism for someone else's sentence
+ * (final-review Important 7). An unrecognised code renders nothing at all.
+ *
+ * This also retires the `decodeURIComponent` hazard the previous comment here
+ * recorded: a code from the closed set never contains a literal `%`, so there
+ * is no longer a refusal sentence whose own punctuation could crash the page
+ * that exists to display it.
  */
-const error = Astro.url.searchParams.get('error');
+const error = fitErrorCopy(Astro.url.searchParams.get('error'));
 ---
 
 <Base
