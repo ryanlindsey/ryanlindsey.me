@@ -30,10 +30,11 @@ export type TurnstileVerdict = { ok: true } | { ok: false; codes: string[] };
 /**
  * Verifies one Turnstile response token.
  *
- * FAILS CLOSED on every uncertainty -- a missing token, a network failure, a
- * body that is not JSON, a `success` that is not `true`. The alternative
- * (treating an outage as a pass) would turn a Cloudflare incident into an
- * open door on the one form in this site that spends Opus tokens.
+ * FAILS CLOSED on every uncertainty -- a missing token, a Secrets Store read
+ * failure, a network failure, a body that is not JSON, a `success` that is
+ * not `true`. The alternative (treating an outage as a pass) would turn a
+ * Cloudflare incident into an open door on the one form in this site that
+ * spends Opus tokens.
  *
  * `fetchImpl` is injected so the tests exercise the real request-shaping code
  * rather than a mock of it: the assertion that `secret`, `response` and
@@ -54,10 +55,7 @@ export async function verifyTurnstile(
 
   if (token === null || token.length === 0) return { ok: false, codes: ['missing-input-response'] };
 
-  const body = new URLSearchParams({
-    secret: await env.RLME_TURNSTILE_SECRET_KEY.get(),
-    response: token,
-  });
+  const body = new URLSearchParams({ response: token });
   // Optional per Cloudflare's API, and omitted rather than sent empty when the
   // header is absent -- an empty `remoteip` is a different input from no
   // `remoteip`.
@@ -65,6 +63,14 @@ export async function verifyTurnstile(
 
   let payload: unknown;
   try {
+    // The secret read is INSIDE this try, not before it. `.get()` throws when
+    // the secret is absent -- rotated to empty, deleted, or bound to a store a
+    // deploy has not written yet, the same production cases src/lib/tier/grant.ts
+    // measured for RLME_TOKEN_SIGNING_KEY -- and this is the identical binding
+    // shape read a second time. Left outside the try, that throw would escape
+    // `verifyTurnstile` uncaught and the Worker would answer 500 instead of
+    // refusing, which is a fail-OPEN dressed as an error page.
+    body.set('secret', await env.RLME_TURNSTILE_SECRET_KEY.get());
     const response = await fetchImpl(SITEVERIFY_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
