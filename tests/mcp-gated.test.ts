@@ -8,8 +8,8 @@ import { TEST_SIGNING_KEY, type Grant } from '../src/lib/tier/grant';
 import { PROFILE_KEYS } from '../src/lib/tier/private-docs';
 import { CAMPAIGN_PREFIX } from '../src/lib/tier/campaigns';
 import { defineTool, ToolError, type ToolContext } from '../workers/mcp/src/define';
-import { fitToolError } from '../workers/mcp/src/gated';
-import { FitUnavailable } from '../src/lib/fit/engine';
+import { fitEnvelope, fitToolError } from '../workers/mcp/src/gated';
+import { FitUnavailable, type FitResult } from '../src/lib/fit/engine';
 import type { McpEnv } from '../workers/mcp/src/env';
 import { LIMITS } from '../src/lib/mcp/limits';
 import { BANNED_PATTERNS } from './candidacy-patterns';
@@ -1000,6 +1000,51 @@ describe('analyze_fit', () => {
    * so the branch that only a real gateway failure would reach in production
    * is exercised by an ordinary function call.
    */
+  test('the envelope carries the grant audience, so a stored report cannot claim one', () => {
+    /**
+     * `fit_reports.audience` is defined by migrations/0002_private_tier.sql as
+     * the audience of the GRANT that produced the report, with a comment
+     * saying a NULL there would be evidence the tier check was bypassed.
+     * `/fit`'s form cannot supply it -- that route treats the token as opaque
+     * by design and never verifies it -- so before this field existed it wrote
+     * the literal `'web'`, and every browser-produced report claimed an
+     * audience named after a channel. This tool is the only place that knows
+     * the answer.
+     *
+     * Called DIRECTLY, like `fitToolError` below and for the same reason: the
+     * whole success path of `analyze_fit` is unreachable under this harness
+     * (`FIT_ENGINE: 'off'` refuses on the seam), so a field silently dropped
+     * from the envelope would otherwise be caught by nothing at all.
+     */
+    const result: FitResult = {
+      report: {
+        overall_read: 'A generic read, for a fixture.',
+        requirement_map: [{ requirement: 'A requirement.', strength: 'strong', evidence: [] }],
+        gaps: [],
+        questions_to_ask: ['A question.'],
+      },
+      citations: { checked: 3, dropped: 1 },
+      model: 'a-fixture-model',
+      generatedAt: '2026-09-09T00:00:00.000Z',
+      corpusDocuments: 7,
+    };
+
+    const envelope = fitEnvelope(result, AUDIENCE);
+    expect(envelope.audience).toBe(AUDIENCE);
+    // The rest of the envelope, asserted alongside it: this function is the
+    // one description of what a caller and `/fit/r/<id>` are handed, and a
+    // field quietly renamed here breaks the stored row rather than the call.
+    expect(envelope).toEqual({
+      report: result.report,
+      audience: AUDIENCE,
+      model: 'a-fixture-model',
+      generated_at: '2026-09-09T00:00:00.000Z',
+      corpus_documents: 7,
+      citations_checked: 3,
+      citations_dropped: 1,
+    });
+  });
+
   test('fitToolError shows a FitUnavailable message and quarantines anything else', () => {
     const safe = fitToolError(new FitUnavailable('The corpus is empty right now.'));
     expect(safe).toBeInstanceOf(ToolError);

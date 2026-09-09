@@ -28,6 +28,21 @@ interface Props {
    * changing the default, which is the whole point of the prop existing now.
    */
   robots?: string;
+  /**
+   * This page's referrer policy, as a meta tag. Unset on every page but one,
+   * so there is no default and no tag: a site-wide referrer policy is a
+   * separate decision from this one and is not being made here.
+   *
+   * `/fit` sets `no-referrer`, and it is load-bearing rather than tidy. That
+   * page's URL CARRIES A SCOPED TOKEN, and the Turnstile widget on it loads a
+   * script from challenges.cloudflare.com -- a cross-origin subresource
+   * request that would otherwise send this URL as the `Referer`. The header
+   * form is set in src/worker.ts; this is the second, independent delivery of
+   * the same policy, because that header's reachability depends on asset
+   * routing config (`run_worker_first` in wrangler.jsonc) and the token's
+   * confinement should not rest on one line.
+   */
+  referrer?: string;
 }
 
 const {
@@ -36,6 +51,7 @@ const {
   markdownHref,
   structuredData,
   robots = 'noindex',
+  referrer,
 } = Astro.props;
 
 // Person, sitewide (task-10-brief.md), built here rather than passed in by
@@ -76,6 +92,7 @@ const jsonLdNodes = [
     <!-- Day 7 changes the DEFAULT above. It must not delete the tag, because
          `/fit` and `/fit/r/<id>` pass their own value. -->
     <meta name="robots" content={robots} />
+    {referrer && <meta name="referrer" content={referrer} />}
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
     {
       /* Sitewide feed autodiscovery (day 3 Task 11, 02 §3) -- unlike the

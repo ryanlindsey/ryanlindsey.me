@@ -34,10 +34,15 @@ const token = Astro.url.searchParams.get('t') ?? '';
  */
 const tools = token === '' ? new Set<string>() : await grantedToolNames(env, token);
 if (!tools.has('analyze_fit')) {
-  return new Response('Not found', {
-    status: 404,
-    headers: { 'X-Robots-Tag': 'noindex, nofollow' },
-  });
+  // A BARE 404, which src/worker.ts replaces with the site's own 404 page
+  // before it reaches the client. That indirection is the fix for a real
+  // finding: what a prober compares is not the status but the whole response,
+  // and this page cannot produce the site's 404 itself. `Astro.rewrite('/404')`
+  // was tried first and MEASURED at 500 -- an on-demand route cannot rewrite to
+  // a prerendered one -- so the worker, which can dispatch a second request,
+  // does it. See its `/fit` branch, and src/pages/404.astro for why that page
+  // had to exist at all.
+  return new Response(null, { status: 404 });
 }
 
 /**
@@ -65,6 +70,7 @@ const error = Astro.url.searchParams.get('error');
 <Base
   title="Fit analysis"
   robots="noindex, nofollow"
+  referrer="no-referrer"
   description="Compare a description against Ryan Lindsey's published record."
 >
   <main class="mx-auto max-w-3xl px-6 py-16">

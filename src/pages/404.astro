@@ -1,0 +1,35 @@
+---
+import Shell from '../layouts/Shell.astro';
+
+/**
+ * The site's 404 (day 5 Task 13, fix round 1).
+ *
+ * It exists for `/fit`, and the reasoning is worth keeping because the page
+ * looks like ordinary polish and is not. Without this route, Astro answers an
+ * unrouted path with its own stock 404 template -- MEASURED: `text/html`, ~4.3
+ * KB, and it embeds the requested path (`<pre>Path: /whatever</pre>`,
+ * HTML-escaped). An unlisted page's whole guarantee is that its refusal is
+ * indistinguishable from a path that has no route, and no refusal `/fit` can
+ * construct is byte-identical to a body that names the path being refused.
+ *
+ * With this page, every unrouted path gets the SAME bytes regardless of path,
+ * so src/worker.ts can serve exactly it for an un-granted `/fit` and the two
+ * are identical rather than merely similar.
+ *
+ * Two things follow for whoever edits this next. It must not render anything
+ * derived from the request -- not the path, not a search box seeded from it,
+ * not a "did you mean" -- or `/fit`'s refusal becomes distinguishable again.
+ * And it must stay prerendered: an on-demand 404 would answer from a different
+ * code path than the asset server's, which is what serves it today.
+ */
+---
+
+<Shell title="404: Not found" description="That page does not exist.">
+  <section class="mx-auto max-w-5xl px-6 py-24">
+    <p class="mb-6 border-t border-accent pt-3 font-mono text-micro uppercase text-accent">404</p>
+    <h1 class="max-w-3xl font-display text-display text-ink">That page does not exist.</h1>
+    <p class="mt-8 max-w-xl text-ink-muted">
+      Nothing is served at this address. <a class="underline" href="/">Start from the home page</a>.
+    </p>
+  </section>
+</Shell>

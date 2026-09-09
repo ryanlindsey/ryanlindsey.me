@@ -76,6 +76,21 @@
       // The full measurement and the decision not to inject them in code are
       // written up beside the `/*` rule in public/_headers.
       "/mcp",
+      // Day 5 Task 13 (04 §2, 09 §1): the same durability argument as `/mcp`
+      // above, and here it guards something sharper than reachability. `/fit`
+      // is on-demand, so it shadows no asset and already falls through today
+      // -- these two entries change nothing now. What they insure against is
+      // `not_found_handling` ever being set: the Asset Worker would then answer
+      // unmatched paths itself and src/worker.ts's `fetch` would stop running
+      // for them. `/fit` would keep rendering (Astro's routing lives inside
+      // `handle()`), and would SILENTLY LOSE `Referrer-Policy: no-referrer` --
+      // the header that keeps the scoped token in that page's URL out of the
+      // `Referer` on the Turnstile script request to challenges.cloudflare.com
+      // -- along with the flattening that keeps a refusal from being a
+      // route-existence oracle. Both entries, because `/fit` is not matched by
+      // `/fit/*`.
+      "/fit",
+      "/fit/*",
     ],
   },
 

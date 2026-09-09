@@ -24,7 +24,12 @@ function back(token: string, message: string): Response {
 }
 
 /**
- * The same 404 the page answers with.
+ * The same bare 404 the page answers with, and like that one it is replaced by
+ * the site's own 404 page in src/worker.ts before it reaches the client. A
+ * refusal that differs observably from what an unrouted path returns -- in
+ * body, in `Content-Type`, or in a header nothing else on this site sets -- is
+ * a route-existence oracle, which is the one thing an unlisted surface must not
+ * be.
  *
  * A FUNCTION rather than a module-scope constant, and the difference is not
  * style: a `Response` carries a single-use body stream, so one shared instance
@@ -33,7 +38,7 @@ function back(token: string, message: string): Response {
  * which is exactly the path a prober hits repeatedly.
  */
 function notFound(): Response {
-  return new Response('Not found', { status: 404 });
+  return new Response(null, { status: 404 });
 }
 
 export const POST: APIRoute = async ({ request }) => {
@@ -63,6 +68,28 @@ export const POST: APIRoute = async ({ request }) => {
   // limiter's, or the engine's, and each was written to be read.
   if (!outcome.ok) return back(token, outcome.message);
 
+  /**
+   * The GRANT'S audience, out of the tool's own envelope.
+   *
+   * `fit_reports.audience` is defined by migrations/0002_private_tier.sql as
+   * the audience of the grant that produced the report, with a comment saying
+   * a NULL there would be evidence the tier check was bypassed. This route
+   * cannot derive it: the token is opaque here by design and this file never
+   * verifies it. So the MCP Worker says it (`fitEnvelope` in
+   * workers/mcp/src/gated.ts, from `grant.audience`) and this reads it back.
+   *
+   * An envelope with no audience is a contract violation rather than a missing
+   * nicety, and it is refused rather than papered over with a placeholder: a
+   * row that names a channel, or an empty string, is a row that lies to
+   * whoever reads the table next -- which is exactly what that column's
+   * comment says must not happen.
+   */
+  const audience = typeof outcome.payload.audience === 'string' ? outcome.payload.audience : '';
+  if (audience === '') {
+    console.error('fit: the tool envelope carried no audience; refusing to store a report');
+    return back(token, 'The report was generated but could not be saved. Try again shortly.');
+  }
+
   const id = newReportId();
   try {
     await env.DB.prepare(
@@ -74,12 +101,7 @@ export const POST: APIRoute = async ({ request }) => {
       .bind(
         id,
         new Date().toISOString(),
-        // The audience is not the site's to know: the token is opaque here by
-        // design. The MCP Worker's audit row carries it (`mcp_tool_calls`),
-        // and this column records how the report was produced rather than who
-        // asked. Day 6's /ops joins the two on time and tool if it ever needs
-        // to.
-        'web',
+        audience,
         String(outcome.payload.model ?? ''),
         description,
         JSON.stringify(outcome.payload.report ?? {}),

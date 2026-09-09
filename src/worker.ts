@@ -231,6 +231,34 @@ async function serveMarkdownAsset(
   return withVaryAccept(assetResponse);
 }
 
+/**
+ * A path with no route, used to ask Astro for the site's own 404.
+ *
+ * Its spelling does not reach the client -- src/pages/404.astro renders nothing
+ * derived from the request, which is the property that makes this work at all
+ * (see that file). It only has to keep not matching a route.
+ */
+const NOT_FOUND_PROBE = '/__unrouted__';
+
+/**
+ * The response an unrouted path gets, byte for byte.
+ *
+ * This is `/fit`'s refusal (see the `/fit` branch below). It is fetched rather
+ * than constructed so the two cannot drift: whatever the site answers a
+ * stranger's typo with is what a stranger's dead token gets, with no second
+ * copy of that body to keep in step.
+ *
+ * The method is carried over for `HEAD` so a `HEAD /fit` refusal is a `HEAD`
+ * 404 rather than a `GET` one with a body attached; anything else asks as
+ * `GET`, which is what an unrouted path's 404 is rendered from.
+ */
+function siteNotFound(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const probe = new Request(new URL(NOT_FOUND_PROBE, request.url), {
+    method: request.method === 'HEAD' ? 'HEAD' : 'GET',
+  });
+  return handle(probe, env, ctx);
+}
+
 export default {
   fetch: async (request, env, ctx) => {
     // Day 4 Task 13 (03 §1): https://ryanlindsey.me/mcp is the PRIMARY MCP
@@ -256,20 +284,67 @@ export default {
     if (new URL(request.url).pathname === '/mcp') return env.MCP.fetch(request);
 
     // Day 5 Task 13 (04 §2, 09 §1): `/fit*` is unlisted and its URL carries a
-    // scoped token, so two headers are added to whatever the route returns.
-    // `X-Robots-Tag` is the header form of the page's own meta tag and covers
-    // the non-HTML responses (the 404, the 303) that have no head to put a tag
-    // in. `Referrer-Policy: no-referrer` is the load-bearing one: without it, a
-    // click from this page would send this URL -- token included -- to whatever
-    // it linked to.
+    // scoped token. Two things happen to whatever the route returns, and they
+    // pull in opposite directions on purpose.
+    //
+    // A REFUSAL IS REPLACED WITH THE SITE'S OWN 404, undecorated. The gates in
+    // src/pages/fit/*.ts answer a bare `404` and this turns it into exactly the
+    // response an unrouted path gets, because what a prober compares is the
+    // whole response and not the status. MEASURED, and it is why
+    // src/pages/404.astro now exists: before it, an unrouted path got Astro's
+    // stock 404 template -- `text/html`, ~4.3 KB, and it EMBEDS THE REQUESTED
+    // PATH -- so no refusal `/fit` could construct was ever byte-identical to
+    // it. `Astro.rewrite('/404')` from the page was tried and measured at 500
+    // (an on-demand route cannot rewrite to a prerendered one), so it is done
+    // here, where a second dispatch is available.
+    //
+    // THE 403 IS A REFUSAL TOO, and it gets the same treatment. Astro's
+    // `security.checkOrigin` middleware answers a form-content-type POST
+    // carrying no `Origin` with `403 Cross-site POST form submissions are
+    // forbidden`, and that check runs BEFORE routing -- measured, against a
+    // review that read it the other way: with no `Origin` and no body,
+    // `/nope/nope`, `/also-not-a-route`, `/resume.pdf` and `/fit/run` all
+    // returned the identical 403, and `PROPFIND /nope` returned the same
+    // sentence with the method substituted. On its own it says nothing about
+    // which paths exist.
+    //
+    // What makes it a refusal worth flattening is ASSET ROUTING, measured after
+    // `/fit` was added to `run_worker_first` (wrangler.jsonc): a path NOT in
+    // that list never reaches this Worker at all, so the Asset Worker answers
+    // it with 404.html and the origin check never runs. A cross-site POST
+    // therefore gets a 404 page from `/nope/nope` and a 403 from `/fit/run` --
+    // "this path is Worker-first", which for an unlisted route is as good as
+    // "this path is real". Merely leaving the headers off it is not enough
+    // either, and that was measured as well: decorated, `/fit/run`'s was the
+    // only 403 on the site carrying them, the same oracle wearing the right
+    // status code.
+    //
+    // EVERY OTHER `/fit` RESPONSE REQUIRES A VALID GRANT, and those get two
+    // headers. `X-Robots-Tag` is the header form of the page's own meta tag and
+    // covers the 303, which has no head to put a tag in. `Referrer-Policy:
+    // no-referrer` is the load-bearing one: the Turnstile widget on this page
+    // loads a script from challenges.cloudflare.com FROM A DOCUMENT WHOSE URL
+    // CARRIES THE TOKEN, and this header is what keeps the token out of the
+    // `Referer` on that subrequest. Base.astro emits the meta-tag form as well
+    // (see its `referrer` prop) so that confinement does not rest on one line.
+    // Neither header belongs on the 404: the site's 404 carries neither, and a
+    // refusal that carries a header nothing else on the site sets is the same
+    // oracle in a subtler form.
     //
     // BEFORE the negotiation block below rather than after it, deliberately:
     // `/fit` is never a markdown route and must not acquire `Vary: Accept`.
-    // The prefix match is the `/fit*` the comment above names; there is no
-    // other `/fit`-prefixed route on this site, and a future one that is not
-    // part of this surface would need to be excluded here.
+    // The prefix match is the `/fit*` this comment names; there is no other
+    // `/fit`-prefixed route on this site, and a future one that is not part of
+    // this surface would need to be excluded here.
     if (new URL(request.url).pathname.startsWith('/fit')) {
       const response = await handle(request, env, ctx);
+      // Every refusal leaves as the site's own 404 and undecorated; only a
+      // response that required a valid grant (the 200, the 303) is decorated
+      // below. A browser submitting this form always sends `Origin`, so the
+      // 403 branch costs a legitimate caller nothing.
+      if (response.status === 404 || response.status === 403) {
+        return siteNotFound(request, env, ctx);
+      }
       const headers = new Headers(response.headers);
       headers.set('X-Robots-Tag', 'noindex, nofollow');
       headers.set('Referrer-Policy', 'no-referrer');

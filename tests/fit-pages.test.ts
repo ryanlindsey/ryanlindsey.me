@@ -25,16 +25,37 @@ let db: D1Database;
  * MEASURED, not decorative (day 5 Task 13). Astro's `security.checkOrigin` is
  * on by default and this repo does not turn it off, so a form-encoded POST
  * carrying no `Origin` header is answered `403 Cross-site POST form
- * submissions are forbidden` by Astro's own middleware -- before routing, and
- * so before any code in src/pages/fit/run.ts runs. A browser submitting this
- * form sends the header, so a test that omits it is testing a client that does
- * not exist and never reaches the route it means to.
+ * submissions are forbidden` by Astro's own middleware. A browser submitting
+ * this form sends the header, so a test that omits it is testing a client that
+ * does not exist and never reaches the route it means to.
  *
- * That 403 leaks nothing about `/fit`, which is the property that matters
- * here: measured against `/nope/nope` (no route at all), `/resume.pdf` (a real
- * on-demand route) and `/fit/run`, the refusal and its body are byte-identical
- * on all three. The unlisted guarantee is a statement about what a token gets,
- * and this refusal happens with no token read on any path.
+ * A review argued that 403 was itself a route-existence oracle, on the reading
+ * that Astro's `handleRequest` returns its 404 when `!state.routeData` before
+ * any middleware, so only a path matching a real on-demand route could produce
+ * it. RE-MEASURED in fix round 1, and that is not what this Astro version does:
+ * with no `Origin` and no body, `/nope/nope`, `/also-not-a-route`,
+ * `/resume.pdf` and `/fit/run` all returned the identical `403 Cross-site POST
+ * form submissions are forbidden`, and `PROPFIND /nope` the same sentence with
+ * the method substituted. The check runs before routing, on every path.
+ *
+ * It became an oracle anyway, by a different route, and only after this round
+ * added `/fit` to `run_worker_first` (wrangler.jsonc): a path NOT in that list
+ * never reaches src/worker.ts, so the Asset Worker answers it with 404.html and
+ * the origin check never runs. A cross-site POST then gets a 404 page from
+ * `/nope/nope` and a 403 from `/fit/run` -- "this path is Worker-first", which
+ * for an unlisted route is as good as "this path is real". src/worker.ts now
+ * flattens BOTH refusals to the site's own 404, and `an un-granted /fit is
+ * indistinguishable from a path that does not exist` below is what holds it
+ * there through whichever of these two mechanisms moves next.
+ *
+ * The harness artifact worth knowing about, because it is what made the first
+ * reading of this look inconsistent: a refusal returned without reading the
+ * request body poisons the keep-alive connection, and the IMMEDIATELY FOLLOWING
+ * request on it fails with `500 Error: Network connection lost` from
+ * miniflare's entry worker. It recovers after one request. That is why the
+ * comparison test below sends no request body at all -- the origin check reads
+ * headers, not bodies, so an empty POST exercises the same path with nothing
+ * left unread.
  */
 let origin = '';
 
@@ -108,12 +129,103 @@ test('/fit carries its own noindex and a no-referrer policy', async () => {
   // Both survive day 7 removing the SITEWIDE noindex from Base.astro: the
   // meta tag is set by an explicit prop, and the headers are on the response.
   // The referrer policy is load-bearing rather than tidy -- the token is in
-  // this page's URL, and a default policy would send it to every host the
-  // page links to.
+  // this page's URL, and the Turnstile widget below loads a script from
+  // challenges.cloudflare.com, which without this would carry that URL in its
+  // `Referer`.
   const response = await server.fetch(`/fit?t=${await grant()}`);
   expect(response.headers.get('x-robots-tag')).toMatch(/noindex/);
   expect(response.headers.get('referrer-policy')).toBe('no-referrer');
-  expect(await response.text()).toMatch(/<meta name="robots" content="noindex, nofollow"/);
+  const html = await response.text();
+  expect(html).toMatch(/<meta name="robots" content="noindex, nofollow"/);
+  // The SECOND delivery of the referrer policy, and the reason `Base.astro`
+  // has a `referrer` prop at all: the header above is set in one line of
+  // src/worker.ts whose reachability depends on asset routing config. The
+  // token's confinement should not rest on one line.
+  expect(html).toMatch(/<meta name="referrer" content="no-referrer"/);
+});
+
+test('the load-bearing headers are on the 303, not only on the rendered page', async () => {
+  // MEASURED AS A GAP in fix round 1: moving both `headers.set` calls in
+  // src/worker.ts into the page's success path left every other test green
+  // while the 303 lost them. The redirect is a `/fit` response like any other
+  // -- it is the one a browser follows straight back to a URL carrying the
+  // token -- so it is asserted directly rather than assumed to be covered.
+  //
+  // The 404 is deliberately NOT in this list: it carries neither header, by
+  // design, because carrying them would make it distinguishable from the
+  // site's own 404. See the indistinguishability test below.
+  const response = await server.fetch('/fit/run', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', origin },
+    redirect: 'manual',
+    body: new URLSearchParams({
+      t: await grant(),
+      target_description: 'A generic description of a target, long enough for the schema. '.repeat(
+        6,
+      ),
+    }).toString(),
+  });
+  expect(response.status).toBe(303);
+  expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+  expect(response.headers.get('x-robots-tag')).toMatch(/noindex/);
+});
+
+test('an un-granted /fit is indistinguishable from a path that does not exist', async () => {
+  // THE WHOLE POINT OF THE PAGE, and status alone does not establish it. Every
+  // other refusal test here asserts `status === 404`, which stayed true while
+  // the refusals carried a body (`'Not found'`, so `Content-Type:
+  // text/plain;charset=UTF-8` and `Content-Length: 9`) and two headers nothing
+  // else on this site sets, against a real 404 that is a 5 KB HTML page.
+  // `curl -i /fit` against `curl -i /nope` told a prober holding the URL and a
+  // dead token that the route was real, and no test noticed.
+  //
+  // So this compares the WHOLE observable response against the site's own 404.
+  // Two different unrouted paths are used as the control on purpose: they must
+  // agree with each other as well as with `/fit`, which is what pins
+  // src/pages/404.astro rendering nothing derived from the request. Astro's
+  // stock 404 -- the one that page replaced -- embeds the requested path, and
+  // under it no `/fit` refusal could ever have matched.
+  //
+  // No request bodies: the origin check reads headers, and an unread body
+  // poisons the next request on the connection (see `origin` above).
+  // The harness's own init type, not the DOM's: `server.fetch` takes
+  // workerd's `RequestInit`, and a DOM-typed literal fails `npm run check` on
+  // an incompatible `body`.
+  type FetchInit = Parameters<typeof server.fetch>[1];
+  const observable = async (path: string, init?: FetchInit) => {
+    const response = await server.fetch(path, { redirect: 'manual', ...init });
+    return {
+      status: response.status,
+      body: await response.text(),
+      contentType: response.headers.get('content-type'),
+      contentLength: response.headers.get('content-length'),
+      robots: response.headers.get('x-robots-tag'),
+      referrer: response.headers.get('referrer-policy'),
+    };
+  };
+  const control = await observable('/definitely-not-a-route');
+  expect(control.status).toBe(404);
+  expect(await observable('/nope/nope'), 'the control must not depend on the path').toEqual(
+    control,
+  );
+
+  // A GET with no token, a GET with a malformed one, and a GET with a token
+  // whose grant lacks the scope: the three ways in.
+  expect(await observable('/fit')).toEqual(control);
+  expect(await observable('/fit?t=not-a-token')).toEqual(control);
+  expect(await observable(`/fit?t=${await grant(['profile'])}`)).toEqual(control);
+
+  // And the POST, against an unrouted path taking the same request. This is
+  // the pair that caught the second oracle: `/fit/run` is Worker-first and
+  // `/nope/nope` is not, so one reached Astro's origin check and answered 403
+  // while the other never left the Asset Worker and answered the 404 page.
+  // What is asserted is that the two agree, whatever they are -- the day the
+  // site stops answering them identically, this fails.
+  const post: FetchInit = {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  };
+  expect(await observable('/fit/run', post)).toEqual(await observable('/nope/nope', post));
 });
 
 test('the page copy carries no search language', async () => {
@@ -144,6 +256,29 @@ test('POST /fit/run without a token is a 404', async () => {
     headers: { 'content-type': 'application/x-www-form-urlencoded', origin },
     redirect: 'manual',
     body: new URLSearchParams({ target_description: 'x'.repeat(300) }).toString(),
+  });
+  expect(response.status).toBe(404);
+});
+
+test('POST /fit/run with a token lacking the fit scope is the same 404', async () => {
+  // The POST's SCOPE gate, which the no-token test above does not reach.
+  // MEASURED in fix round 1: deleting only `if (!tools.has('analyze_fit'))`
+  // from src/pages/fit/run.ts left every test green -- one sent no token at
+  // all and the other two sent valid `fit` grants, so nothing exercised the
+  // difference between "has a grant" and "has THIS grant". This mirrors the
+  // GET case, because the guarantee has to hold on both verbs or it is one
+  // route wide.
+  const response = await server.fetch('/fit/run', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', origin },
+    redirect: 'manual',
+    body: new URLSearchParams({
+      t: await grant(['profile']),
+      target_description: 'A generic description of a target, long enough for the schema. '.repeat(
+        6,
+      ),
+      turnstile_response: 'stubbed',
+    }).toString(),
   });
   expect(response.status).toBe(404);
 });
@@ -194,9 +329,21 @@ test('POST /fit/run with a grant reaches the engine and reports its refusal', as
     }).toString(),
   });
   expect(response.status).toBe(303);
-  const location = response.headers.get('location')!;
-  expect(location).toContain('/fit?');
-  expect(location).toContain('error=');
+  const location = new URL(response.headers.get('location')!, 'https://ryanlindsey.me');
+  expect(location.pathname).toBe('/fit');
+  // The ENGINE'S OWN SENTENCE, verbatim. Asserting only that `error=` is
+  // present would be satisfied by every `back()` call in the route -- the
+  // bot-check refusal above, the storage failure, a transport error -- so the
+  // test would pass with the engine never reached, which is the one thing its
+  // name claims. This string is `FitUnavailable`'s, thrown by `analyzeFit` on
+  // the `FIT_ENGINE` seam, carried through `fitToolError` as an `isError`
+  // RESULT, read out of the result text by `callAnalyzeFit` (`instanceof` does
+  // not survive the service binding) and put on the query string unaltered.
+  // Its arrival here is the proof that the whole path ran.
+  expect(location.searchParams.get('error')).toBe(
+    'Fit analysis is not available in this environment.',
+  );
   // The token is carried back so the page still renders; nothing else is.
-  expect(location).toContain('t=');
+  expect(location.searchParams.get('t')).toBe(token);
+  expect([...location.searchParams.keys()].sort()).toEqual(['error', 't']);
 });

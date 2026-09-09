@@ -1,6 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { analyzeFit, FitUnavailable, type FitEnv } from '../../../src/lib/fit/engine';
+import {
+  analyzeFit,
+  FitUnavailable,
+  type FitEnv,
+  type FitResult,
+} from '../../../src/lib/fit/engine';
 import { readCampaignForAudience } from '../../../src/lib/tier/campaigns';
 import type { Grant } from '../../../src/lib/tier/grant';
 import {
@@ -256,6 +261,44 @@ export function fitToolError(error: unknown): ToolError {
 }
 
 /**
+ * What `analyze_fit` answers with, around the report itself.
+ *
+ * The envelope travels WITH the report rather than in a log, on purpose. A
+ * reader deciding how much to trust this needs to know which model wrote it,
+ * when, how much corpus it saw, and -- the load-bearing one -- how many
+ * citations were dropped as unresolvable. Burying that in a log would make the
+ * honesty contract (03 §4) unverifiable by the person it is for.
+ *
+ * `audience` is here because of what happens downstream. `/fit`'s form stores
+ * every run in `fit_reports`, whose `audience` column is defined by
+ * migrations/0002_private_tier.sql as the GRANT'S audience -- with a comment
+ * saying a NULL there would be evidence the tier check was bypassed. The site
+ * cannot supply it: `/fit` treats the token as opaque by design and never
+ * verifies it, so before this field existed it wrote the literal `'web'` and
+ * every browser-produced report claimed an audience named after a channel.
+ * This is the only place that knows the answer, so this is where it is said.
+ *
+ * Not a disclosure: the audience is a claim inside the signed token the caller
+ * is already holding.
+ *
+ * A separate, pure function so it can be tested without a model call -- the
+ * whole success path of this tool is unreachable under the harness
+ * (`FIT_ENGINE: 'off'`), which is exactly the condition under which a field
+ * silently going missing would never be noticed.
+ */
+export function fitEnvelope(result: FitResult, audience: string): Record<string, unknown> {
+  return {
+    report: result.report,
+    audience,
+    model: result.model,
+    generated_at: result.generatedAt,
+    corpus_documents: result.corpusDocuments,
+    citations_checked: result.citations.checked,
+    citations_dropped: result.citations.dropped,
+  };
+}
+
+/**
  * Every private-tier tool there is, in the order a granted caller meets them.
  *
  * The ARRAY's order is the order of both `tools/list` and the instruction map,
@@ -403,7 +446,7 @@ const GATED_TOOLS: readonly GatedTool[] = [
       "Compares Ryan's published record against a description you supply and returns a structured report: a requirement-by-requirement evidence map with citation URLs, the gaps, and questions worth asking him. Pass the full text. If you have a URL instead, fetch it yourself first and pass what you retrieved -- this tool does not accept URLs.",
     summary:
       'compare a description you supply against the corpus; returns an evidence map with citation URLs, honest gaps, and questions to ask.',
-    register: (server, tc, tool) =>
+    register: (server, tc, tool, grant) =>
       defineTool<z.infer<typeof FIT_INPUT>>(
         server,
         tc,
@@ -423,20 +466,12 @@ const GATED_TOOLS: readonly GatedTool[] = [
         async ({ target_description }, tc) => {
           try {
             const result = await analyzeFit(fitEnv(tc.env), target_description);
-            return {
-              report: result.report,
-              // The envelope travels WITH the report rather than in a log, on
-              // purpose. A reader deciding how much to trust this needs to
-              // know which model wrote it, when, how much corpus it saw, and
-              // -- the load-bearing one -- how many citations were dropped as
-              // unresolvable. Burying that in a log would make the honesty
-              // contract (03 §4) unverifiable by the person it is for.
-              model: result.model,
-              generated_at: result.generatedAt,
-              corpus_documents: result.corpusDocuments,
-              citations_checked: result.citations.checked,
-              citations_dropped: result.citations.dropped,
-            };
+            // `grant` is the registration-time grant, and it is the SAME
+            // object `tc.grant` holds: ./index.ts resolves it once per HTTP
+            // request, before the server is built (see `ToolContext`). Reading
+            // it from the parameter rather than from `tc` is what makes it
+            // non-null here without a check that could only ever be dead code.
+            return fitEnvelope(result, grant.audience);
           } catch (error) {
             // The mapping is `fitToolError` above, where both branches are
             // reachable by a test. `instanceof` is sound at that call because
