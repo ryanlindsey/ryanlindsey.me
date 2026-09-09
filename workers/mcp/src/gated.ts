@@ -56,6 +56,51 @@ const CASE_STUDY_INPUT = z.object({
   slug: z.string().describe('The slug of a published case study, as list_case_studies reports it.'),
 });
 
+/** The namespace a configured narrative document is confined to. */
+const NARRATIVE_PREFIX = 'narrative/';
+const NARRATIVE_SUFFIX = '.md';
+
+/**
+ * A campaign's configured `gated_narrative_doc`, or `null` if it names
+ * anything but a document in the narrative namespace.
+ *
+ * THE SCOPES ARE THE REASON THIS EXISTS, and the reason is worth stating in
+ * full because the obvious objection -- "that value is operator-authored, not
+ * caller input" -- is true and does not settle it.
+ *
+ * `parseCampaign` (src/lib/tier/campaigns.ts) accepts any string here. Handed
+ * to `readPrivateDoc` unchecked, a campaign entry naming
+ * `profile/compensation.md` would serve a PROFILE-tier document to a token
+ * carrying only `narrative`. That is not a traversal -- the key is perfectly
+ * well formed -- it is a scope crossing, and it would defeat the least
+ * privilege split the four scopes exist to draw (src/lib/tier/token.ts's
+ * `SCOPES`: "a token minted for a fit demonstration should not also be able to
+ * read reference contacts"). A typo in a hand-typed `wrangler kv key put` is
+ * enough to cause it, and nothing downstream would notice: the tool would
+ * answer 200 with the wrong tier's document.
+ *
+ * So the config path keeps exactly the property it was taken for -- a document
+ * can be renamed without re-minting tokens -- and keeps it INSIDE the
+ * namespace. Renaming is what it is for; reaching into another scope's
+ * namespace never was.
+ *
+ * VALIDATED BY RECONSTRUCTION rather than by a second regex: the key is
+ * accepted only if `narrativeKey` (the convention path) would have produced
+ * that exact string for the segment inside it. So the set this admits is
+ * precisely the set the convention could also have named -- there is no third
+ * shape to keep in step -- and it inherits `safeSegment`'s refusal of slashes,
+ * dots and percent-encoding for free. If the key template in
+ * src/lib/tier/private-docs.ts ever changes, this equality stops holding and
+ * every configured key is refused, which is the safe direction to fail in.
+ */
+function narrativeKeyFromConfig(configured: string): string | null {
+  if (!configured.startsWith(NARRATIVE_PREFIX) || !configured.endsWith(NARRATIVE_SUFFIX)) {
+    return null;
+  }
+  const segment = configured.slice(NARRATIVE_PREFIX.length, -NARRATIVE_SUFFIX.length);
+  return narrativeKey(segment) === configured ? configured : null;
+}
+
 /**
  * Every private-tier tool, registered against the scopes the grant carries.
  *
@@ -150,14 +195,38 @@ export function registerGatedTools(server: McpServer, tc: ToolContext): void {
         // The audience comes from the SIGNED claim, so a caller cannot ask for
         // someone else's narrative by changing an argument -- there is no
         // argument. That is why this tool takes none.
-        const audience = tc.grant!.audience;
+        //
+        // Read off `grant`, the binding this function narrowed non-null at the
+        // top, rather than off `tc.grant!`. Same object -- the closure captures
+        // the very `tc` it is passed -- but the non-null-ness is then carried
+        // by the type checker instead of asserted past it, so the guarantee is
+        // provable rather than promised.
+        const audience = grant.audience;
         // Configuration first: 00 §5 gives a campaign an explicit
         // `gated_narrative_doc`, and honouring it means a document can be
         // renamed without re-minting tokens. The convention key is the
-        // fallback, not the rule.
+        // fallback, not the rule -- an entry that omits the field parses as
+        // `''` and takes the fallback, which is why this tests for the empty
+        // string rather than for the campaign's presence.
         const campaign = await readCampaignForAudience(tc.env, audience);
-        const key = campaign?.gatedNarrativeDoc || narrativeKey(audience);
-        if (!key) throw new ToolError(NOT_DEPLOYED);
+        const configured = campaign?.gatedNarrativeDoc ?? '';
+        let key: string | null;
+        if (configured === '') {
+          key = narrativeKey(audience);
+        } else {
+          key = narrativeKeyFromConfig(configured);
+          if (key === null) {
+            // Named in the log because this is a deployment mistake an
+            // operator has to be able to find -- and NOT named to the caller,
+            // who gets the same `NOT_DEPLOYED` sentence a missing document
+            // gets. A refusal that quoted the key back would turn a
+            // misconfiguration into a listing of what is in the bucket.
+            console.warn(
+              `mcp/gated: the narrative document configured for audience "${audience}" is outside the ${NARRATIVE_PREFIX} namespace and was refused: ${configured}`,
+            );
+          }
+        }
+        if (key === null) throw new ToolError(NOT_DEPLOYED);
         const text = await readPrivateDoc(tc.env, key);
         if (text === null) throw new ToolError(NOT_DEPLOYED);
         return text;

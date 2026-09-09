@@ -334,9 +334,12 @@ export function defineTool<A>(
         hashable: (args) => args,
         run: async (args) => {
           // The SECOND of two independent mechanisms. The first is
-          // registration: ./server.ts does not register a gated tool at all
-          // unless the grant carries its scope, so a caller without one cannot
-          // see this tool in `tools/list` or name it in `tools/call`. This
+          // registration: `registerGatedTools` in ./gated.ts does not register
+          // a gated tool at all unless the grant carries its scope, so a caller
+          // without one cannot see this tool in `tools/list` or name it in
+          // `tools/call`. (That logic was written to live in ./server.ts, which
+          // is what this comment used to point at; day 5 Task 7 put it in its
+          // own module and ./server.ts now only calls it.) This
           // check is what makes that true even if a future edit registers a
           // tool unconditionally by mistake -- "structural, not filtered"
           // (09 §3) is worth more than one guarantee.

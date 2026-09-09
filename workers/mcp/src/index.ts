@@ -177,13 +177,21 @@ export default {
           // Logged, not answered with an error: a stale token should still get
           // the public tier rather than a broken connection.
           //
-          // The log line names the REASON (`expired`, `revoked`, `unknown`,
-          // `bad_signature`, `unavailable`); what the caller is told does not.
-          // That asymmetry is the whole design: an operator running a
-          // revocation drill (09 §3 item 6) reads this line and knows exactly
-          // which check bit, while the holder gets one unspecific sentence
-          // that is no use for probing which of those four states a token
+          // The log line names the REASON -- every member of `GrantRefusal`
+          // (src/lib/tier/grant.ts), whichever one was reached; what the
+          // caller is told does not. That asymmetry is the whole design: an
+          // operator running a revocation drill (09 §3 item 6) reads this line
+          // and knows exactly which check bit, while the holder gets one
+          // unspecific sentence that is no use for probing which state a token
           // string is in.
+          //
+          // Deliberately NOT a list of those members. An earlier draft of this
+          // comment wrote out five of them and then called them "those four
+          // states" -- wrong twice over, since `GrantRefusal` is `TokenFailure`
+          // plus three and has seven. A hand-copied enumeration in a comment
+          // rots the first time a member is added, and it rots in the place an
+          // operator reading a drill's output would trust it. The type is the
+          // list.
           console.warn(`mcp/grant: refused a presented token (${refusal})`);
         }
         // `refusal` is passed rather than dropped, and that second argument is

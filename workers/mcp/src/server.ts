@@ -10,8 +10,16 @@ import { registerTools } from './tools';
  * Sent on every `initialize` (03 §1), so this is a tool MAP rather than
  * prose on purpose: tests/mcp.smoke.test.ts's "the instructions name every
  * registered tool" enumerates `tools/list` at runtime and fails the moment a
- * later task adds a tool without a matching line here. Under ~1200
- * characters, per that same spec section. The two `resume://json` /
+ * later task adds a tool without a matching line here.
+ *
+ * 03 §1's ~1200-character budget is THIS string's, and saying which string it
+ * governs matters now that there is more than one. Measured 2026-09-08: this
+ * constant is 922 characters, and the instructions a grant carrying all four
+ * scopes is sent are 1364. The larger number is not an overrun to trim: the
+ * budget describes what every client is sent on an unauthenticated connect,
+ * and a per-token map that enumerates the tools a grant unlocked is the whole
+ * point of `buildInstructions` below. Keep THIS one under the budget; let the
+ * granted one be as long as the grant makes it. The two `resume://json` /
  * `writing://{slug}` resources get their own line for the same reason
  * `/llms.txt`'s MCP description (src/pages/llms.txt.ts) names both: two texts
  * describing the same server should not disagree about what it serves.
@@ -57,14 +65,28 @@ const REFUSED_LINE =
   'The scoped token presented with this request was not accepted; the public tools below are what this connection has.';
 
 /**
- * The tool map a GRANTED connection is sent, built from the scopes actually
- * registered rather than from a fixed list.
+ * The tool map a GRANTED connection is sent, keyed by the scope that unlocks
+ * each group rather than written out as one fixed list.
  *
  * 03 §1 asks for exactly this -- per-token MCP `initialize` instructions that
- * enumerate the tools the grant unlocks -- and building it from the same
- * `scopes` array that decided registration is what keeps the two from
- * disagreeing: a tool map that advertises a tool the server did not register
- * is worse than no map.
+ * enumerate the tools the grant unlocks.
+ *
+ * WHAT THIS STRUCTURE GUARANTEES, AND WHAT IT DOES NOT, because the difference
+ * is easy to overclaim and a comment that overclaims it is worse than none.
+ * Driving the map off the same `scopes` array that decided registration means
+ * the SCOPE SET cannot disagree: a scope the grant lacks contributes no lines,
+ * so no caller is ever told about a group of tools their token did not open.
+ * That much is structural.
+ *
+ * The tool NAMES inside each array are a hand-maintained duplicate of
+ * ./gated.ts, and nothing detects a mismatch between them. Rename a tool there
+ * and forget this table, and a granted caller is handed a map naming a tool
+ * `tools/list` does not contain -- which is exactly the failure the structure
+ * above prevents at the coarser grain, at the finer grain still possible.
+ * tests/mcp-gated.test.ts pins the profile group's three lines against the
+ * profile grant's own listing, which catches the case that matters most; it is
+ * a spot check, not a proof, and a general one would mean deriving these lines
+ * from the registrations themselves.
  */
 const SCOPE_LINES: Record<Scope, string[]> = {
   profile: [
@@ -96,13 +118,17 @@ export function buildInstructions(grant: Grant | null, refusal: GrantRefusal | n
   const granted = SCOPES.filter((scope) => grant.scopes.includes(scope)).flatMap(
     (scope) => SCOPE_LINES[scope],
   );
-  return [
-    PUBLIC_INSTRUCTIONS,
-    '',
-    `This connection carries a scoped token for the audience "${grant.audience}". It also has:`,
-    '',
-    ...granted,
-  ].join('\n');
+  const header = `This connection carries a scoped token for the audience "${grant.audience}".`;
+  // A grant that opens NO tool in this build still gets the header, and gets
+  // it without the colon. `SCOPE_LINES.fit` is empty until Task 11 registers
+  // `analyze_fit`, so a `fit`-only token minted before then would otherwise be
+  // sent "It also has:" followed by nothing at all -- a dangling colon on the
+  // one surface whose job is to tell a holder what their token is for, which
+  // reads as a broken server rather than as an unfinished build. The header
+  // itself is kept because it is true and useful: it confirms the token WAS
+  // accepted, which is the other half of what the refusal line above says.
+  if (granted.length === 0) return [PUBLIC_INSTRUCTIONS, '', header].join('\n');
+  return [PUBLIC_INSTRUCTIONS, '', `${header} It also has:`, '', ...granted].join('\n');
 }
 
 /**
