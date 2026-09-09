@@ -761,9 +761,14 @@ describe('search_writing', () => {
  * and never silently pass against a fake"). What genuinely IS true under this
  * harness -- the call fails closed (a tool-result error, not a crash or an
  * unhandled throw) and the failure text itself carries no search language --
- * is asserted for real below. The retrieval half is deferred to Task 16's live
- * run against the real index, where it can actually be observed, and marked
- * with an explicit named skip rather than silently omitted.
+ * is asserted for real below. The retrieval half needs the real index, and no
+ * task in this plan runs it: Task 16 (the candidate-mode audit) is a source-
+ * tree and harness scan whose own constraints forbid deploying or making a
+ * live call, and Task 17's live checks (a `tools/list` curl, the eval suite,
+ * the owner's token walkthrough) do not exercise `search_writing` by name.
+ * That gap is named directly, below, with an explicit skip rather than a
+ * silent omission -- an operator running these two queries by hand against
+ * the deployed endpoint is the closest thing this plan has to an owner for it.
  *
  * One more thing has to be true for "fails closed under this harness" to
  * test anything real: the query has to actually REACH the handler. The plain
@@ -819,9 +824,11 @@ describe('search_writing adversarial candidacy queries (09 §2)', () => {
 
   test.skip(
     'both adversarial queries return cited excerpts only, with no synthesized verdict and no ' +
-      "search language in the actual results -- deferred to Task 16's live run: VECTORIZE has no " +
-      'local simulation under this harness (env.VECTORIZE.query() throws), so there is no result ' +
-      'here to make this assertion about',
+      'search language in the actual results -- VECTORIZE has no local simulation under this ' +
+      'harness (env.VECTORIZE.query() throws) and no task in this plan runs a live query ' +
+      'against the real index, so there is no result here to make this assertion about; an ' +
+      'operator checking these two queries by hand against the deployed endpoint is this ' +
+      "plan's closest thing to an owner for it",
     () => {},
   );
 });

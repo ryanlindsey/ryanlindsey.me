@@ -181,6 +181,30 @@ test('the load-bearing headers are on the 303, not only on the rendered page', a
   expect(response.headers.get('x-robots-tag')).toMatch(/noindex/);
 });
 
+test('a successful /fit/run response sets no cookie', async () => {
+  // Fix round (Task 16, finding 5): tests/tier-invisibility.test.ts's cookie
+  // tests are a SOURCE scan (grep src/pages/fit/run.ts for `set-cookie`),
+  // which is fast but proves nothing about a real response -- a header set
+  // through a helper, a framework default, or a Response constructed
+  // elsewhere would pass that scan and still ship a cookie. This is the
+  // runtime half of the same invariant: `allowedOriginHostnames: '*'`
+  // (workers/mcp/src/index.ts) is safe only because nothing this system ever
+  // sends is ambient, and a cookie is the canonical ambient credential.
+  const response = await server.fetch('/fit/run', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', origin },
+    redirect: 'manual',
+    body: new URLSearchParams({
+      t: await grant(),
+      target_description: 'A generic description of a target, long enough for the schema. '.repeat(
+        6,
+      ),
+    }).toString(),
+  });
+  expect(response.status).toBe(303);
+  expect(response.headers.get('set-cookie')).toBeNull();
+});
+
 test('an un-granted /fit is indistinguishable from a path that does not exist', async () => {
   // THE WHOLE POINT OF THE PAGE, and status alone does not establish it. Every
   // other refusal test here asserts `status === 404`, which stayed true while

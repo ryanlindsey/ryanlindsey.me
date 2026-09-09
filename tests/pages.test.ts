@@ -207,11 +207,29 @@ test('carries no candidacy language on any public surface', async () => {
   }
 
   // Day 5 Task 16: /fit itself (04 §2), asserted as its own case rather than
-  // folded into the loop above -- an ungranted caller gets a bare 404 with no
-  // body (src/pages/fit/index.astro), so there is nothing here for the loop's
-  // `html()` helper (which requires 200) to scan. The GRANTED rendering, the
-  // one that actually carries copy, is scanned in tests/fit-pages.test.ts.
-  expect((await server.fetch('/fit')).status).toBe(404);
+  // folded into the loop above -- the loop's `html()` helper requires 200,
+  // and an ungranted /fit does not answer with one.
+  //
+  // src/pages/fit/index.astro's OWN answer to an ungranted caller is a bare,
+  // empty 404, but that is not what reaches this fetch: src/worker.ts
+  // replaces every /fit refusal with the SITE'S OWN 404 page
+  // (src/pages/404.astro, ~5 KB, byte-identical to an unrouted path's --
+  // tests/fit-pages.test.ts's "an un-granted /fit is indistinguishable from a
+  // path that does not exist" is the test that measures that) before the
+  // caller ever sees it. So the response is not bodyless, the body IS
+  // scannable, and scanning it is strictly stronger than the status-only
+  // check this used to be -- src/pages/404.astro renders nothing derived
+  // from the request, so this stays true regardless of which dead path
+  // produced it. The GRANTED renderings -- the ones that actually carry the
+  // analyser's copy -- are scanned in tests/fit-pages.test.ts's own "the page
+  // copy carries no search language" (the form) and "the permalink page copy
+  // carries no search language" (a stored report).
+  const fitRefusal = await server.fetch('/fit');
+  expect(fitRefusal.status).toBe(404);
+  const fitRefusalBody = await fitRefusal.text();
+  for (const pattern of BANNED_PATTERNS) {
+    expect(fitRefusalBody, `/fit's refusal body must not match ${pattern}`).not.toMatch(pattern);
+  }
 });
 
 test('renders an MDX article with Expressive Code frames', async () => {

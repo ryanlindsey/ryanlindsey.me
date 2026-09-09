@@ -15,6 +15,7 @@
     "\\brecruit(er|ers|ing|ment)?\\b",
     "\\bjob[-\\s]?search(es|ing)?\\b",
     "\\bactively looking\\b",
-    "\\bopen to (work|opportunities|offers)\\b"
+    "\\bopen to (work|opportunities|offers)\\b",
+    "\\bcandidac(y|ies)\\b"
   ]
 }

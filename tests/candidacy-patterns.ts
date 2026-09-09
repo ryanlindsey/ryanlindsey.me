@@ -74,6 +74,13 @@ export const BANNED_PATTERNS = [
  * vocabulary, and a scan that read its own pattern list would be permanently
  * red. Test files are also not shipped, and every surface that IS shipped is
  * covered here or by a runtime scan of the real response.
+ *
+ * `CHANGELOG.md` (fix round 1, finding 6) is the one entry added after the
+ * others, and for a different reason than any of them: it is GENERATED, by
+ * release-please, from squash-merged PR titles -- a channel no human reviews
+ * line by line the way a PR body or a code comment gets read. Clean today,
+ * which is exactly the day to start scanning a surface whose whole point is
+ * that its content arrives through someone else's typing.
  */
 export const SCAN_ROOTS = [
   'src',
@@ -84,6 +91,7 @@ export const SCAN_ROOTS = [
   'public',
   'migrations',
   'README.md',
+  'CHANGELOG.md',
 ];
 
 /**
