@@ -1,0 +1,11 @@
+{
+  "id": "mismatch",
+  "name": "A description the record plainly does not meet",
+  "target_description": "This role is for a senior structural engineer working on bridge and viaduct projects. You will produce stamped calculations for concrete and steel structures, lead site inspections of load-bearing elements, and sign off on designs under a professional engineering licence. A degree in civil or structural engineering and a current PE licence are required, along with ten years of design experience on transport infrastructure and working knowledge of the relevant national design codes.",
+  "expect": {
+    "min_requirements": 4,
+    "min_gaps": 3,
+    "max_strong": 0,
+    "max_dropped_citations": 0
+  }
+}

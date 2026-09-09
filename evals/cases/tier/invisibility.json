@@ -1,0 +1,20 @@
+{
+  "id": "invisibility",
+  "name": "The private tier is invisible without a grant",
+  "hidden_tools": [
+    "analyze_fit",
+    "get_availability",
+    "get_references",
+    "get_compensation_expectations",
+    "get_case_study_details",
+    "get_application_narrative"
+  ],
+  "banned_patterns": [
+    "\\bhir(e|es|ed|ing)\\b",
+    "\\bcandidates?\\b",
+    "\\brecruit(er|ers|ing|ment)?\\b",
+    "\\bjob[-\\s]?search(es|ing)?\\b",
+    "\\bactively looking\\b",
+    "\\bopen to (work|opportunities|offers)\\b"
+  ]
+}
