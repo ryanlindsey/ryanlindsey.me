@@ -1155,6 +1155,13 @@ describe('resources', () => {
  * from coverage. `get_case_study`, `get_post` and `search_writing` are the
  * three genuinely skipped, each because it needs an argument this loop cannot
  * supply -- each is covered by its own describe block above instead.
+ *
+ * DAY 5 ARRIVED AND THIS TEST DID ITS JOB WITHOUT AN EDIT. The gated tools
+ * are registered per grant (workers/mcp/src/server.ts), so an anonymous
+ * `tools/list` here still enumerates exactly the public tier -- which is why
+ * the runtime walk was written instead of a hardcoded list. The gated
+ * surface's own scan lives in tests/mcp-gated.test.ts, where a grant exists
+ * to enumerate it.
  */
 test('no public MCP surface carries search language: initialize, tools/list, resources/list, and every zero-argument tool call', async () => {
   const db = await auditDb();

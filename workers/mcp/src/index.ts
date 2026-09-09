@@ -89,10 +89,16 @@ function corpusEnv(env: McpEnv): CorpusEnv {
  * origin or on the token string. So the property this opening rests on is
  * unchanged: a token is presented EXPLICITLY by a client that already had it,
  * and there is still no ambient credential for a hostile page to borrow.
+ * tests/tier-invisibility.test.ts (Task 16) pins half of that structurally
+ * rather than trusting the next edit to remember it: it fails if the word
+ * `cookie` appears in the CODE of this file, of src/lib/tier/grant.ts, or of
+ * ./define.ts -- comments may still discuss the word, which is how this one
+ * does.
  *
- * The obligation transfers rather than expires. The day anything here accepts
- * a credential the browser would attach on its own, this setting stops being
- * safe and has to change in the same commit.
+ * THE CONDITION IS UNCHANGED. If a token is ever accepted from a cookie, or a
+ * resolved grant is ever cached per origin, this setting becomes a real
+ * cross-origin read of gated data and must change in the same commit. The
+ * obligation transfers rather than expires.
  */
 const HANDLER_OPTIONS = {
   route: '/mcp',

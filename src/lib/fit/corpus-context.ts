@@ -65,8 +65,8 @@ export interface CorpusContext {
  * Also returns `includedUrls` -- exactly the `block.url` of every block this
  * call kept, recorded in the same loop that decides what to keep. Fix round
  * 1, finding 1: `buildCorpusContext` used to recompute its citation set by
- * searching the returned `text` for each candidate URL, and that is unsound
- * -- a KEPT document's own markdown can contain a link to a DROPPED
+ * searching the returned `text` for each URL under consideration, and that is
+ * unsound -- a KEPT document's own markdown can contain a link to a DROPPED
  * document's URL (an ordinary thing for a résumé or case study to do), which
  * would make the URL appear as a substring of `text` even though the model
  * was never shown that document. Reporting membership from the loop that

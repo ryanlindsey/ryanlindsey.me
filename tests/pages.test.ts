@@ -205,6 +205,13 @@ test('carries no candidacy language on any public surface', async () => {
       expect(page, `${route} must not match ${pattern}`).not.toMatch(pattern);
     }
   }
+
+  // Day 5 Task 16: /fit itself (04 §2), asserted as its own case rather than
+  // folded into the loop above -- an ungranted caller gets a bare 404 with no
+  // body (src/pages/fit/index.astro), so there is nothing here for the loop's
+  // `html()` helper (which requires 200) to scan. The GRANTED rendering, the
+  // one that actually carries copy, is scanned in tests/fit-pages.test.ts.
+  expect((await server.fetch('/fit')).status).toBe(404);
 });
 
 test('renders an MDX article with Expressive Code frames', async () => {

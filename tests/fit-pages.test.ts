@@ -620,7 +620,16 @@ test('the permalink page copy carries no search language', async () => {
   // 09 §2's discipline applies to every user-facing surface, not only the
   // gated form -- this page is reachable with no token at all, so it is
   // read by more strangers than /fit itself.
-  await storeReport('fixture-candidacy-id');
-  const html = await (await server.fetch('/fit/r/fixture-candidacy-id')).text();
+  //
+  // The fixture id is deliberately NOT "...candidacy..." (an earlier version
+  // of this test used one): Task 16 added `/\bcandidac(y|ies)\b/i` to
+  // BANNED_PATTERNS, and [id].astro's own Base layout renders the current
+  // path into a `<link rel="canonical">` -- so an id containing that word,
+  // hyphen-delimited on both sides, would trip the pattern against its OWN
+  // URL rather than against anything the page actually says. That is a
+  // fixture-naming collision, not a leak, and the fix is to pick an id that
+  // cannot spell a banned word by accident.
+  await storeReport('fixture-scan-fixture-id');
+  const html = await (await server.fetch('/fit/r/fixture-scan-fixture-id')).text();
   for (const pattern of BANNED_PATTERNS) expect(html).not.toMatch(pattern);
 });

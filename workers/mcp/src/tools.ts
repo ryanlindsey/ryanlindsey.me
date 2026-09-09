@@ -410,14 +410,30 @@ export function registerTools(server: McpServer, tc: ToolContext): void {
         // STRUCTURAL INTENT, not decoration, and day 5 replaces it -- read
         // 09 §3 before deleting or widening this line. Everything in
         // `ryanlindsey-me-corpus` today is `tier: 'public'` (src/lib/corpus.ts's
-        // `CORPUS_TIER`), so the filter changes no result on this branch. It is
-        // written now because day 5 adds a gated tier, and a retrieval path
-        // that filters what it could have partitioned is exactly the shape
-        // 09 §3 says is worth nothing: one forgotten filter and the private
-        // tier leaks through the public tool. Day 5's job is to replace this
-        // with a SEPARATE index, so that a missing filter cannot return a
-        // private passage at all -- a deliberate edit here, not an oversight
-        // somewhere else.
+        // `CORPUS_TIER`), so the filter changes no result on this branch.
+        //
+        // DAY 5 ANSWERED THIS, and not the way the paragraph above expected --
+        // read the answer before acting on the instruction.
+        //
+        // The instruction was: replace this filter with a SEPARATE index, so a
+        // missing filter cannot return a private passage at all. Day 5 did not
+        // create one, deliberately. Nothing it built embeds a gated document:
+        // the fit engine grounds on the PUBLIC corpus because a citation has to
+        // resolve to a URL a reader can open (03 §4), and every private-tier
+        // tool is a keyed R2 read (src/lib/tier/private-docs.ts). A second
+        // Vectorize index would therefore have been empty -- a claim about a
+        // partition rather than a partition, and this repo has been bitten
+        // often enough by green runs against fakes to name that failure.
+        //
+        // The partition day 5 SHIPPED is stronger where it counts and testable
+        // today: two R2 buckets, and a public document layer (`DocumentsEnv`)
+        // whose type does not declare `R2_PRIVATE` at all, so a public tool
+        // cannot name the binding, filter or no filter.
+        // tests/tier-private-docs.test.ts asserts that at the type level.
+        //
+        // SO THE INSTRUCTION TRANSFERS RATHER THAN EXPIRES: the day something
+        // embeds a non-public document, this filter stops being sufficient and
+        // the separate index has to be built in the same change.
         filter: { tier: CORPUS_TIER },
       });
 

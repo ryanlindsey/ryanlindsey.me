@@ -50,4 +50,53 @@ export const BANNED_PATTERNS = [
   /\bjob[-\s]?search(es|ing)?\b/i,
   /\bactively looking\b/i,
   /\bopen to (work|opportunities|offers)\b/i,
+  // Added Day 5 Task 16 (the candidate-mode audit): this repo's own term of
+  // art for the thing the whole private tier exists to keep off the public
+  // surface, and nothing above already catches it -- `candidates?` matches
+  // neither "candidacy" nor "candidacies" (no trailing `s` or `es`). Checked
+  // before adding, not assumed: against every file `SCAN_ROOTS` covers, this
+  // pattern hits only workers/mcp/src/server.ts, which `SCAN_EXCEPTIONS`
+  // already excuses for the same reason ("Candidacy-language discipline"
+  // sits inside the very comment that enumerates the forbidden vocabulary in
+  // order to forbid it). tests/candidacy-patterns.ts's own filename and this
+  // comment are unreachable by the static scan (`tests/` is outside
+  // `SCAN_ROOTS`, by design -- see that constant's doc comment), and
+  // evals/cases/tier/invisibility.json's mirrored `banned_patterns` array
+  // carries the pattern SOURCES as escaped strings ("\\bcandidac(y|ies)\\b"),
+  // which contains no literal "candidacy" substring for this pattern to catch.
+  /\bcandidac(y|ies)\b/i,
 ];
+
+/**
+ * What the static candidacy scan reads (tests/tier-invisibility.test.ts).
+ *
+ * `tests/` is deliberately absent: this file itself enumerates the forbidden
+ * vocabulary, and a scan that read its own pattern list would be permanently
+ * red. Test files are also not shipped, and every surface that IS shipped is
+ * covered here or by a runtime scan of the real response.
+ */
+export const SCAN_ROOTS = [
+  'src',
+  'workers',
+  'prompts',
+  'evals',
+  'scripts',
+  'public',
+  'migrations',
+  'README.md',
+];
+
+/**
+ * Files that legitimately match a banned pattern, and why.
+ *
+ * A REGISTER, not a suppression list, and the test asserts EQUALITY against it
+ * -- a new match fails, and so does an entry whose cause has been removed.
+ * Adding to it is a deliberate act with a reason attached, which is the whole
+ * difference between an exception and a hole.
+ */
+export const SCAN_EXCEPTIONS: Record<string, string> = {
+  'src/lib/corpus.ts':
+    'The chunker names a local variable `candidate` -- ordinary programming English for "the value under consideration", with no candidacy sense. Renaming it to satisfy a regex would make the code worse to read in exchange for nothing.',
+  'workers/mcp/src/server.ts':
+    'The instructions comment ENUMERATES the forbidden vocabulary in order to forbid it (09 §2). A rule that cannot name what it prohibits cannot be read by the next person to edit that string.',
+};

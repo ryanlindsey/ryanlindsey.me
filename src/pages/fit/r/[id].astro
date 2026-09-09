@@ -4,10 +4,11 @@ import Base from '../../../layouts/Base.astro';
 import { FitReport } from '../../../lib/fit/schema';
 
 /**
- * A fit report's permalink (04 §2): "a signed permalink so a recruiter can
- * circulate it internally" -- with the id itself as the capability rather
- * than a signature over it. 128 bits from the CSPRNG, stored in D1, never
- * derived from the report; see `newReportId` in src/lib/fit/client.ts.
+ * A fit report's permalink (04 §2): a link the reader can pass along to
+ * someone who never had a token of their own, with the id itself as the
+ * capability rather than a signature over it. 128 bits from the CSPRNG,
+ * stored in D1, never derived from the report; see `newReportId` in
+ * src/lib/fit/client.ts.
  *
  * No token is required, deliberately. The whole purpose of the permalink is
  * that it can be forwarded to people who do not have one, and requiring the
@@ -77,13 +78,13 @@ if (row === null) {
  * it.
  */
 function parseStoredReport(json: string): FitReport | null {
-  let candidate: unknown;
+  let raw: unknown;
   try {
-    candidate = JSON.parse(json);
+    raw = JSON.parse(json);
   } catch {
     return null;
   }
-  const parsed = FitReport.safeParse(candidate);
+  const parsed = FitReport.safeParse(raw);
   return parsed.success ? parsed.data : null;
 }
 
