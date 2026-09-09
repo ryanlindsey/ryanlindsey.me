@@ -442,13 +442,14 @@ test('a stored report renders at its permalink with no token', async () => {
   expect(html).toContain('https://ryanlindsey.me/resume');
 });
 
-test('an unknown id is a 404', async () => {
-  expect((await server.fetch('/fit/r/never-stored')).status).toBe(404);
-});
-
 test('an unknown permalink id is indistinguishable from a path that does not exist', async () => {
-  // The status-only assertion above is not the whole guarantee (mirrors the
-  // reasoning in "an un-granted /fit is indistinguishable..." above): this
+  // FIX ROUND 1, FINDING 3: this used to sit alongside a standalone
+  // `expect(status).toBe(404)` test for an unknown id, and that test could
+  // not fail -- with no route file at all, `/fit/r/*` already 404s (there is
+  // nothing to distinguish it from a dead path), which is exactly the state
+  // this suite was in the first time it ran. Folded in here rather than kept
+  // separate, because THIS is the assertion an unknown id actually needs:
+  // not merely 404, but the SAME 404 a path that was never routed gets. This
   // route sits under src/worker.ts's `/fit` prefix match, so its 404 is
   // supposed to be REPLACED by the site's own 404 page rather than answered
   // by this route at all. That is only true because the page returns a BARE
@@ -470,16 +471,66 @@ test('the permalink carries noindex and no-referrer too', async () => {
   const response = await server.fetch('/fit/r/fixture-headers-id');
   expect(response.headers.get('x-robots-tag')).toMatch(/noindex/);
   expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+  // FIX ROUND 1, FINDING 2: the two header checks above cannot fail from
+  // anything this PAGE does -- src/worker.ts sets both headers
+  // unconditionally on every non-refusal `/fit*` response, so they would
+  // still pass with `robots`/`referrer` deleted from the `<Base>` call
+  // entirely. The meta tags are the SECOND, independent delivery, and
+  // Base.astro's own prop comment calls that delivery load-bearing precisely
+  // because the header one depends on routing config
+  // (`run_worker_first`/the worker's `/fit` prefix match) that can regress
+  // without this page changing at all. The permalink id is bearer-equivalent
+  // to the token on `/fit` -- it IS the capability -- and a citation URL is
+  // an unrestricted `z.string().url()` (src/lib/fit/schema.ts), so any
+  // external citation could otherwise carry this URL off in a `Referer`.
+  const html = await response.text();
+  expect(html).toMatch(/<meta name="robots" content="noindex, nofollow"/);
+  expect(html).toMatch(/<meta name="referrer" content="no-referrer"/);
 });
 
 test('the report page states its provenance, dropped citations included', async () => {
   // 03 §4's honesty contract is only verifiable by a reader if the reader can
-  // see the numbers. A report that silently dropped a fabricated citation
-  // must say it did.
-  await storeReport('fixture-provenance-id');
+  // see the numbers -- especially the DROPPED count, which is the one that
+  // says whether the analyser was caught inventing a source. FIX ROUND 1,
+  // FINDING 1: `storeReport`'s fixture hardcodes `citations_dropped: 0`, and
+  // this test used to assert only the generic `/1 citation/i`, which stays
+  // true even with the "... dropped as unresolvable" clause deleted from the
+  // template entirely. So this uses its own fixture with a NONZERO dropped
+  // count and asserts on that number directly.
+  await db
+    .prepare(
+      `INSERT INTO fit_reports (id, created_at, audience, model, target_description,
+         report_json, citations_checked, citations_dropped)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      'fixture-provenance-id',
+      '2026-09-08T00:00:00.000Z',
+      'web',
+      'anthropic/claude-opus-5',
+      'A generic description of a role.',
+      JSON.stringify({
+        overall_read: 'A generic read of the comparison.',
+        requirement_map: [
+          {
+            requirement: 'Runs platform teams',
+            strength: 'strong',
+            evidence: [
+              { claim: 'Led a platform group', citation_url: 'https://ryanlindsey.me/resume' },
+            ],
+          },
+        ],
+        gaps: [],
+        questions_to_ask: [],
+      }),
+      4,
+      3,
+    )
+    .run();
   const html = await (await server.fetch('/fit/r/fixture-provenance-id')).text();
   expect(html).toContain('anthropic/claude-opus-5');
-  expect(html).toMatch(/1 citation/i);
+  expect(html).toMatch(/4 citations checked/i);
+  expect(html).toMatch(/3 dropped as unresolvable/i);
 });
 
 test('a stored report that no longer matches the schema renders a notice, not a crash', async () => {
@@ -523,6 +574,46 @@ test('a stored report whose JSON will not even parse renders the same notice', a
   const response = await server.fetch('/fit/r/fixture-unparseable-id');
   expect(response.status).toBe(200);
   expect(await response.text()).toMatch(/cannot be displayed/i);
+});
+
+test('a stored report with an unparseable created_at does not crash', async () => {
+  // FIX ROUND 1, FINDING 4: `generated` (the page's lead line AND the
+  // provenance footer read from it) is computed from `row.created_at`
+  // BEFORE the `report === null` branch above decides whether to render the
+  // report or the stale-schema notice. `created_at` is written by this build
+  // alone and carries no schema-versioning story the way `report_json` does
+  // -- but `new Date(bad).toISOString()` THROWS a RangeError rather than
+  // degrading, unlike `JSON.parse`, which at least fails in a way a
+  // try/catch expects. Uncaught, that throw is a 500 that src/worker.ts's
+  // flattening turns into a silent 404 -- on the stale-schema path too,
+  // which is the one adjustment 2 exists to keep alive. This report is
+  // otherwise well-formed (a valid `report_json`), so a failure here is
+  // specifically about the date guard and nothing else.
+  await db
+    .prepare(
+      `INSERT INTO fit_reports (id, created_at, audience, model, target_description,
+         report_json, citations_checked, citations_dropped)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      'fixture-bad-date-id',
+      'not a date',
+      'web',
+      'anthropic/claude-opus-5',
+      'A generic description of a role.',
+      JSON.stringify({
+        overall_read: 'A generic read of the comparison.',
+        requirement_map: [{ requirement: 'Runs platform teams', strength: 'strong', evidence: [] }],
+        gaps: [],
+        questions_to_ask: [],
+      }),
+      0,
+      0,
+    )
+    .run();
+  const response = await server.fetch('/fit/r/fixture-bad-date-id');
+  expect(response.status).toBe(200);
+  expect(await response.text()).toContain('A generic read of the comparison.');
 });
 
 test('the permalink page copy carries no search language', async () => {

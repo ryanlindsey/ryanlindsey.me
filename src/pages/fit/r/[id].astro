@@ -17,15 +17,27 @@ export const prerender = false;
 
 const { id } = Astro.params;
 
+/**
+ * `target_description` is deliberately NOT selected (fix round 1, finding
+ * 5). It is in the table (migrations/0002_private_tier.sql), it is typed on
+ * this SELECT's row shape in the original brief, and it is never rendered --
+ * pure dead weight on every read. Leaving it selected but unrendered would
+ * be one accidental `{row.target_description}` away from a real disclosure:
+ * that column holds whatever text the submitter pasted, and this permalink
+ * is designed to be forwarded to people holding no token, so rendering it
+ * would show that text to everyone who receives the link. Whether that
+ * should ever happen is a product decision this plan never made; dropping
+ * the column from the query needs no such decision and forecloses the
+ * accident instead of trusting nobody adds the line.
+ */
 const row = await env.DB.prepare(
-  `SELECT created_at, model, target_description, report_json, citations_checked, citations_dropped
+  `SELECT created_at, model, report_json, citations_checked, citations_dropped
      FROM fit_reports WHERE id = ?`,
 )
   .bind(id ?? '')
   .first<{
     created_at: string;
     model: string;
-    target_description: string;
     report_json: string;
     citations_checked: number;
     citations_dropped: number;
@@ -75,8 +87,27 @@ function parseStoredReport(json: string): FitReport | null {
   return parsed.success ? parsed.data : null;
 }
 
+/**
+ * The `generated` date label, guarded the same shape as `parseStoredReport`
+ * above and for the adjacent reason (fix round 1, finding 4): `created_at`
+ * is written by THIS build alone, and unlike `report_json` it carries no
+ * schema-versioning story -- but `toISOString()` on an `Invalid Date` THROWS
+ * a `RangeError` rather than degrading, where `JSON.parse` at least fails in
+ * a shape a `try`/`catch` expects. `generated` is computed before the
+ * `report === null` branch decides which half of the template to render, so
+ * an unguarded throw here would crash the STALE-SCHEMA NOTICE PATH too --
+ * the one adjustment 2 exists to keep alive -- not only the normal render.
+ * `Number.isNaN(date.getTime())` is the check that never throws;
+ * `toISOString()` is the one that can, so it only runs once that check has
+ * passed.
+ */
+function dateLabel(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'an unknown date' : date.toISOString().slice(0, 10);
+}
+
 const report = parseStoredReport(row.report_json);
-const generated = new Date(row.created_at).toISOString().slice(0, 10);
+const generated = dateLabel(row.created_at);
 ---
 
 <Base
