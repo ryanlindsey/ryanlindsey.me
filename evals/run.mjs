@@ -65,14 +65,25 @@ async function rpc(method, params, token) {
   return JSON.parse(payload);
 }
 
+/**
+ * `local` marks a case loaded from a gitignored `*.local.json` file (the
+ * owner's own convention for pointing the suite at a real description
+ * without ever committing it -- see README). It travels with every result
+ * `report()` builds from this case, because that is the ONLY place the
+ * distinction matters: it decides what may be sent to the remote `eval_runs`
+ * row, never what prints to this operator's own terminal.
+ */
 const load = (suite) =>
   readdirSync(join(CASES, suite))
     .filter((name) => name.endsWith('.json'))
-    .map((name) => JSON.parse(readFileSync(join(CASES, suite, name), 'utf8')));
+    .map((name) => ({
+      ...JSON.parse(readFileSync(join(CASES, suite, name), 'utf8')),
+      local: name.endsWith('.local.json'),
+    }));
 
 /** One case's outcome. `notes` is what an operator reads when it fails. */
-const pass = (id) => ({ id, ok: true, notes: '' });
-const fail = (id, notes) => ({ id, ok: false, notes });
+const pass = (id, local) => ({ id, ok: true, notes: '', local });
+const fail = (id, notes, local) => ({ id, ok: false, notes, local });
 
 async function runTier() {
   const results = [];
@@ -109,19 +120,25 @@ async function runTier() {
     }
 
     results.push(
-      problems.length === 0 ? pass(testCase.id) : fail(testCase.id, problems.join('; ')),
+      problems.length === 0
+        ? pass(testCase.id, testCase.local)
+        : fail(testCase.id, problems.join('; '), testCase.local),
     );
   }
   return results;
 }
+
+const FIT_SKIP_REASON = 'RLME_EVAL_TOKEN is not set in this shell';
 
 async function runFit() {
   const token = process.env.RLME_EVAL_TOKEN;
   if (!token) {
     // Loud, and NOT a pass. A suite that quietly reports success because it
     // could not run is the exact failure this repo keeps writing comments
-    // about.
-    process.stderr.write('SKIP fit: RLME_EVAL_TOKEN is not set in this shell\n');
+    // about -- so this goes to stderr for the terminal AND, in main below, to
+    // the stdout summary a redirected log actually keeps, and it flips the
+    // exit code rather than leaving `green` untouched.
+    process.stderr.write(`SKIP fit: ${FIT_SKIP_REASON}\n`);
     return null;
   }
 
@@ -133,7 +150,13 @@ async function runFit() {
       token,
     );
     if (answer.result?.isError) {
-      results.push(fail(testCase.id, `tool refused: ${answer.result.content?.[0]?.text ?? ''}`));
+      results.push(
+        fail(
+          testCase.id,
+          `tool refused: ${answer.result.content?.[0]?.text ?? ''}`,
+          testCase.local,
+        ),
+      );
       continue;
     }
 
@@ -141,14 +164,18 @@ async function runFit() {
     try {
       payload = JSON.parse(answer.result.content[0].text);
     } catch {
-      results.push(fail(testCase.id, 'the tool did not return JSON'));
+      results.push(fail(testCase.id, 'the tool did not return JSON', testCase.local));
       continue;
     }
 
     const parsed = FitReport.safeParse(payload.report);
     if (!parsed.success) {
       results.push(
-        fail(testCase.id, `report failed the schema: ${parsed.error.message.slice(0, 200)}`),
+        fail(
+          testCase.id,
+          `report failed the schema: ${parsed.error.message.slice(0, 200)}`,
+          testCase.local,
+        ),
       );
       continue;
     }
@@ -187,7 +214,9 @@ async function runFit() {
     if (uncited.length > 0) problems.push(`${uncited.length} rated requirements carry no evidence`);
 
     results.push(
-      problems.length === 0 ? pass(testCase.id) : fail(testCase.id, problems.join('; ')),
+      problems.length === 0
+        ? pass(testCase.id, testCase.local)
+        : fail(testCase.id, problems.join('; '), testCase.local),
     );
   }
   return results;
@@ -201,13 +230,30 @@ function report(suite, results) {
   process.stdout.write(`${suite}: ${passed}/${results.length}\n`);
 
   if (record) {
+    const localCount = results.filter((r) => r.local).length;
+    if (localCount > 0) {
+      process.stdout.write(
+        `${suite}: ${localCount} local case(s) redacted from the remote eval_runs row\n`,
+      );
+    }
+    // A `local` case (README: an owner's real, ungitignored description) may
+    // carry its actual id and model-derived failure text -- exactly what the
+    // no-real-campaign-data rule exists to keep out of anything that isn't
+    // this operator's own terminal. `eval_runs` is remote, so a local case
+    // contributes to the counts below (a number leaks nothing) and nothing
+    // else: its id and notes never leave this process.
     const notes = results
       .filter((r) => !r.ok)
-      .map((r) => `${r.id}: ${r.notes}`)
-      .join(' | ');
+      .map((r) => (r.local ? '<local case, redacted>' : `${r.id}: ${r.notes}`))
+      // Truncate the RAW string first, then escape: escaping first can leave
+      // a cut land inside a doubled `''` pair, dropping one of the two quotes
+      // and unterminating the SQL literal that follows.
+      .join(' | ')
+      .slice(0, 900)
+      .replace(/'/g, "''");
     const sql = `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, notes)
        VALUES ('${new Date().toISOString()}', '${suite}', NULL, ${results.length}, ${passed},
-               ${results.length - passed}, '${notes.replace(/'/g, "''").slice(0, 900)}')`;
+               ${results.length - passed}, '${notes}')`;
     execFileSync('npx', ['wrangler', 'd1', 'execute', DB, '--remote', '--command', sql], {
       stdio: ['ignore', 'ignore', 'inherit'],
       env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID },
@@ -216,10 +262,35 @@ function report(suite, results) {
   return passed === results.length;
 }
 
+// `skipped` is what makes a run that proves less than it looks like
+// impossible to mistake for a clean one: a suite that could not run must
+// show up in the stdout summary (not only stderr, which a redirected log
+// drops) and must move the exit code off 0, even when every suite that DID
+// run passed outright.
+const skipped = [];
+
 let green = true;
 if (only === null || only === 'tier') green = report('tier', await runTier()) && green;
 if (only === null || only === 'fit') {
   const results = await runFit();
-  if (results !== null) green = report('fit', results) && green;
+  if (results === null) {
+    skipped.push('fit');
+    // Same wording as runFit()'s own stderr line -- one message, printed on
+    // both streams so it survives a `2>/dev/null` as readily as a `>log`.
+    process.stdout.write(`SKIP fit: ${FIT_SKIP_REASON}\n`);
+    process.stdout.write('fit: skipped\n');
+  } else {
+    green = report('fit', results) && green;
+  }
 }
-process.exit(green ? 0 : 1);
+
+if (!green) {
+  // A real failure outranks an incomplete run: exit 1 says something that DID
+  // run is wrong, which is the more urgent fact.
+  process.exit(1);
+}
+if (skipped.length > 0) {
+  process.stdout.write(`evals: incomplete run -- ${skipped.join(', ')} did not execute (exit 2)\n`);
+  process.exit(2);
+}
+process.exit(0);

@@ -5,6 +5,7 @@
   "expect": {
     "min_requirements": 5,
     "min_gaps": 2,
+    "min_strong": 1,
     "max_dropped_citations": 0
   }
 }
