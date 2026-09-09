@@ -179,6 +179,38 @@ test('the stub mode passes without a secret and without a network call', async (
   expect(called).toBe(false);
 });
 
+test('the stub mode still refuses a missing token', async () => {
+  // The stub skips the Secrets Store read and the network call, and NOTHING
+  // else -- the local missing-token refusal is checked before it, because the
+  // real service refuses a missing token before any network call too.
+  //
+  // This is not a nicety. `/fit/run` answers this verdict with a sentence
+  // about the bot check instead of spending a tool call, and a stub that
+  // passed an absent token unconditionally made that branch unreachable by any
+  // test in this repo. The test above ('the stub mode passes without a secret
+  // and without a network call') passes a NON-EMPTY token and stays green: the
+  // two together say the stub short-circuits the expensive half only.
+  let called = false;
+  const verdict = await verifyTurnstile(
+    {
+      RLME_TURNSTILE_SECRET_KEY: {
+        get: async () => {
+          throw new Error('no local secret');
+        },
+      } as unknown as SecretsStoreSecret,
+      RLME_TURNSTILE_MODE: 'stub',
+    },
+    null,
+    null,
+    (async () => {
+      called = true;
+      return new Response('{}');
+    }) as typeof fetch,
+  );
+  expect(verdict).toEqual({ ok: false, codes: ['missing-input-response'] });
+  expect(called).toBe(false);
+});
+
 test('an unrecognised mode throws rather than guessing', async () => {
   await expect(
     verifyTurnstile({ ...env(), RLME_TURNSTILE_MODE: 'maybe' }, 'x', null),

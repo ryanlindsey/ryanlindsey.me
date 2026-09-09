@@ -20,6 +20,14 @@ interface Props {
   // either consumer exists. `Person` is deliberately NOT part of this prop:
   // see below.
   structuredData?: object;
+  /**
+   * This page's robots directive. The default is the SITEWIDE `noindex` that
+   * day 7 removes -- but an unlisted page (09 §1: absent from nav, sitemap and
+   * llms.txt) needs its own, which is why this is a prop rather than a
+   * constant. `/fit` passes `noindex, nofollow`, and that value survives day 7
+   * changing the default, which is the whole point of the prop existing now.
+   */
+  robots?: string;
 }
 
 const {
@@ -27,6 +35,7 @@ const {
   description = 'Engineering leadership and agentic systems.',
   markdownHref,
   structuredData,
+  robots = 'noindex',
 } = Astro.props;
 
 // Person, sitewide (task-10-brief.md), built here rather than passed in by
@@ -64,7 +73,9 @@ const jsonLdNodes = [
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
     <!-- Removed at launch (day 7). Nothing here should be indexed before then. -->
-    <meta name="robots" content="noindex" />
+    <!-- Day 7 changes the DEFAULT above. It must not delete the tag, because
+         `/fit` and `/fit/r/<id>` pass their own value. -->
+    <meta name="robots" content={robots} />
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
     {
       /* Sitewide feed autodiscovery (day 3 Task 11, 02 §3) -- unlike the

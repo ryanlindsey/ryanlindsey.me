@@ -255,6 +255,31 @@ export default {
     // were rewritten or dropped somewhere along the hop.
     if (new URL(request.url).pathname === '/mcp') return env.MCP.fetch(request);
 
+    // Day 5 Task 13 (04 §2, 09 §1): `/fit*` is unlisted and its URL carries a
+    // scoped token, so two headers are added to whatever the route returns.
+    // `X-Robots-Tag` is the header form of the page's own meta tag and covers
+    // the non-HTML responses (the 404, the 303) that have no head to put a tag
+    // in. `Referrer-Policy: no-referrer` is the load-bearing one: without it, a
+    // click from this page would send this URL -- token included -- to whatever
+    // it linked to.
+    //
+    // BEFORE the negotiation block below rather than after it, deliberately:
+    // `/fit` is never a markdown route and must not acquire `Vary: Accept`.
+    // The prefix match is the `/fit*` the comment above names; there is no
+    // other `/fit`-prefixed route on this site, and a future one that is not
+    // part of this surface would need to be excluded here.
+    if (new URL(request.url).pathname.startsWith('/fit')) {
+      const response = await handle(request, env, ctx);
+      const headers = new Headers(response.headers);
+      headers.set('X-Robots-Tag', 'noindex, nofollow');
+      headers.set('Referrer-Policy', 'no-referrer');
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    }
+
     // `markdownPath` is non-null exactly on a content route being fetched
     // with a negotiable method -- i.e. exactly the requests this module has
     // an opinion about. It is computed once and used twice below: to decide

@@ -21,6 +21,13 @@ export interface TurnstileEnv {
    * throws, and `'stub'` skips both the Secrets Store read and the network
    * call. It exists because the harness has neither a populated local
    * secrets store nor outbound network access to challenges.cloudflare.com.
+   *
+   * IT SKIPS THOSE TWO AND NOTHING ELSE (day 5 Task 13). The LOCAL
+   * missing-token refusal below still runs under the stub, because the real
+   * service refuses a missing token before any network call too -- so a stub
+   * that answered `ok` to an empty token would not be a cheaper Turnstile, it
+   * would be a different one, and it would make `/fit/run`'s refusal branch
+   * unreachable by any test. A seam that hides a branch is worse than no seam.
    */
   RLME_TURNSTILE_MODE?: string;
 }
@@ -51,9 +58,13 @@ export async function verifyTurnstile(
   if (mode !== undefined && mode !== 'stub') {
     throw new Error(`unrecognised RLME_TURNSTILE_MODE: ${mode}`);
   }
-  if (mode === 'stub') return { ok: true };
-
+  // BEFORE the stub short-circuit, not after it. This check needs neither the
+  // secret nor the network, so it is the one part of this function the stub has
+  // no reason to skip -- and skipping it made a refusal the callers must handle
+  // (`/fit/run`'s bot-check branch) impossible to reach under the harness.
   if (token === null || token.length === 0) return { ok: false, codes: ['missing-input-response'] };
+
+  if (mode === 'stub') return { ok: true };
 
   const body = new URLSearchParams({ response: token });
   // Optional per Cloudflare's API, and omitted rather than sent empty when the
