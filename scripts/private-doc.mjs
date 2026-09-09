@@ -21,16 +21,21 @@
 // produces a document no tool will ever find and no error anyone will ever
 // see.
 //
-// NO `list` VERB. MEASURED against the installed wrangler (4.129, `npx
-// wrangler r2 object --help`): its only subcommands are `get`, `put` and
-// `delete` -- there is no object listing without S3-compatible credentials,
-// which the provisioning split for this bucket deliberately does not create
-// (10 §2.3 again: the owner's machine holds a `wrangler` OAuth login and
-// nothing else). `check` is the replacement rather than a listing worked
-// around some other way, because a listing over a private-document store
-// would enumerate every gated key -- including every narrative audience --
-// where a per-key probe only ever answers the one question a caller
-// actually has: is THIS key there.
+// NO `list` VERB. MEASURED against the installed wrangler on 2026-09-08, via
+// `npx wrangler --version` and `npx wrangler r2 object --help`: its only
+// subcommands are `get`, `put` and `delete`. (A first pass the same day read
+// 4.128.0 -- this repo's `node_modules` had drifted from the lockfile's
+// 4.129.0 pin -- and cited the pinned number rather than the one actually
+// installed, which is exactly the mistake this comment now avoids. After
+// `npm ci` restored the pinned install, `--version` read 4.129.0 and the
+// subcommand list re-measured identical.) There is no object listing
+// without S3-compatible credentials, which the provisioning split for this
+// bucket deliberately does not create (10 §2.3 again: the owner's machine
+// holds a `wrangler` OAuth login and nothing else). `check` is the
+// replacement rather than a listing worked around some other way, because a
+// listing over a private-document store would enumerate every gated key --
+// including every narrative audience -- where a per-key probe only ever
+// answers the one question a caller actually has: is THIS key there.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
@@ -39,12 +44,24 @@ import { join } from 'node:path';
 
 const BUCKET = 'ryanlindsey-me-private';
 
+// A PUBLIC identifier, not a secret: the same value already sits in both
+// ./wrangler.jsonc and workers/mcp/wrangler.jsonc's `account_id`, committed
+// in this public repo. It is hardcoded rather than left for wrangler to
+// discover because this login resolves two Cloudflare accounts and wrangler
+// then refuses to guess non-interactively ("More than one account
+// available"), and because this script's documented invocation runs from a
+// DIFFERENT repo's cwd -- so neither `--config` nor cwd-relative config
+// discovery would reach this file's account_id anyway. Set into every child
+// process's own environment below, so the caller's shell need not export it.
+const ACCOUNT_ID = '1b764d090899bf1ee61a8d1e87c10710';
+
 const KEY_PATTERN = /^(profile|case-study|narrative)\/[A-Za-z0-9][A-Za-z0-9._-]*\.md$/;
 
 function wrangler(args) {
   return execFileSync('npx', ['wrangler', ...args], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'inherit'],
+    env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID },
   });
 }
 
@@ -80,8 +97,8 @@ const commands = {
     // output options). These are gated documents, so the body-catching form
     // is not stylistic -- it is what keeps the text out of this process's
     // stdout and out of whatever captures it next (a terminal scrollback, a
-    // CI log). This command never reads the file it writes; only the exit
-    // code is inspected, and the file is removed before returning either way.
+    // CI log). This command never reads the file it writes; only the outcome
+    // below is inspected, and the file is removed before returning either way.
     const dir = mkdtempSync(join(tmpdir(), 'rlme-private-doc-'));
     const file = join(dir, 'object');
     try {
@@ -89,12 +106,33 @@ const commands = {
         'npx',
         ['wrangler', 'r2', 'object', 'get', `${BUCKET}/${key}`, '--remote', '--file', file],
         {
-          stdio: ['ignore', 'ignore', 'inherit'],
+          encoding: 'utf8',
+          stdio: ['ignore', 'ignore', 'pipe'],
+          env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID },
         },
       );
       process.stdout.write('present\n');
-    } catch {
-      process.stdout.write('absent\n');
+    } catch (error) {
+      // `absent` must mean the object is not there -- an auth failure, a
+      // network error, or an unresolved account are NOT absence, and
+      // reporting them as `absent` would tell a caller a deployed document
+      // does not exist, which is worse than no answer.
+      //
+      // MEASURED 2026-09-08 by running this same `get --file` against a key
+      // confirmed not to exist, with stderr captured instead of inherited:
+      // wrangler's not-found error is
+      //   [ERROR] The specified key does not exist.
+      // wrapped in ANSI colour codes that never split that phrase -- stripped
+      // below so a plain terminal, or a future wrangler version that drops
+      // colour, still matches the same substring. Anything else is printed
+      // and fails the process instead of being read as a miss.
+      const stderr = String(error.stderr ?? '').replace(/\x1b\[[0-9;]*m/g, '');
+      if (/specified key does not exist/i.test(stderr)) {
+        process.stdout.write('absent\n');
+      } else {
+        process.stderr.write(stderr || `${error.message}\n`);
+        process.exitCode = 1;
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

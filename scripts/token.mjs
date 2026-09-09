@@ -34,11 +34,14 @@ import { mintToken, newJti, SCOPES } from '../src/lib/tier/token.ts';
 const STORE_ID = '3b06d2a92de642d999509352cfd3ebed';
 const SECRET_NAME = 'RLME_TOKEN_SIGNING_KEY';
 const DB = 'ryanlindsey-me-db';
+// Public (already committed in both wrangler.jsonc files); hardcoded because this login resolves two accounts and wrangler cannot pick one non-interactively.
+const ACCOUNT_ID = '1b764d090899bf1ee61a8d1e87c10710';
 
 function wrangler(args, { capture = true } = {}) {
   return execFileSync('npx', ['wrangler', ...args], {
     encoding: 'utf8',
     stdio: capture ? ['ignore', 'pipe', 'inherit'] : 'inherit',
+    env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID },
   });
 }
 
