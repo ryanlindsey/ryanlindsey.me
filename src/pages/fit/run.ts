@@ -42,7 +42,28 @@ function notFound(): Response {
 }
 
 export const POST: APIRoute = async ({ request }) => {
-  const form = await request.formData();
+  /**
+   * THE FIRST GATE, and it is one because of where it sits rather than what it
+   * checks. `request.formData()` THROWS on a body it cannot parse -- a JSON
+   * content type, a malformed `multipart/form-data`, no body at all with a
+   * content type promising one -- and it runs before either grant check.
+   * Uncaught, that throw is a 500 with an empty body, which MEASURED as the
+   * third shape of the same route-existence oracle this page exists to close:
+   * 500 and empty from `/fit/run`, 5,182 bytes of 404 page from every dead
+   * path, reachable with no token at all.
+   *
+   * A caller whose body this route cannot read is not a caller who has proved
+   * anything, so they get exactly what a stranger gets. src/worker.ts flattens
+   * a 500 on this prefix as well -- two ends, because the property has two
+   * owners and both have moved once already.
+   */
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return notFound();
+  }
+
   const token = String(form.get('t') ?? '');
   const description = String(form.get('target_description') ?? '');
 

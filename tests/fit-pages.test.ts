@@ -5,6 +5,7 @@ import { mintToken, newJti, type Scope } from '../src/lib/tier/token';
 import { recordIssue } from '../src/lib/tier/registry';
 import { TEST_SIGNING_KEY } from '../src/lib/tier/grant';
 import { BANNED_PATTERNS } from './candidacy-patterns';
+import { NOT_FOUND_PROBE } from '../src/lib/not-found-probe';
 
 // `/fit` (04 §2, 09 §1): the unlisted, grant-gated page.
 //
@@ -38,15 +39,25 @@ let db: D1Database;
  * form submissions are forbidden`, and `PROPFIND /nope` the same sentence with
  * the method substituted. The check runs before routing, on every path.
  *
- * It became an oracle anyway, by a different route, and only after this round
- * added `/fit` to `run_worker_first` (wrangler.jsonc): a path NOT in that list
- * never reaches src/worker.ts, so the Asset Worker answers it with 404.html and
- * the origin check never runs. A cross-site POST then gets a 404 page from
- * `/nope/nope` and a 403 from `/fit/run` -- "this path is Worker-first", which
- * for an unlisted route is as good as "this path is real". src/worker.ts now
- * flattens BOTH refusals to the site's own 404, and `an un-granted /fit is
- * indistinguishable from a path that does not exist` below is what holds it
- * there through whichever of these two mechanisms moves next.
+ * It is an oracle anyway, because the check does not run for every path. FIX
+ * ROUND 2 CORRECTION: this comment previously blamed `run_worker_first`, saying
+ * a path outside that list never reaches the Worker so the check never runs.
+ * Measured false -- `POST /work/nope-nope` IS matched by that list, reaches the
+ * Worker (`GET /work/nope-nope` carries `Vary: Accept`, which only
+ * src/worker.ts adds) and still answers the 404 page. The variable is whether
+ * the path resolves to a ROUTE: an unrouted path lands on the PRERENDERED
+ * src/pages/404.astro, so Astro's `renderDefaultError` fetches it as an asset
+ * and skips middleware; a matched on-demand route still reaches the check
+ * (`POST /resume.pdf` with no `Origin` answers 403). So `/fit/run` answering
+ * 403 where a dead path answers the page says "this is a real on-demand route".
+ *
+ * The correction matters in a specific direction: believing the
+ * `run_worker_first` story, a maintainer could delete `/fit` from that list
+ * expecting the asymmetry to go with it, and would lose the `Referrer-Policy`
+ * header instead. src/worker.ts flattens the 403 -- and the 404, and the 500 --
+ * to the site's own 404, and `an un-granted /fit is indistinguishable from a
+ * path that does not exist` below is what holds that through whichever of these
+ * mechanisms moves next.
  *
  * The harness artifact worth knowing about, because it is what made the first
  * reading of this look inconsistent: a refusal returned without reading the
@@ -192,15 +203,18 @@ test('an un-granted /fit is indistinguishable from a path that does not exist', 
   // workerd's `RequestInit`, and a DOM-typed literal fails `npm run check` on
   // an incompatible `body`.
   type FetchInit = Parameters<typeof server.fetch>[1];
+  //
+  // EVERY header, not a named few (fix round 2). The first version of this
+  // compared six fields, which is exactly the shape of assertion that let the
+  // original defect through -- a difference the test does not name is a
+  // difference the test cannot see, and `Referrer-Policy` on a refusal is a
+  // one-header tell.
   const observable = async (path: string, init?: FetchInit) => {
     const response = await server.fetch(path, { redirect: 'manual', ...init });
     return {
       status: response.status,
       body: await response.text(),
-      contentType: response.headers.get('content-type'),
-      contentLength: response.headers.get('content-length'),
-      robots: response.headers.get('x-robots-tag'),
-      referrer: response.headers.get('referrer-policy'),
+      headers: Object.fromEntries([...response.headers.entries()].sort()),
     };
   };
   const control = await observable('/definitely-not-a-route');
@@ -215,17 +229,45 @@ test('an un-granted /fit is indistinguishable from a path that does not exist', 
   expect(await observable('/fit?t=not-a-token')).toEqual(control);
   expect(await observable(`/fit?t=${await grant(['profile'])}`)).toEqual(control);
 
-  // And the POST, against an unrouted path taking the same request. This is
-  // the pair that caught the second oracle: `/fit/run` is Worker-first and
-  // `/nope/nope` is not, so one reached Astro's origin check and answered 403
-  // while the other never left the Asset Worker and answered the 404 page.
-  // What is asserted is that the two agree, whatever they are -- the day the
-  // site stops answering them identically, this fails.
-  const post: FetchInit = {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-  };
-  expect(await observable('/fit/run', post)).toEqual(await observable('/nope/nope', post));
+  // The probe path src/worker.ts fetches to BUILD that refusal. Nothing else
+  // makes it keep not matching a route, and a route added there later would
+  // serve its own page to every un-granted caller of `/fit`. Imported rather
+  // than retyped, so the assertion is about the value the worker actually uses.
+  expect(await observable(NOT_FOUND_PROBE)).toEqual(control);
+
+  // And the POSTs, against the same control. A dead path answers a POST with
+  // exactly what it answers a GET with -- measured, headers and all -- because
+  // the 404 page is prerendered and reached before any method-specific
+  // handling, so `control` is the right comparison for these too.
+  //
+  // Three content types, because each refusal shape this page has had was
+  // found on a different one:
+  //
+  //   form-encoded -- Astro's origin-check 403, for a path that is a route
+  //   json         -- `request.formData()` throwing, a 500 with an empty body
+  //   multipart    -- the same throw, from a content type it cannot parse
+  //
+  // The json case is the one that was open until fix round 2: `/fit/run`
+  // answered 500 and empty, with both headers attached, while every dead path
+  // answered the 404 page -- with no token, and invisible to a test that only
+  // ever posted form-encoded.
+  //
+  // NO REQUEST BODIES, and that is not a weaker test: `formData()` refuses on
+  // the CONTENT TYPE ("Unrecognized Content-Type header value. FormData can
+  // only parse..."), so the throw is reached with or without one. Sending a
+  // body would leave it unread on the dead-path side and poison the next
+  // request on the connection (see `origin` above), making the comparison
+  // depend on test order. The bodied form was measured by hand at this commit
+  // and answers identically.
+  const contentTypes = [
+    'application/x-www-form-urlencoded',
+    'application/json',
+    'multipart/form-data; boundary=nope',
+  ];
+  for (const contentType of contentTypes) {
+    const post: FetchInit = { method: 'POST', headers: { 'content-type': contentType } };
+    expect(await observable('/fit/run', post), `POST ${contentType}`).toEqual(control);
+  }
 });
 
 test('the page copy carries no search language', async () => {
