@@ -16,7 +16,8 @@
     "test": "astro build && vitest run",
     "deploy": "astro build && wrangler deploy",
     "deploy:mcp": "wrangler deploy --config workers/mcp/wrangler.jsonc",
-    "token": "node scripts/token.mjs"
+    "token": "node scripts/token.mjs",
+    "private-doc": "node scripts/private-doc.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "14.3.0",
