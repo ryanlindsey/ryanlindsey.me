@@ -1,0 +1,24 @@
+---
+// The Turnstile widget (04 §2). The sitekey is a PUBLIC identifier -- it is
+// served in this page's HTML by design (10 §2.6) -- and arrives as a prop
+// from the runtime env rather than being hard-coded, so local development can
+// point at a test widget without editing a component.
+interface Props {
+  sitekey: string;
+}
+const { sitekey } = Astro.props;
+---
+
+<div
+  class="cf-turnstile my-6"
+  data-sitekey={sitekey}
+  data-theme="auto"
+  data-response-field-name="turnstile_response"
+>
+</div>
+<noscript>
+  <p class="font-mono text-small text-ink-muted">
+    This form needs JavaScript for its bot check. Everything else on this site works without it.
+  </p>
+</noscript>
+<script is:inline src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>

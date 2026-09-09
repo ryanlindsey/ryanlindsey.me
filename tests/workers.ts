@@ -57,7 +57,25 @@ export const TEST_SITE_ORIGIN = 'http://resume-pdf.test';
  */
 export const SITE_WORKER = {
   configPath: './dist/server/wrangler.json',
-  vars: { SITE_ORIGIN: TEST_SITE_ORIGIN, RESUME_PDF_RENDERER: 'stub' },
+  vars: {
+    SITE_ORIGIN: TEST_SITE_ORIGIN,
+    RESUME_PDF_RENDERER: 'stub',
+    /**
+     * Day 5 Task 12's siteverify seam (src/lib/turnstile.ts's
+     * `verifyTurnstile`). Same shape as `RESUME_PDF_RENDERER` above: no
+     * deployed config declares it, an unrecognised value throws, and 'stub'
+     * is the only accepted value here.
+     *
+     * It exists because the harness has neither a populated local secrets
+     * store (so `RLME_TURNSTILE_SECRET_KEY.get()` would throw, same failure
+     * mode as `RLME_TOKEN_SIGNING_KEY` in tests/tier-grant.test.ts) nor
+     * outbound network access to challenges.cloudflare.com. The real request
+     * shaping this stub skips -- that `secret`, `response` and `remoteip` all
+     * reach the wire correctly -- is asserted in tests/turnstile.test.ts with
+     * an injected `fetch`, not here.
+     */
+    RLME_TURNSTILE_MODE: 'stub',
+  },
   bindingOverrides: { BROWSER: 'mock-browser' },
 };
 

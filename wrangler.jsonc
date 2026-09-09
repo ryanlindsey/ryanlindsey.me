@@ -216,5 +216,16 @@
   "vars": {
     "RLME_AI_GATEWAY_ID": "ryanlindsey-me",
     "SITE_ORIGIN": "https://ryanlindsey.me",
+    // PUBLIC (10 §2.6), and here rather than in a `.env` for two reasons: the
+    // one page that uses it is on-demand rendered, so it reads this at request
+    // time from `Astro.locals.runtime.env`; and this is where the account id
+    // and gateway id already live, which is the right neighbourhood for an
+    // identifier that ships in page HTML anyway. The SECRET half is
+    // `RLME_TURNSTILE_SECRET_KEY` in Secrets Store and is never here.
+    //
+    // Named without the `PUBLIC_` prefix 10 §2.6 suggests: that prefix is
+    // Astro's convention for build-time env, this is a Worker var, and 10
+    // §3.2's own rule is `RLME_<PURPOSE>` with no prefix.
+    "RLME_TURNSTILE_SITEKEY": "0x4AAAAAAElhnY8ov3OYHN8m",
   },
 }
