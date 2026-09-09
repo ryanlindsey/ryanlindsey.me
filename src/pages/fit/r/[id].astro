@@ -1,0 +1,208 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../../layouts/Base.astro';
+import { FitReport } from '../../../lib/fit/schema';
+
+/**
+ * A fit report's permalink (04 §2): a link the reader can pass along to
+ * someone who never had a token of their own -- UNSIGNED by design, with the
+ * id itself as the capability rather than a signature over it. 128 bits from
+ * the CSPRNG, stored in D1, never derived from the report; see `newReportId`
+ * in src/lib/fit/client.ts.
+ *
+ * No token is required, deliberately. The whole purpose of the permalink is
+ * that it can be forwarded to people who do not have one, and requiring the
+ * token would make the feature the thing it was built to replace.
+ */
+export const prerender = false;
+
+const { id } = Astro.params;
+
+/**
+ * `target_description` is deliberately NOT selected (fix round 1, finding
+ * 5). It is in the table (migrations/0002_private_tier.sql), it is typed on
+ * this SELECT's row shape in the original brief, and it is never rendered --
+ * pure dead weight on every read. Leaving it selected but unrendered would
+ * be one accidental `{row.target_description}` away from a real disclosure:
+ * that column holds whatever text the submitter pasted, and this permalink
+ * is designed to be forwarded to people holding no token, so rendering it
+ * would show that text to everyone who receives the link. Whether that
+ * should ever happen is a product decision this plan never made; dropping
+ * the column from the query needs no such decision and forecloses the
+ * accident instead of trusting nobody adds the line.
+ */
+const row = await env.DB.prepare(
+  `SELECT created_at, model, report_json, citations_checked, citations_dropped
+     FROM fit_reports WHERE id = ?`,
+)
+  .bind(id ?? '')
+  .first<{
+    created_at: string;
+    model: string;
+    report_json: string;
+    citations_checked: number;
+    citations_dropped: number;
+  }>();
+
+if (row === null) {
+  /**
+   * A BARE 404 -- no body, no headers. Task 13's `/fit` gates learned this the
+   * hard way (src/pages/fit/index.astro, src/pages/fit/run.ts): src/worker.ts
+   * flattens every 403/404/500 on the `/fit` prefix into the site's own 404
+   * page, fetched rather than reconstructed, so anything this route adds here
+   * (a body, `X-Robots-Tag`, ...) is either overwritten or dead weight. A
+   * response that differed from what an unrouted path returns would be a
+   * route-existence oracle -- confirming to anyone holding a dead or
+   * never-issued id that `/fit/r/<id>` is a real route worth guessing at.
+   */
+  return new Response(null, { status: 404 });
+}
+
+/**
+ * Parses and validates the stored `report_json`, folding two distinct
+ * failure modes into one outcome: JSON that will not even parse, and JSON
+ * that parses but no longer matches `FitReport` (a schema change that shipped
+ * before this row did). Both are "this row cannot be trusted to render" --
+ * and 04 §2's rule that binds this task is that neither may throw. An
+ * uncaught exception here becomes a 500, which src/worker.ts's flattening
+ * turns into a silent 404: a reader who was sent a working link would see
+ * "page not found" for what was actually a stale-but-real report. Returning
+ * `null` instead lets the template render a notice -- 200, honest, and
+ * actionable ("run a new one").
+ *
+ * The row was written by THIS build (src/pages/fit/run.ts always
+ * `JSON.stringify`s a report that has already passed this same schema), so a
+ * parse failure here would itself be surprising -- but the alternative to
+ * checking is a page that crashes on a row it did not expect, and reading
+ * this table is not the place to assume the write path never changes under
+ * it.
+ */
+function parseStoredReport(json: string): FitReport | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  const parsed = FitReport.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * The `generated` date label, guarded the same shape as `parseStoredReport`
+ * above and for the adjacent reason (fix round 1, finding 4): `created_at`
+ * is written by THIS build alone, and unlike `report_json` it carries no
+ * schema-versioning story -- but `toISOString()` on an `Invalid Date` THROWS
+ * a `RangeError` rather than degrading, where `JSON.parse` at least fails in
+ * a shape a `try`/`catch` expects. `generated` is computed before the
+ * `report === null` branch decides which half of the template to render, so
+ * an unguarded throw here would crash the STALE-SCHEMA NOTICE PATH too --
+ * the one adjustment 2 exists to keep alive -- not only the normal render.
+ * `Number.isNaN(date.getTime())` is the check that never throws;
+ * `toISOString()` is the one that can, so it only runs once that check has
+ * passed.
+ */
+function dateLabel(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'an unknown date' : date.toISOString().slice(0, 10);
+}
+
+const report = parseStoredReport(row.report_json);
+const generated = dateLabel(row.created_at);
+---
+
+<Base
+  title="Fit report"
+  robots="noindex, nofollow"
+  referrer="no-referrer"
+  description="A structured comparison against Ryan Lindsey's published record."
+>
+  <main class="mx-auto max-w-3xl px-6 py-16">
+    <p class="mb-6 border-t border-accent pt-3 font-mono text-micro uppercase text-accent">
+      Fit report &middot; {generated}
+    </p>
+
+    {
+      report === null ? (
+        <p class="text-ink-muted">
+          This report was generated by an earlier version of the analyser and cannot be displayed.
+          Run a new one from the link you were sent.
+        </p>
+      ) : (
+        <>
+          <h1 class="font-display text-heading text-ink">The read</h1>
+          <p class="mt-4 text-ink">{report.overall_read}</p>
+
+          <h2 class="mt-14 font-display text-subheading text-ink">Requirement by requirement</h2>
+          <div class="mt-6 space-y-8">
+            {report.requirement_map.map((entry) => (
+              <section class="border-t border-rule pt-4">
+                <p class="font-mono text-micro uppercase text-accent">{entry.strength}</p>
+                <h3 class="mt-1 text-ink">{entry.requirement}</h3>
+                {entry.evidence.length === 0 ? (
+                  <p class="mt-2 text-small text-ink-muted">
+                    No supporting evidence in the corpus.
+                  </p>
+                ) : (
+                  <ul class="mt-2 space-y-2">
+                    {entry.evidence.map((item) => (
+                      <li class="text-small text-ink-muted">
+                        {item.claim}{' '}
+                        <a class="text-accent underline" href={item.citation_url}>
+                          source
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            ))}
+          </div>
+
+          <h2 class="mt-14 font-display text-subheading text-ink">Gaps</h2>
+          {report.gaps.length === 0 ? (
+            <p class="mt-4 text-ink-muted">The analyser found none against this description.</p>
+          ) : (
+            <ul class="mt-4 space-y-3">
+              {report.gaps.map((gap) => (
+                <li class="text-ink-muted">
+                  <strong class="text-ink">{gap.requirement}</strong> &mdash; {gap.why}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <h2 class="mt-14 font-display text-subheading text-ink">Questions worth asking</h2>
+          <ul class="mt-4 list-disc space-y-2 pl-5">
+            {report.questions_to_ask.map((question) => (
+              <li class="text-ink-muted">{question}</li>
+            ))}
+          </ul>
+        </>
+      )
+    }
+
+    {
+      /*
+      Provenance, on the page rather than in a log. 03 §4 makes the honesty
+      contract a promise to the READER, and a reader cannot check a promise
+      whose numbers they cannot see -- especially the dropped count, which is
+      the one that says whether the analyser was caught inventing a source.
+      Shown unconditionally, even on the stale-schema notice above: the
+      numbers are about the ANALYSIS RUN, not about whether today's schema can
+      still render its `report_json`, so a reader is owed them either way.
+    */
+    }
+    <footer class="mt-16 border-t border-rule pt-4 font-mono text-micro text-ink-muted">
+      <p>
+        Generated {generated} by {row.model}. {row.citations_checked} citation{
+          row.citations_checked === 1 ? '' : 's'
+        } checked against the published corpus, {row.citations_dropped} dropped as unresolvable.
+      </p>
+      <p class="mt-2">
+        Verify any claim by opening its source &mdash; or interrogate the same engine over MCP at
+        https://mcp.ryanlindsey.me/mcp.
+      </p>
+    </footer>
+  </main>
+</Base>

@@ -57,7 +57,25 @@ export const TEST_SITE_ORIGIN = 'http://resume-pdf.test';
  */
 export const SITE_WORKER = {
   configPath: './dist/server/wrangler.json',
-  vars: { SITE_ORIGIN: TEST_SITE_ORIGIN, RESUME_PDF_RENDERER: 'stub' },
+  vars: {
+    SITE_ORIGIN: TEST_SITE_ORIGIN,
+    RESUME_PDF_RENDERER: 'stub',
+    /**
+     * Day 5 Task 12's siteverify seam (src/lib/turnstile.ts's
+     * `verifyTurnstile`). Same shape as `RESUME_PDF_RENDERER` above: no
+     * deployed config declares it, an unrecognised value throws, and 'stub'
+     * is the only accepted value here.
+     *
+     * It exists because the harness has neither a populated local secrets
+     * store (so `RLME_TURNSTILE_SECRET_KEY.get()` would throw, same failure
+     * mode as `RLME_TOKEN_SIGNING_KEY` in tests/tier-grant.test.ts) nor
+     * outbound network access to challenges.cloudflare.com. The real request
+     * shaping this stub skips -- that `secret`, `response` and `remoteip` all
+     * reach the wire correctly -- is asserted in tests/turnstile.test.ts with
+     * an injected `fetch`, not here.
+     */
+    RLME_TURNSTILE_MODE: 'stub',
+  },
   bindingOverrides: { BROWSER: 'mock-browser' },
 };
 
@@ -137,6 +155,38 @@ export const MCP_WORKER = {
     CORPUS_REFRESH: 'off',
     MCP_SEARCH_EMBEDDER: 'stub',
     SITE_ORIGIN: TEST_SITE_ORIGIN,
+    /**
+     * Day 5's signing-key seam (src/lib/tier/grant.ts's `signingKey`). Same
+     * shape and the same reasoning as `CORPUS_REFRESH` and
+     * `MCP_SEARCH_EMBEDDER` above: no deployed config declares this var, an
+     * unrecognised value throws, and `'test'` selects a committed constant
+     * that says in its own name it is not a secret.
+     *
+     * It exists because miniflare simulates `secrets_store_secrets` against a
+     * LOCAL store that credential-free CI has never populated, so
+     * `env.RLME_TOKEN_SIGNING_KEY.get()` throws here. Without this, no gated
+     * test could run without account access.
+     */
+    RLME_TOKEN_KEY_SOURCE: 'test',
+    /**
+     * Day 5's fit engine (src/lib/fit/engine.ts's `analyzeFit`), off. Same
+     * shape as the three seams above, and the same cause as
+     * `MCP_SEARCH_EMBEDDER: 'stub'`: the `AI` override below is a SERVICE
+     * binding, so `env.AI` is a `Fetcher` here and `env.AI.run()` is a
+     * TypeError rather than a response. The engine spends a frontier-model
+     * call through AI Gateway, so there is a second reason as well -- a test
+     * suite must not be one edit away from spending real money.
+     *
+     * Unlike the embedder stub, this one does not shape a call it cannot
+     * complete: `analyzeFit` refuses on the seam before it reads the breaker,
+     * the corpus or the model. That is deliberate and it is what makes
+     * tests/mcp-gated.test.ts's limiter test affordable -- seven calls that
+     * each cost a round trip and nothing else. Everything AROUND the model
+     * call is exercised there; the call itself is exercised with a stub `Ai`
+     * at the call site in tests/fit-engine.test.ts, which is what
+     * workers/mock-ai's own doc comment asks for.
+     */
+    FIT_ENGINE: 'off',
   },
   bindingOverrides: { AI: 'mock-ai' },
 };

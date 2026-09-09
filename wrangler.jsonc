@@ -76,6 +76,21 @@
       // The full measurement and the decision not to inject them in code are
       // written up beside the `/*` rule in public/_headers.
       "/mcp",
+      // Day 5 Task 13 (04 §2, 09 §1): the same durability argument as `/mcp`
+      // above, and here it guards something sharper than reachability. `/fit`
+      // is on-demand, so it shadows no asset and already falls through today
+      // -- these two entries change nothing now. What they insure against is
+      // `not_found_handling` ever being set: the Asset Worker would then answer
+      // unmatched paths itself and src/worker.ts's `fetch` would stop running
+      // for them. `/fit` would keep rendering (Astro's routing lives inside
+      // `handle()`), and would SILENTLY LOSE `Referrer-Policy: no-referrer` --
+      // the header that keeps the scoped token in that page's URL out of the
+      // `Referer` on the Turnstile script request to challenges.cloudflare.com
+      // -- along with the flattening that keeps a refusal from being a
+      // route-existence oracle. Both entries, because `/fit` is not matched by
+      // `/fit/*`.
+      "/fit",
+      "/fit/*",
     ],
   },
 
@@ -99,6 +114,22 @@
 
   "r2_buckets": [
     { "binding": "R2_ASSETS", "bucket_name": "ryanlindsey-me-assets" },
+    // DECLARED AND UNUSED ON THIS WORKER, deliberately, and said out loud here
+    // because this is the Worker that serves anonymous traffic
+    // (final-review Important 4). Nothing under src/pages or src/worker.ts
+    // imports src/lib/tier/private-docs.ts -- the private tier's only reader
+    // is the MCP Worker, and `/fit` reaches it over the `MCP` service binding
+    // rather than reading R2 itself.
+    //
+    // What this comment is NOT: the partition's guarantee. That is structural
+    // and lives in the type system -- `DocumentsEnv` (src/lib/mcp/documents.ts)
+    // names no R2 binding at all, so a public document tool cannot reach this
+    // bucket by forgetting a filter, and tests/tier-private-docs.test.ts pins
+    // it with a `@ts-expect-error`. This binding is a capability the site
+    // Worker holds and must never exercise, which is a weaker property than
+    // the one the branch advertises, and the difference is worth knowing when
+    // reading either claim. tests/pages.test.ts pins the binding list so the
+    // set cannot drift without a test saying so.
     { "binding": "R2_PRIVATE", "bucket_name": "ryanlindsey-me-private" },
   ],
 
@@ -194,6 +225,21 @@
   "services": [{ "binding": "MCP", "service": "ryanlindsey-me-mcp" }],
 
   "secrets_store_secrets": [
+    // DECLARED AND UNUSED ON THIS WORKER, which is the plan's locked decision
+    // written down where the binding is (day-5 plan, "Where the token is
+    // verified"): *"The site Worker therefore needs no signing key; the
+    // binding it already declares stays declared and unused, with a comment
+    // saying so."* The comment was the half that went missing
+    // (final-review Important 4).
+    //
+    // The reason it stays rather than being deleted: the token is verified in
+    // EXACTLY ONE place, `resolveGrant` in the MCP Worker
+    // (src/lib/tier/grant.ts). `/fit` treats the token as an opaque string and
+    // asks that Worker, over the `MCP` service binding, whether the granted
+    // surface contains `analyze_fit` -- so the page's gate exercises the real
+    // boundary instead of agreeing with a second copy of it. A signing key
+    // here would make a second verifier possible, which is the thing the
+    // design is spending a service-binding round trip to prevent.
     {
       "binding": "RLME_TOKEN_SIGNING_KEY",
       "store_id": "3b06d2a92de642d999509352cfd3ebed",
@@ -216,5 +262,16 @@
   "vars": {
     "RLME_AI_GATEWAY_ID": "ryanlindsey-me",
     "SITE_ORIGIN": "https://ryanlindsey.me",
+    // PUBLIC (10 §2.6), and here rather than in a `.env` for two reasons: the
+    // one page that uses it is on-demand rendered, so it reads this at request
+    // time from `Astro.locals.runtime.env`; and this is where the account id
+    // and gateway id already live, which is the right neighbourhood for an
+    // identifier that ships in page HTML anyway. The SECRET half is
+    // `RLME_TURNSTILE_SECRET_KEY` in Secrets Store and is never here.
+    //
+    // Named without the `PUBLIC_` prefix 10 §2.6 suggests: that prefix is
+    // Astro's convention for build-time env, this is a Worker var, and 10
+    // §3.2's own rule is `RLME_<PURPOSE>` with no prefix.
+    "RLME_TURNSTILE_SITEKEY": "0x4AAAAAAElhnY8ov3OYHN8m",
   },
 }

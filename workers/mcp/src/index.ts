@@ -1,6 +1,7 @@
 import { createMcpHandler } from 'agents/mcp/server';
 import { corpusRefreshEnabled, refreshCorpus, type CorpusEnv } from '../../../src/lib/corpus';
 import { buildMcpDiscovery, buildMcpRobotsTxt } from '../../../src/lib/mcp/discovery';
+import { resolveGrant } from '../../../src/lib/tier/grant';
 import { type McpEnv } from './env';
 import { createServer } from './server';
 
@@ -80,10 +81,24 @@ function corpusEnv(env: McpEnv): CorpusEnv {
  * authority; there is none to borrow, so a cross-origin fetch obtains exactly
  * what the attacker's own server could have fetched.
  *
- * DAY 5 MUST RE-READ THIS. Scoped tokens arrive then. The property that keeps
- * this safe is that a token is supplied EXPLICITLY by the client on each
- * call. If a token is ever accepted from a cookie, or cached per-origin, this
- * setting becomes a real cross-origin read of gated data and must change.
+ * DAY 5 RE-READ THIS, as the paragraph above told it to, and it still holds --
+ * but only because of a choice made to keep it holding. Scoped tokens have
+ * arrived. `bearerFrom` (src/lib/tier/grant.ts) reads a token from the
+ * `Authorization` header and from NOWHERE else -- not a cookie, not a query
+ * parameter -- and `resolveGrant` runs per request with no cache keyed on the
+ * origin or on the token string. So the property this opening rests on is
+ * unchanged: a token is presented EXPLICITLY by a client that already had it,
+ * and there is still no ambient credential for a hostile page to borrow.
+ * tests/tier-invisibility.test.ts (Task 16) pins half of that structurally
+ * rather than trusting the next edit to remember it: it fails if the word
+ * `cookie` appears in the CODE of this file, of src/lib/tier/grant.ts, or of
+ * ./define.ts -- comments may still discuss the word, which is how this one
+ * does.
+ *
+ * THE CONDITION IS UNCHANGED. If a token is ever accepted from a cookie, or a
+ * resolved grant is ever cached per origin, this setting becomes a real
+ * cross-origin read of gated data and must change in the same commit. The
+ * obligation transfers rather than expires.
  */
 const HANDLER_OPTIONS = {
   route: '/mcp',
@@ -143,7 +158,56 @@ export default {
     }
 
     return createMcpHandler(
-      (mcpCtx) => createServer({ env, ctx, request: mcpCtx.requestInfo ?? request }),
+      // ASYNC, and the factory's contract permits it: `McpServerFactory` is
+      // `(ctx) => McpServer | Server | Promise<McpServer | Server>` -- READ
+      // from @modelcontextprotocol/server 2.0.0's own declaration, the type
+      // agents@0.22.0's `createMcpHandler` takes, and exercised end to end in
+      // tests/tier-grant.test.ts rather than trusted.
+      //
+      // The grant is resolved HERE, once per HTTP request, rather than inside
+      // a tool -- so every tool and every resource in one request sees the
+      // same tier, and one D1 read serves the whole batch. That factory doc
+      // is explicit about the unit and about the one exception, which is not
+      // ours: "one serving unit: one HTTP request under createMcpHandler, or
+      // one connection (or one discarded `server/discover` probe) under
+      // serveStdio" (createMcpHandler-CLhGwQTn.d.mts:3801-3808). The probe
+      // belongs to `serveStdio`; this Worker serves HTTP and never calls it.
+      async (mcpCtx) => {
+        const httpRequest = mcpCtx.requestInfo ?? request;
+        const { grant, refusal } = await resolveGrant(
+          env,
+          httpRequest,
+          Math.floor(Date.now() / 1000),
+        );
+        if (refusal !== null) {
+          // Logged, not answered with an error: a stale token should still get
+          // the public tier rather than a broken connection.
+          //
+          // The log line names the REASON -- every member of `GrantRefusal`
+          // (src/lib/tier/grant.ts), whichever one was reached; what the
+          // caller is told does not. That asymmetry is the whole design: an
+          // operator running a revocation drill (09 §3 item 6) reads this line
+          // and knows exactly which check bit, while the holder gets one
+          // unspecific sentence that is no use for probing which state a token
+          // string is in.
+          //
+          // Deliberately NOT a list of those members. An earlier draft of this
+          // comment wrote out five of them and then called them "those four
+          // states" -- wrong twice over, since `GrantRefusal` is `TokenFailure`
+          // plus three and has seven. A hand-copied enumeration in a comment
+          // rots the first time a member is added, and it rots in the place an
+          // operator reading a drill's output would trust it. The type is the
+          // list.
+          console.warn(`mcp/grant: refused a presented token (${refusal})`);
+        }
+        // `refusal` is passed rather than dropped, and that second argument is
+        // the only thing that makes a refusal visible to the CALLER rather
+        // than only in the log above -- `buildInstructions` (./server.ts) has
+        // no other source for it, because the grant it would otherwise infer
+        // from is `null` for a refused token and for an ordinary public caller
+        // alike. Those two must not be told the same thing.
+        return createServer({ env, ctx, request: httpRequest, grant }, refusal);
+      },
       HANDLER_OPTIONS,
     )(request, env, ctx);
   },

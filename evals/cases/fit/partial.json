@@ -1,0 +1,11 @@
+{
+  "id": "partial",
+  "name": "A description the record meets on one axis and not the other",
+  "target_description": "We need a lead engineer for a small field-services business. Half the week is on client sites: surveys, rack builds, commissioning and handover. You will lead a crew of two technicians, carry the on-call phone in rotation, and meet a four-hour response window written into our contracts. You will also own vendor certifications and the physical security hardware we install. The other half of the role is making the operation delegable: writing down the standards, instrumenting the work, and building the internal tools and training that let a technician do competently what only the principal can do today.",
+  "expect": {
+    "min_requirements": 5,
+    "min_gaps": 2,
+    "min_strong": 1,
+    "max_dropped_citations": 0
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "id": "strong",
+  "name": "A description the record clearly meets",
+  "target_description": "We are looking for an engineering leader to build and run a platform group serving internal product teams. You will set technical direction for agent-based developer tooling, define the standards and review gates that keep it safe, and grow a team of senior engineers across several time zones. You will own reliability for the services the group ships, run the incident process end to end, and report on delivery to executives. Experience adopting large language models inside a regulated environment is strongly preferred, as is a track record of taking an unowned system and making it operable.",
+  "expect": {
+    "min_requirements": 5,
+    "min_strong": 2,
+    "max_dropped_citations": 0
+  }
+}

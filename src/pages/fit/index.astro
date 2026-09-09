@@ -1,0 +1,127 @@
+---
+import { env } from 'cloudflare:workers';
+import Base from '../../layouts/Base.astro';
+import Turnstile from '../../components/Turnstile.astro';
+import { grantedToolNames } from '../../lib/fit/client';
+import { activeCampaign } from '../../lib/tier/campaigns';
+import { fitErrorCopy } from '../../lib/fit/errors';
+
+/**
+ * The fit analyser (04 §2). UNLISTED: absent from nav, from the sitemap and
+ * from /llms.txt, reachable only with a token that carries the `fit` scope.
+ *
+ * On-demand rather than prerendered, for the obvious reason (it reads a token
+ * off the query string) and a less obvious one: a prerendered Astro endpoint
+ * has its Response headers discarded at build time, and this page's
+ * `Referrer-Policy` is not decorative -- the token is in this URL.
+ *
+ * `Base` directly rather than `Shell`: the site header is a nav, and an
+ * unlisted page has no business rendering the index it is deliberately absent
+ * from -- nor linking back into it from a URL that carries a token.
+ */
+export const prerender = false;
+
+const token = Astro.url.searchParams.get('t') ?? '';
+
+/**
+ * The access check, and the ONLY one on this page. Delegated to the MCP
+ * Worker: `analyze_fit` is registered only for a grant carrying the `fit`
+ * scope, so its presence in the granted tool list is the whole statement --
+ * signature, expiry, registration and revocation, all evaluated by the code
+ * that owns them.
+ *
+ * 404, not 403. A 403 would confirm that this page exists to anyone holding
+ * the URL, which is exactly what an unlisted surface must not do.
+ */
+const tools = token === '' ? new Set<string>() : await grantedToolNames(env, token);
+if (!tools.has('analyze_fit')) {
+  // A BARE 404, which src/worker.ts replaces with the site's own 404 page
+  // before it reaches the client. That indirection is the fix for a real
+  // finding: what a prober compares is not the status but the whole response,
+  // and this page cannot produce the site's 404 itself. `Astro.rewrite('/404')`
+  // was tried first and MEASURED at 500 -- an on-demand route cannot rewrite to
+  // a prerendered one -- so the worker, which can dispatch a second request,
+  // does it. See its `/fit` branch, and src/pages/404.astro for why that page
+  // had to exist at all.
+  return new Response(null, { status: 404 });
+}
+
+/**
+ * The preload (04 §2). Sourced from campaign config, never hard-coded -- and
+ * with no campaign `active`, there simply is no preload. Day 7 authors the
+ * entry that fills this in; today it is correctly empty, and the empty state
+ * is the one that ships at launch (00 §5's step 2).
+ */
+const campaign = await activeCampaign(env);
+const preload = campaign?.jdText ?? '';
+
+/**
+ * The refusal to show, LOOKED UP rather than read out of the URL.
+ *
+ * `?error=` carries a reason CODE (see src/lib/fit/errors.ts), and this page
+ * renders only copy it owns. The parameter is attacker-controlled -- a
+ * `/fit?t=...` link is meant to be forwarded, so whoever holds one can put
+ * anything after `&error=` -- and it used to be rendered verbatim, which made
+ * the real origin a delivery mechanism for someone else's sentence
+ * (final-review Important 7). An unrecognised code renders nothing at all.
+ *
+ * This also retires the `decodeURIComponent` hazard the previous comment here
+ * recorded: a code from the closed set never contains a literal `%`, so there
+ * is no longer a refusal sentence whose own punctuation could crash the page
+ * that exists to display it.
+ */
+const error = fitErrorCopy(Astro.url.searchParams.get('error'));
+---
+
+<Base
+  title="Fit analysis"
+  robots="noindex, nofollow"
+  referrer="no-referrer"
+  description="Compare a description against Ryan Lindsey's published record."
+>
+  <main class="mx-auto max-w-3xl px-6 py-16">
+    <p class="mb-6 border-t border-accent pt-3 font-mono text-micro uppercase text-accent">
+      Private tier
+    </p>
+    <h1 class="font-display text-display text-ink">Fit analysis</h1>
+    <p class="mt-6 max-w-xl text-ink-muted">
+      Paste a description below. You will get a requirement-by-requirement reading of Ryan's
+      published record against it &mdash; every claim citing a page you can open, the gaps stated
+      plainly, and questions worth asking him. It is the same engine the <code>analyze_fit</code> MCP
+      tool runs, so you can also point an agent at it instead.
+    </p>
+
+    {
+      error && (
+        <p class="mt-8 border-l-2 border-accent bg-accent-ground/10 px-4 py-3 font-mono text-small text-ink">
+          {error}
+        </p>
+      )
+    }
+
+    <form method="POST" action="/fit/run" class="mt-10">
+      <input type="hidden" name="t" value={token} />
+      <label class="block font-mono text-micro uppercase text-ink-muted" for="target_description">
+        The description
+      </label>
+      <textarea
+        id="target_description"
+        name="target_description"
+        rows="18"
+        required
+        minlength="200"
+        class="mt-3 w-full border border-rule bg-transparent p-4 font-mono text-small text-ink"
+        placeholder="Paste the full text here.">{preload}</textarea
+      >
+
+      <Turnstile sitekey={env.RLME_TURNSTILE_SITEKEY} />
+
+      <button
+        type="submit"
+        class="border border-accent px-5 py-3 font-mono text-small uppercase text-accent hover:bg-accent-ground hover:text-accent-on"
+      >
+        Analyse
+      </button>
+    </form>
+  </main>
+</Base>

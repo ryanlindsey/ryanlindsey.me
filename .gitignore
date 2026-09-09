@@ -9,3 +9,11 @@ dist
 worker-configuration.d.ts.bak
 .DS_Store
 *.log
+.superpowers
+
+# Owner-local eval cases (evals/README.md): a `*.local.json` case lets the
+# owner point the fit suite at a real description for one-off testing without
+# ever committing it -- the golden cases in evals/cases/ stay invented and
+# generic (the plan's generic-engine rule), same split as private-doc.mjs
+# keeps between this repo and the documents it deploys.
+evals/cases/**/*.local.json

@@ -8,8 +8,15 @@
  * compliance. Keep it small and obvious so a human reading it learns the
  * endpoint in one glance -- that is its actual job today.
  *
- * `authentication: 'none'` describes the PUBLIC tier truthfully. Day 5 adds
- * scoped tokens and must revisit this field rather than leave it lying.
+ * `authentication: 'none'` was revisited on day 5, when scoped tokens
+ * arrived, and left as it is. The field states what the ADVERTISED endpoint
+ * requires, and the advertised endpoint requires nothing: every tool a caller
+ * gets without a token is served without one. The private tier is reached by
+ * presenting a bearer token to this same endpoint, and its existence is
+ * already public and neutral through `request_private_access` -- so saying
+ * `none` here conceals nothing and claims nothing false.
+ * tests/tier-invisibility.test.ts pins the value, so changing it is a
+ * deliberate act rather than a drift.
  *
  * `origin` is the caller's to supply rather than something this function
  * infers: the site origin (https://ryanlindsey.me) and the MCP Worker's own

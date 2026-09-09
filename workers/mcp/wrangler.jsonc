@@ -257,6 +257,81 @@
     },
   ],
 
+  // The fit prompt is a MARKDOWN FILE, not a TypeScript string, because 04 §4
+  // requires it to be versioned in `prompts/` and reviewed as a document. This
+  // rule is what lets `src/lib/fit/engine.ts` import it: wrangler ships a
+  // matching file as a module whose default export is its contents.
+  //
+  // THE GLOB IS MATCHED AGAINST THE IMPORT SPECIFIER, NOT AGAINST A FILE PATH,
+  // and getting that wrong costs an hour, so it is written down. wrangler turns
+  // each glob into a regex and hands it to esbuild as an `onResolve` FILTER
+  // (wrangler-dist/cli.js, `parsedRules.rules?.forEach` -> `build.onResolve({
+  // filter: globToRegExp(glob) })`), and esbuild tests that filter against the
+  // string as written in the source -- here `'../../../prompts/fit.md?raw'`,
+  // three levels up from src/lib/fit/, query string included. Nothing
+  // normalises it against the config directory, the repo root, or `base_dir`
+  // first. MEASURED, Task 10 Step 5, one dry run each (the first five against
+  // the same import without its `?raw`):
+  //   prompts/**/*.md         -> no match (this was the brief's glob)
+  //   prompts/*.md            -> no match
+  //   **/prompts/**/*.md      -> no match
+  //   ../../prompts/*.md      -> no match (wrong depth; esbuild's ERROR MESSAGE
+  //                             says `../../prompts/fit.md`, because that is
+  //                             relative to cwd -- it is not the specifier, and
+  //                             copying it from the error is the trap)
+  //   ../../../prompts/*.md   -> MATCHES, confirming the specifier is the input
+  //   **/prompts/*.md         -> MATCHES
+  //   **/prompts/*.md         -> NO MATCH once the import gained its `?raw`
+  //   **/prompts/*.md?raw     -> MATCHES  <- what is used
+  // `base_dir: "../.."` was also tried and changed none of the above.
+  //
+  // The `?raw` is in the SOURCE for a TypeScript reason, not a bundler one, and
+  // src/lib/fit/markdown-modules.d.ts is where that is explained: Astro's own
+  // ambient `declare module '*.md'` resolves the default export to a page
+  // component, so a plain `.md` specifier fails `astro check`. It costs nothing
+  // here -- wrangler calls `stripQueryString(args.path)` before resolving, so
+  // the file it loads is `prompts/fit.md` either way -- but the glob has to
+  // carry it, because the FILTER runs before that strip. The `?` is a
+  // single-character wildcard to the glob, which matches the literal `?`.
+  //
+  // Scoped to a `prompts/` directory rather than a blanket `**/*.md` on
+  // principle rather than on a measured saving: measured 2026-09-08, the two
+  // emitted an IDENTICAL bundle (1995.11 KiB either way), because nothing else
+  // in this Worker's module graph imports a `.md` at all. The scoping is what
+  // keeps that true -- the day someone imports a README or a doc fixture, a
+  // blanket rule would quietly ship it.
+  //
+  // WHAT THE CHECK ACTUALLY SHOWS, because the obvious version of it fails for
+  // an innocent reason: `grep -c 'Fit analysis prompt' <outdir>/*.js` finds
+  // ZERO. Wrangler does not inline a text module into `index.js`; it emits it
+  // as a sibling module and imports it by a hashed name. So the real evidence,
+  // from `wrangler deploy --dry-run --outdir`, is both halves of that.
+  //
+  // RE-MEASURED 2026-09-09 (day 5 Task 11), and the re-run is the one that
+  // counts: the 2026-09-08 measurement was taken while NOTHING in this Worker's
+  // module graph imported the engine, so the rule was being exercised against
+  // an import that esbuild reached only through a temporary edit. Registering
+  // `analyze_fit` in ./src/gated.ts made it a real edge of the graph, and the
+  // bundle now says so:
+  //   index.js          `import FIT_PROMPT from "./01998436…-fit.md"`, and
+  //                     `system: FIT_PROMPT` at the model call
+  //   01998436…-fit.md  emitted beside it, byte for byte the prompt (equal
+  //                     sha256 against prompts/fit.md, and `diff` silent)
+  //   *.js              zero matches for the prompt's own text, as above
+  //   Total Upload      2000.91 KiB, against 1995.11 KiB before the tool
+  // The emitted name is CONTENT-derived, not build-derived, which is why
+  // quoting it here is safe: it is `shasum -a 1 prompts/fit.md` exactly
+  // (measured -- two dry runs produced the same name, and it equals that
+  // digest), so it moves when the prompt does and never otherwise.
+  // A rule that silently did not apply is the failure this is guarding against
+  // -- the import would resolve to something that is not the prompt, and every
+  // test would still pass, because they all stub the model.
+  //
+  // `fallthrough: true` because this is an ADDITIONAL rule, not a replacement
+  // set: without it wrangler drops its own defaults (`.js`, `.mjs`, `.wasm` and
+  // the rest) and warns about every one it dropped.
+  "rules": [{ "type": "Text", "globs": ["**/prompts/*.md?raw"], "fallthrough": true }],
+
   // How this Worker reads the site's published documents (`/llms.txt`,
   // `/resume.json`, `/{writing,work}/*.md`) -- for the corpus refresh below AND
   // for every day-4 content tool. Added by issue #28, which this replaced a

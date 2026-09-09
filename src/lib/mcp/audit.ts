@@ -9,8 +9,24 @@ export interface AuditRow {
   calledAt: string;
   tool: string;
   argsHash: string;
-  tier: 'public';
+  /**
+   * `'public'` for an unauthenticated call, `'private'` for one made under a
+   * grant. Widened from the literal `'public'` on day 5 -- see
+   * `guarded` in workers/mcp/src/define.ts, which is the one place either
+   * value is produced.
+   */
+  tier: 'public' | 'private';
+  /** The grant's audience label. NULL on the public tier, always, forever. */
   audience: string | null;
+  /**
+   * The `jti` of the token that authorised the call. NULL on the public tier.
+   *
+   * Separate from `audience` because they answer different questions: an
+   * audience names a campaign and outlives any one token, while this names
+   * the credential. Revoking a token and then asking what it read is a
+   * `grant_jti` query; `audience` cannot answer it.
+   */
+  grantJti: string | null;
   clientName: string | null;
   clientVersion: string | null;
   userAgent: string | null;
@@ -58,9 +74,9 @@ export async function recordToolCall(db: D1Database, row: AuditRow): Promise<voi
     await db
       .prepare(
         `INSERT INTO mcp_tool_calls
-           (called_at, tool, args_hash, tier, audience, client_name, client_version,
-            user_agent, protocol_version, outcome, duration_ms)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (called_at, tool, args_hash, tier, audience, grant_jti, client_name,
+            client_version, user_agent, protocol_version, outcome, duration_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         row.calledAt,
@@ -68,6 +84,7 @@ export async function recordToolCall(db: D1Database, row: AuditRow): Promise<voi
         row.argsHash,
         row.tier,
         row.audience,
+        row.grantJti,
         row.clientName,
         row.clientVersion,
         row.userAgent,

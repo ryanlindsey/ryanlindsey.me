@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, expect, test } from 'vitest';
@@ -35,4 +36,36 @@ test('McpEnv lists exactly the bindings workers/mcp/wrangler.jsonc declares', ()
 
   const declared = [...block![1]!.matchAll(/^\s*(\w+):/gm)].map((m) => m[1]!).sort();
   expect(declared).toEqual([...MCP_BINDING_NAMES].sort());
+});
+
+test('no wrangler config declares a day-5 test-only seam', async () => {
+  // Each of these seams has the same first safety property: the deployed
+  // behaviour comes from the var being ABSENT, so nothing has to remember to
+  // set it correctly in production. This is the test that keeps them absent.
+  //
+  // `RLME_TOKEN_KEY_SOURCE` (src/lib/tier/grant.ts's `signingKey`): a `vars`
+  // entry added to either config, for any reason, would make production sign
+  // tokens with a constant committed to a public repo.
+  //
+  // `FIT_ENGINE` (src/lib/fit/engine.ts's `analyzeFit`): the only value it
+  // accepts is `'off'`, so a `vars` entry could only ever turn the fit engine
+  // off in production -- silently, since the tool would keep answering a
+  // polite sentence about being unavailable and every test would stay green.
+  //
+  // `RLME_TURNSTILE_MODE` (src/lib/turnstile.ts's `verifyTurnstile`) is the
+  // one that most needs this guard, because it is the only seam of the three
+  // that fails OPEN. The other two degrade loudly in their own way -- a weak
+  // signature, an engine that says it is unavailable -- but `'stub'` makes
+  // `verifyTurnstile` return `{ ok: true }` for every request, so a stray
+  // entry in either config silently removes the cost control on `/fit` with
+  // every test still green. Guarding it here is also the only place the
+  // property is enforced: src/worker.ts flattens `/fit` 500s to the site 404,
+  // so the `throw` on an unrecognised value reaches no caller (see the
+  // `console.error` there, which is what makes it visible to the operator).
+  for (const name of ['RLME_TOKEN_KEY_SOURCE', 'FIT_ENGINE', 'RLME_TURNSTILE_MODE']) {
+    for (const path of ['wrangler.jsonc', 'workers/mcp/wrangler.jsonc']) {
+      const source = await readFile(path, 'utf8');
+      expect(source, `${path} must not declare ${name}`).not.toContain(name);
+    }
+  }
 });
