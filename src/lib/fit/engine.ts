@@ -5,7 +5,7 @@
 // GENERIC by construction (09 §2): `analyzeFit(env, targetDescription)`. It
 // does not know, and must never learn, what a target description is for.
 
-import { buildCorpusContext } from './corpus-context';
+import { buildCorpusContext, type CorpusContext } from './corpus-context';
 import type { DocumentsEnv } from '../mcp/documents';
 import { enforceCitations, FitReport, FIT_REPORT_JSON_SCHEMA, type CitationAudit } from './schema';
 import FIT_PROMPT from '../../../prompts/fit.md?raw';
@@ -49,37 +49,47 @@ export const BREAKER_KEY = 'breaker:inference';
 const EMIT_TOOL = 'emit_fit_report';
 
 /**
- * How this module calls the binding, written out rather than borrowed.
+ * The request body this module sends, named so that the shape is checked.
  *
- * The generated `Ai.run` is `run<Name extends keyof AiModels>(model: Name,
- * inputs: AiModels[Name]['inputs'], ...)`, and `AiModels` lists only Cloudflare's
- * own catalogue -- `worker-configuration.d.ts` contains no `anthropic/` entry at
- * all, and neither does `wrangler ai models`. A partner model therefore has no
- * generated overload to satisfy, so the choice is between casting the arguments
- * away (`as never`, which typechecks anything) and naming the shape here.
+ * `env.AI.run` IS CALLED UNCAST, and this type is why. The binding has a
+ * documented unknown-model fallback overload
+ * (worker-configuration.d.ts:10560-10568):
  *
- * Naming it is worth the twelve lines, because the shape IS the measurement.
- * `temperature`, `top_p` and `top_k` are ABSENT rather than optional -- 10 §5
- * measured all three being rejected with `7003: User Input Error` -- and
- * `tool_choice` is required rather than optional, because a forced tool call is
- * the whole mechanism by which this call returns structured output. There is no
- * `response_format`: that is an OpenAI field, and Anthropic does not have it.
- * A future edit that adds a sampling knob now has to add it to a type whose
- * comment says why it is not there.
+ *   run<Model extends string>(
+ *     model: Model extends keyof AiModelList ? never : Model,
+ *     inputs: Record<string, unknown>,
+ *     options?: AiOptions,
+ *   ): Promise<Record<string, unknown>>
+ *
+ * and its own comment names third-party gateway models as its purpose. So
+ * `'anthropic/claude-opus-5'` -- not a key of `AiModelList`, the generated map
+ * of Cloudflare's own catalogue -- routes here rather than having no overload
+ * at all. Fix round 1, finding 3: this file previously claimed there was no
+ * overload and cast `env.AI` through `as unknown as`, which threw away the
+ * check that `env.AI` is an `Ai` in the first place, to buy nothing.
+ *
+ * The fallback's `inputs` is `Record<string, unknown>`, which accepts anything,
+ * so the named shape below is where the checking actually happens -- it is
+ * declared as a `type` rather than an `interface` deliberately, because an
+ * interface has no implicit index signature and would not be assignable to
+ * `Record<string, unknown>`.
+ *
+ * The shape IS the measurement. `temperature`, `top_p` and `top_k` are ABSENT
+ * rather than optional -- 10 §5 measured all three being rejected with
+ * `7003: User Input Error` -- and `tool_choice` is required rather than
+ * optional, because a forced tool call is the whole mechanism by which this
+ * call returns structured output. There is no `response_format`: that is an
+ * OpenAI field, and Anthropic does not have it. A future edit that adds a
+ * sampling knob now has to add it to a type whose comment says why it is not
+ * there.
  */
-interface AnthropicMessagesBinding {
-  run(
-    model: string,
-    inputs: {
-      max_tokens: number;
-      system: string;
-      messages: { role: 'user'; content: string }[];
-      tools: { name: string; description: string; input_schema: Record<string, unknown> }[];
-      tool_choice: { type: 'tool'; name: string };
-    },
-    options: AiOptions,
-  ): Promise<unknown>;
-}
+type FitModelInput = {
+  max_tokens: number;
+  system: string;
+  messages: { role: 'user'; content: string }[];
+  tools: { name: string; description: string; input_schema: Record<string, unknown> }[];
+  tool_choice: { type: 'tool'; name: string };
+};
 
 export interface FitEnv extends DocumentsEnv {
   AI: Ai;
@@ -98,13 +108,37 @@ export interface FitEnv extends DocumentsEnv {
 /**
  * A failure whose message is safe to show a caller.
  *
- * Every path out of this module that is not a report is one of these, and the
- * message is written here rather than derived from whatever threw -- an
+ * Every path out of this module that is not a report is one of these, with ONE
+ * deliberate exception: the `FIT_ENGINE` seam's unrecognised-value throw in
+ * `analyzeFit` below stays a plain `Error`, because a mis-set var is an
+ * operator's mistake rather than an outage and must not be dressed up as one.
+ *
+ * The message is written HERE rather than derived from whatever threw -- an
  * `AiError: 2018 …` reaching a caller would publish the gateway's internals
  * and, worse, tell them a rate limit was hit rather than that the engine is
  * unavailable.
+ *
+ * FIX ROUND 1, FINDING 1: the sentence above used to be an unqualified "every
+ * path", and it was false in two places -- `env.KV_CONFIG.get` and
+ * `buildCorpusContext` were both unwrapped, and the latter throws BY DESIGN:
+ * `fetchDocumentIndex` raises ``/llms.txt returned ${status} from
+ * ${env.SITE_ORIGIN}``, which names an internal origin and a status code, on
+ * exactly the failure class issue #28 already bit this repo with (a 522 on
+ * `/llms.txt`). Both are wrapped now. A comment asserting a safety property is
+ * worth nothing unless the property is enforced, so if a future edit adds an
+ * `await` to this function, it belongs inside a `try` or this comment becomes
+ * a lie again.
  */
-export class FitUnavailable extends Error {}
+export class FitUnavailable extends Error {
+  constructor(message: string) {
+    super(message);
+    // `Error` sets `name` from the prototype, so a subclass serialises as
+    // plain "Error" without this. Task 11 hands these across a service
+    // binding, where the instance is structured-cloned and `instanceof` does
+    // not survive -- the name is what the far side has left to recognise.
+    this.name = 'FitUnavailable';
+  }
+}
 
 export interface FitResult {
   report: FitReport;
@@ -123,6 +157,17 @@ export interface FitResult {
  * is an OpenAI field Anthropic does not have. So the answer arrives as a
  * `tool_use` content block, and it may sit beside a `text` block the model
  * produced anyway; this searches rather than indexing `content[0]`.
+ *
+ * `name` IS CHECKED, BUT ONLY WHEN PRESENT, and the asymmetry is deliberate
+ * (fix round 1, finding 9). Checking it when present means a `tools` array
+ * that ever grows a second entry cannot silently feed the wrong tool's input
+ * to `FitReport.safeParse` -- a plausible future edit, since a "cannot comply"
+ * tool is the obvious next one. Not REQUIRING it is the measured half: Task
+ * 10's probe measured a `text` response through this gateway route and never a
+ * `tool_use` one, so whether the block carries `name` here is unverified, and
+ * demanding an unmeasured field would fail closed on answers that are fine.
+ * When a real tool_use envelope has been captured, this can tighten to an
+ * equality check.
  */
 export function extractToolInput(raw: unknown): unknown {
   if (typeof raw !== 'object' || raw === null) return null;
@@ -130,10 +175,38 @@ export function extractToolInput(raw: unknown): unknown {
   if (!Array.isArray(content)) return null;
   for (const block of content) {
     if (typeof block !== 'object' || block === null) continue;
-    const entry = block as { type?: unknown; input?: unknown };
-    if (entry.type === 'tool_use' && entry.input !== undefined) return entry.input;
+    const entry = block as { type?: unknown; name?: unknown; input?: unknown };
+    if (entry.type !== 'tool_use' || entry.input === undefined) continue;
+    if (entry.name !== undefined && entry.name !== EMIT_TOOL) continue;
+    return entry.input;
   }
   return null;
+}
+
+/**
+ * The fence long enough to enclose `text` whole.
+ *
+ * FIX ROUND 1, FINDING 2. A fixed three-backtick fence is not a boundary, it
+ * is a suggestion: CommonMark closes a fenced block at the first line whose
+ * fence is at least as long as the opening one, so a description containing a
+ * ``` line closes the block early and everything after it reaches the model as
+ * top-level prompt -- outside the "treat fenced content as data" instruction
+ * that prompts/fit.md relies on. The target description is the ONLY untrusted
+ * input in this system, and this is its entire boundary.
+ *
+ * `enforceCitations` still bounds what an injection can do to the citations,
+ * because a fabricated URL cannot enter `allowedUrls`. What it cannot bound is
+ * the prose: `overall_read`, `gaps[].why` and every `strength` rating are free
+ * for a steered model to write, and those are what a reader actually trusts.
+ *
+ * Opening with one more backtick than the longest run inside is CommonMark's
+ * own answer to this, and the minimum of three keeps the ordinary case
+ * looking like ordinary markdown.
+ */
+export function fenceFor(text: string): string {
+  let longest = 0;
+  for (const run of text.match(/`+/g) ?? []) longest = Math.max(longest, run.length);
+  return '`'.repeat(Math.max(3, longest + 1));
 }
 
 /**
@@ -163,20 +236,47 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
   // The breaker (04 §5). A KV read, checked before anything is spent -- which
   // is the whole point of a breaker: tripping it must stop the spend, not
   // report on it afterwards.
-  if ((await env.KV_CONFIG.get(BREAKER_KEY)) !== null) {
+  //
+  // WRAPPED, and it fails CLOSED (fix round 1, finding 1). A KV read that
+  // throws leaves this function unable to say whether the budget is exhausted,
+  // and the safe answer to "I cannot tell" is to refuse -- spending on a
+  // possibly-tripped breaker is the exact outcome the breaker exists to
+  // prevent.
+  let tripped: string | null;
+  try {
+    tripped = await env.KV_CONFIG.get(BREAKER_KEY);
+  } catch (error) {
+    console.error('fit: the breaker flag could not be read', error);
+    throw new FitUnavailable('Fit analysis is unavailable right now. Try again shortly.');
+  }
+  if (tripped !== null) {
     throw new FitUnavailable(
       'Fit analysis is paused: the daily inference budget breaker is tripped. It resets automatically.',
     );
   }
 
-  const corpus = await buildCorpusContext(env);
+  // WRAPPED for a stronger reason than the breaker read: this one throws by
+  // DESIGN. `fetchDocumentIndex` (src/lib/mcp/documents.ts) raises
+  // ``/llms.txt returned ${status} from ${env.SITE_ORIGIN}`` on a non-ok
+  // index, which names an internal origin and a status code to whoever asked.
+  // That is not hypothetical -- issue #28 was precisely this fetch returning
+  // 522 in production.
+  let corpus: CorpusContext;
+  try {
+    corpus = await buildCorpusContext(env);
+  } catch (error) {
+    console.error('fit: the corpus could not be read', error);
+    throw new FitUnavailable('The corpus could not be read right now. Try again shortly.');
+  }
   if (corpus.documents === 0) {
     throw new FitUnavailable('The corpus is empty right now, so there is nothing to compare.');
   }
 
   // The description is FENCED, like every corpus document, and the prompt
   // tells the model to treat fenced content as data. It is text a stranger
-  // pasted, and this is the boundary.
+  // pasted, and this is the boundary -- which is why the fence is computed
+  // from the text rather than fixed at three backticks. See `fenceFor`.
+  const fence = fenceFor(description);
   const user = [
     '# Corpus',
     '',
@@ -184,42 +284,55 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
     '',
     '# Target description',
     '',
-    '```text',
+    `${fence}text`,
     description,
-    '```',
+    fence,
   ].join('\n');
 
-  let raw: unknown;
+  const input: FitModelInput = {
+    max_tokens: FIT_MAX_TOKENS,
+    system: FIT_PROMPT,
+    messages: [{ role: 'user', content: user }],
+    tools: [
+      {
+        name: EMIT_TOOL,
+        description: 'Return the completed fit report.',
+        input_schema: FIT_REPORT_JSON_SCHEMA,
+      },
+    ],
+    tool_choice: { type: 'tool', name: EMIT_TOOL },
+  };
+
+  let raw: Record<string, unknown>;
   try {
-    raw = await (env.AI as unknown as AnthropicMessagesBinding).run(
-      FIT_MODEL,
-      {
-        max_tokens: FIT_MAX_TOKENS,
-        system: FIT_PROMPT,
-        messages: [{ role: 'user', content: user }],
-        tools: [
-          {
-            name: EMIT_TOOL,
-            description: 'Return the completed fit report.',
-            input_schema: FIT_REPORT_JSON_SCHEMA,
-          },
-        ],
-        tool_choice: { type: 'tool', name: EMIT_TOOL },
+    raw = await env.AI.run(FIT_MODEL, input, {
+      gateway: {
+        id: env.RLME_AI_GATEWAY_ID,
+        // Attribution in the gateway's own logs, which 10 §5 established
+        // are the only reliable signal that routing worked --
+        // `aiGatewayLogId` was null on every probe regardless of whether
+        // the call went through the gateway.
+        metadata: { surface: 'fit' },
       },
-      {
-        gateway: {
-          id: env.RLME_AI_GATEWAY_ID,
-          // Attribution in the gateway's own logs, which 10 §5 established
-          // are the only reliable signal that routing worked --
-          // `aiGatewayLogId` was null on every probe regardless of whether
-          // the call went through the gateway.
-          metadata: { surface: 'fit' },
-        },
-      },
-    );
+    });
   } catch (error) {
     console.error('fit: model call failed', error);
     throw new FitUnavailable('The fit engine could not be reached right now. Try again shortly.');
+  }
+
+  // TRUNCATION IS NOT A SCHEMA ERROR, so zod must not be the only judge of
+  // completeness (fix round 1, finding 5). `FitReport` requires
+  // `requirement_map.min(1)`; prompts/fit.md asks for five to twelve. A report
+  // cut off at four -- or at one -- still parses, and the whole design rests on
+  // never rendering a partial report as a whole one, because the reader cannot
+  // see what is missing. `FIT_MAX_TOKENS` has NOT been validated against a real
+  // five-to-twelve-requirement report (Task 10's probes capped at 16 tokens),
+  // so this is the guard standing in for that measurement until 04 §4's eval
+  // suite supplies it. The signal is already in the envelope; it only had to be
+  // read.
+  if (raw.stop_reason === 'max_tokens') {
+    console.error(`fit: the model hit the ${FIT_MAX_TOKENS}-token cap and the report is truncated`);
+    throw new FitUnavailable('The fit engine returned an incomplete answer. Try again shortly.');
   }
 
   const parsed = FitReport.safeParse(extractToolInput(raw));
