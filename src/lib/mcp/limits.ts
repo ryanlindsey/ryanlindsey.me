@@ -47,6 +47,32 @@ export const LIMITS: Record<ToolCost, { limit: number; periodSeconds: number }> 
 };
 
 /**
+ * How long a refused caller should actually wait, as a phrase to put in the
+ * refusal.
+ *
+ * DERIVED, and derived from the right quantity, which is not the obvious one.
+ * The wait is `periodSeconds / limit` -- the time this bucket takes to return
+ * ONE token -- not `periodSeconds`, which is how long a full refill takes and
+ * would tell an `analyze_fit` caller to wait 5 minutes for something that is
+ * ready in 50 seconds. `consume` (workers/mcp/src/rate-limiter.ts) succeeds at
+ * one whole token, and tokens return continuously rather than on a window
+ * tick, so one token is the whole of what a retry needs.
+ *
+ * MEASURED against the three classes, since the arithmetic is what makes this
+ * worth having: cheap 60/60s returns a token in 1s, inference 10/60s in 6s,
+ * expensive 6/300s in 50s. Day 5 is what made the fixed string this replaces
+ * ("Try again in a minute.") worth revisiting -- and worth recording that it
+ * was never actually WRONG, because 60 seconds buys 1.2 tokens even on the
+ * slowest bucket. It was true by luck, of numbers it did not read. This is
+ * true by construction, and stays true when `LIMITS` changes.
+ */
+export function retryHint(cost: ToolCost): string {
+  const { limit, periodSeconds } = LIMITS[cost];
+  const seconds = Math.ceil(periodSeconds / limit);
+  return seconds === 1 ? '1 second' : `${seconds} seconds`;
+}
+
+/**
  * The limiter object's RPC contract, declared HERE rather than in the Worker
  * that implements it.
  *

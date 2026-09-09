@@ -67,8 +67,12 @@ interface GatedTool {
    * The predicate half of the instruction line, which ./server.ts renders as
    * `${name}: ${summary}`. Deliberately not the `description`: that string is
    * written for an agent about to call the tool, and the map is a one-line
-   * index of what a token opened. tests/mcp-gated.test.ts pins these lines
-   * verbatim, so an edit here is a reviewed edit.
+   * index of what a token opened.
+   *
+   * tests/mcp-gated.test.ts asserts the WHOLE granted block verbatim for a
+   * grant carrying every scope, so an edit to any of these six is an edit to a
+   * test as well. That is the point of the field: a name can be derived, prose
+   * cannot, so the prose is reviewed instead.
    */
   summary: string;
   /**
@@ -208,6 +212,47 @@ function fitEnv(env: McpEnv): FitEnv {
     RLME_AI_GATEWAY_ID: env.RLME_AI_GATEWAY_ID,
     FIT_ENGINE: env.FIT_ENGINE,
   };
+}
+
+/**
+ * What a caller is told when `analyzeFit` throws, and the ONE place that
+ * decides it.
+ *
+ * Exported, and a named function rather than three lines inside the handler,
+ * because the dangerous branch is otherwise untestable. The harness can only
+ * ever reach the safe one: `FIT_ENGINE: 'off'` makes every call in
+ * tests/mcp-gated.test.ts a `FitUnavailable`, so mutating the mapping to copy
+ * `error.message` UNCONDITIONALLY left the whole suite green -- which is
+ * exactly the Critical failure this mapping exists to prevent, an AI Gateway
+ * `2018: Invalid User Credentials` reaching a stranger as a rate-limit
+ * sentence. Pulled out here, both branches are one direct call each, with no
+ * Worker in the way. tests/mcp-gated.test.ts calls them.
+ *
+ * THE GENERIC BRANCH LOGS, and that is not decoration: it is what makes its
+ * own sentence true. `guarded` (./define.ts) logs whatever is THROWN, which
+ * on this path is the replacement `ToolError` -- so without the line below the
+ * original cause is discarded and "The error was logged." is a lie. It also
+ * defeats a property src/lib/fit/engine.ts documents deliberately: a mis-set
+ * `FIT_ENGINE` throws a plain `Error` rather than a `FitUnavailable`
+ * SPECIFICALLY so an operator's typo is loud rather than dressed up as an
+ * outage, and swallowing it here would have made it silent. The cost is one
+ * duplicate log line per generic failure (this one, naming the cause, and
+ * `guarded`'s, naming the wrapper), which is the cheap direction to be wrong
+ * in.
+ */
+export function fitToolError(error: unknown): ToolError {
+  // A `FitUnavailable`'s message is written by the engine, sentence by
+  // sentence, to be shown -- see that class's own comment. Nothing else is:
+  // an unwrapped throw could carry a gateway error code, an internal origin or
+  // a stack, and a raw `2018` would tell a stranger a rate limit was hit
+  // rather than that the engine is unavailable, which is both a disclosure and
+  // a lie.
+  if (error instanceof FitUnavailable) return new ToolError(error.message);
+  console.error(
+    'mcp/gated: analyze_fit failed with a cause the engine did not wrap; the caller was told nothing about it',
+    error,
+  );
+  return new ToolError('Fit analysis failed. The error was logged.');
 }
 
 /**
@@ -393,21 +438,14 @@ const GATED_TOOLS: readonly GatedTool[] = [
               citations_dropped: result.citations.dropped,
             };
           } catch (error) {
-            // Only a `FitUnavailable`'s message is safe to show: the engine
-            // writes those itself, sentence by sentence, for exactly this.
-            // Anything else could carry a gateway error code, an internal
-            // origin or a stack -- and a raw `2018` from AI Gateway would tell
-            // a stranger a rate limit was hit rather than that the engine is
-            // unavailable, which is both a disclosure and a lie.
-            //
-            // `instanceof` is sound HERE because this call is in-process: the
-            // engine and this tool are the same bundle. It is NOT sound across
-            // the service binding /fit uses (Task 13), where the instance is
-            // structured-cloned -- which is why `FitUnavailable` sets its own
-            // `name` and why that side has to read it.
-            throw error instanceof FitUnavailable
-              ? new ToolError(error.message)
-              : new ToolError('Fit analysis failed. The error was logged.');
+            // The mapping is `fitToolError` above, where both branches are
+            // reachable by a test. `instanceof` is sound at that call because
+            // this one is in-process -- the engine and this tool are the same
+            // bundle. It is NOT sound across the service binding /fit uses
+            // (Task 13), where the instance is structured-cloned, which is why
+            // `FitUnavailable` sets its own `name` and why that side has to
+            // read it rather than reusing this.
+            throw fitToolError(error);
           }
         },
       ),
@@ -441,9 +479,10 @@ export function registerGatedTools(server: McpServer, tc: ToolContext): void {
  * `registerGatedTools` ask the same question of the same field of the same
  * entries, so a tool cannot be advertised without being registered or renamed
  * in one place only. What it does not buy is a guarantee that `summary` still
- * DESCRIBES the tool -- prose cannot be derived, and
- * tests/mcp-gated.test.ts pins these lines verbatim so that changing one is a
- * reviewed act.
+ * DESCRIBES the tool -- prose cannot be derived from a registration. That
+ * half is a review gate rather than a mechanism: tests/mcp-gated.test.ts pins
+ * the whole granted block verbatim for an all-scope grant, so changing any
+ * line is a deliberate act with a test to update.
  *
  * Takes the `Grant` rather than the `ToolContext` because that is all it
  * needs: no server, no bindings, and therefore nothing to register.

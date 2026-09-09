@@ -774,7 +774,8 @@ describe('search_writing', () => {
  * just for that test. Calls made here milliseconds later, at the same
  * `unknown` IP, would therefore be refused by the LIMITER and never reach the
  * handler at all. That refusal is itself `isError: true`, with a message
- * ("Rate limit reached for search_writing. Try again in a minute.") that
+ * ("Rate limit reached for search_writing. Try again in 6 seconds." -- the
+ * interval is derived per cost class, see `retryHint` in src/lib/mcp/limits.ts) that
  * trivially satisfies every banned pattern checked below -- so this whole
  * describe block would go green while proving nothing about 09 §2's
  * highest-risk check. (An earlier version of this file did exactly that: its

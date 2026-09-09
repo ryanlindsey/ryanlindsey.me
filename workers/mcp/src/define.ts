@@ -12,7 +12,7 @@ import {
 } from '@modelcontextprotocol/server';
 import type { z } from 'zod';
 import { hashArgs, recordToolCall, type AuditRow } from '../../../src/lib/mcp/audit';
-import { checkLimit, type ToolCost } from '../../../src/lib/mcp/limits';
+import { checkLimit, retryHint, type ToolCost } from '../../../src/lib/mcp/limits';
 import { hasScope, type Grant } from '../../../src/lib/tier/grant';
 import type { Scope } from '../../../src/lib/tier/token';
 import type { McpEnv } from './env';
@@ -388,7 +388,7 @@ export function defineTool<A>(
           content: [
             {
               type: 'text' as const,
-              text: `Rate limit reached for ${spec.name}. Try again in a minute.`,
+              text: `Rate limit reached for ${spec.name}. Try again in ${retryHint(spec.cost)}.`,
             },
           ],
         }),
@@ -520,7 +520,7 @@ export function defineResource(
         refuse: () => {
           throw new ProtocolError(
             RESOURCE_RATE_LIMITED,
-            `Rate limit reached for ${spec.name}. Try again in a minute.`,
+            `Rate limit reached for ${spec.name}. Try again in ${retryHint(spec.cost)}.`,
           );
         },
         // Only a `ProtocolError` -- one this Worker constructed deliberately,

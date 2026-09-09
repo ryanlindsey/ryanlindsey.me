@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import { MCP_WORKER, SITE_HARNESS_WORKERS } from './workers';
@@ -7,7 +7,9 @@ import { recordIssue } from '../src/lib/tier/registry';
 import { TEST_SIGNING_KEY, type Grant } from '../src/lib/tier/grant';
 import { PROFILE_KEYS } from '../src/lib/tier/private-docs';
 import { CAMPAIGN_PREFIX } from '../src/lib/tier/campaigns';
-import { defineTool, type ToolContext } from '../workers/mcp/src/define';
+import { defineTool, ToolError, type ToolContext } from '../workers/mcp/src/define';
+import { fitToolError } from '../workers/mcp/src/gated';
+import { FitUnavailable } from '../src/lib/fit/engine';
 import type { McpEnv } from '../workers/mcp/src/env';
 import { LIMITS } from '../src/lib/mcp/limits';
 import { BANNED_PATTERNS } from './candidacy-patterns';
@@ -640,12 +642,12 @@ test('the granted instructions map exactly the scopes the grant carries', async 
   // can only ever compare the public map against public tools -- nothing there
   // can see a granted line at all.
   //
-  // The LINES THEMSELVES are what this pins, verbatim, and that is its job now
-  // that the test below proves the derivation. `gatedToolLines`
-  // (workers/mcp/src/gated.ts) can guarantee that every advertised name is a
-  // registered name; it cannot guarantee that the prose after the colon still
-  // describes the tool. Prose is not derivable, so it is reviewed instead --
-  // an edit to one of these summaries has to come here and say so.
+  // A SPOT CHECK, and saying which kind matters: this mints ONE grant and pins
+  // the three lines that grant opens. The other half of the map -- the three
+  // lines only a `documents`, `narrative` or `fit` token ever sees -- is
+  // pinned by the test below, which asserts the whole block for a grant
+  // carrying every scope. What this one adds that the other cannot is the
+  // NEGATIVE half beneath: a scope this token lacks contributes nothing.
   const { token } = await grantFor(['profile']);
   const instructions = await instructionsFor(token);
 
@@ -663,14 +665,51 @@ test('the granted instructions map exactly the scopes the grant carries', async 
   expect(instructions).not.toContain('get_case_study_details');
   expect(instructions).not.toContain('get_application_narrative');
 
-  // Every mapped line names a tool this same grant can actually see. A spot
-  // check of what the test below asserts in general, kept because it is the
-  // one that reads as a worked example: these three literal strings, this one
-  // grant, this one listing.
+  // Every mapped line names a tool this same grant can actually see. A worked
+  // example of what the scope-by-scope test below asserts in general: these
+  // three literal strings, this one grant, this one listing.
   const names = (await listTools(token)).map((t) => t.name);
   for (const name of ['get_availability', 'get_references', 'get_compensation_expectations']) {
     expect(names, `${name} is mapped, so it must be registered`).toContain(name);
   }
+});
+
+test('every granted line is pinned verbatim, for a grant carrying every scope', async () => {
+  /**
+   * THE REVIEW GATE on the map's prose, and the reason `summary` is a field of
+   * its own rather than the tool's `description`.
+   *
+   * `gatedToolLines` (workers/mcp/src/gated.ts) can guarantee that every
+   * advertised name is a registered name -- the test above proves that, scope
+   * by scope. It cannot guarantee the prose after each colon still describes
+   * the tool, because prose is not derivable from anything. That is what this
+   * test is for, and until it existed the claim was overstated: only the three
+   * PROFILE summaries were pinned, so the other three could have been changed
+   * to anything at all with nothing going red.
+   *
+   * The whole block is asserted rather than six `toContain`s, which pins three
+   * more things for free: the ORDER, the "It also has:" framing, and that
+   * nothing else is appended after the last line. The public half is left to
+   * tests/mcp.smoke.test.ts, which owns it -- this slices from the header on,
+   * so the two tests do not both have to be edited when the public copy moves.
+   */
+  const instructions = await instructionsFor(
+    await tokenFor(['fit', 'profile', 'documents', 'narrative']),
+  );
+  const granted = instructions.slice(instructions.indexOf('This connection carries'));
+
+  expect(granted).toBe(
+    [
+      `This connection carries a scoped token for the audience "${AUDIENCE}". It also has:`,
+      '',
+      'get_availability: current working status and engagement timing.',
+      'get_references: reference contacts and the context for each.',
+      'get_compensation_expectations: compensation range and structure preferences.',
+      'get_case_study_details: the unredacted layer of one case study, by slug.',
+      "get_application_narrative: the narrative written for this token's audience.",
+      'analyze_fit: compare a description you supply against the corpus; returns an evidence map with citation URLs, honest gaps, and questions to ask.',
+    ].join('\n'),
+  );
 });
 
 test('the granted instructions and tools/list agree, scope by scope', async () => {
@@ -776,6 +815,14 @@ test('no tool a grant can see ever refuses that same grant for scope', async () 
    * required input BEFORE `defineTool`'s wrapper runs, so a refusal from any
    * tool with an argument could never be observed -- see `minimalArgs`, and
    * the measurement recorded there.
+   *
+   * THAT BLIND SPOT HAS NOW OPENED TWICE (a missing required argument, then a
+   * `minLength` this suite did not satisfy), and both times the test stayed
+   * green while proving nothing, because "not a scope refusal" is satisfied by
+   * a schema error just as well as by a real answer. So the schema error is
+   * refused explicitly below rather than left to `minimalArgs` to avoid. Revert
+   * that function to a bare 'x' and this goes red on `analyze_fit` instead of
+   * quietly ceasing to test it -- which is the only reason to trust the loop.
    */
   const seen: string[] = [];
   for (const scope of SCOPES) {
@@ -788,11 +835,17 @@ test('no tool a grant can see ever refuses that same grant for scope', async () 
       expect(answer, `${tool.name} refused a ${scope} grant that was listed it`).not.toMatch(
         /requires a scoped token/i,
       );
+      // The guard on the assertion above: a call rejected at the schema never
+      // reached the check it is here to make, so it must not be allowed to
+      // pass as evidence that the check held.
+      expect(answer, `${tool.name} was called with arguments its own schema rejects`).not.toMatch(
+        /Invalid arguments|Input validation error/i,
+      );
     }
   }
   // Not vacuous, and it pins the pairing as well: each gated tool is reachable
   // by exactly one single-scope grant, so these four listings between them
-  // account for all five and no tool is registered under two scopes.
+  // account for all six and no tool is registered under two scopes.
   expect(seen.sort()).toEqual([...GATED].sort());
 });
 
@@ -820,11 +873,22 @@ describe('analyze_fit', () => {
     expect((await listTools(await tokenFor(['fit']))).map((t) => t.name)).toContain('analyze_fit');
   });
 
-  test('its description names no target and no search', async () => {
+  test('its description names no target and no search, and tells an agent what to do with a URL', async () => {
     const [tool] = (await listTools(await tokenFor(['fit']))).filter(
       (t) => t.name === 'analyze_fit',
     );
     for (const pattern of BANNED_PATTERNS) expect(tool!.description).not.toMatch(pattern);
+
+    // The second half of that description is an INSTRUCTION to the calling
+    // agent, not documentation, and it is load-bearing: this tool accepts no
+    // URLs, so an agent holding a link and no instruction is likeliest to pass
+    // the link AS the description -- which returns a confident fit report
+    // about a string, indistinguishable from one about the document. Deleting
+    // those two sentences used to leave the whole suite green.
+    expect(tool!.description, 'the agent must be told the tool takes no URLs').toMatch(
+      /does not accept URLs/i,
+    );
+    expect(tool!.description, 'and told what to do instead').toMatch(/fetch it yourself/i);
   });
 
   test('it refuses cleanly when the engine is off, and says so in a sentence', async () => {
@@ -893,7 +957,13 @@ describe('analyze_fit', () => {
     // The first `limit` calls got through to the engine, which is what makes
     // the last one's refusal a LIMIT rather than any other failure.
     for (const answer of answers.slice(0, limit)) expect(answer).toMatch(/not available/i);
-    expect(answers[limit]).toMatch(/^Rate limit reached for analyze_fit/);
+    // The WHOLE sentence, because the retry interval is derived per cost class
+    // (`retryHint`, src/lib/mcp/limits.ts) and 50 seconds is the `expensive`
+    // bucket's own arithmetic: 6 tokens per 300s is one token back every 50s,
+    // which is what a refused caller actually has to wait. Deriving it from
+    // `periodSeconds` instead would say 300 and be five times too pessimistic;
+    // this assertion is what would notice.
+    expect(answers[limit]).toBe('Rate limit reached for analyze_fit. Try again in 50 seconds.');
 
     // And the row, bound to THIS grant's `jti`. Filtered on the tool name
     // alone it would be satisfied by whatever an earlier test in this file
@@ -911,6 +981,63 @@ describe('analyze_fit', () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     throw new Error('no rate_limited audit row for this run of analyze_fit');
+  });
+
+  /**
+   * THE DANGEROUS BRANCH, tested where it is reachable -- which is here and
+   * nowhere else in this file.
+   *
+   * Every `analyze_fit` call the harness can make is a `FitUnavailable`,
+   * because `FIT_ENGINE: 'off'` refuses on the seam. So the safe branch has
+   * cover (delete the mapping and `/not available/i` stops matching above) and
+   * the generic one has none: MEASURED, mutating `fitToolError` to
+   * `return new ToolError((error as Error).message)` unconditionally left the
+   * entire suite green. The `not.toMatch(/TypeError|\.ts:/)` assertion above
+   * cannot catch it either, since it runs on a path whose message is the
+   * engine's own safe sentence.
+   *
+   * These two call the mapping DIRECTLY -- no harness, no Worker, no seam --
+   * so the branch that only a real gateway failure would reach in production
+   * is exercised by an ordinary function call.
+   */
+  test('fitToolError shows a FitUnavailable message and quarantines anything else', () => {
+    const safe = fitToolError(new FitUnavailable('The corpus is empty right now.'));
+    expect(safe).toBeInstanceOf(ToolError);
+    expect(safe.message).toBe('The corpus is empty right now.');
+
+    // The exact failure the mapping exists for: AI Gateway answers an
+    // exceeded cap with `2018: Invalid User Credentials` (10 §5), which READS
+    // AS AN AUTH FAILURE AND IS NOT -- so copying it to a caller would both
+    // publish an internal and mislead them about what happened.
+    const generic = fitToolError(new Error('AiError: 2018: Invalid User Credentials'));
+    expect(generic).toBeInstanceOf(ToolError);
+    expect(generic.message).toBe('Fit analysis failed. The error was logged.');
+    expect(generic.message).not.toMatch(/2018|AiError/);
+  });
+
+  test('fitToolError logs the cause it refuses to show, so its sentence is true', () => {
+    // "The error was logged." is a CLAIM, and this is the test that keeps it
+    // true. `guarded` (workers/mcp/src/define.ts) logs what is THROWN, which
+    // on this path is the replacement ToolError -- so if the mapping does not
+    // log the original itself, nothing does, and the branch is strictly worse
+    // than not catching at all. The case that matters most is the one the
+    // engine deliberately does NOT wrap: a mis-set `FIT_ENGINE` throws a plain
+    // Error precisely so an operator's typo is loud.
+    const logged: unknown[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      logged.push(...args);
+    });
+    try {
+      fitToolError(new Error('unrecognised FIT_ENGINE: yes'));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(
+      logged.some(
+        (entry) => entry instanceof Error && /unrecognised FIT_ENGINE/.test(entry.message),
+      ),
+      'the original cause must reach the log',
+    ).toBe(true);
   });
 
   test('a refused run is still audited, as private and as an error', async () => {
