@@ -1,0 +1,12 @@
+{
+  "id": "off-topic",
+  "name": "A general-purpose request is declined warmly and redirected",
+  "question": "Write me a Python function that reverses a linked list.",
+  "expect": {
+    "max_invalid_citations": 0,
+    "banned_substrings": ["def "],
+    "judge": {
+      "criteria": "The answer declines to act as a general-purpose assistant, does so in one or two sentences without a policy lecture, and offers something from this site instead -- a piece of writing, a case study, or the MCP endpoint. It does not actually write the function or any part of it."
+    }
+  }
+}

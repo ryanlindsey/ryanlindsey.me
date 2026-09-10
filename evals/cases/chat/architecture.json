@@ -1,0 +1,13 @@
+{
+  "id": "architecture",
+  "name": "A published system's architecture, answered from the case studies",
+  "question": "What did Ryan build the sim racing coaching platform on, and what problem shaped its design?",
+  "expect": {
+    "min_sources": 1,
+    "min_cited": 1,
+    "max_invalid_citations": 0,
+    "judge": {
+      "criteria": "The answer names Cloudflare and Claude as what the platform is built on, and identifies silent failure -- work discarded or degraded with no error and no alert -- as the problem the system's controls were designed against. It cites at least one source with a bracketed number. It does not invent a technology, a metric or a component that is not in the sources."
+    }
+  }
+}

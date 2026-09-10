@@ -222,6 +222,183 @@ async function runFit() {
   return results;
 }
 
+// ---- day 6: chat and leak (04 §1, 04 §4, 09 §2) -------------------------
+
+const CHAT_SKIP_REASON = 'RLME_EVAL_TOKEN is not set in this shell';
+
+/**
+ * Reads one chat turn off the wire, returning the frames the contract defines.
+ *
+ * THE TOKEN IS MANDATORY HERE, unlike in `runFit` where it gates one suite:
+ * `POST /chat` admits a Turnstile token or an `evals` grant and nothing else,
+ * and this process cannot solve a challenge. So the chat and leak suites SKIP
+ * loudly without `RLME_EVAL_TOKEN` rather than reporting a run of refusals as
+ * failures -- a suite that reports "the model would not answer" when the truth
+ * is "the harness was not admitted" is worse than one that does not run.
+ *
+ * `error` may arrive INSTEAD of `sources` (a guard refused) or AFTER deltas
+ * (the upstream stream broke mid-answer). Both are collected; the caller
+ * decides which matters.
+ */
+async function ask(question, token) {
+  const response = await fetch(`${endpoint}/chat`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ question }),
+  });
+  const text = await response.text();
+  let sources = [];
+  let answer = '';
+  let error = null;
+  let cited = [];
+  for (const frame of text.split('\n\n').filter(Boolean)) {
+    const name = frame.match(/^event: (.+)$/m)?.[1];
+    let data = {};
+    try {
+      data = JSON.parse(frame.match(/^data: (.+)$/m)?.[1] ?? '{}');
+    } catch {
+      continue;
+    }
+    if (name === 'sources') sources = data.sources ?? [];
+    else if (name === 'delta') answer += data.text ?? '';
+    else if (name === 'done') cited = data.cited ?? [];
+    else if (name === 'error') error = data.code;
+  }
+  return { sources, answer, cited, error };
+}
+
+/**
+ * Scores `subject` against `criteria` through the gated judge tool.
+ *
+ * A thrown judge is NOT a failed case: `JudgeUnavailable` means the scorer did
+ * not run, and reporting that as a red case sends somebody after a prompt
+ * regression that never happened. It returns null and the caller records the
+ * case as unjudged, which flips the exit code the same way a skipped suite does.
+ */
+async function askJudge(criteria, subject, token) {
+  const answer = await rpc(
+    'tools/call',
+    { name: 'judge_answer', arguments: { criteria, subject } },
+    token,
+  );
+  if (answer.error || answer.result?.isError) return null;
+  try {
+    return JSON.parse(answer.result.content[0].text);
+  } catch {
+    return null;
+  }
+}
+
+/** Which `[n]` markers in an answer name a source that does not exist. */
+const invalidCitations = (answer, sourceCount) => {
+  const invalid = new Set();
+  for (const match of answer.matchAll(/\[(\d+)\]/g)) {
+    const n = Number(match[1]);
+    if (n < 1 || n > sourceCount) invalid.add(n);
+  }
+  return [...invalid];
+};
+
+async function runChat() {
+  const token = process.env.RLME_EVAL_TOKEN;
+  if (!token) {
+    process.stderr.write(`SKIP chat: ${CHAT_SKIP_REASON}\n`);
+    return null;
+  }
+
+  const results = [];
+  for (const testCase of load('chat')) {
+    const expect = testCase.expect ?? {};
+    const { sources, answer, cited, error } = await ask(testCase.question, token);
+    const problems = [];
+
+    if (error !== null) problems.push(`the endpoint refused with "${error}"`);
+    if (expect.min_sources !== undefined && sources.length < expect.min_sources) {
+      problems.push(`retrieved ${sources.length} sources, expected at least ${expect.min_sources}`);
+    }
+    if (expect.min_cited !== undefined && cited.length < expect.min_cited) {
+      problems.push(`cited ${cited.length} sources, expected at least ${expect.min_cited}`);
+    }
+    const invalid = invalidCitations(answer, sources.length);
+    if (
+      expect.max_invalid_citations !== undefined &&
+      invalid.length > expect.max_invalid_citations
+    ) {
+      problems.push(`cited ${invalid.length} source(s) that do not exist: ${invalid.join(', ')}`);
+    }
+    for (const banned of expect.banned_substrings ?? []) {
+      if (answer.includes(banned)) problems.push(`the answer contains "${banned}"`);
+    }
+
+    // The judge runs LAST and only on an answer that survived the deterministic
+    // checks. Scoring an answer we already know is wrong spends a model call to
+    // learn nothing.
+    if (problems.length === 0 && expect.judge) {
+      const verdict = await askJudge(expect.judge.criteria, answer, token);
+      if (verdict === null) problems.push('the judge did not run');
+      else if (verdict.verdict !== 'pass') {
+        problems.push(`judge: ${verdict.reasons.join('; ')} (score ${verdict.score})`);
+      }
+    }
+
+    results.push(
+      problems.length === 0
+        ? pass(testCase.id, testCase.local)
+        : fail(testCase.id, problems.join('; '), testCase.local),
+    );
+  }
+  return results;
+}
+
+/**
+ * The leak suite (09 §2).
+ *
+ * EVERY PROBE IS ITS OWN RESULT rather than one pass/fail for the file, so a
+ * red run names the question that leaked instead of the case that contains
+ * eight of them. The probes deliberately avoid the banned vocabulary --
+ * `BANNED_PATTERNS` is what the ANSWERS are scanned for, so a probe built from
+ * that list would only prove the model can echo.
+ */
+async function runLeak() {
+  const token = process.env.RLME_EVAL_TOKEN;
+  if (!token) {
+    process.stderr.write(`SKIP leak: ${CHAT_SKIP_REASON}\n`);
+    return null;
+  }
+
+  const results = [];
+  for (const testCase of load('leak')) {
+    const banned = (testCase.banned_patterns ?? []).map((source) => new RegExp(source, 'i'));
+    for (const [index, question] of (testCase.questions ?? []).entries()) {
+      const id = `${testCase.id}[${index}]`;
+      const { answer, error } = await ask(question, token);
+      const problems = [];
+
+      if (error !== null) problems.push(`the endpoint refused with "${error}"`);
+      for (const pattern of banned) {
+        if (pattern.test(answer)) problems.push(`the answer matches ${pattern}`);
+      }
+      if (problems.length === 0 && testCase.judge) {
+        const verdict = await askJudge(testCase.judge.criteria, answer, token);
+        if (verdict === null) problems.push('the judge did not run');
+        else if (verdict.verdict !== 'pass') {
+          problems.push(`judge: ${verdict.reasons.join('; ')} (score ${verdict.score})`);
+        }
+      }
+
+      results.push(
+        problems.length === 0
+          ? pass(id, testCase.local)
+          : fail(id, `"${question}" -- ${problems.join('; ')}`, testCase.local),
+      );
+    }
+  }
+  return results;
+}
+
 function report(suite, results) {
   const passed = results.filter((r) => r.ok).length;
   for (const result of results) {
@@ -281,6 +458,24 @@ if (only === null || only === 'fit') {
     process.stdout.write('fit: skipped\n');
   } else {
     green = report('fit', results) && green;
+  }
+}
+
+// `chat` and `leak` are day 6's, and `leak` goes LAST deliberately: it is the
+// private-tier disclosure gate, and a failure there should be the last thing on
+// screen rather than scrolled past.
+for (const [name, run] of [
+  ['chat', runChat],
+  ['leak', runLeak],
+]) {
+  if (only !== null && only !== name) continue;
+  const results = await run();
+  if (results === null) {
+    skipped.push(name);
+    process.stdout.write(`SKIP ${name}: ${CHAT_SKIP_REASON}\n`);
+    process.stdout.write(`${name}: skipped\n`);
+  } else {
+    green = report(name, results) && green;
   }
 }
 

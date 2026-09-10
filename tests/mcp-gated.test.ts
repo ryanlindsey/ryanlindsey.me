@@ -894,6 +894,34 @@ test('the granted instructions and tools/list agree, scope by scope', async () =
   expect([...seen].sort(), 'every gated tool is opened by some scope').toEqual([...GATED].sort());
 });
 
+/**
+ * `judge_answer` (04 §4), day 6's addition and the first gated tool that reads
+ * nothing.
+ *
+ * It is registered under `evals` rather than under a content scope because what
+ * it opens is a frontier-model CALL, not a document -- and the same
+ * registration-time gating applies for the same reason: an anonymous
+ * `tools/list` must not learn that a scoring endpoint exists.
+ */
+test('judge_answer is invisible without the evals scope', async () => {
+  const names = (await listTools(await tokenFor(['fit']))).map((tool) => tool.name);
+  expect(names).not.toContain('judge_answer');
+});
+
+test('judge_answer appears for a grant that carries the evals scope', async () => {
+  const names = (await listTools(await tokenFor(['evals']))).map((tool) => tool.name);
+  expect(names).toContain('judge_answer');
+});
+
+test('an anonymous tools/list cannot see judge_answer at all', async () => {
+  const names = (await listTools()).map((tool) => tool.name);
+  expect(names).not.toContain('judge_answer');
+});
+
+test('GATED_TOOL_NAMES stays derived, so a seventh tool cannot be missed', () => {
+  expect(GATED).toContain('judge_answer');
+});
+
 test('a grant that opens no tool is told so without a dangling colon', async () => {
   // The naive build sent such a grant "It also has:" with nothing under it, on
   // the one surface whose job is to say what a token is for. The header stays

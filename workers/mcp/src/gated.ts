@@ -15,8 +15,10 @@ import {
   readPrivateDoc,
 } from '../../../src/lib/tier/private-docs';
 import type { Scope } from '../../../src/lib/tier/token';
+import { judge, JudgeUnavailable, type JudgeEnv } from '../../../src/lib/judge/engine';
 import { defineTool, ToolError, type ToolContext } from './define';
 import type { McpEnv } from './env';
+import { JUDGE_INPUT } from './judge-schema';
 
 // The private tier's tools (03 §2). Registered ONLY for a request whose grant
 // carries the matching scope -- see ./server.ts. An unauthenticated caller's
@@ -247,6 +249,18 @@ function fitEnv(env: McpEnv): FitEnv {
     KV_CONFIG: env.KV_CONFIG,
     RLME_AI_GATEWAY_ID: env.RLME_AI_GATEWAY_ID,
     FIT_ENGINE: env.FIT_ENGINE,
+  };
+}
+
+/**
+ * The judge's slice of the environment, assembled explicitly for the same
+ * reason `fitEnv` is: the judge has no business holding D1, R2 or the limiter.
+ */
+function judgeEnv(env: McpEnv): JudgeEnv {
+  return {
+    AI: env.AI,
+    RLME_AI_GATEWAY_ID: env.RLME_AI_GATEWAY_ID,
+    JUDGE_ENGINE: env.JUDGE_ENGINE,
   };
 }
 
@@ -510,6 +524,44 @@ const GATED_TOOLS: readonly GatedTool[] = [
             // `FitUnavailable` sets its own `name` and why that side has to
             // read it rather than reusing this.
             throw fitToolError(error);
+          }
+        },
+      ),
+  },
+  {
+    scope: 'evals',
+    name: 'judge_answer',
+    title: 'Judge an answer against criteria',
+    description:
+      'Scores a piece of text against a set of criteria and returns a pass/fail verdict with a score and reasons. Generic: it has no knowledge of what the text is for, and the criteria are supplied by the caller.',
+    summary:
+      'score text against criteria; returns a verdict, a score and the criteria that failed.',
+    register: (server, tc, tool) =>
+      defineTool<z.infer<typeof JUDGE_INPUT>>(
+        server,
+        tc,
+        {
+          ...specOf(tool),
+          // One Sonnet call over two short strings. `conversation` rather than
+          // `expensive`: this is the same order of spend as a chat turn, and an
+          // eval run makes a dozen of them in a burst -- `expensive`'s six per
+          // five minutes would make a full suite take half an hour to no
+          // purpose, since the caller is the owner's own harness holding a
+          // scoped token.
+          cost: 'conversation',
+          inputSchema: JUDGE_INPUT,
+        },
+        async ({ criteria, subject }, tc) => {
+          try {
+            return await judge(judgeEnv(tc.env), criteria, subject);
+          } catch (error) {
+            // The same shape as `fitToolError`, and the same reason for
+            // refusing rather than degrading: a judge that answers "fail"
+            // because it could not run turns a harness outage into a red suite
+            // somebody spends an afternoon on.
+            if (error instanceof JudgeUnavailable) throw new ToolError(error.message);
+            console.error('judge_answer failed', error);
+            throw new ToolError('The judge could not score that. The error was logged.');
           }
         },
       ),

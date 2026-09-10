@@ -128,12 +128,20 @@ export interface McpEnv {
    * anything else throws.
    */
   CHAT_ENGINE?: string;
+
+  /**
+   * Test-only seam, the sixth of the same shape; see `JudgeEnv.JUDGE_ENGINE` in
+   * src/lib/judge/engine.ts. ABSENT runs the judge; `'off'` refuses before the
+   * model is called; anything else throws. Set on this Worker by
+   * tests/workers.ts for the same reason `FIT_ENGINE` is.
+   */
+  JUDGE_ENGINE?: string;
 }
 
 /**
  * The same list as runtime data, for the drift test. `CORPUS_REFRESH`,
  * `MCP_SEARCH_EMBEDDER`, `RLME_TOKEN_KEY_SOURCE`, `FIT_ENGINE`,
- * `RLME_TURNSTILE_MODE` and `CHAT_ENGINE` are excluded deliberately: they are
+ * `RLME_TURNSTILE_MODE`, `CHAT_ENGINE` and `JUDGE_ENGINE` are excluded deliberately: they are
  * test-only vars that no deployed environment and no config declares, so
  * `wrangler types` will never emit them. This list is the CONFIG's bindings,
  * and tests/mcp-env.test.ts fails in both directions if it drifts -- so adding

@@ -212,6 +212,15 @@ export const MCP_WORKER = {
      * hidden behind the seam.
      */
     RLME_TURNSTILE_MODE: 'stub',
+    /**
+     * Day 6's judge (src/lib/judge/engine.ts), off. Same seam shape and same
+     * cause as `FIT_ENGINE` and `CHAT_ENGINE`: `env.AI` is a service binding
+     * under the harness, so `env.AI.run` is a TypeError. Under the seam,
+     * `judge_answer` exercises the scope gate, the argument schema, the limiter
+     * and the error shape; the model call is exercised only by `npm run evals`
+     * against a deployed endpoint.
+     */
+    JUDGE_ENGINE: 'off',
   },
   bindingOverrides: { AI: 'mock-ai' },
 };
