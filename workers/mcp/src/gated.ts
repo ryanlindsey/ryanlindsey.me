@@ -91,9 +91,11 @@ interface GatedTool {
 /**
  * The fields `defineTool` declares that come from the TABLE, spelled ONCE.
  *
- * Four `register` closures used to write `name`, `title`, `description` and
- * `scope` out of the entry themselves (deferred minor L961). Four sites is
- * four places a future edit can register a name the instruction map is not
+ * Four sites -- `defineDocumentTool` below, plus the three tools registered
+ * inline (`get_case_study_details`, `get_application_narrative`,
+ * `analyze_fit`) -- used to write `name`, `title`, `description` and `scope`
+ * out of the entry themselves (deferred minor L961). Four sites is four
+ * places a future edit can register a name the instruction map is not
  * built from. tests/mcp-gated.test.ts's agreement test would catch it, which
  * makes that a NARROWER divergence site than the hand-maintained name list
  * `GATED_TOOL_NAMES` replaced -- narrower, not none. They read this instead,
@@ -117,8 +119,8 @@ function specOf(tool: GatedTool): Pick<GatedTool, 'name' | 'title' | 'descriptio
 }
 
 /**
- * One document tool. A local helper rather than five copies, and the shape is
- * the same every time: resolve a key, read it, hand back markdown.
+ * One document tool. A local helper rather than three copies, and the shape
+ * is the same every time: resolve a key, read it, hand back markdown.
  *
  * `scope` used to be FIXED to `'profile'` in here rather than taken from the
  * caller, because a helper taking a scope as an argument would let a future
