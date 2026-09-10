@@ -255,6 +255,20 @@
       "store_id": "3b06d2a92de642d999509352cfd3ebed",
       "secret_name": "RLME_TOKEN_SIGNING_KEY",
     },
+    // Day 6 (04 §1). NOT A NEW SECRET -- the same store entry the site Worker
+    // already binds. `POST /chat` verifies its own bot check, because a
+    // Turnstile token is the one thing the site can hand across a service
+    // binding that this Worker can check for itself (see src/chat.ts).
+    //
+    // The site MUST NOT also verify it: a Turnstile response is single-use, so
+    // two verifications means the second one fails as `timeout-or-duplicate`.
+    // src/pages/chat/send.ts forwards without verifying, and that is a pair of
+    // facts rather than two independent choices.
+    {
+      "binding": "RLME_TURNSTILE_SECRET_KEY",
+      "store_id": "3b06d2a92de642d999509352cfd3ebed",
+      "secret_name": "RLME_TURNSTILE_SECRET_KEY",
+    },
   ],
 
   // The fit prompt is a MARKDOWN FILE, not a TypeScript string, because 04 §4

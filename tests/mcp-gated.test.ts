@@ -861,16 +861,28 @@ test('the granted instructions and tools/list agree, scope by scope', async () =
    * green only for exactly as long as the two copies agree -- which is the
    * failure it is here to catch.
    */
+  // The anti-vacuity guard, and it is deliberately a UNION over every scope
+  // rather than a per-scope `length > 0`.
+  //
+  // The per-scope form encoded "every scope opens at least one tool", which
+  // stopped being true when day 6 added `evals` -- the first scope that gates
+  // something OTHER than a tool. It admits the eval harness to `POST /chat`,
+  // an endpoint rather than a registration, and the test immediately below this
+  // one ('a grant that opens no tool is told so without a dangling colon')
+  // shows the server already treats a toolless grant as a supported state.
+  //
+  // The union is also the stronger check: it proves the loop actually exercised
+  // EVERY gated tool, which the per-scope form never did. A tool no scope opens
+  // would have slipped through it and cannot slip through this.
+  const seen = new Set<string>();
   for (const scope of SCOPES) {
     const { token } = await grantFor([scope]);
     const names = (await listTools(token)).map((t) => t.name);
     const instructions = await instructionsFor(token);
 
     const visible = GATED.filter((name) => names.includes(name));
-    // Not vacuous: every scope opens at least one tool, so an empty listing
-    // would otherwise satisfy the loop below without asserting anything.
-    expect(visible.length, `a ${scope} grant should open at least one tool`).toBeGreaterThan(0);
     for (const name of visible) {
+      seen.add(name);
       expect(instructions, `${name} is registered, so it must be mapped`).toContain(`${name}: `);
     }
     for (const name of GATED.filter((n) => !names.includes(n))) {
@@ -879,6 +891,35 @@ test('the granted instructions and tools/list agree, scope by scope', async () =
       );
     }
   }
+  expect([...seen].sort(), 'every gated tool is opened by some scope').toEqual([...GATED].sort());
+});
+
+/**
+ * `judge_answer` (04 §4), day 6's addition and the first gated tool that reads
+ * nothing.
+ *
+ * It is registered under `evals` rather than under a content scope because what
+ * it opens is a frontier-model CALL, not a document -- and the same
+ * registration-time gating applies for the same reason: an anonymous
+ * `tools/list` must not learn that a scoring endpoint exists.
+ */
+test('judge_answer is invisible without the evals scope', async () => {
+  const names = (await listTools(await tokenFor(['fit']))).map((tool) => tool.name);
+  expect(names).not.toContain('judge_answer');
+});
+
+test('judge_answer appears for a grant that carries the evals scope', async () => {
+  const names = (await listTools(await tokenFor(['evals']))).map((tool) => tool.name);
+  expect(names).toContain('judge_answer');
+});
+
+test('an anonymous tools/list cannot see judge_answer at all', async () => {
+  const names = (await listTools()).map((tool) => tool.name);
+  expect(names).not.toContain('judge_answer');
+});
+
+test('GATED_TOOL_NAMES stays derived, so a seventh tool cannot be missed', () => {
+  expect(GATED).toContain('judge_answer');
 });
 
 test('a grant that opens no tool is told so without a dangling colon', async () => {

@@ -8,9 +8,11 @@
  * to bound abuse rather than to ration the content. `inference` spends a
  * Workers AI call. `expensive` spends a frontier-model call through AI
  * Gateway -- day 5's private tier, and the only bucket here whose overspend
- * costs real money rather than quota.
+ * costs real money rather than quota. `conversation` is day 6's chat turn --
+ * one Workers AI embedding call plus one Sonnet call -- and is the one entry
+ * here that is not a tool at all (see `LIMITS` below).
  */
-export type ToolCost = 'cheap' | 'inference' | 'expensive';
+export type ToolCost = 'cheap' | 'inference' | 'expensive' | 'conversation';
 
 /**
  * What each cost class is allowed.
@@ -44,6 +46,25 @@ export const LIMITS: Record<ToolCost, { limit: number; periodSeconds: number }> 
    * breaker (src/lib/fit/engine.ts) noticed.
    */
   expensive: { limit: 6, periodSeconds: 300 },
+  /**
+   * Chat (04 §1's "per-session and daily global caps", the per-caller half).
+   * One Workers AI embedding call plus one Sonnet call per message.
+   *
+   * NOT A TOOL, and this is the one entry in this table that is not. Chat is an
+   * HTTP route on the MCP Worker (workers/mcp/src/chat.ts) rather than a
+   * registered tool, because 04 §1 requires a streamed answer and a tool result
+   * is one payload -- but it draws from this limiter through the same
+   * `checkLimit`, keyed `chat:<ip>`, so "everything that spends inference is
+   * limited" stays true with no second mechanism.
+   *
+   * Twelve per five minutes rather than a per-minute cap, for the same reason
+   * `expensive` is shaped that way: a conversation is a handful of turns over
+   * several minutes, and a per-minute cap either refuses a fast follow-up or is
+   * loose enough to be no cap at all. `retryHint` derives the wait from these
+   * two numbers -- 25 seconds here -- so a refusal tells the caller something
+   * true without a second constant.
+   */
+  conversation: { limit: 12, periodSeconds: 300 },
 };
 
 /**
@@ -188,6 +209,48 @@ export async function checkLimit(
 ): Promise<boolean> {
   const { limit, periodSeconds } = LIMITS[cost];
   const { success } = await env.RATE_LIMITER.getByName(limitKeyFor(request, tool, grant)).consume(
+    limit,
+    limit / periodSeconds,
+  );
+  return success;
+}
+
+/**
+ * Caps that belong to a FEATURE rather than to a caller (04 §1's "daily global
+ * cap"). Same Durable Object class, same `consume` call; the only difference is
+ * that the object's name is a constant instead of being derived from the
+ * request, so every caller in the world shares one bucket.
+ *
+ * A DURABLE OBJECT RATHER THAN A KV COUNTER, and the alternative is written
+ * down because it was the first design: KV has no counter primitive, so a cap
+ * there is read-compare-write against an eventually-consistent store and can be
+ * overshot by roughly the number of concurrent requests. That is the same
+ * approximate-limiter trap #29 already cost this repo a day on
+ * (workers/mcp/src/rate-limiter.ts), and there is no reason to re-enter it when
+ * the exact mechanism is already deployed and one call away.
+ *
+ * 500 messages a day at Sonnet prices over ~8 retrieved passages is the number
+ * the breaker exists to make survivable rather than the number the budget
+ * expects; if it is ever reached in ordinary use, that is a signal to publish on
+ * /ops, not a limit to quietly raise.
+ */
+export const GLOBAL_LIMITS = {
+  chat: { limit: 500, periodSeconds: 86_400 },
+} as const;
+
+/**
+ * Spend one unit of a feature-wide allowance. `false` means refuse.
+ *
+ * The bucket's name is `global:<feature>`, which cannot collide with
+ * `limitKeyFor`'s output: that always contains a tool name followed by `:` and
+ * either an address or `g:`, and no tool is called `global`.
+ */
+export async function checkGlobalLimit(
+  env: LimitsEnv,
+  name: keyof typeof GLOBAL_LIMITS,
+): Promise<boolean> {
+  const { limit, periodSeconds } = GLOBAL_LIMITS[name];
+  const { success } = await env.RATE_LIMITER.getByName(`global:${name}`).consume(
     limit,
     limit / periodSeconds,
   );

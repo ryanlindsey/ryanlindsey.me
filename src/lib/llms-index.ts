@@ -60,6 +60,16 @@ export function buildLlmsTxt(input: {
   posts: LlmsLink[];
   caseStudies: LlmsLink[];
   /**
+   * Interactive surfaces on the site itself (day 6). Distinct from `mcp` above,
+   * which is a protocol endpoint, and from the content sections below: these are
+   * things a reader DOES rather than documents they ingest.
+   *
+   * After MCP and before the content, because the ordering answers a question in
+   * sequence -- here is the record, here is how to query it with your own agent,
+   * here is how to ask it directly, and here is the corpus itself.
+   */
+  site: LlmsLink[];
+  /**
    * The bulk-ingest sibling, `/llms-full.txt` (fix round 2). It had ZERO
    * inbound links anywhere on the site while three separate comments -- in
    * src/pages/llms-full.txt.ts, src/components/SiteFooter.astro and
@@ -74,6 +84,7 @@ export function buildLlmsTxt(input: {
   const sections = [
     buildSection('Resume', input.resume),
     buildSection('MCP', input.mcp),
+    buildSection('Site', input.site),
     buildSection('Writing', input.posts),
     buildSection('Case studies', input.caseStudies),
     buildSection('Full content', input.full),

@@ -100,16 +100,55 @@ export interface McpEnv {
    * tests/fit-engine.test.ts.
    */
   FIT_ENGINE?: string;
+
+  /**
+   * Day 6. The Turnstile secret, bound on THIS Worker as well as on the site.
+   *
+   * Not a new secret -- the same Secrets Store entry the site Worker already
+   * binds. `POST /chat` (./chat.ts) verifies its own bot check, because a
+   * Turnstile response token is the one thing the site can hand across a
+   * service binding that this Worker can check for itself. It is a real
+   * binding, so it is in `MCP_BINDING_NAMES` below as well.
+   */
+  RLME_TURNSTILE_SECRET_KEY: SecretsStoreSecret;
+
+  /**
+   * Test-only seam; see `TurnstileEnv.RLME_TURNSTILE_MODE` in
+   * src/lib/turnstile.ts, where the accepted values are written down. `'stub'`
+   * skips the secret read and the network call while STILL refusing an absent
+   * token, which is what keeps ./chat.ts's `bot-check` branch reachable under
+   * the harness.
+   */
+  RLME_TURNSTILE_MODE?: string;
+
+  /**
+   * Test-only seam, the fifth of the same shape; see `ChatEnv.CHAT_ENGINE` in
+   * src/lib/chat/engine.ts. ABSENT runs the engine; `'off'` refuses after the
+   * question's shape checks and before the breaker, the corpus or the model;
+   * anything else throws.
+   */
+  CHAT_ENGINE?: string;
+
+  /**
+   * Test-only seam, the sixth of the same shape; see `JudgeEnv.JUDGE_ENGINE` in
+   * src/lib/judge/engine.ts. ABSENT runs the judge; `'off'` refuses before the
+   * model is called; anything else throws. Set on this Worker by
+   * tests/workers.ts for the same reason `FIT_ENGINE` is.
+   */
+  JUDGE_ENGINE?: string;
 }
 
 /**
  * The same list as runtime data, for the drift test. `CORPUS_REFRESH`,
- * `MCP_SEARCH_EMBEDDER`, `RLME_TOKEN_KEY_SOURCE` and `FIT_ENGINE` are
- * excluded deliberately: they are test-only vars that no deployed environment
- * and no config declares, so `wrangler types` will never emit them. This list
- * is the CONFIG's bindings, and tests/mcp-env.test.ts fails in both
- * directions if it drifts -- so adding a seam here would break that test
- * rather than document the seam.
+ * `MCP_SEARCH_EMBEDDER`, `RLME_TOKEN_KEY_SOURCE`, `FIT_ENGINE`,
+ * `RLME_TURNSTILE_MODE`, `CHAT_ENGINE` and `JUDGE_ENGINE` are excluded deliberately: they are
+ * test-only vars that no deployed environment and no config declares, so
+ * `wrangler types` will never emit them. This list is the CONFIG's bindings,
+ * and tests/mcp-env.test.ts fails in both directions if it drifts -- so adding
+ * a seam here would break that test rather than document the seam.
+ *
+ * `RLME_TURNSTILE_SECRET_KEY` IS here, because it is a real binding day 6 added
+ * to workers/mcp/wrangler.jsonc rather than a seam.
  */
 export const MCP_BINDING_NAMES = [
   'DB',
@@ -125,4 +164,5 @@ export const MCP_BINDING_NAMES = [
   'SITE',
   'RLME_AI_GATEWAY_ID',
   'SITE_ORIGIN',
+  'RLME_TURNSTILE_SECRET_KEY',
 ] as const;

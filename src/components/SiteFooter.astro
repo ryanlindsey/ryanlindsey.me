@@ -23,6 +23,11 @@ const year = new Date().getFullYear();
   >
     <span>&copy; {year} Ryan Lindsey</span>
     <nav aria-label="Agent resources" class="flex items-baseline gap-4">
+      <!-- Day 6 (04 §1). FIRST in this list, and in the footer rather than the
+        primary nav: /chat is a way to READ this site, like the two beside it,
+        not a section of it. It leads because it is the one a person can use
+        without knowing what an MCP endpoint is. -->
+      <a href="/chat" class="hover:text-accent">Ask my agent</a>
       <a href="/llms.txt" class="hover:text-accent">llms.txt</a>
       <a href="https://mcp.ryanlindsey.me/mcp" class="hover:text-accent">MCP</a>
     </nav>

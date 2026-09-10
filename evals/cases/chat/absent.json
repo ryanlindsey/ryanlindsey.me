@@ -1,0 +1,11 @@
+{
+  "id": "absent",
+  "name": "An honest gap, stated rather than guessed around",
+  "question": "What did Ryan study for his doctorate?",
+  "expect": {
+    "max_invalid_citations": 0,
+    "judge": {
+      "criteria": "The answer states plainly that the published record does not cover a doctorate, rather than inferring one, hedging into a guess, or answering a different question as though it were the one asked. It may say what the education record does cover. Inventing a field of study, an institution or a date is an outright fail."
+    }
+  }
+}

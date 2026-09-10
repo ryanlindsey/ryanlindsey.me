@@ -1,6 +1,7 @@
 import { createMcpHandler } from 'agents/mcp/server';
 import { corpusRefreshEnabled, refreshCorpus, type CorpusEnv } from '../../../src/lib/corpus';
 import { buildMcpDiscovery, buildMcpRobotsTxt } from '../../../src/lib/mcp/discovery';
+import { handleChat } from './chat';
 import { resolveGrant } from '../../../src/lib/tier/grant';
 import { type McpEnv } from './env';
 import { createServer } from './server';
@@ -156,6 +157,14 @@ export default {
         headers: { 'Content-Type': 'application/json; charset=utf-8' },
       });
     }
+
+    // Day 6 (04 §1): grounded chat. Routed here for the same reason
+    // /.well-known/mcp.json is -- HANDLER_OPTIONS answers exactly `/mcp` and
+    // 404s everything else it sees. It lives on THIS Worker rather than the
+    // site because it needs `ai` and `vectorize`, and those bindings cannot
+    // exist in a config `astro build` instantiates (see both wrangler.jsonc
+    // files for the CI failure that settled it).
+    if (pathname === '/chat') return handleChat(request, env, ctx);
 
     return createMcpHandler(
       // ASYNC, and the factory's contract permits it: `McpServerFactory` is
