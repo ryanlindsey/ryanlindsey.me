@@ -83,15 +83,23 @@ export function parseCampaign(raw: unknown): CampaignConfig | null {
 }
 
 /**
- * Every parseable campaign. Unparseable entries are DROPPED rather than
- * failing the listing: one malformed entry must not make every other campaign
- * disappear, and the dropped one is logged where an operator will see it.
+ * Walks `campaign:*` entries in KV list order: pages through every `list`
+ * call (KV caps one call at 1,000 keys and reports `list_complete` plus a
+ * `cursor` for the rest -- looping on the cursor is what makes this correct
+ * past 1,000 campaigns), then gets and parses each key, warning and skipping
+ * any entry that fails to parse so one malformed entry does not take down
+ * every other campaign.
  *
- * Pages through every KV `list` call: KV caps one call at 1,000 keys and
- * reports `list_complete` plus a `cursor` for the rest, so looping on the
- * cursor is what keeps this correct past 1,000 campaigns.
+ * `match`, when given, ends the walk as soon as a parsed entry satisfies it
+ * -- entries after the match are neither fetched nor parsed, so nothing is
+ * warned about them. `listCampaigns` omits `match` and always sees every
+ * entry, including every warning; `readCampaignForAudience` passes one and
+ * accepts that trade (see its own comment for why).
  */
-export async function listCampaigns(env: CampaignEnv): Promise<CampaignConfig[]> {
+async function walkCampaigns(
+  env: CampaignEnv,
+  match?: (campaign: CampaignConfig) => boolean,
+): Promise<CampaignConfig[]> {
   const found: CampaignConfig[] = [];
   let cursor: string | undefined;
   for (;;) {
@@ -108,12 +116,25 @@ export async function listCampaigns(env: CampaignEnv): Promise<CampaignConfig[]>
         console.warn(`campaigns: ${key.name} did not parse; ignoring it`);
         continue;
       }
-      if (parsed === null) console.warn(`campaigns: ${key.name} did not parse; ignoring it`);
-      else found.push(parsed);
+      if (parsed === null) {
+        console.warn(`campaigns: ${key.name} did not parse; ignoring it`);
+        continue;
+      }
+      found.push(parsed);
+      if (match?.(parsed)) return found;
     }
     if (page.list_complete) return found;
     cursor = page.cursor;
   }
+}
+
+/**
+ * Every parseable campaign. Unparseable entries are DROPPED rather than
+ * failing the listing: one malformed entry must not make every other campaign
+ * disappear, and the dropped one is logged where an operator will see it.
+ */
+export async function listCampaigns(env: CampaignEnv): Promise<CampaignConfig[]> {
+  return walkCampaigns(env);
 }
 
 /**
@@ -139,10 +160,29 @@ export async function activeCampaign(env: CampaignEnv): Promise<CampaignConfig |
  * Not on `id`: 00 §5 lists them as separate fields and they are allowed to
  * differ, so matching on the id would silently resolve the wrong narrative
  * document for any campaign whose audience label was ever renamed.
+ *
+ * This runs on every `get_application_narrative` call, so it walks with an
+ * early-exit `match`: entries after the one wanted are never fetched or
+ * parsed, only earlier ones (plus the match itself) pay the get+parse cost.
+ * At least one KV `list` call -- the walk's first page -- still happens on
+ * every call regardless of where the match falls, and that residual is left
+ * alone here: a `cacheTtl` trades configuration-propagation latency for a
+ * saving nobody has measured a need for, and an audience->id index would
+ * require the private authoring repo to write a second key per campaign, a
+ * change this repo cannot make or verify. Whether to cache the `list` call
+ * is left to day 6's `/ops` read patterns, which will know the actual call
+ * volume this needs to justify.
+ *
+ * Early exit also means an unparseable entry AFTER the match never runs
+ * through `parseCampaign` and so never logs `walkCampaigns`'s
+ * `console.warn`. Decided acceptable: this call wants one campaign, not a
+ * census of every entry's health -- `listCampaigns`, which IS a census,
+ * always walks everything and sees every warning.
  */
 export async function readCampaignForAudience(
   env: CampaignEnv,
   audience: string,
 ): Promise<CampaignConfig | null> {
-  return (await listCampaigns(env)).find((c) => c.tokenAudience === audience) ?? null;
+  const walked = await walkCampaigns(env, (c) => c.tokenAudience === audience);
+  return walked.find((c) => c.tokenAudience === audience) ?? null;
 }

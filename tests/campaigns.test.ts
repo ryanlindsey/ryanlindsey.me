@@ -172,6 +172,33 @@ test('listCampaigns pages through every KV list page, not just the first', async
   expect(listCalls).toEqual([undefined, 'page-two']);
 });
 
+test('readCampaignForAudience stops at the first match: it does not get entries after it', async () => {
+  const entries = ['one', 'two', 'three'].map((id) => toStored(fixture({ id, tokenAudience: id })));
+  let getCalls = 0;
+  const env: { KV_CONFIG: KVNamespace } = {
+    KV_CONFIG: {
+      list: async () => ({
+        keys: entries.map((_, i) => ({ name: `${CAMPAIGN_PREFIX}${i}` })),
+        list_complete: true,
+      }),
+      get: async (name: string) => {
+        getCalls += 1;
+        return entries[Number(name.slice(CAMPAIGN_PREFIX.length))];
+      },
+    } as unknown as KVNamespace,
+  };
+
+  getCalls = 0;
+  const first = await readCampaignForAudience(env, 'one');
+  expect(first?.id).toBe('one');
+  expect(getCalls).toBe(1); // the match is entry 0; entries 1 and 2 are never fetched
+
+  getCalls = 0;
+  const last = await readCampaignForAudience(env, 'three');
+  expect(last?.id).toBe('three');
+  expect(getCalls).toBe(3); // the match is the last entry; every earlier one had to be checked
+});
+
 test('listCampaigns drops malformed JSON, does not throw', async () => {
   // Campaign entries are hand-typed by an operator in the private repo. A
   // single JSON typo (e.g. trailing comma) throws when KV parses it. The
