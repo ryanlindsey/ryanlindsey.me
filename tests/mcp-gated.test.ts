@@ -546,11 +546,16 @@ type ProbeInvoke = (...params: unknown[]) => Promise<CallToolResult>;
  * behaviour of ONE branch under two callers. `name` is a parameter because
  * `mcp_tool_calls` is queried by tool name and a shared name would let either
  * test read the other's row.
+ *
+ * The declared SCOPE is not a parameter, because it does not vary: what the
+ * two tests change is the CALLER and the bucket the refusal draws from. It is
+ * fixed at `documents` below, and the fixture's one requirement is that no
+ * caller here carries it -- the granted test's grant is `['profile']`, and
+ * the ungranted one carries nothing at all.
  */
 async function callScopeProbe(probe: {
   name: string;
   cost: ToolCost;
-  scope: Scope;
   grant: Grant | null;
 }): Promise<{ result: CallToolResult; handlerRan: boolean }> {
   let invoke: ProbeInvoke | undefined;
@@ -591,7 +596,10 @@ async function callScopeProbe(probe: {
       title: 'Scope-check probe',
       description: 'Test-only. Declares a scope this caller does not carry.',
       cost: probe.cost,
-      scope: probe.scope,
+      // The constant of this fixture -- see the note above on why it is not a
+      // parameter. Any scope refuses the ungranted caller; this one also has
+      // to be absent from the granted caller's `['profile']`.
+      scope: 'documents',
     },
     async () => {
       handlerRan = true;
@@ -615,12 +623,7 @@ test("a scope refusal is audited as an error, on the caller's own tier and audie
     expiresAt: Math.floor(Date.now() / 1000) + 3600,
   };
 
-  const { result, handlerRan } = await callScopeProbe({
-    name: PROBE,
-    cost: 'cheap',
-    scope: 'documents',
-    grant,
-  });
+  const { result, handlerRan } = await callScopeProbe({ name: PROBE, cost: 'cheap', grant });
 
   expect(handlerRan, 'the handler must not run for a refused scope').toBe(false);
   expect(result.isError).toBe(true);
@@ -704,7 +707,6 @@ test('a scope refusal spends limiter budget, and audits an ungranted caller as p
   const { result, handlerRan } = await callScopeProbe({
     name: PROBE,
     cost: 'expensive',
-    scope: 'documents',
     grant: null,
   });
 
