@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
-import type { LimitsEnv } from '../src/lib/mcp/limits';
+import { LIMITS, GLOBAL_LIMITS, retryHint, type LimitsEnv } from '../src/lib/mcp/limits';
 import { MCP_WORKER, MOCK_AI_WORKER, MOCK_BROWSER_WORKER, SITE_WORKER } from './workers';
 
 /**
@@ -154,6 +154,58 @@ test('refills the bucket over time', async () => {
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
   expect((await stub.consume(1, 2)).success).toBe(true);
+});
+
+/**
+ * The feature-wide cap (04 §1's daily global cap) is a bucket like any other,
+ * and the only thing that makes it global is its NAME being a constant. This
+ * pins the property that follows from that and is easy to lose: `global:chat`
+ * and a per-caller `chat:<ip>` bucket are different objects, so exhausting the
+ * day's allowance must not refuse a caller who has spent nothing, and a single
+ * enthusiastic caller must not drain the day.
+ *
+ * Named directly rather than through `checkGlobalLimit`, for the reason the
+ * closing note below gives about every other test here: the harness sets no
+ * `CF-Connecting-IP`, so routing this through the real helpers would compare
+ * `global:chat` against `chat:unknown` and prove less than it appears to.
+ */
+test('the global chat cap is a different bucket from any per-caller one', async () => {
+  const namespace = await limiter();
+  const global = namespace.getByName('global:chat');
+  for (let i = 0; i < 3; i++) await global.consume(2, 0);
+
+  expect((await global.consume(2, 0)).success).toBe(false);
+  expect((await namespace.getByName('chat:203.0.113.7').consume(2, 0)).success).toBe(true);
+});
+
+/**
+ * The cost table itself, pinned whole.
+ *
+ * Pure -- no harness, no Durable Object. It is here rather than in a file of
+ * its own because these four numbers are the ones every test above is really
+ * about, and a table that can be edited without a single assertion moving is a
+ * table that will be.
+ */
+test('every cost class states the allowance the code and the docs both quote', () => {
+  expect(LIMITS).toEqual({
+    cheap: { limit: 60, periodSeconds: 60 },
+    inference: { limit: 10, periodSeconds: 60 },
+    expensive: { limit: 6, periodSeconds: 300 },
+    conversation: { limit: 12, periodSeconds: 300 },
+  });
+  expect(GLOBAL_LIMITS).toEqual({ chat: { limit: 500, periodSeconds: 86_400 } });
+});
+
+/**
+ * `retryHint` is derived from `LIMITS`, so this is the arithmetic rather than a
+ * second copy of the numbers -- 300/12 is 25. Day 6 added `conversation`, and
+ * the hint it produces is what a refused chat message tells its reader.
+ */
+test('the retry hint is one token of wait, per cost class', () => {
+  expect(retryHint('cheap')).toBe('1 second');
+  expect(retryHint('inference')).toBe('6 seconds');
+  expect(retryHint('expensive')).toBe('50 seconds');
+  expect(retryHint('conversation')).toBe('25 seconds');
 });
 
 /**
