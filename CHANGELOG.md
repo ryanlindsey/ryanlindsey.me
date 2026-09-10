@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.9.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.8.2...ryanlindsey-me-v1.9.0) (2026-09-10)
+
+
+### Features
+
+* **chat:** add grounded chat with cited, streamed answers ([#50](https://github.com/ryanlindsey/ryanlindsey.me/issues/50)) ([f672a07](https://github.com/ryanlindsey/ryanlindsey.me/commit/f672a0755d0dc1d83c18743d211cb3beb1149c2f))
+
+
+### Bug Fixes
+
+* **evals:** give a full run headroom, retry a rate-limited call, and correct the BYOK claim ([#55](https://github.com/ryanlindsey/ryanlindsey.me/issues/55)) ([85411c6](https://github.com/ryanlindsey/ryanlindsey.me/commit/85411c63f9bfea6bffb73c16a3d58db974ea44c5))
+* **evals:** parse the MCP response by content-type, not by its first line ([#52](https://github.com/ryanlindsey/ryanlindsey.me/issues/52)) ([806c514](https://github.com/ryanlindsey/ryanlindsey.me/commit/806c5144b0a2bb7e9c1ac87c4e8c42e7cd8ba42d))
+* **evals:** repair the three defects the first full eval run exposed ([#54](https://github.com/ryanlindsey/ryanlindsey.me/issues/54)) ([6d984fb](https://github.com/ryanlindsey/ryanlindsey.me/commit/6d984fb144cb87f5dea8ec3e6c28ccdafd1bdbf1))
+* **scripts:** stop minting tokens with a signing key the CLI cannot read ([#48](https://github.com/ryanlindsey/ryanlindsey.me/issues/48)) ([f62f476](https://github.com/ryanlindsey/ryanlindsey.me/commit/f62f4767271793f9c91b492328248368364a0b81))
+
+
+### Documentation
+
+* **evals:** mint the eval token for a day, and set it per command ([#53](https://github.com/ryanlindsey/ryanlindsey.me/issues/53)) ([f210a63](https://github.com/ryanlindsey/ryanlindsey.me/commit/f210a63cd20f9d5314b10383f8b29b98a80b6e3c))
+* **evals:** say that the token must be minted and used in one shell ([#51](https://github.com/ryanlindsey/ryanlindsey.me/issues/51)) ([0739f07](https://github.com/ryanlindsey/ryanlindsey.me/commit/0739f07c51d8a46727f48ae913f6cf3870fc8d5a))
+
 ## [1.8.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.8.1...ryanlindsey-me-v1.8.2) (2026-09-10)
 
 
