@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.6.0...ryanlindsey-me-v1.7.0) (2026-09-10)
+
+
+### Features
+
+* **writing:** add the terminal setup post as a draft ([#39](https://github.com/ryanlindsey/ryanlindsey.me/issues/39)) ([21ffae5](https://github.com/ryanlindsey/ryanlindsey.me/commit/21ffae53416c50acdc7db3872a360cb20530c4ee))
+
 ## [1.6.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.5.0...ryanlindsey-me-v1.6.0) (2026-09-09)
 
 
