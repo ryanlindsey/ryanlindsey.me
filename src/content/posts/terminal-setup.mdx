@@ -1,0 +1,535 @@
+---
+title: A terminal built for driving agents
+description: The macOS terminal I use to keep shipping code as an engineering leader. Ghostty, zsh with Sheldon and Starship, the Rust CLI replacements, and a Claude Code configuration tuned for reviewing agent work you were not present for. Every file copy-pasteable, every opinion marked as one.
+publishedAt: 2026-09-09
+pillar: agentic-engineering
+draft: true
+---
+
+**TL;DR.** This is the macOS terminal I use to keep shipping code as an engineering leader: [Ghostty](https://ghostty.org), a light zsh stack (no Oh My Zsh, just [Sheldon](https://sheldon.cli.rs) and [Starship](https://starship.rs)), the usual fast CLI replacements, and a [Claude Code](https://docs.claude.com/en/docs/claude-code/setup) configuration. Every file below is copy-pasteable. Three choices are shaped by reviewing agent work you were not present for; the rest is a good ordinary terminal, and I have marked the places where my opinion should probably lose to yours.
+
+## Why a dotfiles post needs a thesis
+
+There are a lot of terminal setup posts and most of them are the same post. Here is what makes this one different, and if it does not apply to you, you should skim the config and ignore the argument.
+
+I am an engineering leader who still ships code. Between the day job and my own projects, I do not get long uninterrupted stretches, and anything I build has to survive being put down and picked up several times.
+
+Agents are what make that workable, and they change what I need from a terminal. I am usually not watching an agent work. I start something, leave, and come back to a finished run I have to review carefully enough to put my name on. Three of the settings below exist because of that, and all three are about coming back rather than about watching:
+
+1. **A very large scrollback buffer.** The output I need is often an hour old and thousands of lines back, because I was not there when it was produced. A default buffer discarded it long ago. I run roughly 100MB and have never seen it roll over.
+2. **Fast splits.** Agent in one pane, tests or logs in the other. Reviewing a run after the fact, what the code now does matters more than the agent's account of how it got there, and I want both on screen without hunting for a window.
+3. **Notifications.** The agent tells the operating system when it has finished or needs an answer. This is the one that actually buys time back: a question that would otherwise sit unanswered until I next happened to look gets handled in the gap between two meetings, or at the end of an evening.
+
+Everything else here is a fast, quiet, pleasant terminal that happens to also be good for this. If you take nothing else from the post, take the scrollback setting and turn the notifications on.
+
+## Before you start
+
+- **macOS on Apple Silicon.** Most of this works elsewhere. The Homebrew prefix (`/opt/homebrew`) and the `macos-*` keys in the Ghostty config are the parts that differ on Intel Macs and on Linux.
+- **[Homebrew](https://brew.sh) installed.**
+- **Enough terminal comfort to run a command and edit a text file.** You do not need to know zsh; every file here is given in full and every line that matters has a comment.
+- **About twenty minutes**, most of which is Homebrew downloading things.
+
+A warning worth reading before you paste anything: this replaces your shell configuration. If you already have a `~/.zshrc` you care about, copy it somewhere first.
+
+```sh
+cp ~/.zshrc ~/.zshrc.backup
+```
+
+## 1. Install everything first
+
+Nothing will work until section 3, because almost every tool here needs a line in your shell config to activate. Install first, configure second, and do not panic in between.
+
+```sh
+# Terminal emulator, plus a Nerd Font. The font is not optional: the prompt
+# and the file listings use glyphs that a normal font renders as blank boxes.
+brew install --cask ghostty font-jetbrains-mono-nerd-font
+
+# Shell stack
+brew install sheldon starship atuin zoxide fzf
+
+# Faster replacements for the standard tools
+brew install eza bat ripgrep fd git-delta jq gh tree htop
+
+# Node version manager. Section 7 covers the alternatives if you prefer another.
+brew install fnm
+```
+
+Claude Code installs separately. A Homebrew cask and an npm package both exist, but the official installer is what I run, because it drops a self-updating binary into `~/.local/bin` and stays out of your package manager's way. Follow the [setup docs](https://docs.claude.com/en/docs/claude-code/setup) rather than trusting a command pasted into a blog post that may have aged.
+
+## 2. Ghostty
+
+Ghostty is GPU-accelerated, native on macOS, and configured with one plain text file. That last property is why it is here: the whole configuration is greppable, diffable, and reviewable in a way that a preferences pane is not.
+
+Create `~/.config/ghostty/config`. No file extension.
+
+```ini title="~/.config/ghostty/config"
+# ---- Appearance ----
+theme = light:"Catppuccin Mocha",dark:"Catppuccin Mocha"
+font-family = "JetBrainsMono Nerd Font"
+font-size = 14
+window-padding-x = 12
+window-padding-y = 12
+unfocused-split-opacity = 0.7
+cursor-style = block
+cursor-style-blink = true
+cursor-color = #8F00FF
+cursor-invert-fg-bg = false
+adjust-cell-height = 12%
+
+# ---- macOS behavior ----
+macos-option-as-alt = true
+macos-titlebar-style = tabs
+mouse-hide-while-typing = true
+copy-on-select = clipboard
+confirm-close-surface = false
+
+# ---- Scrollback ----
+# Large buffer so a long agent session does not truncate mid-transcript.
+# The value is in bytes; this is roughly 100MB. Raise it if you tail big logs.
+scrollback-limit = 104857600
+
+# ---- Shell integration ----
+shell-integration = zsh
+shell-integration-features = cursor,sudo,title
+
+# ---- Keybinds: splits ----
+# Agent in one pane, tests or logs in the other.
+keybind = cmd+d=new_split:right
+keybind = cmd+shift+d=new_split:down
+keybind = cmd+opt+left=goto_split:left
+keybind = cmd+opt+right=goto_split:right
+keybind = cmd+opt+up=goto_split:up
+keybind = cmd+opt+down=goto_split:down
+
+# Shift+Enter works natively in Ghostty, so agents that use it to insert a
+# newline without submitting need no keybind here.
+```
+
+Reload with `Cmd+Shift+,`.
+
+Two notes on the theme line. It takes separate `light:` and `dark:` values and follows the macOS appearance setting, but I have set both to the same theme on purpose: I want the terminal to look identical regardless of what the system thinks the time of day is. If you would rather it follow along, give the keys different values, for example `theme = light:"Catppuccin Latte",dark:"Catppuccin Mocha"`. Run `ghostty +list-themes` to see everything installed.
+
+The scrollback number is the one setting I would argue about with anyone. 100MB sounds absurd until the first time you want to read what an agent did forty minutes ago and find that the buffer rolled over.
+
+## 3. The shell: zsh and Sheldon
+
+I do not use Oh My Zsh. It is a large framework, most of it loads on every shell start, and I want four plugins rather than two hundred. [Sheldon](https://sheldon.cli.rs) is a plugin manager configured with a single TOML file, and `zsh-defer` lets the heavy plugins load after the prompt appears instead of before it.
+
+Create `~/.config/sheldon/plugins.toml`:
+
+```toml title="~/.config/sheldon/plugins.toml"
+shell = "zsh"
+
+[templates]
+defer = "{{ hooks?.pre | nl }}{% for file in files %}zsh-defer source \"{{ file }}\"\n{% endfor %}{{ hooks?.post | nl }}"
+
+# Lazy-loading helper, so heavier plugins do not block the prompt.
+[plugins.zsh-defer]
+github = "romkatv/zsh-defer"
+
+# Extra completion definitions. Adds to fpath, so it must load before compinit.
+[plugins.zsh-completions]
+github = "zsh-users/zsh-completions"
+
+# Inline command suggestions drawn from your history.
+[plugins.zsh-autosuggestions]
+github = "zsh-users/zsh-autosuggestions"
+
+# Syntax highlighting. Keep this LAST: it wraps every widget defined before it.
+[plugins.fast-syntax-highlighting]
+github = "zdharma-continuum/fast-syntax-highlighting"
+```
+
+Then fetch them:
+
+```sh
+sheldon lock --update
+```
+
+Now `~/.zshrc`. This is the whole file, not an excerpt:
+
+```zsh title="~/.zshrc"
+# ---- Homebrew (Apple Silicon) ----
+# Canonically this belongs in ~/.zprofile so it does not re-run in every
+# subshell. It is here to keep the setup to one file; move it if you prefer.
+eval "$(/opt/homebrew/bin/brew shellenv)"
+
+# ---- PATH ----
+export PATH="$HOME/.local/bin:$PATH"
+
+# ---- Plugins (sheldon) ----
+# Sources completions, autosuggestions and highlighting.
+# zsh-completions adds to fpath, so this runs BEFORE compinit below.
+eval "$(sheldon source)"
+
+# ---- Completion system ----
+autoload -Uz compinit
+compinit
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|=*' 'l:|=* r:|=*'
+zstyle ':completion:*' menu select
+
+# ---- History: large, shared between sessions, deduplicated, timestamped ----
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=100000
+SAVEHIST=100000
+setopt SHARE_HISTORY HIST_IGNORE_ALL_DUPS HIST_REDUCE_BLANKS HIST_VERIFY \
+       INC_APPEND_HISTORY EXTENDED_HISTORY
+
+# ---- Tool integrations ----
+eval "$(zoxide init zsh)"   # smarter cd: `z foo` jumps to the best match
+source <(fzf --zsh)         # fuzzy finder: Ctrl-T files, Alt-C directories
+eval "$(atuin init zsh)"    # SQLite history; claims Ctrl-R, so it goes AFTER fzf
+
+# ---- Aliases: modern replacements ----
+alias ls='eza --group-directories-first --icons'
+alias ll='eza -lah --group-directories-first --icons --git'
+alias la='eza -a --group-directories-first --icons'
+alias lt='eza --tree --level=2 --icons'
+alias cat='bat --paging=never'
+alias catp='bat'                 # the same thing, with paging
+alias grep='rg'
+alias find='fd'
+
+# ---- git and gh convenience ----
+alias gs='git status -sb'
+alias gd='git diff'
+alias gl='git log --oneline --graph --decorate -20'
+alias prs='gh pr list'
+alias prv='gh pr view --web'
+
+# ---- Prompt. Must be near the end. ----
+eval "$(starship init zsh)"
+
+# ---- Node (see section 7) ----
+export PATH="$HOME/Library/Application Support/fnm:$PATH"
+eval "$(fnm env --use-on-cd)"
+
+# ---- Package manager (see section 7) ----
+# pnpm itself comes from a corepack shim in ~/.local/bin. PNPM_HOME stays on
+# PATH only because that is where `pnpm add -g` links global packages.
+export PNPM_HOME="$HOME/Library/pnpm"
+case ":$PATH:" in
+  *":$PNPM_HOME:"*) ;;
+  *) export PATH="$PNPM_HOME:$PATH" ;;
+esac
+
+# Do not prompt before fetching the version a project pins in `packageManager`,
+# so interactive and non-interactive shells behave identically. This one is
+# specifically for agents: a command running in a shell you cannot see should
+# never stall on a confirmation you cannot answer.
+export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+```
+
+Ordering is the only genuinely fiddly thing in that file, and it bites in three places:
+
+- `sheldon source` runs **before** `compinit`, because `zsh-completions` works by adding directories to `fpath` and `compinit` is what reads `fpath`.
+- `fast-syntax-highlighting` is **last** in `plugins.toml`, because it wraps every widget defined before it and cannot wrap what does not exist yet.
+- `atuin` initializes **after** `fzf`. Both want `Ctrl-R`, and the last one to bind it wins.
+
+Get any of those backwards and nothing errors. You simply lose a feature quietly, which is worse.
+
+## 4. The prompt: Starship
+
+Two lines: information on the first, the character you type against on the second. The language modules render only when the relevant files are in the directory, and the command duration appears only when something took longer than two seconds, so the prompt stays quiet until it has something to say.
+
+`~/.config/starship.toml`:
+
+```toml title="~/.config/starship.toml"
+format = """
+$directory\
+$git_branch\
+$git_status\
+$package\
+$nodejs$python$ruby$rust$golang$java\
+$cmd_duration\
+$line_break\
+$character"""
+
+add_newline = true
+
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"
+vimcmd_symbol = "[❮](bold green)"
+
+[directory]
+truncation_length = 3
+truncate_to_repo = true
+style = "bold cyan"
+read_only = " "
+
+[git_branch]
+symbol = " "
+style = "bold purple"
+
+[git_status]
+style = "bold yellow"
+conflicted = "="
+ahead = "⇡${count}"
+behind = "⇣${count}"
+diverged = "⇕⇡${ahead_count}⇣${behind_count}"
+untracked = "?${count}"
+stashed = "*${count}"
+modified = "!${count}"
+staged = "+${count}"
+renamed = "»${count}"
+deleted = "✘${count}"
+
+# Only appears when a command took more than two seconds.
+[cmd_duration]
+min_time = 2000
+format = "[ $duration]($style) "
+style = "bold yellow"
+
+# Reads package.json, Cargo.toml, pyproject.toml and friends.
+[package]
+symbol = "📦 "
+format = "[$symbol$version]($style) "
+style = "208 bold"
+
+# Language modules: shown only when relevant files are present.
+[nodejs]
+symbol = " "
+format = "[$symbol($version )]($style)"
+style = "green"
+
+[python]
+symbol = " "
+format = '[$symbol($version )(\($virtualenv\) )]($style)'
+style = "yellow"
+
+[ruby]
+symbol = " "
+format = "[$symbol($version )]($style)"
+
+[rust]
+symbol = " "
+format = "[$symbol($version )]($style)"
+
+[golang]
+symbol = " "
+format = "[$symbol($version )]($style)"
+
+[java]
+symbol = " "
+format = "[$symbol($version )]($style)"
+```
+
+The git status counts are the part that earns its place when an agent is working. A glance tells you how many files it has touched and whether it has staged anything, without running a command.
+
+## 5. The tools themselves
+
+Every one of these is a faster, friendlier replacement for something you already use. None of them is required. All of them are aliased in the `.zshrc` above.
+
+| Tool                                               | Replaces      | Why                                                           |
+| -------------------------------------------------- | ------------- | ------------------------------------------------------------- |
+| [`eza`](https://eza.rocks)                         | `ls`          | Icons, git status per file, tree view via `lt`                |
+| [`bat`](https://github.com/sharkdp/bat)            | `cat`         | Syntax highlighting; `catp` when you want paging              |
+| [`ripgrep`](https://github.com/BurntSushi/ripgrep) | `grep`        | Dramatically faster recursive search, respects `.gitignore`   |
+| [`fd`](https://github.com/sharkdp/fd)              | `find`        | Sane defaults and an argument order you can remember          |
+| [`zoxide`](https://github.com/ajeetdsouza/zoxide)  | `cd`          | `z partial-name` jumps to the directory you visit most        |
+| [`fzf`](https://github.com/junegunn/fzf)           | nothing       | Fuzzy finder. `Ctrl-T` for files, `Alt-C` to change directory |
+| [`atuin`](https://atuin.sh)                        | shell history | Searchable SQLite history, synced across machines             |
+| [`git-delta`](https://dandavison.github.io/delta/) | the git pager | Diffs you can actually read                                   |
+| `jq`, `gh`, `tree`, `htop`                         | nothing       | JSON, GitHub, directory trees, processes                      |
+
+Aliasing `grep` to `rg` and `find` to `fd` is a real opinion and not everyone's. The two tools take different flags from the ones they shadow, so a command you copy from documentation may fail in a way that is confusing until you remember why. If that trade sounds bad, drop those two alias lines and call `rg` and `fd` by name.
+
+## 6. History and navigation
+
+This trio is what makes the terminal feel fast, and it is the part people notice when they sit down at my machine.
+
+**atuin** replaces `Ctrl-R` with full text search over a SQLite database of every command you have run, synced between machines. Two settings are worth changing from the defaults. `~/.config/atuin/config.toml`:
+
+```toml title="~/.config/atuin/config.toml"
+# Enter runs the selected command. Tab puts it in the prompt to edit first.
+enter_accept = true
+
+[sync]
+records = true
+```
+
+Everything else in that file I leave alone. Atuin's `secrets_filter` is on by default and keeps token-shaped strings out of the history database, which is worth knowing about and worth leaving on.
+
+**zoxide** gives you `z` for jumping to directories by fragment, ranked by how often and how recently you go there. After a week it is faster than any bookmark system you would design.
+
+**fzf** provides `Ctrl-T` to insert a file path into the current command and `Alt-C` to change directory, both fuzzy.
+
+## 7. Node versions and package managers
+
+This is the most opinionated section, and it is the one where your preference should probably beat mine. Both choices below are defaults I am happy with, not arguments I want to win. I have listed the serious alternatives with links to their own documentation rather than explaining each one, because each has better installation instructions than I would write.
+
+### Node versions
+
+I use **[fnm](https://github.com/Schniz/fnm)**. It is fast, and `--use-on-cd` in the `.zshrc` above means that entering a directory with a `.nvmrc` or `.node-version` file switches Node automatically. That automatic switch is the whole reason for the choice: an agent running a build in a project you have not thought about for a month gets the right runtime without being told.
+
+| Alternative                          | Worth it if                                                                         |
+| ------------------------------------ | ----------------------------------------------------------------------------------- |
+| [nvm](https://github.com/nvm-sh/nvm) | You want the one everyone has heard of, and shell startup speed does not bother you |
+| [Volta](https://volta.sh)            | You want the toolchain pinned per project and shimmed, with no shell hook at all    |
+| [mise](https://mise.jdx.dev)         | You manage several languages and want one tool for all of them                      |
+| [asdf](https://asdf-vm.com)          | Same reason as mise, with a longer history and a bigger plugin ecosystem            |
+
+Any of these will work with everything else in this post. Swap the two fnm lines in the `.zshrc` for whatever your choice tells you to add.
+
+### Package managers
+
+I do not install a package manager globally at all. **[Corepack](https://nodejs.org/api/corepack.html)** ships with Node, reads the `packageManager` field from a project's `package.json`, and fetches and runs exactly that version. The package manager becomes a property of the project rather than of my machine, which is the behavior I want as soon as two repositories disagree.
+
+```sh
+corepack enable
+```
+
+That is the entire setup. In a project pinning `"packageManager": "pnpm@11.22.0"`, running `pnpm install` gets that version whether or not you have ever installed pnpm.
+
+The `COREPACK_ENABLE_DOWNLOAD_PROMPT=0` line in the `.zshrc` above is there for agent work specifically. Without it, corepack asks for confirmation the first time it fetches a new version, and a command running in a shell you are not looking at will sit there waiting for an answer forever.
+
+If you would rather install one directly: [npm](https://docs.npmjs.com) ships with Node and needs nothing, [pnpm](https://pnpm.io) is what I pin in most projects, [Yarn](https://yarnpkg.com) is the other mature option, and [Bun](https://bun.sh) is worth a look if you want the runtime and the package manager to be the same program.
+
+One thing I have deliberately left out. If you install from or publish to a private registry you will need authentication, and the tempting move is to export a token into your shell environment so it is always there. Do not do that, or at least do not do it without deciding to. Every process you start inherits your environment, including every command an agent runs, and a token that is always present is a token that is present during the mistake. Put the credential in a project-scoped config file or supply it to the single command that needs it.
+
+## 8. The agent layer: Claude Code
+
+This is the part that is actually about agentic work rather than about having a nice terminal.
+
+`~/.claude/settings.json`:
+
+```json title="~/.claude/settings.json"
+{
+  "permissions": {
+    "defaultMode": "auto",
+    "allow": ["Bash(cd:*)", "Bash(ls:*)", "Bash(grep:*)", "Bash(cat:*)", "Bash(find:*)"],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Read(//**/.env)",
+      "Read(//**/.env.local)",
+      "Read(//**/.env.*.local)",
+      "Read(//**/.env.development)",
+      "Read(//**/.env.production)",
+      "Read(//**/.env.test)",
+      "Read(~/.ssh/**)",
+      "Read(~/.netrc)",
+      "Edit(//**/.env)",
+      "Edit(//**/.env.local)",
+      "Edit(//**/.env.*.local)",
+      "Edit(//**/.env.development)",
+      "Edit(//**/.env.production)",
+      "Edit(//**/.env.test)",
+      "Edit(~/.ssh/**)",
+      "Edit(~/.netrc)"
+    ]
+  },
+  "effortLevel": "xhigh",
+  "theme": "dark",
+  "tui": "fullscreen",
+  "inputNeededNotifEnabled": true,
+  "agentPushNotifEnabled": true,
+  "skipAutoPermissionPrompt": true,
+  "skipWorkflowUsageWarning": true
+}
+```
+
+Add your own entries for whatever else on your machine holds a credential. Mine also covers the local stores belonging to the GitHub CLI, the npm client, and Cloudflare's deploy tool. The [settings documentation](https://docs.claude.com/en/docs/claude-code/settings) lists the full syntax.
+
+Taking the parts in the order they matter:
+
+**The deny list is the important half, and it is important precisely because of the allow list above it.** `defaultMode: "auto"` means the agent acts without asking permission for each call, which is the only way long autonomous runs are tolerable. The cost of that convenience is that the boundary has to be written down somewhere instead of being enforced by you clicking approve. These paths are the ones where reading the file is the incident.
+
+Note what is **not** in the list: the `.env.example` convention. Denying every `.env.*` wholesale would block the file that exists specifically to be read, and the agent would then guess at your configuration rather than look it up. Precision costs a few more lines and is worth them.
+
+**Notifications** (`inputNeededNotifEnabled`, `agentPushNotifEnabled`) are the second of the three agent-shaped choices from the top of this post. The agent tells macOS when it has finished or needs an answer, which is what makes it reasonable to start something and go do something else.
+
+**`effortLevel: "xhigh"`** asks for maximum reasoning depth. It is slower and it costs more. For non-trivial work I have not regretted it.
+
+### Plugins and skills
+
+Claude Code loads plugins from marketplaces you name yourself. Mine, current as of writing:
+
+```json title="~/.claude/settings.json"
+{
+  "extraKnownMarketplaces": {
+    "claude-plugins-official": {
+      "source": { "source": "github", "repo": "anthropics/claude-plugins-official" }
+    },
+    "anthropic-agent-skills": {
+      "source": { "source": "github", "repo": "anthropics/skills" }
+    },
+    "superpowers-marketplace": {
+      "source": { "source": "github", "repo": "obra/superpowers-marketplace" }
+    },
+    "cq": {
+      "source": { "source": "github", "repo": "mozilla-ai/cq" }
+    },
+    "cloudflare": {
+      "source": { "source": "github", "repo": "cloudflare/skills" }
+    },
+    "armature": {
+      "source": { "source": "github", "repo": "ryanlindsey/armature" }
+    }
+  },
+  "enabledPlugins": {
+    "superpowers@superpowers-marketplace": true,
+    "cq@cq": true,
+    "code-simplifier@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "document-skills@anthropic-agent-skills": true,
+    "example-skills@anthropic-agent-skills": true,
+    "armature@armature": true
+  }
+}
+```
+
+The two I would recommend to anyone doing this kind of work:
+
+- **[superpowers](https://github.com/obra/superpowers-marketplace)** adds process skills, the most useful of which force a design conversation before any code gets written. Most of my bad agent outcomes have been the agent confidently building the wrong thing, and this is the cheapest fix I have found for that.
+- **[cq](https://github.com/mozilla-ai/cq)** is Mozilla AI's shared knowledge commons. It surfaces the gotchas a model's training data missed, which is disproportionately about stale version numbers and integration quirks.
+
+Most of my work is on Cloudflare, so I also run [Cloudflare's skills](https://github.com/cloudflare/skills), which bias the agent toward retrieving current documentation instead of recalling a version of the platform that has moved on:
+
+```sh
+/plugin marketplace add cloudflare/skills
+/plugin install cloudflare@cloudflare
+```
+
+Substitute your own stack. The general principle is the part to take: a skill that makes the agent go and read current documentation is worth more than any amount of prompting about being careful, because the failure it prevents is the agent being confidently correct about last year.
+
+The last one on that list is mine, and it is here because it is genuinely part of this setup, not because you should install it:
+
+- **[armature](https://github.com/ryanlindsey/armature)** (v0.3.4) gives an agent a board to work from. It picks the next actionable item across several repositories, claims it so nothing else takes the same one, works it on a branch, and opens a pull request that closes it. I merge those pull requests myself, every time, and it cannot merge them for me.
+
+That constraint is the reason it fits the way I work rather than an incidental detail. A fragmented day still produces shipped work, because starting a unit of work no longer requires me to hold the whole context, and the merge stays where accountability for what lands has to stay. Why it is built this way is its own post. Here it is one more line in the plugin list.
+
+Configuration for [MCP](https://modelcontextprotocol.io) servers lives outside this file. The rule I hold to is that credentials are referenced by environment variable and never written into a config file, which is what makes these files safe to show you.
+
+## 9. Check that it worked
+
+```sh
+exec zsh                  # reload the shell
+```
+
+Then, in order:
+
+```sh
+starship --version        # prompt is installed
+sheldon source | head -3  # plugins resolve
+atuin status              # history database is live
+fnm current               # node version manager responds
+claude --version          # agent responds
+```
+
+And four things to look at rather than run:
+
+- `ll` shows icons and per-file git status. Blank boxes instead of icons means Ghostty is not using the Nerd Font; check `font-family`.
+- `Ctrl-R` opens atuin's search interface, not zsh's. If you get the plain one, atuin is initializing before fzf.
+- `Cmd+D` splits the window; `Cmd+Opt+arrow` moves between panes.
+- Typing a command you have run before shows a grey completion after the cursor. That is `zsh-autosuggestions`, and it means Sheldon is loading.
+
+If the prompt appears noticeably slowly, the usual cause is `compinit` running before `sheldon source`. Check the order.
+
+## A note on secrets
+
+Every file in this post is safe to publish, and that is a property of how they are written rather than luck. No credential appears in any of them. Tokens live in the environment or in a secrets manager, and configuration references them by name.
+
+That discipline is worth more now than it used to be. A configuration file with a token in it used to be a file on your laptop. It is now a file that an agent can read, quote into a transcript, and paste into a commit, and it will do all three without malice if nothing stops it. The deny list in section 8 exists for exactly that reason, and the reason I can show you these files is that the credentials they need are named in them rather than written into them.
+
+Check yours at the moment you share them rather than the moment you wrote them. Configuration accumulates, and the version you remember writing is not the version on your disk.
