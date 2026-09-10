@@ -268,7 +268,35 @@ const CHAT_SKIP_REASON = 'RLME_EVAL_TOKEN is not set in this shell';
  * (the upstream stream broke mid-answer). Both are collected; the caller
  * decides which matters.
  */
-async function ask(question, token) {
+/**
+ * How many times a transient refusal is retried, and how long the backoff is.
+ *
+ * MEASURED, 2026-09-10. The AI Gateway returns `2018: Invalid User Credentials`
+ * when its rate limit is hit -- an auth error's wording on a rate-limit fault,
+ * recorded in 10 §5 -- and `handleChat` maps that to the `unreachable` code. The
+ * dashboard attributed 19 HTTP 429s to the runs that afternoon, so this is rate
+ * limiting rather than a broken credential, whatever the message says.
+ *
+ * A suite of thirteen cases that each make one chat call and one judge call is a
+ * burst by construction, and a single refusal anywhere in it fails a case for a
+ * reason that has nothing to do with the answer. Retrying is what a rate limit
+ * asks for. Two seconds because the limit is per-minute and the run is
+ * sequential -- a short pause is enough to fall behind the window, and a long
+ * one would make a full run tedious enough to stop being run.
+ *
+ * NOT A SUBSTITUTE FOR THE LIMIT BEING RIGHT. The gateway was raised to 300/min
+ * the same day. This exists so that the next transient does not read as a
+ * prompt regression, which is the failure that wastes an afternoon.
+ */
+const RETRIES = 2;
+const BACKOFF_MS = 2000;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Codes worth retrying: the endpoint could not reach the model, for now. */
+const TRANSIENT = new Set(['unreachable']);
+
+async function askOnce(question, token) {
   const response = await fetch(`${endpoint}/chat`, {
     method: 'POST',
     headers: {
@@ -299,6 +327,23 @@ async function ask(question, token) {
 }
 
 /**
+ * One chat turn, retried past a transient refusal.
+ *
+ * The LAST attempt's result is returned whatever it says, so a case that is
+ * genuinely refused still reports the code rather than a retry count -- the
+ * suite's job is to say what happened, and "unreachable after 3 attempts" is a
+ * different and more useful fact than "unreachable".
+ */
+async function ask(question, token) {
+  let result = await askOnce(question, token);
+  for (let attempt = 1; attempt <= RETRIES && TRANSIENT.has(result.error); attempt += 1) {
+    await sleep(BACKOFF_MS * attempt);
+    result = await askOnce(question, token);
+  }
+  return result;
+}
+
+/**
  * Scores `subject` against `criteria` through the gated judge tool.
  *
  * A thrown judge is NOT a failed case: `JudgeUnavailable` means the scorer did
@@ -307,11 +352,27 @@ async function ask(question, token) {
  * case as unjudged, which flips the exit code the same way a skipped suite does.
  */
 async function askJudge(criteria, subject, token) {
-  const answer = await rpc(
+  let answer = await rpc(
     'tools/call',
     { name: 'judge_answer', arguments: { criteria, subject } },
     token,
   );
+  // Retried for the same reason `ask` is: `judge_answer` spends a model call
+  // through the same gateway, in the same burst, and a rate-limited judge
+  // reports "the judge did not run" -- which reads like a broken tool rather
+  // than a busy minute.
+  for (
+    let attempt = 1;
+    attempt <= RETRIES && (answer.error || answer.result?.isError);
+    attempt += 1
+  ) {
+    await sleep(BACKOFF_MS * attempt);
+    answer = await rpc(
+      'tools/call',
+      { name: 'judge_answer', arguments: { criteria, subject } },
+      token,
+    );
+  }
   if (answer.error || answer.result?.isError) return null;
   try {
     return JSON.parse(answer.result.content[0].text);

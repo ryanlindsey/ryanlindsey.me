@@ -123,12 +123,15 @@ because a count leaks nothing a real id or a fragment of model output would.
 ## The judge
 
 `chat` and `leak` score their answers with an LLM judge (04 §4), through the
-gated `judge_answer` tool rather than in this process. The reason is that the
-runner holds no inference credential by design — the Anthropic key lives in AI
-Gateway BYOK and never leaves Cloudflare (10 §3.1) — so the judge has to be
-reachable over HTTP, and a registration-gated tool is this repo's existing way
-to expose something without publishing that it exists. The eval harness is
-therefore a first-class MCP client, which is a fair description of what it is.
+gated `judge_answer` tool rather than in this process. The runner holds no
+inference credential by design, and there is no provider key for it to hold:
+`env.AI.run()` bills through AI Gateway's **Unified Billing** — measured on day
+1 as `gatewayMetadata.keySource: "Unified"`, and true whether the call names the
+gateway or passes no gateway option at all (10 §5). The Worker's `AI` binding is
+the credential, and a binding cannot leave Cloudflare. So the judge has to be
+reachable over HTTP, and a registration-gated tool is this repo's existing way to
+expose something without publishing that it exists. The eval harness is therefore
+a first-class MCP client, which is a fair description of what it is.
 
 The judge is **generic**: it scores text against criteria and knows nothing
 about what it is scoring. That is a 09 §2 requirement rather than a preference —
