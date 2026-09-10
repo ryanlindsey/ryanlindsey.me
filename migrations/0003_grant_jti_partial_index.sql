@@ -2,12 +2,15 @@
 -- deferred-minors register, item 3). Like 0001 and 0002, this schema change
 -- is a published governance artifact (06 §2).
 --
--- `grant_jti` (0002) is NULL on every public-tier call, which is nearly all
--- traffic today, so the full index this replaces stored one entry per
--- public-tier row and none of those entries was ever looked up: a revocation
--- query is always `grant_jti = <a specific jti>`, which by definition is
--- never NULL. Indexing only the rows a lookup can ever match is cheaper to
--- store and to maintain for the same query.
+-- `grant_jti` (0002) is NULL on every public-tier call -- a schema fact. Public
+-- tier is presumably most of today's traffic, but that is reasoning, not
+-- something this credential-free harness measured, and the argument below
+-- does not depend on it: the full index this replaces stored one entry per
+-- NULL row, and none of those entries was ever looked up, whatever the mix of
+-- public- to private-tier traffic actually is -- a revocation query is always
+-- `grant_jti = <a specific jti>`, which by definition is never NULL. Indexing
+-- only the rows a lookup can ever match is cheaper to store and to maintain
+-- for the same query.
 --
 -- The register that raised this also named `idx_access_tokens_audience` as a
 -- second mostly-NULL index worth the same treatment. That half is FALSE:
