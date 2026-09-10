@@ -30,6 +30,17 @@ export const SCOPES = [
   'narrative',
 ] as const satisfies readonly Scope[];
 
+/**
+ * Type guard for `Scope`, so a caller holding an `unknown`/`string` value can
+ * narrow it against `SCOPES` without repeating the `SCOPES as readonly
+ * unknown[]` cast that `Array.prototype.includes` otherwise forces (`SCOPES`
+ * is typed as `readonly Scope[]`, and `includes` requires its argument to
+ * already be a `Scope`).
+ */
+export function isScope(value: unknown): value is Scope {
+  return (SCOPES as readonly unknown[]).includes(value);
+}
+
 /** The claims a token carries, and the whole of what it asserts. */
 export interface TokenClaims {
   v: 1;
@@ -169,11 +180,7 @@ function decodeClaims(segment: string): TokenClaims | null {
   if (typeof value.aud !== 'string' || value.aud.length === 0) return null;
   if (!Number.isSafeInteger(value.iat) || !Number.isSafeInteger(value.exp)) return null;
   if (!Array.isArray(value.scopes)) return null;
-  if (
-    !value.scopes.every((scope): scope is Scope => (SCOPES as readonly unknown[]).includes(scope))
-  ) {
-    return null;
-  }
+  if (!value.scopes.every(isScope)) return null;
   // The version is READ but not judged here: an unrecognised version is a
   // different refusal reason from a malformed one, and `verifyToken` is where
   // the two are told apart. Consequence, MEASURED (see `verifyToken`'s

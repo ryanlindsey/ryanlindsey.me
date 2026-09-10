@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'vitest';
-import { mintToken, verifyToken, newJti, SCOPES, type TokenClaims } from '../src/lib/tier/token';
+import {
+  mintToken,
+  verifyToken,
+  newJti,
+  SCOPES,
+  isScope,
+  type TokenClaims,
+} from '../src/lib/tier/token';
 
 const KEY = 'a-fixture-signing-key-not-used-anywhere-real';
 const NOW = 1_800_000_000; // epoch seconds, fixed so expiry is arithmetic rather than timing
@@ -163,4 +170,11 @@ test('newJti is 128 bits of base64url and does not repeat', () => {
 
 test('SCOPES is the closed set the rest of the tier keys on', () => {
   expect([...SCOPES]).toEqual(['fit', 'profile', 'documents', 'narrative']);
+});
+
+test('isScope accepts exactly the members of SCOPES', () => {
+  for (const scope of SCOPES) expect(isScope(scope)).toBe(true);
+  for (const notAScope of ['everything', '', 0, null, undefined]) {
+    expect(isScope(notAScope)).toBe(false);
+  }
 });
