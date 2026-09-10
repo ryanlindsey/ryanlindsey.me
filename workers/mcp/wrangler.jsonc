@@ -270,20 +270,20 @@
   // string as written in the source -- here `'../../../prompts/fit.md?raw'`,
   // three levels up from src/lib/fit/, query string included. Nothing
   // normalises it against the config directory, the repo root, or `base_dir`
-  // first. MEASURED, Task 10 Step 5, one dry run each (the first five against
-  // the same import without its `?raw`):
-  //   prompts/**/*.md         -> no match (this was the brief's glob)
-  //   prompts/*.md            -> no match
-  //   **/prompts/**/*.md      -> no match
-  //   ../../prompts/*.md      -> no match (wrong depth; esbuild's ERROR MESSAGE
-  //                             says `../../prompts/fit.md`, because that is
-  //                             relative to cwd -- it is not the specifier, and
-  //                             copying it from the error is the trap)
-  //   ../../../prompts/*.md   -> MATCHES, confirming the specifier is the input
-  //   **/prompts/*.md         -> MATCHES
-  //   **/prompts/*.md         -> NO MATCH once the import gained its `?raw`
-  //   **/prompts/*.md?raw     -> MATCHES  <- what is used
-  // `base_dir: "../.."` was also tried and changed none of the above.
+  // first. MEASURED, Task 10 Step 5, one dry run per measurement below -- the
+  // second row is one glob run twice. The three that decide it:
+  //   ../../../prompts/*.md  -> MATCHES (import still without its `?raw`), so
+  //                             the depth that works is the SPECIFIER's
+  //   **/prompts/*.md        -> MATCHES, then NO MATCH once the `?raw` landed
+  //   **/prompts/*.md?raw    -> MATCHES  <- what is used
+  // Nothing else moved a result. Four more globs each missed, all measured
+  // before the `?raw` landed -- `prompts/**/*.md` (the brief's glob),
+  // `prompts/*.md`, `**/prompts/**/*.md` and `../../prompts/*.md` -- and
+  // `base_dir: "../.."` was tried as well and changed none of the rows above.
+  // THE TRAP is that last miss: esbuild's ERROR MESSAGE for it
+  // says `../../prompts/fit.md` -- relative to cwd, NOT the specifier -- and
+  // copying it out of the error is how the wrong depth gets written down as
+  // the right one.
   //
   // The `?raw` is in the SOURCE for a TypeScript reason, not a bundler one, and
   // src/lib/fit/markdown-modules.d.ts is where that is explained: Astro's own

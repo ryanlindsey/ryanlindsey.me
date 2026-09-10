@@ -11,7 +11,7 @@ import { defineTool, ToolError, type ToolContext } from '../workers/mcp/src/defi
 import { fitEnvelope, fitToolError, GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
 import { FitUnavailable, type FitResult } from '../src/lib/fit/engine';
 import type { McpEnv } from '../workers/mcp/src/env';
-import { LIMITS } from '../src/lib/mcp/limits';
+import { LIMITS, limitKeyFor, type ToolCost } from '../src/lib/mcp/limits';
 import { BANNED_PATTERNS } from './candidacy-patterns';
 
 const server = createTestHarness({ workers: SITE_HARNESS_WORKERS });
@@ -527,12 +527,38 @@ describe('with a grant', () => {
  * Without this, that branch of define.ts has no test at all: it is the one
  * call an operator most needs to see, because reaching it means either someone
  * is probing for gated tool names or mechanism 1 has regressed.
+ *
+ * TWO tests below, because the branch makes two promises and they fail
+ * independently. The first takes the granted-but-wrong-scope caller and the
+ * tier, audience and `jti` its row carries. The second takes the UNGRANTED
+ * caller -- the public half of the same row -- and the limiter spend, which
+ * `defineTool`'s comment claims at length and nothing pinned until deferred
+ * minor L624 was reopened.
  */
-test("a scope refusal is audited as an error, on the caller's own tier and audience", async () => {
-  const PROBE = 'probe_scope_refusal';
-  type Invoke = (...params: unknown[]) => Promise<CallToolResult>;
+type ProbeInvoke = (...params: unknown[]) => Promise<CallToolResult>;
 
-  let invoke: Invoke | undefined;
+/**
+ * Registers ONE test-only tool through `defineTool` and calls it, with the
+ * audit write already settled by the time it returns.
+ *
+ * A helper rather than a copy in each test: the scaffolding here is the thing
+ * that must be identical between them, since what the two assert is the
+ * behaviour of ONE branch under two callers. `name` is a parameter because
+ * `mcp_tool_calls` is queried by tool name and a shared name would let either
+ * test read the other's row.
+ *
+ * The declared SCOPE is not a parameter, because it does not vary: what the
+ * two tests change is the CALLER and the bucket the refusal draws from. It is
+ * fixed at `documents` below, and the fixture's one requirement is that no
+ * caller here carries it -- the granted test's grant is `['profile']`, and
+ * the ungranted one carries nothing at all.
+ */
+async function callScopeProbe(probe: {
+  name: string;
+  cost: ToolCost;
+  grant: Grant | null;
+}): Promise<{ result: CallToolResult; handlerRan: boolean }> {
+  let invoke: ProbeInvoke | undefined;
   // Named `registrar`, not `server`, and that is not a style choice.
   // tests/mcp-audit.test.ts's seam walk greps every source file in the repo
   // for the two SDK registration calls SPELLED AS TEXT -- receiver included --
@@ -542,19 +568,14 @@ test("a scope refusal is audited as an error, on the caller's own tier and audie
   // literal out loud on its first draft and turned that test red. The capture
   // below still only ever runs because `defineTool` calls it.
   const registrar = {
-    registerTool: (_name: string, _config: unknown, callback: Invoke) => {
+    registerTool: (_name: string, _config: unknown, callback: ProbeInvoke) => {
       invoke = callback;
     },
   } as unknown as McpServer;
 
-  const grant: Grant = {
-    jti: newJti(),
-    audience: AUDIENCE,
-    scopes: ['profile'],
-    expiresAt: Math.floor(Date.now() / 1000) + 3600,
-  };
-  // The audit write goes through `ctx.waitUntil`; collecting the promise is
-  // what lets this assert on the row without polling for it.
+  // The audit write goes through `ctx.waitUntil`; collecting the promises and
+  // settling them below is what lets the callers assert on the row without
+  // polling for it.
   const dispatched: Promise<unknown>[] = [];
   const tc: ToolContext = {
     env,
@@ -563,7 +584,7 @@ test("a scope refusal is audited as an error, on the caller's own tier and audie
       passThroughOnException: () => {},
     } as unknown as ExecutionContext,
     request: undefined,
-    grant,
+    grant: probe.grant,
   };
 
   let handlerRan = false;
@@ -571,10 +592,13 @@ test("a scope refusal is audited as an error, on the caller's own tier and audie
     registrar,
     tc,
     {
-      name: PROBE,
+      name: probe.name,
       title: 'Scope-check probe',
-      description: 'Test-only. Declares a scope this grant does not carry.',
-      cost: 'cheap',
+      description: 'Test-only. Declares a scope this caller does not carry.',
+      cost: probe.cost,
+      // The constant of this fixture -- see the note above on why it is not a
+      // parameter. Any scope refuses the ungranted caller; this one also has
+      // to be absent from the granted caller's `['profile']`.
       scope: 'documents',
     },
     async () => {
@@ -586,12 +610,25 @@ test("a scope refusal is audited as an error, on the caller's own tier and audie
   // `(args, ctx)`: the SDK passes the context LAST, and `defineTool` reads the
   // arguments only when there is more than one parameter -- see its own note.
   const result = await invoke!({}, {});
+  await Promise.all(dispatched);
+  return { result, handlerRan };
+}
+
+test("a scope refusal is audited as an error, on the caller's own tier and audience", async () => {
+  const PROBE = 'probe_scope_refusal';
+  const grant: Grant = {
+    jti: newJti(),
+    audience: AUDIENCE,
+    scopes: ['profile'],
+    expiresAt: Math.floor(Date.now() / 1000) + 3600,
+  };
+
+  const { result, handlerRan } = await callScopeProbe({ name: PROBE, cost: 'cheap', grant });
 
   expect(handlerRan, 'the handler must not run for a refused scope').toBe(false);
   expect(result.isError).toBe(true);
   expect((result.content?.[0] as { text: string }).text).toBe(`${PROBE} requires a scoped token.`);
 
-  await Promise.all(dispatched);
   const row = await env.DB.prepare(
     'SELECT tier, audience, grant_jti, outcome, args_hash FROM mcp_tool_calls WHERE tool=? ORDER BY id DESC LIMIT 1',
   )
@@ -615,7 +652,103 @@ test("a scope refusal is audited as an error, on the caller's own tier and audie
   // is the mechanical proof that the check ran INSIDE the guard rather than as
   // an early return in front of it. An early return would answer the same
   // sentence with no hash, no row, and no limiter spend.
+  //
+  // It is NOT proof of the spend, and reading it as one is the trap: `guarded`
+  // takes this hash BEFORE it awaits `checkLimit`, so a check moved to sit
+  // between the two would leave a perfectly real digest here. The limiter half
+  // is pinned by the test below, against the bucket itself.
   expect(row!.args_hash).toMatch(/^[0-9a-f]{64}$/);
+});
+
+/**
+ * THE SPEND, AND THE PUBLIC HALF OF THE ROW (deferred minor L624).
+ *
+ * `defineTool` states this property at length -- "a refusal costs limiter
+ * budget, deliberately: an unscoped caller hammering a gated name is exactly
+ * who should meet a bucket" -- and it was true and untested. The register
+ * judged testing it disproportionate on the grounds that reaching the branch
+ * needs a tool registered without its scope, which no request can produce.
+ * That is true of the SERVER and irrelevant here: `defineTool` is exported and
+ * takes its registrar as a parameter, so the capture in `callScopeProbe` above
+ * reaches the branch with no server in the way.
+ *
+ * The caller is UNGRANTED, where the test above is granted-but-wrong-scope,
+ * which is what makes the two rows different rather than the same row twice:
+ * `tier` is derived from the grant's presence, so this is the only shape in
+ * which a scope refusal writes `public` with a null audience and a null `jti`.
+ * It is also the shape an operator will actually meet, since reaching this
+ * branch means someone is probing for gated tool names.
+ */
+test('a scope refusal spends limiter budget, and audits an ungranted caller as public', async () => {
+  const PROBE = 'probe_scope_refusal_ungranted';
+
+  // `expensive` for a reason about MEASURABILITY rather than about what this
+  // probe costs: it is the smallest bucket (6) with the slowest refill (6 per
+  // 300s, so one token every 50 seconds), which puts the boundary five setup
+  // calls away and puts a wall-clock margin of ~50s around an assertion this
+  // test reaches in well under a second. `cheap` would need 59 setup calls
+  // against a bucket that returns a whole token every second, so the drain
+  // would refill under itself -- the round-trip-versus-refill race
+  // tests/mcp-rate-limit.test.ts records losing on CI.
+  const { limit, periodSeconds } = LIMITS.expensive;
+  const refillPerSecond = limit / periodSeconds;
+  // The very object `checkLimit` will reach. Named through `limitKeyFor`
+  // rather than spelled `${PROBE}:unknown` here, so this stays pointed at the
+  // real bucket if the key shape changes -- and given the same arguments the
+  // call below has: no request (hence `unknown`) and no grant.
+  const bucket = env.RATE_LIMITER.getByName(limitKeyFor(undefined, PROBE, null));
+
+  // Drained to exactly ONE token, so what follows is a boundary rather than an
+  // estimate: the refusal has one token to spend and nothing to spare.
+  for (let i = 0; i < limit - 1; i += 1) {
+    expect((await bucket.consume(limit, refillPerSecond)).success).toBe(true);
+  }
+
+  const { result, handlerRan } = await callScopeProbe({
+    name: PROBE,
+    cost: 'expensive',
+    grant: null,
+  });
+
+  // The caller-visible half, which already held and is asserted anyway: it is
+  // what the two halves below are worth having ALONGSIDE. An early return in
+  // `invoke` answers these three exactly as the guarded branch does, so a
+  // suite that stopped here would be green against the one regression this
+  // placement exists to prevent.
+  expect(handlerRan, 'the handler must not run for a refused scope').toBe(false);
+  expect(result.isError).toBe(true);
+  expect((result.content?.[0] as { text: string }).text).toBe(`${PROBE} requires a scoped token.`);
+
+  const row = await env.DB.prepare(
+    'SELECT tier, audience, grant_jti, outcome FROM mcp_tool_calls WHERE tool=? ORDER BY id DESC LIMIT 1',
+  )
+    .bind(PROBE)
+    .first<{ tier: string; audience: string | null; grant_jti: string | null; outcome: string }>();
+
+  // SOFT from here down, which is a deliberate choice rather than a default:
+  // the limiter spend and the audit row are the two halves of ONE sentence in
+  // define.ts, and the regression that breaks either breaks both. A hard
+  // assertion would report the first and hide the second, understating the
+  // damage to whoever is reading the failure.
+  //
+  // The bucket had one token before the call and must have none now. This is
+  // the assertion that fails if the scope check moves anywhere in front of
+  // `checkLimit`: an early return leaves that last token unspent, and this
+  // consume then succeeds.
+  expect
+    .soft(
+      (await bucket.consume(limit, refillPerSecond)).success,
+      "the refusal must have spent the last token in this tool's bucket",
+    )
+    .toBe(false);
+
+  // Optional-chained rather than `row!`, so a missing row fails these as
+  // assertions instead of throwing a TypeError that would swallow the rest.
+  expect.soft(row, 'a scope refusal must leave an audit row').not.toBeNull();
+  expect.soft(row?.outcome, 'a scope refusal is recorded as a failed call').toBe('error');
+  expect.soft(row?.tier, 'an ungranted caller is the public tier').toBe('public');
+  expect.soft(row?.audience, 'there is no audience without a grant').toBeNull();
+  expect.soft(row?.grant_jti, 'there is no granting token without a grant').toBeNull();
 });
 
 /** One `initialize`, returning the `instructions` the connection is sent. */

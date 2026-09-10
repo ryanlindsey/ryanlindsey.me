@@ -359,6 +359,14 @@ export function defineTool<A>(
           // A `ToolError` because that is the only class whose message
           // `fail` copies to the caller -- the sentence is unchanged, and the
           // row it now leaves behind reads `outcome: 'error'`.
+          //
+          // BOTH HALVES OF THAT ARE PINNED, and were not until deferred minor
+          // L624: tests/mcp-gated.test.ts reaches this branch by handing
+          // `defineTool` a registrar that captures `invoke`, and asserts the
+          // audit row AND the spent token against the bucket itself. The
+          // regression named two paragraphs up -- this check moved to an early
+          // return in `invoke` -- is the mutation those assertions were
+          // measured against, and it turns both of them red.
           if (spec.scope !== undefined && !hasScope(tc.grant, spec.scope)) {
             throw new ToolError(`${spec.name} requires a scoped token.`);
           }
