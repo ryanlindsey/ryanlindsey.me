@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.8.1...ryanlindsey-me-v1.8.2) (2026-09-10)
+
+
+### Bug Fixes
+
+* **tier:** page through every campaign and stop the audience lookup at its match ([#42](https://github.com/ryanlindsey/ryanlindsey.me/issues/42)) ([1505547](https://github.com/ryanlindsey/ryanlindsey.me/commit/150554718f9b38f2d259e733703082523d43088c))
+
 ## [1.8.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.8.0...ryanlindsey-me-v1.8.1) (2026-09-10)
 
 
