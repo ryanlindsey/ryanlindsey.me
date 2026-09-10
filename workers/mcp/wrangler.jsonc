@@ -270,16 +270,17 @@
   // string as written in the source -- here `'../../../prompts/fit.md?raw'`,
   // three levels up from src/lib/fit/, query string included. Nothing
   // normalises it against the config directory, the repo root, or `base_dir`
-  // first. MEASURED, Task 10 Step 5, one dry run per glob. The three that
-  // decide it:
+  // first. MEASURED, Task 10 Step 5, one dry run per measurement below -- the
+  // second row is one glob run twice. The three that decide it:
   //   ../../../prompts/*.md  -> MATCHES (import still without its `?raw`), so
   //                             the depth that works is the SPECIFIER's
   //   **/prompts/*.md        -> MATCHES, then NO MATCH once the `?raw` landed
   //   **/prompts/*.md?raw    -> MATCHES  <- what is used
-  // The other five changed nothing: `prompts/**/*.md` (the brief's glob),
-  // `prompts/*.md`, `**/prompts/**/*.md` and `../../prompts/*.md` each missed,
-  // all measured before the `?raw` landed, and `base_dir: "../.."` moved no
-  // result above. THE TRAP is that last miss: esbuild's ERROR MESSAGE for it
+  // Nothing else moved a result. Four more globs each missed, all measured
+  // before the `?raw` landed -- `prompts/**/*.md` (the brief's glob),
+  // `prompts/*.md`, `**/prompts/**/*.md` and `../../prompts/*.md` -- and
+  // `base_dir: "../.."` was tried as well and changed none of the rows above.
+  // THE TRAP is that last miss: esbuild's ERROR MESSAGE for it
   // says `../../prompts/fit.md` -- relative to cwd, NOT the specifier -- and
   // copying it out of the error is how the wrong depth gets written down as
   // the right one.
