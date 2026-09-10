@@ -54,15 +54,43 @@ async function rpc(method, params, token) {
     body: JSON.stringify({ jsonrpc: '2.0', id: rpcId++, method, params }),
   });
   const text = await response.text();
-  const payload =
-    text.startsWith('event:') || text.startsWith('data:')
-      ? text
-          .split('\n')
-          .find((line) => line.startsWith('data:'))
-          .slice(5)
-          .trim()
-      : text;
-  return JSON.parse(payload);
+  return JSON.parse(payloadOf(response, text));
+}
+
+/**
+ * The JSON body of a Streamable HTTP response, whether it arrived as JSON or as
+ * one SSE frame.
+ *
+ * DECIDED BY CONTENT-TYPE, not by what the first line happens to be. The version
+ * this replaces tested `text.startsWith('event:') || text.startsWith('data:')`,
+ * which is true for every fast response and false for a slow one: SSE allows a
+ * COMMENT line -- anything beginning with `:` -- and the transport sends
+ * `: keepalive` to hold the connection open. `analyze_fit` is an Opus call over
+ * the whole corpus and is slow enough to get one, so the body arrived as
+ * `: keepalive\n\nevent: message\ndata: {...}`, the prefix test said "not SSE",
+ * and the whole stream went to `JSON.parse`:
+ *
+ *   SyntaxError: Unexpected token ':', ": keepaliv"... is not valid JSON
+ *
+ * Nothing had ever exercised it. `tier` needs no token and answers fast enough
+ * that no heartbeat is sent; `fit` needs one, and no token existed until the
+ * signing-key bug in scripts/token.mjs was fixed -- so the first real `fit` run
+ * in this repo's history was also the first thing to meet a keepalive.
+ *
+ * Comment lines are skipped rather than parsed, which is what the SSE spec says
+ * to do with them, and an absent `data:` line is a thrown error naming the
+ * status rather than a `TypeError` on `undefined.slice`.
+ */
+function payloadOf(response, text) {
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.includes('text/event-stream')) return text;
+  const data = text.split('\n').find((line) => line.startsWith('data:'));
+  if (data === undefined) {
+    throw new Error(
+      `the endpoint answered ${response.status} with an event stream carrying no data line`,
+    );
+  }
+  return data.slice(5).trim();
 }
 
 /**
