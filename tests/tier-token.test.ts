@@ -37,8 +37,12 @@ test('base64url round-trips across payload lengths, not just the fixture length'
   // Padding bugs live at the class boundaries -- `toBase64Url` strips `=`
   // padding, and `fromBase64Url` has to reconstruct exactly the right amount
   // of it back -- so this varies `aud`'s length one character at a time,
-  // which walks the encoded payload's byte length through all four mod-4
-  // remainders rather than exercising only one of them four times.
+  // which walks the encoded payload's length through all three reachable
+  // mod-4 remainders (a remainder of 1 is impossible: unpadded base64url
+  // never strips three padding characters) rather than exercising only one
+  // of them five times. MEASURED: the five `auds` below produce encoded
+  // payloads of length 131, 132, 134, 135 and 164 -- remainders 3, 0, 2, 3
+  // and 0, covering all three.
   const auds = ['a', 'ab', 'abc', 'abcd', 'abcdefghijklmnopqrstuvwxyz'];
   for (const aud of auds) {
     const token = await mintToken(KEY, claims({ aud }));
