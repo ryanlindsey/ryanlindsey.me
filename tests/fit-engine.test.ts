@@ -108,12 +108,15 @@ test('extractToolInput finds the forced tool call among other content blocks', (
   // body, and a forced tool call arrives as a `tool_use` block that may sit
   // beside a `text` block the model emitted anyway.
   expect(
-    extractToolInput({
-      content: [
-        { type: 'text', text: 'here you go' },
-        { type: 'tool_use', name: 'emit_fit_report', input: { a: 1 } },
-      ],
-    }),
+    extractToolInput(
+      {
+        content: [
+          { type: 'text', text: 'here you go' },
+          { type: 'tool_use', name: 'emit_fit_report', input: { a: 1 } },
+        ],
+      },
+      'emit_fit_report',
+    ),
   ).toEqual({ a: 1 });
 });
 
@@ -126,17 +129,37 @@ test('extractToolInput skips a tool_use block that names a different tool', () =
   // `text` response through this gateway route and never a `tool_use` one.
   // Requiring an unmeasured field would fail closed on answers that are fine.
   expect(
-    extractToolInput({
-      content: [
-        { type: 'tool_use', name: 'some_other_tool', input: { a: 1 } },
-        { type: 'tool_use', name: 'emit_fit_report', input: { b: 2 } },
-      ],
-    }),
+    extractToolInput(
+      {
+        content: [
+          { type: 'tool_use', name: 'some_other_tool', input: { a: 1 } },
+          { type: 'tool_use', name: 'emit_fit_report', input: { b: 2 } },
+        ],
+      },
+      'emit_fit_report',
+    ),
   ).toEqual({ b: 2 });
   expect(
-    extractToolInput({ content: [{ type: 'tool_use', name: 'some_other_tool', input: { a: 1 } }] }),
+    extractToolInput(
+      { content: [{ type: 'tool_use', name: 'some_other_tool', input: { a: 1 } }] },
+      'emit_fit_report',
+    ),
   ).toBeNull();
-  expect(extractToolInput({ content: [{ type: 'tool_use', input: { c: 3 } }] })).toEqual({ c: 3 });
+  expect(
+    extractToolInput({ content: [{ type: 'tool_use', input: { c: 3 } }] }, 'emit_fit_report'),
+  ).toEqual({ c: 3 });
+});
+
+test('extractToolInput reads the tool name from its ARGUMENT, not from the fit engine', () => {
+  // The defect this parameter exists to prevent, pinned. The helper used to
+  // close over `emit_fit_report`, so the judge -- which forces a tool called
+  // `emit_verdict` -- had every block skipped and every verdict come back null.
+  // The first full eval run reported "the judge did not run" thirteen times.
+  const body = {
+    content: [{ type: 'tool_use', name: 'emit_verdict', input: { verdict: 'pass' } }],
+  };
+  expect(extractToolInput(body, 'emit_verdict')).toEqual({ verdict: 'pass' });
+  expect(extractToolInput(body, 'emit_fit_report')).toBeNull();
 });
 
 test('extractToolInput returns null for every shape that is not a tool call', () => {
@@ -149,7 +172,7 @@ test('extractToolInput returns null for every shape that is not a tool call', ()
     'string',
   ];
   for (const shape of bad) {
-    expect(extractToolInput(shape)).toBeNull();
+    expect(extractToolInput(shape, 'emit_fit_report')).toBeNull();
   }
 });
 

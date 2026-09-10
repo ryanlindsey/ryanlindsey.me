@@ -40,7 +40,7 @@ export const FIT_FALLBACK_MODEL = 'anthropic/claude-sonnet-5';
  * accepts: 10 §5 measured `temperature`, `top_p` and `top_k` being rejected
  * with `7003: User Input Error`, deterministically. Do not add them.
  */
-export const FIT_MAX_TOKENS = 4096;
+export const FIT_MAX_TOKENS = 8192;
 
 /** The daily breaker flag (04 §5). Any value at all means tripped. */
 export const BREAKER_KEY = 'breaker:inference';
@@ -181,7 +181,7 @@ export interface FitResult {
  * When a real tool_use envelope has been captured, this can tighten to an
  * equality check.
  */
-export function extractToolInput(raw: unknown): unknown {
+export function extractToolInput(raw: unknown, toolName: string): unknown {
   if (typeof raw !== 'object' || raw === null) return null;
   const content = (raw as { content?: unknown }).content;
   if (!Array.isArray(content)) return null;
@@ -189,7 +189,7 @@ export function extractToolInput(raw: unknown): unknown {
     if (typeof block !== 'object' || block === null) continue;
     const entry = block as { type?: unknown; name?: unknown; input?: unknown };
     if (entry.type !== 'tool_use' || entry.input === undefined) continue;
-    if (entry.name !== undefined && entry.name !== EMIT_TOOL) continue;
+    if (entry.name !== undefined && entry.name !== toolName) continue;
     return entry.input;
   }
   return null;
@@ -348,17 +348,31 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
   // `requirement_map.min(1)`; prompts/fit.md asks for five to twelve. A report
   // cut off at four -- or at one -- still parses, and the whole design rests on
   // never rendering a partial report as a whole one, because the reader cannot
-  // see what is missing. `FIT_MAX_TOKENS` has NOT been validated against a real
-  // five-to-twelve-requirement report (Task 10's probes capped at 16 tokens),
-  // so this is the guard standing in for that measurement until 04 §4's eval
-  // suite supplies it. The signal is already in the envelope; it only had to be
-  // read.
+  // see what is missing. The signal is already in the envelope; it only had to
+  // be read.
+  //
+  // THE EVAL SUITE SUPPLIED THE MEASUREMENT, 2026-09-10, which is exactly what
+  // the note here used to say it was waiting for: `FIT_MAX_TOKENS` had never
+  // been validated against a real five-to-twelve-requirement report because
+  // Task 10's probes capped at 16 tokens. The first full `npm run evals` run in
+  // this repo's history answered it -- `fit/mismatch` passed at 4096 and both
+  // `fit/strong` and `fit/partial` hit the cap and were refused by this guard.
+  // The two that failed are the two that produce LONG reports: `strong` expects
+  // at least five requirements with two rated strong, and `partial` is built to
+  // surface gaps on top of matches. So 4096 was sized for the smallest case.
+  //
+  // 8192 now, doubled rather than tuned to a measured ceiling, because the
+  // number that matters is "comfortably more than the longest report" and the
+  // suite is what tells us if it is not. If a twelve-requirement report ever
+  // trips this again, raise it again -- the guard failing loudly is the system
+  // working, and a truncated report rendered as a whole one is the outcome it
+  // exists to prevent.
   if (raw.stop_reason === 'max_tokens') {
     console.error(`fit: the model hit the ${FIT_MAX_TOKENS}-token cap and the report is truncated`);
     throw new FitUnavailable('The fit engine returned an incomplete answer. Try again shortly.');
   }
 
-  const parsed = FitReport.safeParse(extractToolInput(raw));
+  const parsed = FitReport.safeParse(extractToolInput(raw, EMIT_TOOL));
   if (!parsed.success) {
     // FAILS CLOSED. A partial report rendered as a whole one is the one
     // failure this feature cannot afford: the reader cannot see what is

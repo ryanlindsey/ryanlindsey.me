@@ -116,7 +116,13 @@ export async function judge(
   // `extractToolInput` is REUSED from the fit engine rather than copied: it
   // already handles the content-block walk and the `tool_use` filter, and a
   // second copy would be a second place for the envelope to change under us.
-  const parsed = JudgeVerdict.safeParse(extractToolInput(raw));
+  //
+  // THE TOOL NAME IS PASSED, and it has to be. That helper used to close over
+  // the fit engine's own `emit_fit_report` constant, so reusing it here skipped
+  // every `emit_verdict` block and returned null -- every verdict in the first
+  // full eval run came back as "the judge did not run". Reuse was right; reuse
+  // without reading the callee was not.
+  const parsed = JudgeVerdict.safeParse(extractToolInput(raw, EMIT_TOOL));
   if (!parsed.success) {
     // Refusing beats guessing. An unparseable verdict is a judge that did not
     // answer, and reporting it as a `fail` would turn a harness outage into a
