@@ -138,6 +138,67 @@ test('readCampaignForAudience matches on token_audience, not on id', async () =>
   expect(await readCampaignForAudience(env, 'one')).toBeNull();
 });
 
+test('listCampaigns returns [] against an empty namespace', async () => {
+  expect(await listCampaigns(kv({}))).toEqual([]);
+});
+
+test('listCampaigns pages through every KV list page, not just the first', async () => {
+  // Cloudflare KV caps a single `list` call at 1,000 keys and signals more
+  // with `list_complete: false` plus a `cursor`. A fake that returns two
+  // pages, only completing on the second, proves the loop follows the
+  // cursor instead of stopping after the first `list` call.
+  const one = toStored(fixture({ id: 'one', tokenAudience: 'one' }));
+  const two = toStored(fixture({ id: 'two', tokenAudience: 'two' }));
+  const listCalls: Array<string | undefined> = [];
+  const env: { KV_CONFIG: KVNamespace } = {
+    KV_CONFIG: {
+      list: async ({ cursor }: { cursor?: string }) => {
+        listCalls.push(cursor);
+        if (cursor === undefined) {
+          return {
+            keys: [{ name: `${CAMPAIGN_PREFIX}one` }],
+            list_complete: false,
+            cursor: 'page-two',
+          };
+        }
+        return { keys: [{ name: `${CAMPAIGN_PREFIX}two` }], list_complete: true };
+      },
+      get: async (name: string) => (name === `${CAMPAIGN_PREFIX}one` ? one : two),
+    } as unknown as KVNamespace,
+  };
+
+  const found = await listCampaigns(env);
+  expect(found.map((c) => c.id)).toEqual(['one', 'two']);
+  expect(listCalls).toEqual([undefined, 'page-two']);
+});
+
+test('readCampaignForAudience stops at the first match: it does not get entries after it', async () => {
+  const entries = ['one', 'two', 'three'].map((id) => toStored(fixture({ id, tokenAudience: id })));
+  let getCalls = 0;
+  const env: { KV_CONFIG: KVNamespace } = {
+    KV_CONFIG: {
+      list: async () => ({
+        keys: entries.map((_, i) => ({ name: `${CAMPAIGN_PREFIX}${i}` })),
+        list_complete: true,
+      }),
+      get: async (name: string) => {
+        getCalls += 1;
+        return entries[Number(name.slice(CAMPAIGN_PREFIX.length))];
+      },
+    } as unknown as KVNamespace,
+  };
+
+  getCalls = 0;
+  const first = await readCampaignForAudience(env, 'one');
+  expect(first?.id).toBe('one');
+  expect(getCalls).toBe(1); // the match is entry 0; entries 1 and 2 are never fetched
+
+  getCalls = 0;
+  const last = await readCampaignForAudience(env, 'three');
+  expect(last?.id).toBe('three');
+  expect(getCalls).toBe(3); // the match is the last entry; every earlier one had to be checked
+});
+
 test('listCampaigns drops malformed JSON, does not throw', async () => {
   // Campaign entries are hand-typed by an operator in the private repo. A
   // single JSON typo (e.g. trailing comma) throws when KV parses it. The
