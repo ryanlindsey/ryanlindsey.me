@@ -632,6 +632,10 @@ test('/llms.txt carries a Case studies section listing every published case stud
   // omission rule is working.
   expect(page).toContain('## Resume');
   expect(page).toContain('## MCP');
+  // Day 6: the site's own interactive surfaces. `/fit` is NOT here and must not
+  // be -- it is unlisted by requirement (09 §1), pinned separately below.
+  expect(page).toContain('## Site');
+  expect(page).toContain('https://ryanlindsey.me/chat');
   expect(page).toContain('## Full content');
 });
 
@@ -690,6 +694,7 @@ test('buildLlmsTxt omits a heading entirely when its link list is empty', () => 
     summary: 'A test summary.',
     resume: [],
     mcp: [],
+    site: [],
     posts: [],
     caseStudies: [],
     full: [],
@@ -715,6 +720,7 @@ test('buildLlmsTxt lists a published entry with its .md URL and one-line descrip
     // example a reader copies, so shipping the known-wrong URL in one -- in the
     // same file that asserts the right one twice -- is worth the two words.
     mcp: [{ title: 'MCP server', url: 'https://mcp.ryanlindsey.me/mcp', description: 'x' }],
+    site: [{ title: 'Ask my agent', url: 'https://ryanlindsey.me/chat', description: 'x' }],
     posts: [fixturePost],
     caseStudies: [],
     full: [

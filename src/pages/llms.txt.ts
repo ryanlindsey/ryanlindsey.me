@@ -103,6 +103,26 @@ const MCP_LINKS: LlmsLink[] = [
 ];
 
 /**
+ * The site's own interactive surfaces (day 6).
+ *
+ * Unconditional, like RESUME_LINKS and MCP_LINKS: `/chat` is an on-demand route
+ * that always exists. `/fit` is deliberately ABSENT and stays that way -- it is
+ * unlisted by requirement (09 §1), and tests/pages.test.ts pins that.
+ *
+ * PR 2 adds `/ops` and `/ai-policy` here in the same edit that puts them in the
+ * nav; neither exists yet, and listing a route that 404s would be worse than
+ * listing nothing.
+ */
+const SITE_LINKS: LlmsLink[] = [
+  {
+    title: 'Ask my agent',
+    url: `${SITE_ORIGIN}/chat`,
+    description:
+      'A grounded chat over everything published here: it answers from the résumé, the case studies and the posts, and cites the page each claim comes from.',
+  },
+];
+
+/**
  * The bulk-ingest corpus (fix round 2). `/llms-full.txt` had no inbound link
  * from anywhere on the site, while src/pages/llms-full.txt.ts,
  * src/components/SiteFooter.astro and tests/pages.test.ts each explained their
@@ -142,6 +162,7 @@ export const GET: APIRoute = async () => {
     summary: resume.basics.summary,
     resume: RESUME_LINKS,
     mcp: MCP_LINKS,
+    site: SITE_LINKS,
     posts: posts.sort(byPublishedDesc).map(markdownLinkFor),
     caseStudies: caseStudies.sort(byPublishedDesc).map(markdownLinkFor),
     full: FULL_CONTENT_LINKS,
