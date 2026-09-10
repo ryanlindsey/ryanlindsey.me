@@ -1,0 +1,39 @@
+-- A partial index for the audit trail's grant_jti lookup (day-5
+-- deferred-minors register, item 3). Like 0001 and 0002, this schema change
+-- is a published governance artifact (06 §2).
+--
+-- `grant_jti` (0002) is NULL on every public-tier call -- a schema fact. Public
+-- tier is presumably most of today's traffic, but that is reasoning, not
+-- something this credential-free harness measured, and the argument below
+-- does not depend on it: the full index this replaces stored one entry per
+-- NULL row, and none of those entries was ever looked up, whatever the mix of
+-- public- to private-tier traffic actually is -- a revocation query is always
+-- `grant_jti = <a specific jti>`, which by definition is never NULL. Indexing
+-- only the rows a lookup can ever match is cheaper to store and to maintain
+-- for the same query.
+--
+-- The register that raised this also named `idx_access_tokens_audience` as a
+-- second mostly-NULL index worth the same treatment. That half is FALSE:
+-- `access_tokens.audience` is declared NOT NULL (0002) and always has been,
+-- so that index has no NULL entries to exclude and is deliberately untouched
+-- here. Recording the correction stops the next reader re-opening it.
+--
+-- MEASURED, not assumed (node:sqlite's DatabaseSync, an in-memory database
+-- built from 0001 + 0002 + this file's DDL):
+--
+--   EXPLAIN QUERY PLAN SELECT * FROM mcp_tool_calls WHERE grant_jti = ?;
+--   -> SEARCH mcp_tool_calls USING INDEX idx_mcp_tool_calls_grant_jti (grant_jti=?)
+--
+-- confirming SQLite's planner uses the partial index for the equality lookup:
+-- `grant_jti = ?` implies `grant_jti IS NOT NULL`, which is the index's own
+-- predicate, so the plan is allowed to use it and does. As a control, the one
+-- query this index cannot serve:
+--
+--   EXPLAIN QUERY PLAN SELECT * FROM mcp_tool_calls WHERE grant_jti IS NULL;
+--   -> SCAN mcp_tool_calls
+--
+-- falls back to a full scan, which is the expected cost of indexing only the
+-- rows that are ever queried.
+DROP INDEX idx_mcp_tool_calls_grant_jti;
+CREATE INDEX idx_mcp_tool_calls_grant_jti ON mcp_tool_calls (grant_jti)
+  WHERE grant_jti IS NOT NULL;
