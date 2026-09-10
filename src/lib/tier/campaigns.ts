@@ -83,6 +83,19 @@ export function parseCampaign(raw: unknown): CampaignConfig | null {
 }
 
 /**
+ * `walkCampaigns`'s result: every entry seen (`found`) plus, when a `match`
+ * predicate was given, the entry that satisfied it (`matched`) -- captured at
+ * the moment of the match, not re-derived by the caller. A caller that only
+ * wants the match uses `matched` directly instead of re-applying its own
+ * predicate to `found`, which would restate the same test twice and would
+ * silently stop meaning "the match" if the two spellings ever drifted apart.
+ */
+interface CampaignWalk {
+  found: CampaignConfig[];
+  matched: CampaignConfig | null;
+}
+
+/**
  * Walks `campaign:*` entries in KV list order: pages through every `list`
  * call (KV caps one call at 1,000 keys and reports `list_complete` plus a
  * `cursor` for the rest -- looping on the cursor is what makes this correct
@@ -92,14 +105,15 @@ export function parseCampaign(raw: unknown): CampaignConfig | null {
  *
  * `match`, when given, ends the walk as soon as a parsed entry satisfies it
  * -- entries after the match are neither fetched nor parsed, so nothing is
- * warned about them. `listCampaigns` omits `match` and always sees every
- * entry, including every warning; `readCampaignForAudience` passes one and
- * accepts that trade (see its own comment for why).
+ * warned about them -- and returns that entry as `matched`. `listCampaigns`
+ * omits `match` and always sees every entry, including every warning;
+ * `readCampaignForAudience` passes one and accepts that trade (see its own
+ * comment for why).
  */
 async function walkCampaigns(
   env: CampaignEnv,
   match?: (campaign: CampaignConfig) => boolean,
-): Promise<CampaignConfig[]> {
+): Promise<CampaignWalk> {
   const found: CampaignConfig[] = [];
   let cursor: string | undefined;
   for (;;) {
@@ -121,9 +135,9 @@ async function walkCampaigns(
         continue;
       }
       found.push(parsed);
-      if (match?.(parsed)) return found;
+      if (match?.(parsed)) return { found, matched: parsed };
     }
-    if (page.list_complete) return found;
+    if (page.list_complete) return { found, matched: null };
     cursor = page.cursor;
   }
 }
@@ -134,7 +148,7 @@ async function walkCampaigns(
  * disappear, and the dropped one is logged where an operator will see it.
  */
 export async function listCampaigns(env: CampaignEnv): Promise<CampaignConfig[]> {
-  return walkCampaigns(env);
+  return (await walkCampaigns(env)).found;
 }
 
 /**
@@ -183,6 +197,5 @@ export async function readCampaignForAudience(
   env: CampaignEnv,
   audience: string,
 ): Promise<CampaignConfig | null> {
-  const walked = await walkCampaigns(env, (c) => c.tokenAudience === audience);
-  return walked.find((c) => c.tokenAudience === audience) ?? null;
+  return (await walkCampaigns(env, (c) => c.tokenAudience === audience)).matched;
 }
