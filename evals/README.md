@@ -47,6 +47,15 @@ hold above.
 `--silent` is load-bearing: without it `npm run` prepends its own banner lines to
 **stdout**, and the command substitution folds them into the token.
 
+**A full run takes a few minutes, deliberately.** Cases are paced three seconds
+apart and a refused call is retried up to four times with a rising backoff. That
+is not politeness: AI Gateway's Unified Billing has its own **wholesale** rate
+limit, separate from the per-gateway limit in the dashboard and not published by
+Cloudflare, and it binds at the volume one run produces. Exceeding it returns
+`2018: Invalid User Credentials` — an auth error's wording on a rate-limit
+fault — which the endpoint reports as `unreachable`. If you see a burst of those,
+it is the ceiling and not the prompt.
+
 **`--days 1`, not 30.** This token admits its holder to `POST /chat` and to
 `judge_answer`, so it is a frontier-model credential — and its value cannot be
 recovered once the process that minted it is gone. A long window on an

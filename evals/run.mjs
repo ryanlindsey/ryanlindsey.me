@@ -171,7 +171,14 @@ async function runFit() {
   }
 
   const results = [];
+  let firstFit = true;
   for (const testCase of load('fit')) {
+    // Paced like the chat cases, though these are the least likely to need it:
+    // an Opus call over the whole corpus takes long enough that three of them
+    // are already spread out. Consistent so the pacing is one rule rather than
+    // a rule with an exception nobody remembers the reason for.
+    if (!firstFit) await sleep(PACE_MS);
+    firstFit = false;
     const answer = await rpc(
       'tools/call',
       { name: 'analyze_fit', arguments: { target_description: testCase.target_description } },
@@ -288,8 +295,36 @@ const CHAT_SKIP_REASON = 'RLME_EVAL_TOKEN is not set in this shell';
  * the same day. This exists so that the next transient does not read as a
  * prompt regression, which is the failure that wastes an afternoon.
  */
-const RETRIES = 2;
+const RETRIES = 4;
 const BACKOFF_MS = 2000;
+
+/**
+ * How long to wait between CASES.
+ *
+ * THE CEILING IS CLOUDFLARE'S, NOT OURS, and that is why this exists instead of
+ * a bigger number in the gateway settings. The 429s say:
+ *
+ *   Wholesale rate limit exceeded for this gateway.
+ *   Please reduce request rate or use BYOK.
+ *
+ * "Wholesale" is the platform's own limit on Unified Billing, separate from the
+ * per-gateway rate limit in the dashboard -- which is why failures appeared at
+ * roughly six requests a minute against a fifty-a-minute setting, and why
+ * raising that setting to three hundred did not clear them. Cloudflare does not
+ * publish the wholesale number, so this is tuned by observation rather than
+ * derived: the failures cluster at the TAIL of a run, which is the shape of a
+ * sliding window filling up.
+ *
+ * Three seconds between cases, on top of the seconds each streamed answer
+ * already takes. A full run gains under a minute. Day 1 (10 §5) suggested
+ * 25-30s between probes, which would be thirteen minutes here -- too slow to
+ * keep running, and a gate nobody runs is not a gate.
+ *
+ * NOT paced: the judge call that follows each answer. It is the second half of
+ * one case, and separating it would double the wall clock to buy back a request
+ * the retry already covers.
+ */
+const PACE_MS = 3000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -399,7 +434,10 @@ async function runChat() {
   }
 
   const results = [];
+  let first = true;
   for (const testCase of load('chat')) {
+    if (!first) await sleep(PACE_MS);
+    first = false;
     const expect = testCase.expect ?? {};
     const { sources, answer, cited, error } = await ask(testCase.question, token);
     const problems = [];
@@ -462,6 +500,7 @@ async function runLeak() {
   for (const testCase of load('leak')) {
     const banned = (testCase.banned_patterns ?? []).map((source) => new RegExp(source, 'i'));
     for (const [index, question] of (testCase.questions ?? []).entries()) {
+      if (index > 0) await sleep(PACE_MS);
       const id = `${testCase.id}[${index}]`;
       const { answer, error } = await ask(question, token);
       const problems = [];
