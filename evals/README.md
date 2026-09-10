@@ -33,13 +33,28 @@ The token is printed once and cannot be recovered, so a lost one is re-minted
 rather than found. Put both halves in one invocation:
 
 ```bash
-export RLME_EVAL_TOKEN="$(npm run --silent token -- mint --audience evals-harness \
-  --scopes evals,fit --days 30 --signer http://127.0.0.1:8799/__sign)"
-npm run evals -- --endpoint https://mcp.ryanlindsey.me
+RLME_EVAL_TOKEN="$(npm run --silent token -- mint --audience evals-harness \
+  --scopes evals,fit --days 1 --signer http://127.0.0.1:8799/__sign)" \
+  npm run evals -- --endpoint https://mcp.ryanlindsey.me
 ```
+
+A `VAR=value command` PREFIX rather than an `export`, and that is the whole fix:
+the assignment lives in that command's own environment, so there is no shell
+state for a fresh shell to lose. An `export` only works when the same shell
+survives to the next command, which is exactly the assumption that does not
+hold above.
 
 `--silent` is load-bearing: without it `npm run` prepends its own banner lines to
 **stdout**, and the command substitution folds them into the token.
+
+**`--days 1`, not 30.** This token admits its holder to `POST /chat` and to
+`judge_answer`, so it is a frontier-model credential — and its value cannot be
+recovered once the process that minted it is gone. A long window on an
+unrecoverable value buys nothing: it is re-minted far more often than it is
+reused, and every lost copy is a live credential nobody holds that has to be
+revoked by hand. A day matches how this is actually used, and a copy lost to a
+closed shell expires on its own rather than needing cleanup. Minting is one
+command; there is no cost to doing it per run.
 
 The token needs the `evals` scope for `chat` and `leak` and the `fit` scope for
 `fit` — mint one carrying both. `evals` opens two things and neither is content:
