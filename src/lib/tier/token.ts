@@ -13,7 +13,7 @@
 // audience-specific meaning arrives as runtime data, never as code.
 
 /** What a grant may reach. A closed set: an unknown scope is a malformed token. */
-export type Scope = 'fit' | 'profile' | 'documents' | 'narrative';
+export type Scope = 'fit' | 'profile' | 'documents' | 'narrative' | 'evals';
 
 /**
  * Every scope, in the order `scripts/token.mjs` prints them.
@@ -28,6 +28,17 @@ export const SCOPES = [
   'profile',
   'documents',
   'narrative',
+  /**
+   * Day 6. The eval harness's own scope. It opens two things, and neither is
+   * content: admission to `POST /chat` for a caller that cannot solve a bot
+   * challenge, and the `judge_answer` tool that 04 §4's LLM-judge scoring runs
+   * through. The harness is a Node script on the owner's machine holding no
+   * inference credential -- the Anthropic key lives in AI Gateway and never
+   * leaves Cloudflare (10 §3.1) -- so everything it needs has to be reachable
+   * over HTTP, and a scoped grant is this repo's existing mechanism for
+   * exposing something without publishing that it exists.
+   */
+  'evals',
 ] as const satisfies readonly Scope[];
 
 /**

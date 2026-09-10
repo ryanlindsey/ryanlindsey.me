@@ -169,7 +169,10 @@ test('newJti is 128 bits of base64url and does not repeat', () => {
 });
 
 test('SCOPES is the closed set the rest of the tier keys on', () => {
-  expect([...SCOPES]).toEqual(['fit', 'profile', 'documents', 'narrative']);
+  // `evals` is day 6's, and it is the first member that gates no CONTENT: it
+  // admits the eval harness to POST /chat (which cannot solve a bot challenge)
+  // and to the judge tool. Order matters -- scripts/token.mjs prints them in it.
+  expect([...SCOPES]).toEqual(['fit', 'profile', 'documents', 'narrative', 'evals']);
 });
 
 test('isScope accepts exactly the members of SCOPES', () => {

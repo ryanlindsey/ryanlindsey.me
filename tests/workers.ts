@@ -187,6 +187,31 @@ export const MCP_WORKER = {
      * workers/mock-ai's own doc comment asks for.
      */
     FIT_ENGINE: 'off',
+    /**
+     * Day 6's chat engine (src/lib/chat/engine.ts's `startAnswer`), off. The
+     * same seam shape and the same cause as `FIT_ENGINE` above, doubled: the
+     * `AI` override below is a service binding, so `env.AI.run()` is a
+     * TypeError here, AND `VECTORIZE` throws `needs to be run remotely` under
+     * miniflare -- so retrieval could not run even if the model could.
+     *
+     * `startAnswer` refuses on this seam AFTER its shape checks and before the
+     * breaker, the corpus or the model. That order is load-bearing for
+     * tests/chat-endpoint.test.ts: the `empty` and `too-long` refusals are
+     * reachable there precisely because the seam is not checked first.
+     */
+    CHAT_ENGINE: 'off',
+    /**
+     * Day 6. `POST /chat` verifies its own bot check (workers/mcp/src/chat.ts),
+     * so this Worker needs the same seam `SITE_WORKER` already carries and for
+     * the same two reasons: the harness has no populated local secrets store,
+     * and it has no outbound access to challenges.cloudflare.com.
+     *
+     * The stub still REFUSES AN ABSENT TOKEN -- `verifyTurnstile` checks for
+     * one before the stub short-circuit, deliberately -- which is what keeps
+     * the endpoint's `bot-check` branch reachable by a test rather than
+     * hidden behind the seam.
+     */
+    RLME_TURNSTILE_MODE: 'stub',
   },
   bindingOverrides: { AI: 'mock-ai' },
 };
