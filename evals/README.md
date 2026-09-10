@@ -22,12 +22,40 @@ npm run evals -- --endpoint http://127.0.0.1:8787 --suite tier --no-record
 in your own shell; it is never an argument and is never printed. Without it
 those suites **skip loudly** and report nothing as passed.
 
+**Mint and run in the SAME shell invocation.** "Your own shell" above means a
+terminal where state persists between commands — and several ways of running
+these do not have one. Claude Code's `!` prefix, `ssh host '…'`, a CI `run:`
+step and most task runners each execute in a fresh shell, so an `export` in one
+command is gone by the next, and the run that follows reports `RLME_EVAL_TOKEN is
+not set in this shell` seconds after you watched the export succeed.
+
+The token is printed once and cannot be recovered, so a lost one is re-minted
+rather than found. Put both halves in one invocation:
+
+```bash
+export RLME_EVAL_TOKEN="$(npm run --silent token -- mint --audience evals-harness \
+  --scopes evals,fit --days 30 --signer http://127.0.0.1:8799/__sign)"
+npm run evals -- --endpoint https://mcp.ryanlindsey.me
+```
+
+`--silent` is load-bearing: without it `npm run` prepends its own banner lines to
+**stdout**, and the command substitution folds them into the token.
+
 The token needs the `evals` scope for `chat` and `leak` and the `fit` scope for
 `fit` — mint one carrying both. `evals` opens two things and neither is content:
 admission to `POST /chat`, which this process cannot get past a bot challenge to
 reach, and the gated `judge_answer` tool. See `scripts/token.mjs` for how a mint
 works, which is less obvious than it looks: the signing key is readable only
 inside a Worker.
+
+A token minted and then lost to a non-persisting shell is a live, registered
+credential nobody holds. Revoke it rather than leaving it to expire —
+`npm run token -- list` shows the jti, and the `minted …` line the mint wrote to
+stderr carries it too:
+
+```bash
+npm run token -- revoke --jti <jti>
+```
 
 `leak` runs LAST, deliberately. It is the private-tier disclosure gate, and a failure
 there should be the last thing on screen rather than scrolled past. **A red
