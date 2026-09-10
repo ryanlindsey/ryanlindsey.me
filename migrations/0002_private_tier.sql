@@ -51,16 +51,16 @@ CREATE INDEX idx_access_tokens_audience ON access_tokens (audience);
 -- caller's pasted text is retained; /ai-policy (06 §2) must say so, and the
 -- retention window is the one this table's cleanup enforces.
 CREATE TABLE fit_reports (
-  id                 TEXT PRIMARY KEY,
-  created_at         TEXT NOT NULL,
+  id                 TEXT    PRIMARY KEY,
+  created_at         TEXT    NOT NULL,
   -- The audience of the grant that generated it. NOT NULL: a fit report cannot
   -- be produced without a grant, so a NULL here would mean the tier check was
   -- bypassed and the row is evidence of a bug.
-  audience           TEXT NOT NULL,
-  model              TEXT NOT NULL,
-  target_description TEXT NOT NULL,
+  audience           TEXT    NOT NULL,
+  model              TEXT    NOT NULL,
+  target_description TEXT    NOT NULL,
   -- The validated report, exactly as `/fit/r/<id>` renders it.
-  report_json        TEXT NOT NULL,
+  report_json        TEXT    NOT NULL,
   -- How many citations were checked and how many were dropped for not
   -- resolving to a real corpus URL (03 §4). A non-zero `dropped` is the
   -- signal that the prompt is fabricating, and it belongs beside the report

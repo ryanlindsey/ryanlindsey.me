@@ -19,7 +19,8 @@ export interface AuditRow {
   /** The grant's audience label. NULL on the public tier, always, forever. */
   audience: string | null;
   /**
-   * The `jti` of the token that authorised the call. NULL on the public tier.
+   * The `jti` of the token that authorised the call. NULL on the public
+   * tier, always, forever.
    *
    * Separate from `audience` because they answer different questions: an
    * audience names a campaign and outlives any one token, while this names
