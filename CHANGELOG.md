@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.7.0...ryanlindsey-me-v1.8.0) (2026-09-10)
+
+
+### Features
+
+* **tier:** add an isScope guard and correct the token format's comments ([#40](https://github.com/ryanlindsey/ryanlindsey.me/issues/40)) ([84703da](https://github.com/ryanlindsey/ryanlindsey.me/commit/84703da5d399213bd63c440a19bcb4029246c235))
+
 ## [1.7.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.6.0...ryanlindsey-me-v1.7.0) (2026-09-10)
 
 
