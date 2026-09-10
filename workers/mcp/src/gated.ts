@@ -89,6 +89,34 @@ interface GatedTool {
 }
 
 /**
+ * The fields `defineTool` declares that come from the TABLE, spelled ONCE.
+ *
+ * Four `register` closures used to write `name`, `title`, `description` and
+ * `scope` out of the entry themselves (deferred minor L961). Four sites is
+ * four places a future edit can register a name the instruction map is not
+ * built from. tests/mcp-gated.test.ts's agreement test would catch it, which
+ * makes that a NARROWER divergence site than the hand-maintained name list
+ * `GATED_TOOL_NAMES` replaced -- narrower, not none. They read this instead,
+ * so the registered spelling and the mapped one are one expression rather
+ * than four copies of it.
+ *
+ * Returns ONLY those four, and that is what makes spreading the RESULT safe
+ * where spreading the ENTRY is not: `defineTool` should be given what it
+ * declares and nothing else, and a `GatedTool` also carries this module's
+ * `summary` and `register`. `cost` and `inputSchema` are deliberately absent
+ * -- they are not in the table, and each call site is the only thing that
+ * knows its own.
+ */
+function specOf(tool: GatedTool): Pick<GatedTool, 'name' | 'title' | 'description' | 'scope'> {
+  return {
+    name: tool.name,
+    title: tool.title,
+    description: tool.description,
+    scope: tool.scope,
+  };
+}
+
+/**
  * One document tool. A local helper rather than five copies, and the shape is
  * the same every time: resolve a key, read it, hand back markdown.
  *
@@ -101,9 +129,13 @@ interface GatedTool {
  * at all, so the two cannot say different things. Passing a scope that came
  * from anywhere else would reopen the hole.
  *
- * The spec is picked from the entry field by field rather than spread:
- * `defineTool` should be given what it declares and nothing else, and a spread
- * would hand the SDK this module's `summary` and `register` as well.
+ * The four table-derived fields come from `specOf` rather than being written
+ * out here, and the spread below is of THAT narrow object rather than of the
+ * entry. The rule it used to be justified by is unchanged -- `defineTool`
+ * should be given what it declares and nothing else, and spreading a
+ * `GatedTool` would hand the SDK this module's `summary` and `register` as
+ * well -- but a helper that returns only the four satisfies it without the
+ * field-by-field copy, at every call site rather than at this one.
  */
 function defineDocumentTool(
   server: McpServer,
@@ -115,11 +147,8 @@ function defineDocumentTool(
     server,
     tc,
     {
-      name: tool.name,
-      title: tool.title,
-      description: tool.description,
+      ...specOf(tool),
       cost: 'cheap',
-      scope: tool.scope,
     },
     async (_args, tc) => {
       const text = await readPrivateDoc(tc.env, key);
@@ -349,11 +378,8 @@ const GATED_TOOLS: readonly GatedTool[] = [
         server,
         tc,
         {
-          name: tool.name,
-          title: tool.title,
-          description: tool.description,
+          ...specOf(tool),
           cost: 'cheap',
-          scope: tool.scope,
           inputSchema: CASE_STUDY_INPUT,
         },
         async ({ slug }, tc) => {
@@ -384,11 +410,8 @@ const GATED_TOOLS: readonly GatedTool[] = [
         server,
         tc,
         {
-          name: tool.name,
-          title: tool.title,
-          description: tool.description,
+          ...specOf(tool),
           cost: 'cheap',
-          scope: tool.scope,
         },
         async (_args, tc) => {
           // The audience comes from the SIGNED claim, so a caller cannot ask
@@ -458,16 +481,13 @@ const GATED_TOOLS: readonly GatedTool[] = [
         server,
         tc,
         {
-          name: tool.name,
-          title: tool.title,
-          description: tool.description,
+          ...specOf(tool),
           // The only `expensive` tool in the server, and the only one anywhere
           // in this repo that spends inference at a frontier model's price:
           // one call over the whole corpus per invocation. Six per five
           // minutes, and the reasoning for that shape is in `LIMITS`
           // (src/lib/mcp/limits.ts).
           cost: 'expensive',
-          scope: tool.scope,
           inputSchema: FIT_INPUT,
         },
         async ({ target_description }, tc) => {
