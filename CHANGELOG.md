@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.8.0...ryanlindsey-me-v1.8.1) (2026-09-10)
+
+
+### Performance
+
+* **db:** make the audit trail's grant_jti index partial ([#41](https://github.com/ryanlindsey/ryanlindsey.me/issues/41)) ([d88dc75](https://github.com/ryanlindsey/ryanlindsey.me/commit/d88dc75a9b15b864ffaecc1590576ab7038a38bd))
+
 ## [1.8.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.7.0...ryanlindsey-me-v1.8.0) (2026-09-10)
 
 
