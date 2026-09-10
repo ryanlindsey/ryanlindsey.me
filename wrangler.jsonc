@@ -149,12 +149,24 @@
   // additionalProperties: false, and it is not inherited by named environments.
   "browser": { "binding": "BROWSER" },
 
-  // 05:17 UTC daily, and now the résumé-PDF job alone: the corpus refresh that
-  // used to share this trigger moved to workers/mcp/wrangler.jsonc with the
-  // bindings it runs on (see the note below). The handler is a no-op unless the
-  // résumé source hash has moved (see src/lib/resume-pdf.ts), so the
-  // steady-state cost is one KV read.
-  "triggers": { "crons": ["17 5 * * *"] },
+  // 05:17 UTC daily, the résumé-PDF job: the corpus refresh that used to share
+  // this trigger moved to workers/mcp/wrangler.jsonc with the bindings it runs
+  // on (see the note below). The handler is a no-op unless the résumé source
+  // hash has moved (see src/lib/resume-pdf.ts), so the steady-state cost is one
+  // KV read.
+  //
+  // 05:47 UTC daily, the retention sweep (day 6, 06 §2). A SECOND SLOT rather
+  // than a second job on the same trigger, for the reason
+  // workers/mcp/wrangler.jsonc already records about its own 05:32: separated
+  // slots make a cron failure attributable on sight rather than by reading which
+  // handler threw. Thirty minutes after the PDF job, because the two are
+  // independent and there is no reason to have them contend.
+  //
+  // These two expressions are matched STRING FOR STRING by the `switch` in
+  // src/worker.ts's `scheduled()`. Editing one without the other leaves the
+  // handler matching nothing; the switch's `default` arm is what makes that
+  // loud rather than a silent pair of jobs that stopped running.
+  "triggers": { "crons": ["17 5 * * *", "47 5 * * *"] },
 
   // NO `ai` AND NO `vectorize` BINDING HERE, AND THAT IS A BUILD CONSTRAINT
   // RATHER THAN A STATEMENT ABOUT NEED. Both moved to workers/mcp/wrangler.jsonc

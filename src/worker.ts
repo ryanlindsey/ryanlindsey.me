@@ -1,6 +1,7 @@
 import { handle } from '@astrojs/cloudflare/handler';
 import { NOT_FOUND_PROBE } from './lib/not-found-probe';
 import { regenerateResumePdf } from './lib/resume-pdf';
+import { enforceRetention } from './lib/retention';
 
 /**
  * The site's Worker entry.
@@ -425,8 +426,26 @@ export default {
   },
 
   /**
-   * The daily job (see `triggers.crons` in wrangler.jsonc): the résumé-PDF
-   * refresh (Task 5), and now only that.
+   * The daily jobs (see `triggers.crons` in wrangler.jsonc), dispatched on which
+   * trigger fired.
+   *
+   * 05:17 UTC is the résumé-PDF refresh (Task 5). It is hash-gated, and that is
+   * the whole point of running it on a schedule at all: `regenerateResumePdf`
+   * does not touch a browser unless the résumé source hash has moved. The steady
+   * state of this cron is one KV read, so cost scales with content changing
+   * rather than with days elapsed.
+   *
+   * 05:47 UTC is the retention sweep (day 6, 06 §2). A SECOND SLOT rather than a
+   * second call on the same trigger, for the reason workers/mcp/wrangler.jsonc
+   * already records about its own 05:32: separated slots make a cron failure
+   * attributable on sight rather than by reading which handler threw.
+   *
+   * `controller.cron` is the trigger's own expression, exactly as written in
+   * wrangler.jsonc -- so these two strings and that array are one fact spelled in
+   * two files, and the `default` arm is what makes a mismatch loud instead of
+   * silent. Without it, editing a cron expression in config would leave this
+   * handler matching nothing and both jobs would simply stop, with a green deploy
+   * and no error anywhere.
    *
    * The publishing corpus's embedding refresh (Task 15) ran here too until the
    * `ai` binding it needs turned out to force a remote proxy session on every
@@ -435,18 +454,29 @@ export default {
    * Vectorize, and neither was a precondition for the other -- so nothing had to
    * be untangled to separate them.
    *
-   * It is hash-gated, and that is the whole point of running it on a schedule at
-   * all: `regenerateResumePdf` does not touch a browser unless the résumé source
-   * hash has moved. The steady state of this cron is one KV read, so cost scales
-   * with content changing rather than with days elapsed.
-   *
    * NOT YET PROVEN: Astro's docs show `fetch`, `queue` and Durable Object
    * exports from this entry but carry no `scheduled()` example. It should
    * survive the adapter's build by the same `ExportedHandler` rule the others
    * do, but that is inference. Task 16 confirms the deployed Worker actually
    * lists the cron trigger.
    */
-  scheduled: (_controller, env, ctx) => {
-    ctx.waitUntil(regenerateResumePdf(env, { force: false }));
+  scheduled: (controller, env, ctx) => {
+    switch (controller.cron) {
+      case '17 5 * * *':
+        ctx.waitUntil(regenerateResumePdf(env, { force: false }));
+        return;
+      case '47 5 * * *':
+        ctx.waitUntil(
+          enforceRetention(env.DB, new Date(controller.scheduledTime)).then((deleted) => {
+            // One line naming every table, so `wrangler tail` around 05:47 shows
+            // whether the sweep ran at all -- a delete of zero rows and a delete
+            // that never happened look identical from outside.
+            console.log(`retention: ${JSON.stringify(deleted)}`);
+          }),
+        );
+        return;
+      default:
+        console.error(`scheduled: no job is registered for the cron "${controller.cron}"`);
+    }
   },
 } satisfies ExportedHandler<Env>;
