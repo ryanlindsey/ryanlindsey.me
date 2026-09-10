@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.9.0...ryanlindsey-me-v1.9.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* **evals:** pace the suite against the wholesale rate limit ([#56](https://github.com/ryanlindsey/ryanlindsey.me/issues/56)) ([f51a8bf](https://github.com/ryanlindsey/ryanlindsey.me/commit/f51a8bf3f7379ebc682ad38ea1afff66765a7b97))
+
 ## [1.9.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.8.2...ryanlindsey-me-v1.9.0) (2026-09-10)
 
 
