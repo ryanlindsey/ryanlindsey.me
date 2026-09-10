@@ -1,0 +1,262 @@
+---
+import { env } from 'cloudflare:workers';
+import Shell from '../layouts/Shell.astro';
+import Turnstile from '../components/Turnstile.astro';
+
+/**
+ * Grounded chat (04 §1). On-demand for one reason: the Turnstile sitekey is a
+ * runtime var, and a prerendered page would bake whatever value the build
+ * machine had.
+ *
+ * THE OPENERS ARE PRACTITIONER-REGISTER BY REQUIREMENT (09 §2), not by taste.
+ * They are the first thing a visitor reads and the first thing an agent
+ * summarising this page repeats, so they carry no signal about anything but
+ * the work.
+ */
+export const prerender = false;
+
+const openers = [
+  'How has Ryan scaled engineering orgs with agents?',
+  "What's this site's architecture?",
+  'Summarise his take on agent governance.',
+];
+---
+
+<Shell
+  title="Ask my agent"
+  description="A grounded chat over Ryan Lindsey's published writing, résumé and case studies — every claim cited."
+>
+  <div class="mx-auto max-w-3xl px-6 py-16">
+    <p class="mb-6 border-t border-accent pt-3 font-mono text-micro uppercase text-accent">
+      Ask my agent
+    </p>
+    <h1 class="font-display text-display text-ink">Ask about the work</h1>
+    <p class="mt-6 max-w-xl text-ink-muted">
+      This answers from what is published here — the résumé, the case studies and the posts — and
+      cites the page each claim comes from. If the corpus does not cover something, it says so
+      rather than guessing. It is the same corpus the
+      <a class="text-accent underline" href="/mcp">MCP server</a> serves, so you can query it with your
+      own agent instead.
+    </p>
+
+    <ul class="mt-8 flex flex-wrap gap-2" data-openers>
+      {
+        openers.map((opener) => (
+          <li>
+            <button
+              type="button"
+              class="border border-rule px-3 py-2 text-left font-mono text-micro text-ink-muted hover:border-accent hover:text-accent"
+              data-opener={opener}
+            >
+              {opener}
+            </button>
+          </li>
+        ))
+      }
+    </ul>
+
+    <div class="mt-10 space-y-8" data-transcript aria-live="polite" aria-atomic="false"></div>
+
+    <form class="mt-10" data-chat-form>
+      <label class="block font-mono text-micro uppercase text-ink-muted" for="question">
+        Your question
+      </label>
+      <textarea
+        id="question"
+        name="question"
+        rows="3"
+        required
+        maxlength="1000"
+        class="mt-3 w-full border border-rule bg-transparent p-4 font-mono text-small text-ink"
+        placeholder="Ask about the writing, the résumé, or how this site works."></textarea>
+
+      <Turnstile sitekey={env.RLME_TURNSTILE_SITEKEY} />
+
+      <button
+        type="submit"
+        class="border border-accent px-5 py-3 font-mono text-small uppercase text-accent hover:bg-accent-ground hover:text-accent-on"
+        data-send
+      >
+        Ask
+      </button>
+    </form>
+
+    <p class="mt-8 font-mono text-micro text-ink-muted">
+      Questions and answers are stored for 30 days so the answers can be evaluated and improved,
+      then deleted. Nothing else about you is recorded — no account, no cookie, no address. See
+      <a class="text-accent underline" href="/ai-policy">the policy</a>.
+    </p>
+
+    <noscript>
+      <p class="mt-8 border-l-2 border-accent px-4 py-3 font-mono text-small text-ink">
+        This one needs JavaScript — the bot check and the streamed answer both do. The corpus it
+        reads is plain text and needs nothing at all:
+        <a class="text-accent underline" href="/llms.txt">/llms.txt</a> is the index,
+        <a class="text-accent underline" href="/llms-full.txt">/llms-full.txt</a> is everything, and
+        <a class="text-accent underline" href="/mcp">the MCP server</a> answers the same questions over
+        a protocol.
+      </p>
+    </noscript>
+  </div>
+
+  <script>
+    import { CHAT_ERROR_COPY } from '../lib/chat/errors';
+
+    // The whole client. Deliberately small and deliberately not a framework:
+    // one fetch, one stream reader, three event names (the wire contract in
+    // workers/mcp/src/chat.ts).
+    //
+    // THE SOURCE LIST IS RENDERED FROM THE `sources` FRAME AND NOTHING ELSE.
+    // Citation numbers in the answer are linked by LOOKING UP the number in
+    // that list -- a number with no entry stays plain text. No href is ever
+    // built from anything the model wrote, which is the client half of the
+    // guarantee src/lib/chat/context.ts describes.
+    //
+    // The error copy is IMPORTED rather than reproduced, so the sentences a
+    // reader sees exist once. The frame carries a code and never a sentence
+    // (workers/mcp/src/chat.ts), which is what makes that possible.
+    interface ChatSource {
+      n: number;
+      title: string;
+      url: string;
+      exact: boolean;
+    }
+
+    // The Turnstile script (loaded by components/Turnstile.astro) hangs this on
+    // `window`, and nothing in the type graph knows that. Declared here rather
+    // than in a .d.ts because this is the only file that touches it.
+    declare global {
+      interface Window {
+        turnstile?: { reset(): void };
+      }
+    }
+
+    // `appendChild`, NEVER `append`, throughout this file -- and the reason is
+    // not style. `worker-configuration.d.ts` declares a global `Element` for
+    // HTMLRewriter whose `append(content: string | Response | ReadableStream)`
+    // MERGES with the DOM's `Element`, so `node.append(someNode)` fails
+    // `astro check` with "Argument of type 'HTMLElement' is not assignable to
+    // parameter of type 'string | Response | ReadableStream'". `appendChild`
+    // exists only on the DOM side, so it is unambiguous. Text goes through
+    // `createTextNode` for the same reason.
+    const text_ = (value: string) => document.createTextNode(value);
+
+    const form = document.querySelector<HTMLFormElement>('[data-chat-form]');
+    const transcript = document.querySelector<HTMLDivElement>('[data-transcript]');
+    const field = document.querySelector<HTMLTextAreaElement>('#question');
+    const sendButton = document.querySelector<HTMLButtonElement>('[data-send]');
+    const sessionId = crypto.randomUUID();
+
+    for (const button of document.querySelectorAll<HTMLButtonElement>('[data-opener]')) {
+      button.addEventListener('click', () => {
+        if (!field) return;
+        field.value = button.dataset.opener ?? '';
+        field.focus();
+      });
+    }
+
+    const el = (tag: string, className?: string, text?: string) => {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text) node.textContent = text;
+      return node;
+    };
+
+    /** Renders `[n]` as a link when n names a source, and as plain text when it does not. */
+    const withCitations = (text: string, sources: ChatSource[]) => {
+      const fragment = document.createDocumentFragment();
+      let last = 0;
+      for (const match of text.matchAll(/\[(\d+)\]/g)) {
+        const index = match.index ?? 0;
+        fragment.appendChild(text_(text.slice(last, index)));
+        const source = sources.find((entry) => entry.n === Number(match[1]));
+        if (source) {
+          const link = el('a', 'text-accent underline', match[0]) as HTMLAnchorElement;
+          link.href = source.url;
+          fragment.appendChild(link);
+        } else {
+          fragment.appendChild(text_(match[0]));
+        }
+        last = index + match[0].length;
+      }
+      fragment.appendChild(text_(text.slice(last)));
+      return fragment;
+    };
+
+    form?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!field || !transcript) return;
+      const question = field.value.trim();
+      if (question === '') return;
+
+      const tokenField = form.querySelector<HTMLInputElement>('[name="turnstile_response"]');
+      const token = tokenField?.value ?? '';
+      const turn = el('div', 'border-t border-rule pt-6');
+      turn.appendChild(el('p', 'font-mono text-small text-ink-muted', question));
+      const answer = el('p', 'mt-4 whitespace-pre-wrap text-ink');
+      const sourceList = el('ul', 'mt-4 space-y-1 font-mono text-micro text-ink-muted');
+      turn.appendChild(answer);
+      turn.appendChild(sourceList);
+      transcript.appendChild(turn);
+      field.value = '';
+      if (sendButton) sendButton.disabled = true;
+
+      let sources: ChatSource[] = [];
+      let text = '';
+      try {
+        const response = await fetch('/chat/send', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ question, sessionId, turnstileResponse: token }),
+        });
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('no body');
+        const decoder = new TextDecoder();
+        let buffer = '';
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const frames = buffer.split('\n\n');
+          buffer = frames.pop() ?? '';
+          for (const frame of frames) {
+            const name = frame.match(/^event: (.+)$/m)?.[1];
+            const data = JSON.parse(frame.match(/^data: (.+)$/m)?.[1] ?? '{}');
+            if (name === 'sources') {
+              sources = data.sources ?? [];
+              for (const source of sources) {
+                const item = el('li');
+                const link = el(
+                  'a',
+                  'text-accent underline',
+                  `[${source.n}] ${source.title}`,
+                ) as HTMLAnchorElement;
+                link.href = source.url;
+                item.appendChild(link);
+                if (!source.exact) item.appendChild(text_(' — opening of the document'));
+                sourceList.appendChild(item);
+              }
+            } else if (name === 'delta') {
+              text += data.text;
+              answer.replaceChildren(withCitations(text, sources));
+            } else if (name === 'error') {
+              const copy =
+                CHAT_ERROR_COPY[data.code as keyof typeof CHAT_ERROR_COPY] ??
+                CHAT_ERROR_COPY.unreachable;
+              answer.appendChild(el('p', 'mt-3 text-accent', copy));
+            }
+          }
+        }
+      } catch {
+        answer.appendChild(el('p', 'mt-3 text-accent', CHAT_ERROR_COPY.unreachable));
+      } finally {
+        if (sendButton) sendButton.disabled = false;
+        // A Turnstile response is single-use, so the widget is re-run for the
+        // next message. This is what makes "a bot check on every message"
+        // affordable instead of needing a session credential to carry the first
+        // check forward.
+        window.turnstile?.reset();
+      }
+    });
+  </script>
+</Shell>
