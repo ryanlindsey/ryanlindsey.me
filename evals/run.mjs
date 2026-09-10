@@ -295,8 +295,28 @@ const CHAT_SKIP_REASON = 'RLME_EVAL_TOKEN is not set in this shell';
  * the same day. This exists so that the next transient does not read as a
  * prompt regression, which is the failure that wastes an afternoon.
  */
-const RETRIES = 4;
-const BACKOFF_MS = 2000;
+/**
+ * ONE client retry, and the number is small because it is not the first one.
+ *
+ * THE GATEWAY ALREADY RETRIES. The `ryanlindsey-me` gateway has a retry rule --
+ * up to 4 attempts, 2s delay, exponential backoff -- so a single call from here
+ * is already up to FIVE upstream requests spread over ~30 seconds, and a failure
+ * that reaches this process is one the gateway has already given up on.
+ *
+ * Retries multiply rather than add. At the four client retries this file briefly
+ * had, one failing case became 5 x 5 = 25 upstream requests -- against a RATE
+ * LIMIT, which is the one fault retrying cannot help with. Retry is for a
+ * transient; a quota needs fewer requests, not more. That amplification is also
+ * a candidate explanation for the puzzle in 10 §5: failures appearing at ~6
+ * requests/minute of OBSERVED traffic, which gateway-level retries could be
+ * multiplying several-fold upstream.
+ *
+ * So: one attempt after the gateway has exhausted its own, after a wait long
+ * enough to be past the window rather than another go at the same second. The
+ * real remedy is `PACE_MS` below.
+ */
+const RETRIES = 1;
+const BACKOFF_MS = 10_000;
 
 /**
  * How long to wait between CASES.
@@ -315,16 +335,19 @@ const BACKOFF_MS = 2000;
  * derived: the failures cluster at the TAIL of a run, which is the shape of a
  * sliding window filling up.
  *
- * Three seconds between cases, on top of the seconds each streamed answer
- * already takes. A full run gains under a minute. Day 1 (10 §5) suggested
- * 25-30s between probes, which would be thirteen minutes here -- too slow to
- * keep running, and a gate nobody runs is not a gate.
+ * Five seconds between cases, on top of the seconds each streamed answer already
+ * takes. A full run gains about a minute. Day 1 (10 §5) suggested 25-30s between
+ * probes, which would be thirteen minutes here -- too slow to keep running, and
+ * a gate nobody runs is not a gate.
+ *
+ * PACING IS THE REAL FIX and the retry above is the fallback, not the other way
+ * round. Fewer requests is the only thing that helps a quota; see `RETRIES`.
  *
  * NOT paced: the judge call that follows each answer. It is the second half of
  * one case, and separating it would double the wall clock to buy back a request
  * the retry already covers.
  */
-const PACE_MS = 3000;
+const PACE_MS = 5000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
