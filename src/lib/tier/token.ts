@@ -186,8 +186,9 @@ function decodeClaims(segment: string): TokenClaims | null {
   // the two are told apart. Consequence, MEASURED (see `verifyToken`'s
   // `claims.v !== 1` check): every other v1 field is validated above, so
   // `'unsupported_version'` is reachable only by a payload that is v1-shaped
-  // in every respect except `v` -- the same payload with any other field also
-  // invalid is refused as `'malformed'` here instead.
+  // in every respect AND carries a `v` that is a number other than 1 -- the
+  // same payload with any other field invalid, or with a non-number `v`, is
+  // refused as `'malformed'` here instead.
   if (typeof value.v !== 'number') return null;
 
   return {
