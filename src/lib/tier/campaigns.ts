@@ -87,28 +87,33 @@ export function parseCampaign(raw: unknown): CampaignConfig | null {
  * failing the listing: one malformed entry must not make every other campaign
  * disappear, and the dropped one is logged where an operator will see it.
  *
- * Reads only the first page of KV list results (caps at 1,000 keys per call).
- * No practical risk at campaign volumes, but worth noting for future scales.
+ * Pages through every KV `list` call: KV caps one call at 1,000 keys and
+ * reports `list_complete` plus a `cursor` for the rest, so looping on the
+ * cursor is what keeps this correct past 1,000 campaigns.
  */
 export async function listCampaigns(env: CampaignEnv): Promise<CampaignConfig[]> {
-  const { keys } = await env.KV_CONFIG.list({ prefix: CAMPAIGN_PREFIX });
   const found: CampaignConfig[] = [];
-  for (const key of keys) {
-    let parsed: CampaignConfig | null = null;
-    try {
-      // get(…, 'json') throws SyntaxError on invalid JSON. Campaign entries
-      // are hand-typed by an operator running `wrangler kv key put`, so a
-      // single JSON typo takes down the entire listing. Treat it like a failed
-      // parse: warn and skip this entry, letting other campaigns through.
-      parsed = parseCampaign(await env.KV_CONFIG.get(key.name, 'json'));
-    } catch (error) {
-      console.warn(`campaigns: ${key.name} did not parse; ignoring it`);
-      continue;
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await env.KV_CONFIG.list({ prefix: CAMPAIGN_PREFIX, cursor });
+    for (const key of page.keys) {
+      let parsed: CampaignConfig | null = null;
+      try {
+        // get(…, 'json') throws SyntaxError on invalid JSON. Campaign entries
+        // are hand-typed by an operator running `wrangler kv key put`, so a
+        // single JSON typo takes down the entire listing. Treat it like a failed
+        // parse: warn and skip this entry, letting other campaigns through.
+        parsed = parseCampaign(await env.KV_CONFIG.get(key.name, 'json'));
+      } catch (error) {
+        console.warn(`campaigns: ${key.name} did not parse; ignoring it`);
+        continue;
+      }
+      if (parsed === null) console.warn(`campaigns: ${key.name} did not parse; ignoring it`);
+      else found.push(parsed);
     }
-    if (parsed === null) console.warn(`campaigns: ${key.name} did not parse; ignoring it`);
-    else found.push(parsed);
+    if (page.list_complete) return found;
+    cursor = page.cursor;
   }
-  return found;
 }
 
 /**
