@@ -171,7 +171,14 @@ async function runFit() {
   }
 
   const results = [];
+  let firstFit = true;
   for (const testCase of load('fit')) {
+    // Paced like the chat cases, though these are the least likely to need it:
+    // an Opus call over the whole corpus takes long enough that three of them
+    // are already spread out. Consistent so the pacing is one rule rather than
+    // a rule with an exception nobody remembers the reason for.
+    if (!firstFit) await sleep(PACE_MS);
+    firstFit = false;
     const answer = await rpc(
       'tools/call',
       { name: 'analyze_fit', arguments: { target_description: testCase.target_description } },
@@ -288,8 +295,65 @@ const CHAT_SKIP_REASON = 'RLME_EVAL_TOKEN is not set in this shell';
  * the same day. This exists so that the next transient does not read as a
  * prompt regression, which is the failure that wastes an afternoon.
  */
-const RETRIES = 2;
-const BACKOFF_MS = 2000;
+/**
+ * ONE client retry, and the number is small because it is not the first one.
+ *
+ * THE GATEWAY ALREADY RETRIES. The `ryanlindsey-me` gateway has a retry rule --
+ * up to 4 attempts, 2s delay, exponential backoff -- so a single call from here
+ * is already up to FIVE upstream requests spread over ~30 seconds, and a failure
+ * that reaches this process is one the gateway has already given up on.
+ *
+ * Retries compose rather than add: at the four client retries this file briefly
+ * had, one failing case was up to 5 x 5 = 25 upstream attempts. Whether those
+ * attempts each count against the wholesale rate limit is NOT DOCUMENTED --
+ * Cloudflare's request-handling page specifies the knobs (`cf-aig-max-attempts`,
+ * capped at 5) and says nothing about what triggers a retry, how a retried
+ * request is counted, or whether retry runs before or after rate limiting. So
+ * the cost of a high client retry count is known to be latency and unknown to be
+ * quota.
+ *
+ * One retry is chosen on the part that does NOT depend on that unknown: the
+ * gateway already implements this, a failure reaching here is one it has already
+ * given up on, and a second mechanism at a second layer is harder to reason
+ * about than either alone. Ten seconds so the attempt lands past the window
+ * rather than inside it.
+ *
+ * The real remedy is `PACE_MS` below. Fewer requests is the only thing that
+ * helps a quota, and unlike the above that is true whatever the counting is.
+ */
+const RETRIES = 1;
+const BACKOFF_MS = 10_000;
+
+/**
+ * How long to wait between CASES.
+ *
+ * THE CEILING IS CLOUDFLARE'S, NOT OURS, and that is why this exists instead of
+ * a bigger number in the gateway settings. The 429s say:
+ *
+ *   Wholesale rate limit exceeded for this gateway.
+ *   Please reduce request rate or use BYOK.
+ *
+ * "Wholesale" is the platform's own limit on Unified Billing, separate from the
+ * per-gateway rate limit in the dashboard -- which is why failures appeared at
+ * roughly six requests a minute against a fifty-a-minute setting, and why
+ * raising that setting to three hundred did not clear them. Cloudflare does not
+ * publish the wholesale number, so this is tuned by observation rather than
+ * derived: the failures cluster at the TAIL of a run, which is the shape of a
+ * sliding window filling up.
+ *
+ * Five seconds between cases, on top of the seconds each streamed answer already
+ * takes. A full run gains about a minute. Day 1 (10 §5) suggested 25-30s between
+ * probes, which would be thirteen minutes here -- too slow to keep running, and
+ * a gate nobody runs is not a gate.
+ *
+ * PACING IS THE REAL FIX and the retry above is the fallback, not the other way
+ * round. Fewer requests is the only thing that helps a quota; see `RETRIES`.
+ *
+ * NOT paced: the judge call that follows each answer. It is the second half of
+ * one case, and separating it would double the wall clock to buy back a request
+ * the retry already covers.
+ */
+const PACE_MS = 5000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -399,7 +463,10 @@ async function runChat() {
   }
 
   const results = [];
+  let first = true;
   for (const testCase of load('chat')) {
+    if (!first) await sleep(PACE_MS);
+    first = false;
     const expect = testCase.expect ?? {};
     const { sources, answer, cited, error } = await ask(testCase.question, token);
     const problems = [];
@@ -462,6 +529,7 @@ async function runLeak() {
   for (const testCase of load('leak')) {
     const banned = (testCase.banned_patterns ?? []).map((source) => new RegExp(source, 'i'));
     for (const [index, question] of (testCase.questions ?? []).entries()) {
+      if (index > 0) await sleep(PACE_MS);
       const id = `${testCase.id}[${index}]`;
       const { answer, error } = await ask(question, token);
       const problems = [];

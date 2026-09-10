@@ -47,6 +47,28 @@ hold above.
 `--silent` is load-bearing: without it `npm run` prepends its own banner lines to
 **stdout**, and the command substitution folds them into the token.
 
+**A full run takes a few minutes, deliberately.** Cases are paced five seconds
+apart, and a refused call gets exactly one retry after a ten-second wait. That is
+not politeness: AI Gateway's Unified Billing has its own **wholesale** rate limit,
+separate from the per-gateway limit in the dashboard and not published by
+Cloudflare, and it binds at the volume one run produces. Exceeding it returns
+`2018: Invalid User Credentials` — an auth error's wording on a rate-limit
+fault — which the endpoint reports as `unreachable`. If you see a burst of those,
+it is the ceiling and not the prompt.
+
+**Pacing is the fix; the retry is the fallback.** The gateway has its own retry
+rule (4 attempts, exponential backoff), so one call from here is already up to
+five upstream attempts and a failure reaching this process is one the gateway has
+already given up on. A second retry mechanism at a second layer is harder to
+reason about than either alone, which is why there is only one attempt here.
+
+Whether those upstream attempts each count against the wholesale limit is **not
+documented** — Cloudflare specifies the retry knobs and says nothing about what
+triggers a retry or how a retried request is counted. So raising the retry count
+here has a known cost in latency and an unknown one in quota. Pacing does not
+depend on that question: fewer requests is the only thing that helps a quota,
+whatever the counting turns out to be.
+
 **`--days 1`, not 30.** This token admits its holder to `POST /chat` and to
 `judge_answer`, so it is a frontier-model credential — and its value cannot be
 recovered once the process that minted it is gone. A long window on an
