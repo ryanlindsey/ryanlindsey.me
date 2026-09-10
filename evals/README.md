@@ -58,10 +58,16 @@ it is the ceiling and not the prompt.
 
 **Pacing is the fix; the retry is the fallback.** The gateway has its own retry
 rule (4 attempts, exponential backoff), so one call from here is already up to
-five upstream requests. Client retries multiply that rather than adding to it,
-and a rate limit is the one fault retrying cannot help with — fewer requests is
-the only thing that helps a quota. Raising the retry count here makes the
-problem worse, not better.
+five upstream attempts and a failure reaching this process is one the gateway has
+already given up on. A second retry mechanism at a second layer is harder to
+reason about than either alone, which is why there is only one attempt here.
+
+Whether those upstream attempts each count against the wholesale limit is **not
+documented** — Cloudflare specifies the retry knobs and says nothing about what
+triggers a retry or how a retried request is counted. So raising the retry count
+here has a known cost in latency and an unknown one in quota. Pacing does not
+depend on that question: fewer requests is the only thing that helps a quota,
+whatever the counting turns out to be.
 
 **`--days 1`, not 30.** This token admits its holder to `POST /chat` and to
 `judge_answer`, so it is a frontier-model credential — and its value cannot be

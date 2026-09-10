@@ -303,17 +303,23 @@ const CHAT_SKIP_REASON = 'RLME_EVAL_TOKEN is not set in this shell';
  * is already up to FIVE upstream requests spread over ~30 seconds, and a failure
  * that reaches this process is one the gateway has already given up on.
  *
- * Retries multiply rather than add. At the four client retries this file briefly
- * had, one failing case became 5 x 5 = 25 upstream requests -- against a RATE
- * LIMIT, which is the one fault retrying cannot help with. Retry is for a
- * transient; a quota needs fewer requests, not more. That amplification is also
- * a candidate explanation for the puzzle in 10 §5: failures appearing at ~6
- * requests/minute of OBSERVED traffic, which gateway-level retries could be
- * multiplying several-fold upstream.
+ * Retries compose rather than add: at the four client retries this file briefly
+ * had, one failing case was up to 5 x 5 = 25 upstream attempts. Whether those
+ * attempts each count against the wholesale rate limit is NOT DOCUMENTED --
+ * Cloudflare's request-handling page specifies the knobs (`cf-aig-max-attempts`,
+ * capped at 5) and says nothing about what triggers a retry, how a retried
+ * request is counted, or whether retry runs before or after rate limiting. So
+ * the cost of a high client retry count is known to be latency and unknown to be
+ * quota.
  *
- * So: one attempt after the gateway has exhausted its own, after a wait long
- * enough to be past the window rather than another go at the same second. The
- * real remedy is `PACE_MS` below.
+ * One retry is chosen on the part that does NOT depend on that unknown: the
+ * gateway already implements this, a failure reaching here is one it has already
+ * given up on, and a second mechanism at a second layer is harder to reason
+ * about than either alone. Ten seconds so the attempt lands past the window
+ * rather than inside it.
+ *
+ * The real remedy is `PACE_MS` below. Fewer requests is the only thing that
+ * helps a quota, and unlike the above that is true whatever the counting is.
  */
 const RETRIES = 1;
 const BACKOFF_MS = 10_000;
