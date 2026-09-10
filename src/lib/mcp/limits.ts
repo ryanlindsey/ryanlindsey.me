@@ -57,14 +57,31 @@ export const LIMITS: Record<ToolCost, { limit: number; periodSeconds: number }> 
    * `checkLimit`, keyed `chat:<ip>`, so "everything that spends inference is
    * limited" stays true with no second mechanism.
    *
-   * Twelve per five minutes rather than a per-minute cap, for the same reason
-   * `expensive` is shaped that way: a conversation is a handful of turns over
-   * several minutes, and a per-minute cap either refuses a fast follow-up or is
-   * loose enough to be no cap at all. `retryHint` derives the wait from these
-   * two numbers -- 25 seconds here -- so a refusal tells the caller something
-   * true without a second constant.
+   * Per five minutes rather than per minute, for the same reason `expensive` is
+   * shaped that way: a conversation is a handful of turns over several minutes,
+   * and a per-minute cap either refuses a fast follow-up or is loose enough to
+   * be no cap at all. `retryHint` derives the wait from these two numbers -- 10
+   * seconds here -- so a refusal tells the caller something true without a
+   * second constant.
+   *
+   * THIRTY, RAISED FROM TWELVE on 2026-09-10, and the reason is a collision
+   * rather than a judgement about visitors. A full `npm run evals` run makes
+   * exactly TWELVE `POST /chat` calls -- four chat cases plus eight leak probes
+   * -- and up to twelve `judge_answer` calls. At a limit of twelve those two
+   * buckets were consumed to the last token, so the suite passed only while
+   * nothing was added to it: a fifth chat case or a ninth probe would have
+   * started refusing, and a second run inside five minutes already did (the
+   * bucket refills at 2.4/minute).
+   *
+   * Thirty is still a sane ceiling for a person -- nobody types thirty questions
+   * in five minutes -- and it leaves the suite roughly 2.5x headroom. The eval
+   * harness shares the per-IP bucket deliberately (see workers/mcp/src/chat.ts's
+   * `checkLimit` call, which passes a null grant on purpose), so the suite's
+   * needs and a visitor's are answered by one number; if the suite keeps
+   * growing, the right fix is to give an `evals` grant its own bucket rather
+   * than to keep raising this.
    */
-  conversation: { limit: 12, periodSeconds: 300 },
+  conversation: { limit: 30, periodSeconds: 300 },
 };
 
 /**

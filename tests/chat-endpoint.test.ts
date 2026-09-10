@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { MCP_HARNESS_WORKERS } from './workers';
+import { LIMITS } from '../src/lib/mcp/limits';
 import { mintToken, newJti, type Scope, type TokenClaims } from '../src/lib/tier/token';
 import { recordIssue } from '../src/lib/tier/registry';
 import { TEST_SIGNING_KEY } from '../src/lib/tier/grant';
@@ -186,15 +187,23 @@ describe('POST /chat', () => {
     expect(Object.keys(first?.data ?? {})).toEqual(['code']);
   });
 
-  test('the limiter refuses the thirteenth message in a window', async () => {
+  test('the limiter refuses the message after the allowance is spent', async () => {
+    // DERIVED from `LIMITS.conversation`, not the literal 13 this used to hard-
+    // code. That number was right for a limit of twelve and silently wrong the
+    // moment the limit moved -- and it moved, because a full eval run consumed
+    // exactly twelve of twelve. A test that pins a behaviour should read the
+    // constant that decides it.
+    const allowance = LIMITS.conversation.limit;
     const headers = { 'cf-connecting-ip': '203.0.113.7' };
     const codes: unknown[] = [];
-    for (let i = 0; i < 13; i += 1) {
+    for (let i = 0; i <= allowance; i += 1) {
       const [first] = await frames(await post({ question: `q${i}` }, headers));
       codes.push(first?.data.code);
     }
-    expect(codes.slice(0, 12).every((code) => code === 'unreachable')).toBe(true);
-    expect(codes[12]).toBe('rate-limited');
+    // Everything up to the allowance reaches the engine (off here, so
+    // `unreachable`); the one after it is refused by the limiter instead.
+    expect(codes.slice(0, allowance).every((code) => code === 'unreachable')).toBe(true);
+    expect(codes[allowance]).toBe('rate-limited');
   });
 
   test('a refused message is audited, so /ops sees the refusal', async () => {

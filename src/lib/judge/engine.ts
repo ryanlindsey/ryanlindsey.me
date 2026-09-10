@@ -6,11 +6,21 @@ import { JUDGE_VERDICT_JSON_SCHEMA, JudgeVerdict } from '../../../workers/mcp/sr
 // a subject against criteria.
 //
 // WHY IT RUNS IN A WORKER AT ALL. `evals/run.mjs` is a Node script on the
-// owner's machine and holds no inference credential by design -- the Anthropic
-// key lives in AI Gateway BYOK and never leaves Cloudflare (10 §3.1). So the
-// judge has to be reachable over HTTP, and the safest way to expose a
-// frontier-model call is the mechanism day 5 already built: registration-time
-// scope gating, so an anonymous `tools/list` cannot see it exists.
+// owner's machine and holds no inference credential by design. There is no
+// provider key for it to hold: `env.AI.run()` bills through AI Gateway's
+// UNIFIED BILLING -- measured on day 1, `gatewayMetadata.keySource: "Unified"`,
+// and true whether the call names the gateway or passes no gateway option at
+// all (10 §5). The Worker's `AI` binding IS the credential, and a binding
+// cannot leave Cloudflare. So the judge has to be reachable over HTTP, and the
+// safest way to expose a frontier-model call is the mechanism day 5 already
+// built: registration-time scope gating, so an anonymous `tools/list` cannot
+// see it exists.
+//
+// An earlier version of this comment said the key "lives in AI Gateway BYOK".
+// That is wrong and is corrected rather than deleted, because several places in
+// the spec still say it: a BYOK provider key was configured on day 1 and has
+// never been used. The conclusion was right for the wrong reason, and the right
+// reason is stronger.
 //
 // IT KNOWS NOTHING ABOUT WHAT IT JUDGES, and that is a 09 §2 requirement rather
 // than a design preference. A judge that held an opinion about the vocabulary

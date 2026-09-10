@@ -191,7 +191,7 @@ test('every cost class states the allowance the code and the docs both quote', (
     cheap: { limit: 60, periodSeconds: 60 },
     inference: { limit: 10, periodSeconds: 60 },
     expensive: { limit: 6, periodSeconds: 300 },
-    conversation: { limit: 12, periodSeconds: 300 },
+    conversation: { limit: 30, periodSeconds: 300 },
   });
   expect(GLOBAL_LIMITS).toEqual({ chat: { limit: 500, periodSeconds: 86_400 } });
 });
@@ -205,7 +205,7 @@ test('the retry hint is one token of wait, per cost class', () => {
   expect(retryHint('cheap')).toBe('1 second');
   expect(retryHint('inference')).toBe('6 seconds');
   expect(retryHint('expensive')).toBe('50 seconds');
-  expect(retryHint('conversation')).toBe('25 seconds');
+  expect(retryHint('conversation')).toBe('10 seconds');
 });
 
 /**
