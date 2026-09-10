@@ -14,14 +14,68 @@
 // material at all and are safe to run in any session -- which is the point of
 // splitting them from `mint`.
 //
-// THE SIGNING KEY IS NEVER SEEN BY THIS SCRIPT EITHER, in the sense that
-// matters: `mint` reads it from the local Secrets Store through wrangler --
-// the one place 10 §3.4 permits a value to exist on the owner's machine --
-// into a variable that is never logged, never passed as an argument to
-// another process, and never written to disk.
+// THE SIGNING KEY CANNOT BE READ BY THIS SCRIPT, and the version of this
+// comment that stood here until 2026-09-10 said the opposite. It said `mint`
+// "reads it from the local Secrets Store through wrangler -- the one place
+// 10 §3.4 permits a value to exist on the owner's machine". That was never
+// true, and it is written out rather than quietly deleted because the mistake
+// is instructive: the design was right and the mechanism was assumed.
+//
+// A CLOUDFLARE SECRETS STORE SECRET IS WRITE-ONLY. Values go in and never come
+// back out of the API. MEASURED in wrangler 4.129.0's own source: the
+// `secrets-store secret get` handler fetches
+// `GET /accounts/{a}/secrets_store/stores/{s}/secrets/{id}` and renders a
+// METADATA TABLE -- Name, ID, StoreID, Comment, Scopes, Status, Created,
+// Modified. There is no value field, for `--secret-id`, for the older
+// `getSecretByName`, or for the local `--persist-to` path (which hands back a
+// name). The `create` command's own help says the rest of it out loud: `--value`
+// is "Only for testing. Not secure as this will leave secret value in plain-text
+// in terminal history."
+//
+// So the key is readable ONLY by a Worker, through its binding -- which is
+// exactly the property 10 §3.4 wanted, arrived at more completely than intended.
+// The consequence is that SIGNING MUST HAPPEN INSIDE A WORKER, and this script
+// cannot do it alone.
+//
+// HOW THE OLD VERSION FAILED. It fed wrangler's stdout to `mintToken` as the
+// key. Today that stdout is a usage error (`--name` was removed in favour of
+// `--secret-id`), so it throws; before that it would have been a metadata table,
+// and the script would have cheerfully signed a token with a box-drawing
+// character as its HMAC key and printed it. Every such token would verify as
+// `bad_signature` at the Worker, which reads as a key-rotation problem rather
+// than a minting one. Two facts show it had never worked: `access_tokens` was
+// empty, and no test covers this path -- every suite signs with
+// `TEST_SIGNING_KEY` through the `RLME_TOKEN_KEY_SOURCE: 'test'` seam, so the
+// seam that makes the tests possible is also what hid this.
+//
+// `--signer` IS THE SPLIT THAT RESULTS. This script still does everything it
+// can do without a credential: parse arguments, validate scopes against
+// `SCOPES`, build the claims, write the registry row, and keep the output
+// discipline below. It delegates exactly one step -- turning claims into a
+// signed token -- to a Worker reachable at `--signer`, which holds the binding.
+// Without `--signer`, `mint` REFUSES rather than guessing.
+//
+// THE SIGNER IS A TEMPORARY, LOCAL ROUTE, added for a mint and deleted before
+// committing -- the same shape as the day-6 stream-framing probe. It is not a
+// deployed surface: an endpoint whose whole job is issuing credentials deserves
+// its own threat model before it exists in production, and a mint happens a
+// handful of times a year. Paste this into `workers/mcp/src/index.ts` above the
+// `createMcpHandler` return, run `npx wrangler dev --config
+// workers/mcp/wrangler.jsonc --remote --port 8799`, mint, then delete it:
+//
+//   // TEMPORARY -- token signer. DELETE BEFORE COMMITTING.
+//   if (pathname === '/__sign' && request.method === 'POST') {
+//     return (async () => {
+//       const { mintToken } = await import('../../../src/lib/tier/token');
+//       const { signingKey } = await import('../../../src/lib/tier/grant');
+//       const claims = await request.json();
+//       return new Response(await mintToken(await signingKey(env), claims));
+//     })();
+//   }
 //
 // Usage:
-//   node scripts/token.mjs mint --audience <label> --scopes fit,profile --days 30 [--note "..."]
+//   node scripts/token.mjs mint --audience <label> --scopes fit,profile --days 30 \
+//     --signer http://127.0.0.1:8799/__sign [--note "..."]
 //   node scripts/token.mjs list
 //   node scripts/token.mjs revoke --jti <jti>
 //
@@ -29,10 +83,12 @@
 // deployed one. `mint` writes to it too.
 
 import { execFileSync } from 'node:child_process';
-import { mintToken, newJti, SCOPES, isScope } from '../src/lib/tier/token.ts';
+import { newJti, SCOPES, isScope, TOKEN_SCHEME } from '../src/lib/tier/token.ts';
 
-const STORE_ID = '3b06d2a92de642d999509352cfd3ebed';
-const SECRET_NAME = 'RLME_TOKEN_SIGNING_KEY';
+// The Secrets Store id and the signing key's name are GONE from this file, and
+// their absence is the point: this script no longer reaches for a value it
+// cannot have. Both still live in the two wrangler.jsonc files, which is where
+// a binding is declared and the only place either belongs.
 const DB = 'ryanlindsey-me-db';
 // Public (already committed in both wrangler.jsonc files); hardcoded because this login resolves two accounts and wrangler cannot pick one non-interactively.
 const ACCOUNT_ID = '1b764d090899bf1ee61a8d1e87c10710';
@@ -73,6 +129,44 @@ function arg(name, fallback) {
   return process.argv[index + 1];
 }
 
+/**
+ * Turns claims into a signed token, via a Worker that holds the binding.
+ *
+ * VALIDATED ON THE WAY BACK, because the failure this replaces was a silent
+ * one. A signer that answers with an error page, a wrangler banner or an empty
+ * body would otherwise become a "token" that fails as `bad_signature` at the
+ * far end -- indistinguishable from a rotated key, and the exact confusion that
+ * cost this script its correctness for a week. `TOKEN_SCHEME` is the cheapest
+ * thing to check that only a real mint produces.
+ */
+async function sign(signer, claims) {
+  let response;
+  try {
+    response = await fetch(signer, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(claims),
+    });
+  } catch (cause) {
+    throw new Error(
+      `the signer at ${signer} could not be reached; is \`wrangler dev --remote\` running?`,
+      { cause },
+    );
+  }
+  if (!response.ok) {
+    throw new Error(`the signer at ${signer} answered ${response.status}`);
+  }
+  const token = (await response.text()).trim();
+  if (!token.startsWith(`${TOKEN_SCHEME}.`)) {
+    throw new Error(
+      `the signer at ${signer} did not return a ${TOKEN_SCHEME} token; ` +
+        'it answered something else, and signing it into the registry would have ' +
+        'produced a credential that fails as bad_signature at the Worker.',
+    );
+  }
+  return token;
+}
+
 async function mint() {
   const audience = arg('audience');
   const days = Number(arg('days', '30'));
@@ -86,17 +180,14 @@ async function mint() {
   const unknown = scopes.filter((s) => !isScope(s));
   if (unknown.length > 0) throw new Error(`unknown scopes: ${unknown.join(', ')}`);
 
-  // Read into a local only. Never logged, never passed as an argument to
-  // another process, never written to disk.
-  const key = wrangler([
-    'secrets-store',
-    'secret',
-    'get',
-    STORE_ID,
-    '--name',
-    SECRET_NAME,
-    '--remote',
-  ]).trim();
+  const signer = arg('signer');
+  if (!signer) {
+    throw new Error(
+      '--signer is required: the signing key lives in Secrets Store and is readable only ' +
+        'by a Worker through its binding, so this script cannot sign on its own. See the ' +
+        'header of this file for the temporary /__sign route to run under `wrangler dev`.',
+    );
+  }
 
   const now = Math.floor(Date.now() / 1000);
   const claims = {
@@ -107,7 +198,7 @@ async function mint() {
     iat: now,
     exp: now + Math.round(days * 86400),
   };
-  const token = await mintToken(key, claims);
+  const token = await sign(signer, claims);
 
   d1(
     `INSERT INTO access_tokens (jti, audience, scopes, issued_at, expires_at, revoked_at, note)
