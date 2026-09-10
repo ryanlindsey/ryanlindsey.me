@@ -30,6 +30,17 @@ export const SCOPES = [
   'narrative',
 ] as const satisfies readonly Scope[];
 
+/**
+ * Type guard for `Scope`, so a caller holding an `unknown`/`string` value can
+ * narrow it against `SCOPES` without repeating the `SCOPES as readonly
+ * unknown[]` cast that `Array.prototype.includes` otherwise forces (`SCOPES`
+ * is typed as `readonly Scope[]`, and `includes` requires its argument to
+ * already be a `Scope`).
+ */
+export function isScope(value: unknown): value is Scope {
+  return (SCOPES as readonly unknown[]).includes(value);
+}
+
 /** The claims a token carries, and the whole of what it asserts. */
 export interface TokenClaims {
   v: 1;
@@ -145,6 +156,12 @@ function encodeClaims(claims: TokenClaims): string {
  * harmlessly in an array that no `hasScope` call ever matches -- harmless
  * until someone adds a scope with that name and a years-old token silently
  * acquires it.
+ *
+ * The object returned carries exactly these six known fields: any other field
+ * present in the SIGNED payload is silently dropped. Deliberate for a strict
+ * format reader, but it costs a lossless round-trip -- `verdict.claims` is not
+ * a faithful image of the signed bytes, so a future path that re-signs or
+ * persists `verdict.claims` cannot assume it gets back what was signed.
  */
 function decodeClaims(segment: string): TokenClaims | null {
   const bytes = fromBase64Url(segment);
@@ -163,14 +180,15 @@ function decodeClaims(segment: string): TokenClaims | null {
   if (typeof value.aud !== 'string' || value.aud.length === 0) return null;
   if (!Number.isSafeInteger(value.iat) || !Number.isSafeInteger(value.exp)) return null;
   if (!Array.isArray(value.scopes)) return null;
-  if (
-    !value.scopes.every((scope): scope is Scope => (SCOPES as readonly unknown[]).includes(scope))
-  ) {
-    return null;
-  }
+  if (!value.scopes.every(isScope)) return null;
   // The version is READ but not judged here: an unrecognised version is a
   // different refusal reason from a malformed one, and `verifyToken` is where
-  // the two are told apart.
+  // the two are told apart. Consequence, MEASURED (see `verifyToken`'s
+  // `claims.v !== 1` check): every other v1 field is validated above, so
+  // `'unsupported_version'` is reachable only by a payload that is v1-shaped
+  // in every respect AND carries a `v` that is a number other than 1 -- the
+  // same payload with any other field invalid, or with a non-number `v`, is
+  // refused as `'malformed'` here instead.
   if (typeof value.v !== 'number') return null;
 
   return {
@@ -195,10 +213,11 @@ export async function mintToken(key: string, claims: TokenClaims): Promise<strin
  * Verifies a token's signature, version and expiry. Says nothing about
  * revocation -- that is ./registry.ts, and ./grant.ts asks both.
  *
- * ORDER MATTERS and is deliberate: signature first, then version, then
- * expiry. Checking expiry before the signature would let an unsigned string
- * with a past `exp` come back `'expired'`, which reads as "this used to be
- * valid" about a token that never was.
+ * ORDER MATTERS and is deliberate: signature first, then decoding the claims
+ * (malformed), then version, then expiry. Checking expiry before the
+ * signature would let an unsigned string with a past `exp` come back
+ * `'expired'`, which reads as "this used to be valid" about a token that
+ * never was.
  *
  * `crypto.subtle.verify` rather than comparing digests by hand: it is the
  * platform's constant-time comparison, and a hand-rolled `===` on two hex

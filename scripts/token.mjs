@@ -29,7 +29,7 @@
 // deployed one. `mint` writes to it too.
 
 import { execFileSync } from 'node:child_process';
-import { mintToken, newJti, SCOPES } from '../src/lib/tier/token.ts';
+import { mintToken, newJti, SCOPES, isScope } from '../src/lib/tier/token.ts';
 
 const STORE_ID = '3b06d2a92de642d999509352cfd3ebed';
 const SECRET_NAME = 'RLME_TOKEN_SIGNING_KEY';
@@ -37,10 +37,10 @@ const DB = 'ryanlindsey-me-db';
 // Public (already committed in both wrangler.jsonc files); hardcoded because this login resolves two accounts and wrangler cannot pick one non-interactively.
 const ACCOUNT_ID = '1b764d090899bf1ee61a8d1e87c10710';
 
-function wrangler(args, { capture = true } = {}) {
+function wrangler(args) {
   return execFileSync('npx', ['wrangler', ...args], {
     encoding: 'utf8',
-    stdio: capture ? ['ignore', 'pipe', 'inherit'] : 'inherit',
+    stdio: ['ignore', 'pipe', 'inherit'],
     env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID },
   });
 }
@@ -83,7 +83,7 @@ async function mint() {
 
   if (!audience) throw new Error('--audience is required');
   if (!Number.isFinite(days) || days <= 0) throw new Error('--days must be a positive number');
-  const unknown = scopes.filter((s) => !SCOPES.includes(s));
+  const unknown = scopes.filter((s) => !isScope(s));
   if (unknown.length > 0) throw new Error(`unknown scopes: ${unknown.join(', ')}`);
 
   // Read into a local only. Never logged, never passed as an argument to

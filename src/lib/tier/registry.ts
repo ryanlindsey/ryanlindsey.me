@@ -6,7 +6,7 @@
 // migrations/0002_private_tier.sql for why (the audit trail's `grant_jti` has
 // no other key).
 
-import { SCOPES, type Scope } from './token';
+import { isScope, type Scope } from './token';
 
 export interface TokenRecord {
   jti: string;
@@ -41,7 +41,7 @@ function parseScopes(raw: string): Scope[] {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((scope): scope is Scope => (SCOPES as readonly unknown[]).includes(scope));
+    return parsed.filter(isScope);
   } catch {
     return [];
   }

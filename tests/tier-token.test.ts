@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'vitest';
-import { mintToken, verifyToken, newJti, SCOPES, type TokenClaims } from '../src/lib/tier/token';
+import {
+  mintToken,
+  verifyToken,
+  newJti,
+  SCOPES,
+  isScope,
+  type TokenClaims,
+} from '../src/lib/tier/token';
 
 const KEY = 'a-fixture-signing-key-not-used-anywhere-real';
 const NOW = 1_800_000_000; // epoch seconds, fixed so expiry is arithmetic rather than timing
@@ -37,8 +44,12 @@ test('base64url round-trips across payload lengths, not just the fixture length'
   // Padding bugs live at the class boundaries -- `toBase64Url` strips `=`
   // padding, and `fromBase64Url` has to reconstruct exactly the right amount
   // of it back -- so this varies `aud`'s length one character at a time,
-  // which walks the encoded payload's byte length through all four mod-4
-  // remainders rather than exercising only one of them four times.
+  // which walks the encoded payload's length through all three reachable
+  // mod-4 remainders (a remainder of 1 is impossible: unpadded base64url
+  // never strips three padding characters) rather than exercising only one
+  // of them five times. MEASURED: the five `auds` below produce encoded
+  // payloads of length 131, 132, 134, 135 and 164 -- remainders 3, 0, 2, 3
+  // and 0, covering all three.
   const auds = ['a', 'ab', 'abc', 'abcd', 'abcdefghijklmnopqrstuvwxyz'];
   for (const aud of auds) {
     const token = await mintToken(KEY, claims({ aud }));
@@ -159,4 +170,11 @@ test('newJti is 128 bits of base64url and does not repeat', () => {
 
 test('SCOPES is the closed set the rest of the tier keys on', () => {
   expect([...SCOPES]).toEqual(['fit', 'profile', 'documents', 'narrative']);
+});
+
+test('isScope accepts exactly the members of SCOPES', () => {
+  for (const scope of SCOPES) expect(isScope(scope)).toBe(true);
+  for (const notAScope of ['everything', '', 0, null, undefined]) {
+    expect(isScope(notAScope)).toBe(false);
+  }
 });
