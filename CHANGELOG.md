@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.11.0...ryanlindsey-me-v1.12.0) (2026-09-11)
+
+
+### Features
+
+* publish the first post and make the site indexable ([#66](https://github.com/ryanlindsey/ryanlindsey.me/issues/66)) ([a91a504](https://github.com/ryanlindsey/ryanlindsey.me/commit/a91a5041fe219b472cd562756fea0e419e080aa4))
+
 ## [1.11.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.10.1...ryanlindsey-me-v1.11.0) (2026-09-11)
 
 
