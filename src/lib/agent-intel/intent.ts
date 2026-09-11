@@ -28,7 +28,24 @@ export interface IntentEvent {
 }
 
 export type IntentInput =
-  | { kind: 'fit-run'; at: string; audience: string; reportId: string }
+  /**
+   * `audience` is OPTIONAL here and required on `gated-read` below, and the
+   * asymmetry is the point rather than an oversight.
+   *
+   * A fit run is observable from two places. The MCP Worker resolves the grant
+   * and knows the audience. The site Worker sees only a 303 to `/fit/r/<id>` go
+   * past, and resolving the token itself would mean a second grant verifier --
+   * the one thing `resolveGrant` exists to prevent there being two of.
+   *
+   * So the site omits the field rather than filling it. A placeholder was tried
+   * (`audience: 'unavailable-at-site'`) and is worse: `detail` renders straight
+   * into a notification email as `key=value`, so a non-label sits in the one
+   * field that otherwise always holds a real one, one careless read away from
+   * looking like an audience actually named that. An absent key reads as absent.
+   * The audience arrives in the `gated-read` event the MCP Worker queues for the
+   * same run.
+   */
+  | { kind: 'fit-run'; at: string; audience?: string; reportId: string }
   | { kind: 'private-access'; at: string; client: string }
   | { kind: 'gated-read'; at: string; tool: string; audience: string }
   | { kind: 'resume-pdf'; at: string; referrerClass: ReferrerClass }
@@ -62,7 +79,13 @@ export function highIntentFor(input: IntentInput): IntentEvent | null {
       return {
         kind: 'fit-run',
         at: input.at,
-        detail: { audience: input.audience, report: input.reportId },
+        // Spread-if-present rather than `audience: input.audience`, which would
+        // put an `undefined` value in a `Record<string, string>` -- present to
+        // `Object.entries`, and rendered into the email as `audience=undefined`.
+        detail: {
+          ...(input.audience === undefined ? {} : { audience: input.audience }),
+          report: input.reportId,
+        },
       };
     case 'private-access':
       return { kind: 'private-access', at: input.at, detail: { client: input.client } };
