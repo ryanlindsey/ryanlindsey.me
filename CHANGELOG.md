@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.13.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.13.0...ryanlindsey-me-v1.13.1) (2026-09-11)
+
+
+### Bug Fixes
+
+* **chat:** name the private tier and the contact route in the redirect ([#73](https://github.com/ryanlindsey/ryanlindsey.me/issues/73)) ([673a300](https://github.com/ryanlindsey/ryanlindsey.me/commit/673a30072de0cf09b681b0917f6a15245f73a303))
+* **fit:** compute the corpus fence instead of assuming three backticks ([#75](https://github.com/ryanlindsey/ryanlindsey.me/issues/75)) ([60b1b43](https://github.com/ryanlindsey/ryanlindsey.me/commit/60b1b43a3ab9157b575b7b76e0790549fed389dd))
+* **ops:** relabel the latency figure to what it measures ([#74](https://github.com/ryanlindsey/ryanlindsey.me/issues/74)) ([0eab927](https://github.com/ryanlindsey/ryanlindsey.me/commit/0eab927a4f1c6427d96f5bb6060c31799826686b))
+
+
+### Documentation
+
+* **chat:** correct the comment that said the model sees no URLs ([#76](https://github.com/ryanlindsey/ryanlindsey.me/issues/76)) ([262f902](https://github.com/ryanlindsey/ryanlindsey.me/commit/262f9024c738f81b196e06fd0f02f2ecb8398623))
+
 ## [1.13.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.12.0...ryanlindsey-me-v1.13.0) (2026-09-11)
 
 
