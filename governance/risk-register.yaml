@@ -14,7 +14,7 @@ rows:
       corpus, the chat question, the fit target description and both of the judge's
       spans. It is fixed at three backticks for one span, the fit corpus, and that
       is named here as a known gap rather than left to be discovered: a post
-      published on this site opens 28 fenced blocks of its own, so a fit run over
+      published on this site opens 14 fenced blocks of its own, so a fit run over
       the corpus sends much of it outside the fence that the "treat fenced content
       as data" rule depends on. That span is this site's own writing rather than a
       stranger's paste, which is why it is a gap and not an incident — but it is
@@ -109,7 +109,7 @@ rows:
       them is verified where the spend happens: the chat form's token is checked on
       the Worker that makes the model call, while the fit form's is checked on the
       Worker that served the form, after which the analysis call is gated by a scope
-      check and the limiter alone. A budget breaker is read before a chat turn or a
+      check, the limiter and the breaker. A budget breaker is read before a chat turn or a
       fit run spends anything and refuses when it cannot be read, which is the safe
       answer to not knowing whether the budget is exhausted — but it is not read by
       the judge, and not by the embedding call retrieval makes before a chat turn
