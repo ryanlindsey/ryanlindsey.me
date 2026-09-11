@@ -1,3 +1,6 @@
+import { classifyRequest, signalsFrom } from '../../../src/lib/agent-intel/classify';
+import { highIntentFor } from '../../../src/lib/agent-intel/intent';
+import { recordAgentEvent, type AgentEvent } from '../../../src/lib/agent-intel/record';
 import { citationsIn, type ChatSource } from '../../../src/lib/chat/context';
 import {
   CHAT_MODEL,
@@ -62,6 +65,36 @@ const STREAM_HEADERS = {
   'x-accel-buffering': 'no',
 };
 
+// THE ONE PLACE THIS WORKER WOULD READ CAMPAIGN DOMAINS, and does not, for the
+// identical reason src/worker.ts's own `CAMPAIGN_DOMAINS_OFF` does not: they
+// live in KV, and this route has no more cause to pay a KV read per turn than
+// the site has to pay one per request. `classifyRequest`'s campaign label is
+// therefore unavailable here; the referrer still classifies as `social` or
+// `search` where it applies.
+const CAMPAIGN_DOMAINS_OFF: readonly string[] = [];
+
+/**
+ * The AE event both `recordAgentEvent` call sites in this file share.
+ * EXTRACTED, rather than an object literal at each site, specifically so
+ * Ruling 1 (task-13a-brief.md) has something to fail against: this route's
+ * `surface` is ALWAYS the literal `'chat'`, and this function's signature
+ * does not accept a caller-supplied one -- so it cannot be confused with the
+ * `surface` local in `handleChat` below (`'site' | 'direct'`, the transcript
+ * column's own, unrelated vocabulary, which happens to share the string
+ * `'site'` with this one) the way an inline `{ ..., surface, ... }` could be
+ * confused by a future edit. Tested directly in
+ * tests/chat-endpoint.test.ts -- see that file's comment for why: neither
+ * call site's actual effect is observable under this test harness.
+ */
+export function chatAgentEvent(request: Request, status: number, durationMs: number): AgentEvent {
+  return {
+    classification: classifyRequest(signalsFrom(request), CAMPAIGN_DOMAINS_OFF),
+    surface: 'chat',
+    status,
+    durationMs,
+  };
+}
+
 function errorResponse(code: ChatErrorCode): Response {
   // 200 WITH AN ERROR FRAME, not an HTTP error status. The client is an
   // EventSource-shaped reader over `fetch`, and a non-200 gives it a body it
@@ -113,6 +146,45 @@ async function writeTranscript(env: McpEnv, row: TranscriptRow): Promise<void> {
   }
 }
 
+/**
+ * Whether `sessionId` has no `chat_turns` row yet -- i.e. whether the turn
+ * about to be answered is the first of its session, which 06 §3 treats as
+ * high intent. EXPORTED so this D1 read is directly testable: the obvious way
+ * to exercise it -- send two real turns and see the second one not counted --
+ * needs a working model call, and this endpoint's test harness cannot make
+ * one (`env.CHAT_ENGINE` is `'off'` in tests/workers.ts, which makes
+ * `startAnswer` throw before the call site below is ever reached). Seeding
+ * `chat_turns` through `env.DB` and calling this function directly is the
+ * real observation point instead.
+ *
+ * Reads rather than trusting a client-supplied flag, and the reason is
+ * concrete rather than defensive: `src/pages/chat.astro` mints its session id
+ * with `crypto.randomUUID()` once per page load and sends it from the first
+ * message onward, so there is no "the server minted this id" moment for a
+ * real client to signal -- a flag would report every turn as first.
+ *
+ * `writeTranscript` for the CURRENT turn has not run yet at the call site
+ * below -- it happens later, inside `waitUntil` -- so "no existing row for
+ * this session id" is exactly "first turn"; the query can never see its own
+ * row and double-count nothing.
+ *
+ * A failed read reports NOT first rather than throwing or guessing true. This
+ * decision's only output is an email (the high-intent fan-out), and a D1 blip
+ * that silently sends a notification is a worse failure than one that
+ * silently skips it.
+ */
+export async function firstOfSession(env: McpEnv, sessionId: string): Promise<boolean> {
+  try {
+    const row = await env.DB.prepare(`SELECT 1 FROM chat_turns WHERE session_id = ? LIMIT 1`)
+      .bind(sessionId)
+      .first();
+    return row === null;
+  } catch (error) {
+    console.error('chat: the first-of-session read failed; treating this turn as not first', error);
+    return false;
+  }
+}
+
 export async function handleChat(
   request: Request,
   env: McpEnv,
@@ -142,6 +214,7 @@ export async function handleChat(
     : ('direct' as const);
 
   const refuse = (code: ChatErrorCode, outcome: 'refused' | 'error' = 'refused') => {
+    const response = errorResponse(code);
     ctx.waitUntil(
       writeTranscript(env, {
         sessionId,
@@ -155,7 +228,14 @@ export async function handleChat(
         surface,
       }),
     );
-    return errorResponse(code);
+    // TASK 13a (2026-09-10) CLOSES THIS HALF OF THE ANALYTICS-DATAPOINT SEAM
+    // (its other half is at the end of the stream below): a refusal is still
+    // a request this route answered, and 06 §3 wants it counted the same as
+    // a served one, UNCONDITIONALLY -- see `chatAgentEvent`'s own comment for
+    // why that call, not an object literal here, is what keeps this from
+    // silently becoming the `surface` local two lines up.
+    recordAgentEvent(env, chatAgentEvent(request, response.status, Date.now() - started));
+    return response;
   };
 
   // ADMISSION, FIRST AND CHEAPEST. Ordered so the free check runs before the
@@ -230,11 +310,28 @@ export async function handleChat(
     return refuse('unreachable', 'error');
   }
 
-  // PR 2, TASK 3 ADDS THE HIGH-INTENT SEND HERE: the first turn of a session is
-  // high intent (06 §3), and this is the only place it is observable, since the
-  // site holds no state across messages. Nothing stands in for it on this
-  // branch -- `env.EVENTS` is not bound on this Worker yet and
-  // src/lib/agent-intel/intent.ts does not exist.
+  // TASK 13a (2026-09-10) CLOSES THE HIGH-INTENT SEAM HERE: the first turn of
+  // a session is high intent (06 §3), and this is the only place it is
+  // observable, since the site holds no state across messages. `startAnswer`
+  // above having just succeeded is what makes this reachable at all -- only a
+  // turn that is actually going to be answered reaches this line.
+  // `firstOfSession` (above `handleChat`) is the decision, kept out of line
+  // because Ruling 4 (task-13a-brief.md) needed room to say why a D1 read
+  // beats trusting the client; the send itself mirrors `queueFitRunIntent` in
+  // src/worker.ts.
+  //
+  // NOT REACHABLE FROM tests/chat-endpoint.test.ts: `env.CHAT_ENGINE` is
+  // `'off'` there (tests/workers.ts), so `startAnswer` always throws before
+  // this line runs and the suite always refuses upstream of here. That is
+  // exactly why `firstOfSession` is exported and asserted directly instead of
+  // through this call site -- see its own comment.
+  const first = await firstOfSession(env, sessionId);
+  const highIntent = highIntentFor({
+    kind: 'chat',
+    at: new Date().toISOString(),
+    firstOfSession: first,
+  });
+  if (highIntent !== null) ctx.waitUntil(env.EVENTS.send(highIntent));
 
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
@@ -305,8 +402,36 @@ export async function handleChat(
           surface,
         }),
       );
-      // PR 2, TASK 2 ADDS THE ANALYTICS DATAPOINT HERE (and in `refuse` above),
-      // once src/lib/agent-intel/record.ts exists.
+      // TASK 13a (2026-09-10) CLOSES THIS SEAM (its other half is in `refuse`
+      // above): one AE row per turn that reaches here, UNCONDITIONALLY --
+      // `chatAgentEvent`'s own comment (above `handleChat`) says why its
+      // `surface` is always `'chat'` and can never be this scope's `surface`.
+      //
+      // `durationMs` IS THE FULL STREAM DURATION (`Date.now() - started`),
+      // the same number the transcript row just above got, and that is a
+      // known cost rather than an oversight: it becomes `double2`, which Task
+      // 10's `quantileWeighted(0.5)(double2, _sample_interval)` uses for the
+      // sitewide p50 -- so a slow chat answer drags that number up. Truthful
+      // and consistent with the transcript beside it beats a
+      // time-to-first-byte number that would disagree with it.
+      //
+      // `status` is the literal 200 rather than something read off a
+      // `Response`: by the time this runs, the stream's `Response` (returned
+      // from `handleChat` before this callback ever ran) was already sent
+      // with the implicit 200 `STREAM_HEADERS` always carries -- see
+      // `errorResponse` above, whose "200 WITH AN ERROR FRAME" note is the
+      // same protocol decision seen from the other side.
+      //
+      // THE CALL ITSELF IS NOT ASSERTED BY A TEST: Miniflare's local
+      // Analytics Engine dataset (node_modules/miniflare/dist/src/workers/
+      // analytics-engine) is a `writeDataPoint` that does nothing at all, not
+      // even log -- there is no read-back for a test to observe, here or at
+      // any other AE call site in this repo (src/worker.ts's own is likewise
+      // unasserted). What IS covered: the event `chatAgentEvent` builds
+      // (tests/chat-endpoint.test.ts), `recordAgentEvent`'s own contract
+      // (tests/agent-record.test.ts), and that this route still answers
+      // correctly with the call in place (tests/chat-endpoint.test.ts).
+      recordAgentEvent(env, chatAgentEvent(request, 200, Date.now() - started));
     },
   });
 

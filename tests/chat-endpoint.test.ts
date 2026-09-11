@@ -1,10 +1,11 @@
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { MCP_HARNESS_WORKERS } from './workers';
 import { LIMITS } from '../src/lib/mcp/limits';
 import { mintToken, newJti, type Scope, type TokenClaims } from '../src/lib/tier/token';
 import { recordIssue } from '../src/lib/tier/registry';
 import { TEST_SIGNING_KEY } from '../src/lib/tier/grant';
+import { chatAgentEvent, firstOfSession } from '../workers/mcp/src/chat';
 import type { McpEnv } from '../workers/mcp/src/env';
 
 /**
@@ -234,5 +235,119 @@ describe('POST /chat', () => {
     expect(columns.length).toBeGreaterThan(0);
     expect(columns).not.toContain('ip');
     expect(columns).not.toContain('user_agent');
+  });
+});
+
+/**
+ * Task 13a: the two seams chat.ts closes (06 §3) -- `firstOfSession`, the
+ * high-intent decision, and `chatAgentEvent`, the shared shape both
+ * `recordAgentEvent` call sites pass. Neither is exercised by `describe('POST
+ * /chat', ...)` above: `env.CHAT_ENGINE` is `'off'` on this Worker (see
+ * MCP_WORKER in tests/workers.ts), so `startAnswer` throws before EITHER
+ * seam's call site in chat.ts runs, on every turn, regardless of admission or
+ * question validity. Both are asserted directly here instead -- see each
+ * function's own doc comment in chat.ts for why that is the real observation
+ * point rather than a workaround.
+ *
+ * What is NOT asserted anywhere, and cannot be under this harness: that
+ * `recordAgentEvent`/`env.EVENTS.send` are actually CALLED at chat.ts's two
+ * call sites. Miniflare's local Analytics Engine dataset is a `writeDataPoint`
+ * that does nothing at all (node_modules/miniflare/dist/src/workers/
+ * analytics-engine), so there is no AE read-back to assert against, and the
+ * high-intent send is downstream of the same unreachable `startAnswer`
+ * success this comment already explains. `describe('POST /chat', ...)`
+ * above is what proves the route still answers correctly with both call
+ * sites wired in.
+ */
+describe('firstOfSession', () => {
+  test('a fresh session id counts as the first turn', async () => {
+    expect(await firstOfSession(env, crypto.randomUUID())).toBe(true);
+  });
+
+  test('a session id with an existing chat_turns row does not', async () => {
+    const sessionId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO chat_turns
+         (id, session_id, created_at, question, answer, model, sources_json,
+          cited, invalid_citations, outcome, duration_ms, surface)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        crypto.randomUUID(),
+        sessionId,
+        new Date().toISOString(),
+        'seed question',
+        'seed answer',
+        'seed-model',
+        '[]',
+        0,
+        0,
+        'ok',
+        1,
+        'direct',
+      )
+      .run();
+    expect(await firstOfSession(env, sessionId)).toBe(false);
+  });
+
+  test('a failed read reports NOT first, and logs rather than throwing (Ruling 4)', async () => {
+    const logged: unknown[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      logged.push(...args);
+    });
+    const broken = {
+      DB: {
+        prepare: () => {
+          throw new Error('D1 unavailable');
+        },
+      },
+    } as unknown as McpEnv;
+    try {
+      await expect(firstOfSession(broken, crypto.randomUUID())).resolves.toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(
+      logged.some((entry) => entry instanceof Error && entry.message === 'D1 unavailable'),
+      'the original D1 failure must reach the log',
+    ).toBe(true);
+  });
+});
+
+describe('chatAgentEvent', () => {
+  const requestWith = (headers: Record<string, string> = {}) =>
+    new Request('https://mcp.ryanlindsey.me/chat', { method: 'POST', headers });
+
+  test('surface is always the literal "chat", never the transcript\'s site/direct vocabulary', () => {
+    // The exact bug Ruling 1 (task-13a-brief.md) warns about: a `surface`
+    // local read here by mistake would typecheck whenever its value happens
+    // to be 'site', because that string is valid in both vocabularies. This
+    // function takes no `surface` parameter at all, so there is nothing in
+    // scope to pass by mistake.
+    expect(chatAgentEvent(requestWith(), 200, 5).surface).toBe('chat');
+  });
+
+  test('status and durationMs pass through unchanged', () => {
+    const event = chatAgentEvent(requestWith(), 429, 123);
+    expect(event.status).toBe(429);
+    expect(event.durationMs).toBe(123);
+  });
+
+  test('classification is computed from the real request, not a fixed value', () => {
+    const agent = chatAgentEvent(requestWith({ 'user-agent': 'ClaudeBot/1.0' }), 200, 1);
+    expect(agent.classification.agentClass).toBe('agent');
+    expect(agent.classification.agent).toBe('ClaudeBot');
+
+    const browser = chatAgentEvent(requestWith({ 'sec-fetch-mode': 'navigate' }), 200, 1);
+    expect(browser.classification.agentClass).toBe('browser');
+  });
+
+  test("no campaign domains are read here, matching src/worker.ts's CAMPAIGN_DOMAINS_OFF", () => {
+    const event = chatAgentEvent(
+      requestWith({ referer: 'https://a-campaign-domain.example/post' }),
+      200,
+      1,
+    );
+    expect(event.classification.referrerClass).not.toBe('campaign');
   });
 });
