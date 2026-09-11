@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.9.1...ryanlindsey-me-v1.9.2) (2026-09-11)
+
+
+### Bug Fixes
+
+* **evals:** a failed recording must not destroy the run ([#58](https://github.com/ryanlindsey/ryanlindsey.me/issues/58)) ([8192d6a](https://github.com/ryanlindsey/ryanlindsey.me/commit/8192d6a9115c0f1e646cb275b8490ff6fe829426))
+
 ## [1.9.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.9.0...ryanlindsey-me-v1.9.1) (2026-09-10)
 
 
