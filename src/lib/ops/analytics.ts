@@ -47,7 +47,17 @@ import { AE_BLOB_FIELDS } from '../agent-intel/record';
 // .gitignore excludes -- so what is transcribed here and at `readSpend` is what
 // a future reader gets, and the fixtures in tests/ops-analytics.test.ts are the
 // other copy. Do not thin either one out on the assumption that the file is
-// findable. What the probes establish, for the Analytics Engine half:
+// findable.
+//
+// WHAT THE RECORDING DOES NOT CONTAIN: the requests. It holds five labelled
+// responses and nothing that was sent -- no URL, no header, no SQL text, no
+// GraphQL document, no variables. So every claim below about a RESPONSE is
+// record, and every claim anywhere in this file about what was SENT (the exact
+// query text, the `limit`, the selection set, the datetime spelling, the REST
+// route's spelling) is recollection of how the probe was run. Where that
+// difference can bite, it is said at the line.
+//
+// What the probes establish, for the Analytics Engine half:
 //
 //   - THE SQL ENVELOPE IS `{ meta: [{name,type},...], data: [...], rows,
 //     rows_before_limit_at_least }`. `payload.data` is the row array, which is
@@ -60,9 +70,28 @@ import { AE_BLOB_FIELDS } from '../agent-intel/record';
 //     coercion that handled only one of the two would be right about half this
 //     module's fields and silently wrong about the other half, which is why
 //     `finiteNumber` takes both and why a test pins the asymmetry.
+//   - A GROUPED ROW CARRIES ITS LABEL AS A `String` AND ITS COUNT AS A `UInt64`
+//     STRING (probe `ae:groupBy`, the by-route-class query):
+//
+//       {"meta":[{"name":"route_class","type":"String"},
+//                {"name":"requests","type":"UInt64"}],
+//        "data":[{"route_class":"other","requests":"983"},
+//                {"route_class":"agent-signal","requests":"46"},
+//                {"route_class":"content","requests":"12"}],
+//        "rows":3,"rows_before_limit_at_least":305}
+//
+//     So `breakdownRows`'s two demands -- a non-empty string label, a
+//     `finiteNumber` count -- are both satisfied by the real thing rather than
+//     by a fixture written to suit them, and the label vocabulary on the wire
+//     is `RouteClass` exactly as src/lib/agent-intel/classify.ts closes it.
 //   - AN EMPTY GROUPED RESULT IS `data: []` WITH `rows: 0` -- a real empty
 //     array, not an absent key and not a `null`. That is what lets an empty
 //     `byAgent` stay a measurement while an empty `totals` stays a `null`.
+//   - `p50` CAME BACK AS 0 OVER 1041 REQUESTS, WHICH IS NOT A LATENCY. See the
+//     note on `p50Ms` at the end of `readAnalytics`: the figure is structurally
+//     near-zero for this Worker, the probe is evidence that the FUNCTION
+//     resolved (`meta` types it `Float64`) and no evidence at all about
+//     response times. Do not read that 0 as a fast site.
 //
 // The gateway half is recorded at `readSpend`, where the parse is.
 //
@@ -229,6 +258,26 @@ function finiteNumber(value: unknown): number | null {
   if (typeof value !== 'string' || value.trim() === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * A response field as an object whose keys are safe to read, or `null`.
+ *
+ * `finiteNumber`'S INSTINCT ONE LEVEL UP, and it exists because `typeof null`
+ * is `'object'` and optional chaining does not save a dereference of a value
+ * that IS null: `(null).foo` throws, and a JSON body is allowed to contain
+ * `null` anywhere a reader expects an object. `readSpend` walks four levels of
+ * someone else's envelope, so each level goes through this rather than through
+ * a cast that TypeScript believes and the runtime does not.
+ *
+ * A THROW WOULD NOT BE A CRASH, AND THAT IS WHY IT HAD TO BE FIXED RATHER THAN
+ * TOLERATED. src/pages/ops.astro catches it, so the page still renders -- but
+ * the module's stated contract is that every failure is a `null`, and an
+ * exception leaves that contract as a `TypeError` logged under a message about
+ * a cache read, pointing the operator at the wrong system.
+ */
+function objectField(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
 }
 
 /**
@@ -413,6 +462,22 @@ export async function readAnalytics(
     // figure and renders its absence, because it is the least valuable number
     // on the page and the only one with no second source. The two counts above
     // have no such fallback, so they fail the whole read instead.
+    //
+    // WHAT THIS NUMBER ACTUALLY MEASURES, AND IT IS NOT ROUND-TRIP LATENCY.
+    // `double2` is `Date.now() - started` around `route()` in src/worker.ts, and
+    // a Worker's `Date.now()` DOES NOT ADVANCE during synchronous execution --
+    // it moves when the isolate waits on I/O. So this median is the time the
+    // Worker spent waiting on something else (D1, KV, a service binding, the
+    // model), not the time a reader waited for the page, and it excludes
+    // network time entirely.
+    //
+    // THE MEASURED 0 IS THAT, NOT A FAST SITE. The 2026-09-11 probe returned
+    // `p50: 0` over 1041 requests, which is what a Worker whose median request
+    // renders from memory looks like -- it is structural, and a reader seeing
+    // "Median response time — 0 ms" would take it for a claim about speed.
+    // /ops therefore carries a note on that tile saying what the figure is; the
+    // label itself overstates it and is the owner's to settle (see the task
+    // report). Recorded here so nobody "fixes" a 0 that is not broken.
     p50Ms: finiteNumber(first.p50),
   };
 }
@@ -420,15 +485,24 @@ export async function readAnalytics(
 const GRAPHQL_URL = 'https://api.cloudflare.com/client/v4/graphql';
 
 /**
- * The measured query, narrowed to the three fields /ops renders.
+ * The query, narrowed to the three fields /ops renders.
  *
- * `limit: 50` IS THE MEASURED VALUE AND IS DELIBERATELY NOT TIGHTENED TO 1.
- * The selection asks for no grouping dimension, so this dataset returns exactly
- * one aggregate group per matching window, which is what the probe saw. A
- * `limit: 1` would make that assumption unfalsifiable by truncating any other
- * answer into the expected shape; at 50, a response carrying more than one
- * group is visible, and `readSpend` treats it as an envelope this build does
- * not recognise rather than reading the first row and under-reporting the rest.
+ * RECOLLECTION, NOT RECORD, and the distinction matters here more than
+ * anywhere else in this file: the probe's recording holds the five RESPONSES
+ * and nothing that was sent, so the field spellings below are how the query was
+ * written at the time rather than a transcript. What the recording does prove
+ * is that SOME query answered 200 with this dataset name, this nesting and
+ * these leaf names in the body -- a strong constraint on the spelling, not a
+ * copy of it. A misspelling anywhere here is a 200 with an `errors` array,
+ * which `readSpend` reads as `null` and logs with the complaint in it.
+ *
+ * `limit: 50` IS THE VALUE THE PROBE USED AND IS DELIBERATELY NOT TIGHTENED TO
+ * 1. The selection asks for no grouping dimension, so this dataset returns one
+ * aggregate group per matching window -- one is what came back. A `limit: 1`
+ * would make that unfalsifiable by truncating any other answer into the
+ * expected shape; at 50, a response carrying more than one group is visible,
+ * and `readSpend` treats it as an envelope this build does not recognise
+ * rather than reading the first row and under-reporting the rest.
  */
 const SPEND_QUERY = `query OpsSpend($account: String!, $gateway: String!, $since: Time!, $until: Time!) {
   viewer {
@@ -447,13 +521,28 @@ const SPEND_QUERY = `query OpsSpend($account: String!, $gateway: String!, $since
 /**
  * An instant in the spelling Cloudflare's GraphQL `Time` scalar takes.
  *
- * SECONDS PRECISION RATHER THAN `toISOString()`'s MILLISECONDS, and this is the
- * one part of the gateway read the probe did not pin: it recorded the response
- * and not the exact datetime literals that produced it. RFC 3339 to the second
- * is the form Cloudflare's own examples use and the narrower of the two
- * spellings, so it is what this sends. If it is wrong, the answer is a 200 with
- * a populated `errors` array, which `readSpend` reads as `null` -- a blank
- * section, never a number.
+ * SECONDS PRECISION RATHER THAN `toISOString()`'s MILLISECONDS. The probe's
+ * recording holds responses only, so what was sent here is recollection like
+ * the query text; RFC 3339 to the second is the form Cloudflare's own examples
+ * use and the narrower of the two spellings, so it is what this sends.
+ *
+ * THE FAILURE MODE HAS TWO BRANCHES AND ONLY ONE OF THEM IS SAFE, which an
+ * earlier version of this note missed by stopping at the first:
+ *
+ *   - A LITERAL THE SCALAR REJECTS is a 200 with an `errors` array, which
+ *     `readSpend` reads as `null`. Blank section, never a number, and the
+ *     errors are logged with the reason in them.
+ *   - A LITERAL THE SCALAR ACCEPTS BUT READS DIFFERENTLY -- a naive local time,
+ *     a date-only string, an offset silently taken as UTC -- is a 200 with
+ *     `errors: null` and a perfectly well-formed group in it. The window is
+ *     then not the window /ops labels, and NOTHING in this module can tell:
+ *     the figure is plausible, the envelope is right, and the page says 30 days
+ *     under a number measured over something else.
+ *
+ * That second branch is why the spelling is pinned by a test rather than left
+ * to `toISOString()`, and it is the strongest argument for a follow-up probe
+ * that records the REQUEST beside the response: the window bound is the one
+ * input here whose error is invisible.
  */
 const graphqlTime = (at: Date): string => `${at.toISOString().slice(0, 19)}Z`;
 
@@ -465,16 +554,22 @@ const graphqlTime = (at: Date): string => `${at.toISOString().slice(0, 19)}Z`;
  * great screenshot", and a cost page that rounds to a marketing number is
  * neither.
  *
- * GRAPHQL, MEASURED 2026-09-11, AND THE REST ROUTE IS RULED OUT. The probe
- * described at the top of this file called both possibilities with this token:
+ * GRAPHQL, MEASURED 2026-09-11, AND THE REST ROUTE IS RULED OUT FOR NOW. The
+ * probe described at the top of this file called both possibilities with this
+ * token. What the recording holds is two labelled responses:
  *
- *   - `GET /accounts/{account}/ai-gateway/gateways/{id}` answered 403
- *     `{"success":false,"errors":[{"code":10000,"message":"Authentication
- *     error"}]}`. Not a shape problem and not a typo: the token's AI Gateway
- *     Read permission does not open that route. Recorded so that nobody spends
- *     another round trip finding out again.
- *   - `POST https://api.cloudflare.com/client/v4/graphql` answered 200 with
- *     real numbers. That is what this reads.
+ *   - `gw:rest` ANSWERED 403 `{"success":false,"errors":[{"code":10000,
+ *     "message":"Authentication error"}]}`. The label is the probe's, and the
+ *     route it stands for -- `GET /accounts/{account}/ai-gateway/gateways/{id}`
+ *     -- is recollection, because the recording holds no requests. So what is
+ *     established is that the REST attempt was refused, and the likeliest
+ *     reading is that the token's AI Gateway Read scope does not open it; a
+ *     wrong path or a malformed header would look the same from here. The
+ *     conclusion is the same either way and is the useful part: do not reach
+ *     for REST again without new evidence, because the GraphQL route works and
+ *     this one cost a round trip to be told no.
+ *   - `gw:graphql` ANSWERED 200 with real numbers, from a POST to
+ *     `https://api.cloudflare.com/client/v4/graphql`. That is what this reads.
  *
  * THE ENVELOPE, verbatim from that probe -- a window with traffic in it:
  *
@@ -487,6 +582,20 @@ const graphqlTime = (at: Date): string => `${at.toISOString().slice(0, 19)}Z`;
  * number (5.2026... of them -- not micro-dollars, not a string, and not
  * pre-rounded), and `sum.cachedRequests` is the cache-hit count. Three fields,
  * the three figures on the page.
+ *
+ * WHAT THE `gateway:` FILTER COVERS, AND IT IS NOT THE WHOLE INFERENCE BILL.
+ * The query filters on this account's `RLME_AI_GATEWAY_ID`, so a call is in
+ * these numbers only if it passed a `gateway:` option to `env.AI.run`. Three
+ * call sites do -- chat, fit and the judge (src/lib/{chat,fit,judge}/engine.ts)
+ * -- and the two embedding call sites do not (src/lib/corpus.ts,
+ * src/lib/mcp/search.ts). The embeddings are NOT free and are NOT off-gateway
+ * in a billing sense: `env.AI.run` bills through Unified Billing either way
+ * (day 1's measurement, `gatewayMetadata.keySource: "Unified"`, recorded in
+ * src/lib/judge/engine.ts and src/components/ArchitectureDiagram.astro). What
+ * the option buys is ATTRIBUTION in the gateway's own logs, which is exactly
+ * the dataset above -- so this is the gateway's accounting for three of the
+ * five inference surfaces, and /ops says so on the tile rather than letting
+ * "Inference spend" imply the other two.
  *
  * `erroredRequests`, `tokensIn` AND `tokensOut` ARE NOT REQUESTED, though the
  * probe returned all three. Per-token figures are out of scope for this page
@@ -521,7 +630,7 @@ export async function readSpend(
   const token = await readToken(env);
   if (token === null) return null;
 
-  let payload: { data?: { viewer?: { accounts?: unknown } }; errors?: unknown };
+  let payload: unknown;
   try {
     const response = await fetchImpl(GRAPHQL_URL, {
       method: 'POST',
@@ -540,53 +649,86 @@ export async function readSpend(
       console.error(`ops: the gateway query answered ${response.status}`);
       return null;
     }
-    payload = (await response.json()) as typeof payload;
+    payload = await response.json();
   } catch (error) {
     console.error('ops: the gateway query failed', error);
     return null;
   }
 
+  // EVERY LEVEL BELOW GOES THROUGH `objectField`, INCLUDING THIS ONE, and the
+  // reason is that the parse runs OUTSIDE the try above -- deliberately, so
+  // that a network failure and an unrecognised envelope stay two different log
+  // lines, and so that no future `return null` inside the try can be mistaken
+  // for a caught throw. That only works if nothing here can throw. Three
+  // spellings could, before this: a body that is the JSON literal `null`, an
+  // `accounts` array holding a `null`, and a groups array holding one. All
+  // three are 200s, all three are things a JSON API is allowed to send, and all
+  // three used to leave this module as a `TypeError` instead of as the `null`
+  // its contract promises.
+  const body = objectField(payload);
+  if (body === null) return null;
+
   // GATE TWO, and the reason a status check alone would publish nonsense here.
-  // The measured success carries `errors: null`; anything else -- a populated
-  // array, and equally an empty one, which is not a shape this API was seen to
-  // produce -- means the response is not the one this build parses. Failing
-  // closed on the ambiguous case costs a blank section and buys never
-  // publishing a figure out of a half-answered query.
-  if (payload.errors !== null && payload.errors !== undefined) {
-    console.error('ops: the gateway query answered 200 with errors');
+  //
+  // TWO SPELLINGS PASS: `errors: null`, which is what the probe's success
+  // carried, and NO `errors` KEY AT ALL, which is what the GraphQL
+  // specification says a clean response looks like. Cloudflare sends the first;
+  // the second is accepted because refusing it would make this module depend on
+  // a habit rather than on the protocol.
+  //
+  // EVERYTHING ELSE FAILS, an EMPTY ARRAY INCLUDED. `errors: []` is not a shape
+  // this API was seen to produce and not one the specification sanctions, so it
+  // means the response is not the one this build parses -- and the cost of
+  // being wrong about that is a blank section, against publishing a figure out
+  // of a half-answered query.
+  const errors = body.errors;
+  if (errors !== null && errors !== undefined) {
+    // THE ARRAY ITSELF, not just the fact of it. This is where the one
+    // unmeasured thing in this read lands -- a `Time` literal the scalar
+    // rejects -- and a GraphQL error says which field or filter it disliked.
+    // Query-shape complaints carry no credential and no visitor data; the
+    // operator gets them in Workers observability, where the alternative is a
+    // sentence saying only that something was wrong.
+    console.error('ops: the gateway query answered 200 with errors', errors);
     return null;
   }
 
-  const accounts = payload.data?.viewer?.accounts;
+  const accounts = objectField(objectField(body.data)?.viewer)?.accounts;
   if (!Array.isArray(accounts) || accounts.length === 0) return null;
 
-  const groups = (accounts[0] as { aiGatewayRequestsAdaptiveGroups?: unknown })
-    .aiGatewayRequestsAdaptiveGroups;
+  const groups = objectField(accounts[0])?.aiGatewayRequestsAdaptiveGroups;
 
-  // ZERO GROUPS IS A `null`, NOT `$0.00`, and this is where the gateway read
-  // parts company with `byAgent`'s "nothing happened is a measurement". That
-  // dataset groups, so a window with no inference in it plausibly returns no
-  // group at all -- but so does a wrong gateway id, a filter key this build
-  // spelled wrongly, and a window boundary the `Time` scalar read differently
-  // from what was meant. The probe's window had traffic in it, so WHICH of
-  // those an empty array means was never measured, and the figures it feeds are
-  // the headline cost numbers on the page. "$0.00 spent, 0 requests" standing
-  // in for "the filter matched nothing" is precisely the invisible lie this
-  // module exists to prevent, so it fails the read until somebody measures an
-  // empty window and can tell the two apart.
+  // ZERO GROUPS IS A `null`, NOT `$0.00`. The closest thing in this module is
+  // not `byAgent` but the ungrouped `totals` query above, which is also a
+  // `null` on zero rows and for the same reason: nothing about an empty result
+  // from an aggregate says which of "nothing happened" and "this is not the
+  // answer I asked for" produced it. `byAgent` is the EXCEPTION rather than the
+  // rule, and it is the exception because its emptiness is locally verifiable
+  // -- the totals row beside it carries `agent_requests`, so "no agent rows"
+  // can be checked against a number this build already has. There is no second
+  // source here: a wrong gateway id, a filter key spelled wrongly and a window
+  // boundary the `Time` scalar read differently all produce the same empty
+  // array as a genuinely quiet month, and the figures it feeds are the headline
+  // cost numbers on the page.
+  //
+  // HOW TO SETTLE IT, since it is settleable and this comment should not
+  // outlive its excuse: one probe with a far-past window (say a month in 2020,
+  // before the account existed) answers what an EMPTY result looks like here.
+  // If that comes back as a group of zeros rather than as no group, then an
+  // empty array is unambiguously "not the answer I asked for" and this stays;
+  // if it comes back empty, the two cases are genuinely indistinguishable and
+  // this stays for a better-documented reason. Either way, record it here.
   //
   // MORE THAN ONE GROUP IS ALSO A `null`: the query asks for no grouping
   // dimension, so one group is the whole answer, and reading `[0]` of a longer
   // list would publish a fraction of the spend as the total.
   if (!Array.isArray(groups) || groups.length !== 1) return null;
 
-  const group = groups[0] as {
-    count?: unknown;
-    sum?: { cost?: unknown; cachedRequests?: unknown };
-  };
-  const requests = finiteNumber(group.count);
-  const costUsd = finiteNumber(group.sum?.cost);
-  const cachedRequests = finiteNumber(group.sum?.cachedRequests);
+  const group = objectField(groups[0]);
+  const sum = objectField(group?.sum);
+  const requests = finiteNumber(group?.count);
+  const costUsd = finiteNumber(sum?.cost);
+  const cachedRequests = finiteNumber(sum?.cachedRequests);
   // ALL THREE OR NOTHING. Every one of them is rendered, none has a second
   // source, and there is no equivalent here of `p50Ms`'s pre-agreed fallback --
   // a spend section showing two of its three tiles would be a page inviting a

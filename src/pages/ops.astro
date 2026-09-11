@@ -131,16 +131,30 @@ const D1_ABSENT = {
 /**
  * The absence wording for the gateway half.
  *
- * THE SECOND CLAUSE IS GONE, and its removal is the point rather than a tidy-up:
- * it used to read "and the gateway read is unwritten", which was true of the
- * empty `readSpend` it was written beside and became false the moment that
- * function got its measured parse. The read is written; what is missing when
- * these three tiles are blank is the token, exactly as it is for the Analytics
- * Engine tiles above -- which is the state of every test run and of production
- * until the Secrets Store entry is populated.
+ * IT NAMES TWO CAUSES BECAUSE THERE ARE AT LEAST SEVEN, and a sentence naming
+ * one of them would be this page's own signature defect. `readSpend` returns
+ * `null` for an unreadable or empty token, a non-200, a 200 carrying a GraphQL
+ * `errors` array, an envelope that is not the measured one, an empty
+ * `accounts`, a group count other than one, and any figure that is not finite.
+ * Those fall into two classes a reader can act on -- the credential, and a
+ * response this build will not read -- so the line names the classes and
+ * claims nothing about which.
+ *
+ * WHAT IT MUST NOT SAY IS THAT SPENDING HAPPENED. An earlier version of the
+ * copy below promised a blank tile "is a different statement from nothing
+ * having been spent", which src/lib/ops/analytics.ts contradicts in writing: a
+ * window with no gateway traffic in it returns an empty groups array, which is
+ * deliberately a `null`, because an empty result cannot be told from a wrong
+ * filter. So a genuinely quiet month renders exactly like a broken read, and
+ * the page has to leave that open rather than rule it out.
+ *
+ * The previous clause it replaced -- "and the gateway read is unwritten" --
+ * went for a simpler reason: it was true of the empty `readSpend` it was
+ * written beside, and false the moment that function got its measured parse.
  */
 const GATEWAY_ABSENT = {
-  absentReason: 'this needs the read-only analytics token',
+  absentReason:
+    'this needs the read-only analytics token, and a gateway response this build can read',
 };
 
 /** A figure with thousands separators, or `null` when there is no figure. */
@@ -362,12 +376,29 @@ const releases = recentReleases(changelog, 5);
           value={count(traffic?.agentRequests)}
           source="Analytics Engine"
         />
+        {
+          /*
+            THE NOTE EXISTS BECAUSE THE LABEL OVERSTATES THE FIGURE, and saying
+            so is cheaper than a number nobody can check. `double2` is
+            `Date.now() - started` around the Worker's own routing, and a
+            Worker's clock does not advance during synchronous execution -- it
+            moves when the isolate waits on I/O. So this is the time the Worker
+            spent waiting on something else, with no network time in it at all.
+            The 2026-09-11 probe measured `p50: 0` over 1041 requests, which is
+            what that looks like for a site whose median request renders from
+            memory: a real measurement of a quantity the label's plain reading
+            gets wrong. Whether the label should change, or the figure be
+            dropped, is a spec question and the owner's; until then the tile
+            says what it is.
+          */
+        }
         <OpsMetric
           label="Median response time"
           value={traffic === null || traffic.p50Ms === null
             ? null
             : `${Math.round(traffic.p50Ms)} ms`}
           source="Analytics Engine"
+          note="Measured inside the Worker, where the clock advances only while a request is waiting on something else — a database, a cache, a model. It carries no network time, so a request served from memory is 0 ms here and this figure reads low by design."
         />
       </div>
 
@@ -504,10 +535,25 @@ const releases = recentReleases(changelog, 5);
       </dl>
 
       <div class="mt-10 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+        {
+          /*
+            THE NOTE IS ON THE COST TILE BECAUSE THAT IS THE ONE A READER WILL
+            TAKE FOR THE WHOLE BILL, and the same exclusion applies to all
+            three: the query filters on this gateway, so a call is counted only
+            if it passed a `gateway:` option to `env.AI.run`. Chat, fit and the
+            judge do; the two embedding call sites do not (src/lib/corpus.ts,
+            src/lib/mcp/search.ts). They are still BILLED -- `env.AI.run` goes
+            through Unified Billing either way, which this repo measured on day
+            1 -- so the honest word is attribution rather than spend, and the
+            note says which surfaces are in it rather than leaving "Inference
+            spend" to imply five.
+          */
+        }
         <OpsMetric
           label="Inference spend"
           value={spend === null ? null : `$${spend.costUsd.toFixed(2)}`}
           source="AI Gateway"
+          note="These three cover the calls that name the gateway — chat answers, fit analysis and eval judging. The corpus embedding calls pass no gateway option, so they are billed but not attributed here, and none of these figures is the account's whole inference bill."
           {...GATEWAY_ABSENT}
         />
         <OpsMetric
@@ -524,13 +570,14 @@ const releases = recentReleases(changelog, 5);
         />
       </div>
       <p class="mt-8 max-w-2xl text-small text-ink-muted">
-        These three are the gateway's own accounting, read from its GraphQL API over the same window
-        as everything above — what the account was actually billed, rather than an estimate worked
-        out from token counts here. When they are blank it is because the read-only token this site
-        reads them with was not available, which is a different statement from nothing having been
-        spent. The token counts behind the cost are deliberately not published: the dollar figure is
-        the one that means anything to a reader, and the rest is detail about other people's
-        questions.
+        These three are the gateway's own accounting over the same window as everything above — its
+        computed cost for the calls it was asked to record, which is a closer thing to an invoice
+        than an estimate made here from token counts, and not the invoice itself. When they are
+        blank, the read did not produce a figure: no token, a response this build would not read, or
+        a window it could not tell from a misdirected query. A blank is not a claim that nothing was
+        spent — the two look identical from here, which is why neither is rendered as a zero. The
+        token counts behind the cost are deliberately not published: the dollar figure is the one
+        that means anything to a reader, and the rest is detail about other people's questions.
       </p>
     </section>
 

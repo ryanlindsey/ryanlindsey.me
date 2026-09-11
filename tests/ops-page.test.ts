@@ -136,9 +136,17 @@ describe('/ops', () => {
     // `not.toMatch(/0 agents served/i)` beside `toMatch(/not configured/i)`, and
     // NEITHER HALF COULD FAIL for these three figures: the page never renders
     // the words "agents served" anywhere, and "not configured" would still be
-    // found on the three permanently-null AI Gateway tiles even if all three
-    // Analytics Engine figures regressed to `?? 0`. So the property 06 §1 calls
-    // an invisible lie had no failing assertion behind it.
+    // found on the three AI Gateway tiles even if all three Analytics Engine
+    // figures regressed to `?? 0`. So the property 06 §1 calls an invisible lie
+    // had no failing assertion behind it.
+    //
+    // THOSE GATEWAY TILES ARE NOT "PERMANENTLY NULL", which is what this
+    // comment used to call them and what they were while `readSpend` returned
+    // `null` unconditionally. It now reads the AI Gateway's GraphQL API; they
+    // are null HERE for the same reason the Analytics Engine ones are, namely
+    // that `RLME_ANALYTICS_MODE` is 'stub' under this harness. The point about
+    // the old assertion is unchanged -- a tile that is null for its own reasons
+    // still cannot witness a regression in a different tile.
     //
     // `data-numeric` is the mechanism: `OpsMetric` puts that attribute on the
     // figure paragraph and on nothing else, so its presence in a tile means a

@@ -11,23 +11,29 @@ import {
  *
  * WHAT THIS SUITE NOW PROVES, and it is more than it used to: both APIs were
  * answered by the real service on 2026-09-11, and `MEASURED_TOTALS`,
- * `MEASURED_EMPTY` and `MEASURED_SPEND` below are transcriptions of three of
- * those responses. A green run therefore says the module parses what the API
- * actually sent rather than what this build hoped it would.
+ * `MEASURED_ROUTES`, `MEASURED_EMPTY` and `MEASURED_SPEND` below are
+ * transcriptions of four of those five responses. A green run therefore says
+ * the module parses what the API actually sent rather than what this build
+ * hoped it would.
  *
- * THOSE THREE FIXTURES ARE ALSO AN ARCHIVE. The probe's raw output lives in the
+ * THOSE FOUR FIXTURES ARE ALSO AN ARCHIVE. The probe's raw output lives in the
  * plan's working notes under `.superpowers/`, which .gitignore excludes, so
  * these literals and the comments in src/lib/ops/analytics.ts are the only
- * copies that ship. Edit them to suit a parser and the record is gone.
+ * copies that ship. Edit them to suit a parser and the record is gone. (The
+ * fifth, `gw:rest`, is a 403 with no parse behind it; it is transcribed at
+ * `readSpend` because its value is the ruling, not the body.)
  *
- * The rest of the fixtures are still constructed --
- * there is no recorded body for a 403, a GraphQL error or an empty gateway
- * window, and inventing one to assert against would prove nothing the fixture
- * did not already assume.
+ * The rest of the fixtures are constructed -- there is no recorded body for a
+ * GraphQL error, an empty gateway window or a malformed envelope, and inventing
+ * one to assert against would prove nothing the fixture did not already assume.
  *
- * WHAT IT STILL CANNOT PROVE: that the envelope has not changed since. Nothing
- * here calls api.cloudflare.com, deliberately -- CI holds no credential, and a
- * suite that needed one would either be skipped or be a liability.
+ * WHAT IT STILL CANNOT PROVE, beyond that the envelope has not changed since:
+ * anything about the REQUESTS. The recording holds five responses and nothing
+ * that was sent, so the query text, the `limit`, the selection set and the
+ * datetime spelling are recollection rather than record -- these tests hold
+ * them still, which is a different and smaller thing than confirming them.
+ * Nothing here calls api.cloudflare.com, deliberately: CI holds no credential,
+ * and a suite that needed one would either be skipped or be a liability.
  *
  * That is why the failure assertions still outnumber the success ones. The
  * property this page depends on is that an unrecognised response yields `null`
@@ -115,6 +121,30 @@ const MEASURED_TOTALS = {
   ],
   data: [{ requests: '1041', agent_requests: '314', p50: 0 }],
   rows: 1,
+  rows_before_limit_at_least: 305,
+};
+
+/**
+ * THE RECORDED BY-ROUTE-CLASS RESPONSE (`ae:groupBy`), the third transcription.
+ *
+ * It is the only measured evidence about a GROUPED row, and `breakdownRows`
+ * makes two demands of one -- a non-empty string label and a `finiteNumber`
+ * count. Here they are met by `String` and `UInt64`-as-string, from the real
+ * dataset, with the label vocabulary (`RouteClass`) that
+ * src/lib/agent-intel/classify.ts closes. Without this fixture the breakdown
+ * parse was exercised only against rows written to suit it.
+ */
+const MEASURED_ROUTES = {
+  meta: [
+    { name: 'route_class', type: 'String' },
+    { name: 'requests', type: 'UInt64' },
+  ],
+  data: [
+    { route_class: 'other', requests: '983' },
+    { route_class: 'agent-signal', requests: '46' },
+    { route_class: 'content', requests: '12' },
+  ],
+  rows: 3,
   rows_before_limit_at_least: 305,
 };
 
@@ -492,26 +522,36 @@ describe('a recognised envelope', () => {
     // the reverse. Either renders as "not configured" on a page whose read
     // worked perfectly, which is the failure nobody goes looking for.
     //
-    // `p50Ms: 0` IS A PUBLISHED ZERO, AND IT IS CORRECT. The module's rule is
-    // that a zero must never stand in for a read that failed -- not that zero
-    // is unsayable. This one is what the engine answered.
+    // `p50Ms: 0` IS PARSED CORRECTLY AND IS NOT A LATENCY. The module's rule is
+    // that a zero must never stand in for a read that failed, not that zero is
+    // unsayable -- and this zero is what the engine answered. What it is NOT is
+    // evidence of a fast site: `double2` is `Date.now() - started` inside a
+    // Worker, whose clock advances only on I/O, so a median of exactly 0 over
+    // 1041 requests is structural. The assertion here is about the parse; the
+    // figure's meaning is recorded at `p50Ms` in src/lib/ops/analytics.ts and
+    // on the tile itself.
     //
-    // The two breakdowns are fed the recorded EMPTY response, which is the
-    // other half of what the probe established: an empty grouped result is a
-    // real `data: []` with `rows: 0`, so it lands as an empty list rather than
-    // as the null an absent key would produce.
+    // ALL THREE FIXTURES ARE RECORDINGS, which is the other half of the point:
+    // the totals row, the empty grouped response (a real `data: []` with
+    // `rows: 0`, so it lands as an empty list rather than the null an absent
+    // key would produce) and the by-route-class rows, so `breakdownRows` is
+    // exercised against measured labels and measured UInt64-string counts.
     const result = await readAnalytics(
       env(),
       NOW,
       30,
-      inOrder([MEASURED_TOTALS, MEASURED_EMPTY, MEASURED_EMPTY]),
+      inOrder([MEASURED_TOTALS, MEASURED_EMPTY, MEASURED_ROUTES]),
     );
     expect(result).toEqual({
       windowDays: 30,
       requests: 1041,
       agentRequests: 314,
       byAgent: [],
-      byRouteClass: [],
+      byRouteClass: [
+        { routeClass: 'other', requests: 983 },
+        { routeClass: 'agent-signal', requests: 46 },
+        { routeClass: 'content', requests: 12 },
+      ],
       p50Ms: 0,
     });
   });
@@ -719,21 +759,30 @@ describe('readSpend', () => {
     expect(body.variables).toEqual({
       account: 'an-account',
       gateway: 'a-gateway',
-      // SECONDS PRECISION, NO MILLISECONDS. The `Time` scalar's exact tolerance
-      // is the one part of this read the probe did not pin, so the spelling
-      // this build sends is worth holding still: a change to it is a change to
-      // a request nobody can test against the real API from here.
+      // SECONDS PRECISION, NO MILLISECONDS, AND PINNED RATHER THAN DERIVED.
+      // The probe recorded responses only -- nothing that was sent -- so the
+      // `Time` scalar's tolerance is the one input here this repo cannot check
+      // against the real API. It matters more than an unmeasured thing usually
+      // does because its failure has a silent branch: a literal the scalar
+      // REJECTS is a 200 with errors and a blank section, but one it ACCEPTS
+      // AND READS DIFFERENTLY is a well-formed figure over the wrong window,
+      // which nothing downstream can detect. Holding the spelling still is the
+      // only guard available from here.
       since: '2026-08-10T12:00:00Z',
       until: '2026-09-09T12:00:00Z',
     });
-    // THE WINDOW IS A PARAMETER, not a hard-coded 30 days, and /ops passes the
-    // same `WINDOW_DAYS` it passes `readAnalytics` -- two figures on one page
-    // measured over two different windows would be the quietest wrong answer
-    // this section could give.
+    // The filter keys those variables feed, so that a rename on either side is
+    // a failure here rather than a 200 with an `errors` array in production.
+    // That the WINDOW is a parameter at all is the next test's property, not
+    // this one's.
     expect(body.query).toContain('datetime_geq');
+    expect(body.query).toContain('datetime_leq');
   });
 
-  test('a shorter window moves the lower bound and nothing else', async () => {
+  test('THE WINDOW IS A PARAMETER: a shorter one moves the lower bound and nothing else', async () => {
+    // /ops passes the same `WINDOW_DAYS` here as to `readAnalytics`, so two
+    // figures on one page measured over two different windows would be the
+    // quietest wrong answer this section could give.
     const wire = vi.fn<FetchImpl>(async () => new Response(JSON.stringify(MEASURED_SPEND)));
     const result = await readSpend(env(), NOW, 7, wire);
 
@@ -751,6 +800,13 @@ describe('readSpend', () => {
     // query does not request them -- fetching a field nothing renders spends a
     // rate-limited token's round trip on data no reader will ever see, which is
     // the same defect the two unrendered Analytics Engine breakdowns were.
+    //
+    // NOTE WHAT THIS DOES NOT PROVE: that the narrowed selection set is
+    // accepted. The recording holds responses and no requests, so the query
+    // text -- its field spellings, its `limit`, this selection -- is how the
+    // probe was written rather than a transcript of what it sent. A GraphQL
+    // selection is a subset of what came back, which is why the narrowing is
+    // safe to make blind; it is not the same as having seen it answered.
     const wire = vi.fn<FetchImpl>(async () => new Response(JSON.stringify(MEASURED_SPEND)));
     await readSpend(env(), NOW, 30, wire);
 
@@ -862,6 +918,67 @@ describe('readSpend', () => {
           ),
       );
       expect(await readSpend(env(), NOW, 30, wire)).toBeNull();
+
+      // THE ERRORS THEMSELVES REACH THE LOG, asserted because the version that
+      // did not was indistinguishable from this one on the page and useless in
+      // observability. This is where the unmeasured `Time` spelling lands, and
+      // "the gateway query answered 200 with errors" without the complaint in
+      // it leaves an operator with a blank tile and nothing to act on. GraphQL
+      // errors are query-shape complaints: no credential, no visitor data.
+      expect(vi.mocked(console.error)).toHaveBeenCalledWith(
+        expect.stringContaining('200 with errors'),
+        [{ message: 'unknown field "cost"' }],
+      );
+    });
+
+    test('AN EMPTY errors ARRAY IS A NULL TOO', async () => {
+      // Not a shape this API was seen to produce and not one the GraphQL
+      // specification sanctions -- which makes it an envelope this build does
+      // not recognise, and those are nulls. The cheap alternative (treat `[]`
+      // as success) would be this module deciding that a response it has never
+      // seen is fine.
+      const wire = vi.fn<FetchImpl>(
+        async () =>
+          new Response(
+            JSON.stringify({
+              ...spendBody({ count: 656, sum: { cost: 5.2, cachedRequests: 0 } }),
+              errors: [],
+            }),
+          ),
+      );
+      expect(await readSpend(env(), NOW, 30, wire)).toBeNull();
+    });
+
+    test('NO errors KEY AT ALL PARSES, because that is what the spec says success looks like', async () => {
+      // The one non-null in this block, and it is here rather than above
+      // because it pins the boundary of the gate rather than a figure.
+      // Cloudflare sends `errors: null`; the specification says a clean
+      // response omits the key. Accepting both is what keeps this parse tied to
+      // the protocol rather than to one server's habit.
+      const wire = vi.fn<FetchImpl>(
+        async () =>
+          new Response(
+            JSON.stringify({
+              data: {
+                viewer: {
+                  accounts: [
+                    {
+                      aiGatewayRequestsAdaptiveGroups: [
+                        { count: 656, sum: { cost: 5.2, cachedRequests: 0 } },
+                      ],
+                    },
+                  ],
+                },
+              },
+            }),
+          ),
+      );
+      expect(await readSpend(env(), NOW, 30, wire)).toEqual({
+        windowDays: 30,
+        costUsd: 5.2,
+        requests: 656,
+        cachedRequests: 0,
+      });
     });
 
     test('a network failure is a null', async () => {
@@ -869,6 +986,38 @@ describe('readSpend', () => {
         throw new TypeError('network');
       });
       expect(await readSpend(env(), NOW, 30, wire)).toBeNull();
+    });
+
+    /**
+     * The three 200s that used to leave this module as a `TypeError` rather
+     * than as the `null` its contract promises.
+     *
+     * THE PARSE RUNS OUTSIDE THE `try`, deliberately -- a network failure and
+     * an unrecognised envelope are two different log lines -- so a throw there
+     * escapes `readSpend` entirely. /ops catches it and still renders, which is
+     * exactly why nothing failed: the defect was invisible on the page and
+     * visible only as a `TypeError` filed under a message about a cache read,
+     * pointing an operator at the wrong system.
+     *
+     * All three are shapes a JSON API is allowed to send: `null` is a legal
+     * JSON document, and a `null` inside an array is legal anywhere.
+     */
+    test('a body that is the JSON literal null is a null, not a TypeError', async () => {
+      const wire = vi.fn<FetchImpl>(async () => new Response('null'));
+      await expect(readSpend(env(), NOW, 30, wire)).resolves.toBeNull();
+    });
+
+    test('a null inside the accounts array is a null, not a TypeError', async () => {
+      const wire = vi.fn<FetchImpl>(
+        async () =>
+          new Response(JSON.stringify({ data: { viewer: { accounts: [null] } }, errors: null })),
+      );
+      await expect(readSpend(env(), NOW, 30, wire)).resolves.toBeNull();
+    });
+
+    test('a null inside the groups array is a null, not a TypeError', async () => {
+      const wire = vi.fn<FetchImpl>(async () => new Response(JSON.stringify(spendBody(null))));
+      await expect(readSpend(env(), NOW, 30, wire)).resolves.toBeNull();
     });
 
     test('a body that is not JSON is a null', async () => {
