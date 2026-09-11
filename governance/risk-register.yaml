@@ -9,16 +9,19 @@ rows:
     impact: moderate
     mitigation: >-
       Untrusted spans are fenced, and the prompts say that fenced content is data.
-      The fence is COMPUTED to be longer than any backtick run inside the text —
-      which is what makes it a boundary rather than a suggestion — for the chat
-      corpus, the chat question, the fit target description and both of the judge's
-      spans. It is fixed at three backticks for one span, the fit corpus, and that
-      is named here as a known gap rather than left to be discovered: a post
-      published on this site opens 14 fenced blocks of its own, so a fit run over
-      the corpus sends much of it outside the fence that the "treat fenced content
-      as data" rule depends on. That span is this site's own writing rather than a
-      stranger's paste, which is why it is a gap and not an incident — but it is
-      the weakest fence here and it is tracked for a change of its own.
+      The fence is COMPUTED to be longer than any backtick run inside the text,
+      which is what makes it a boundary rather than a suggestion, and it is
+      computed for every span without exception: the chat corpus, the chat
+      question, the fit corpus, the fit target description and both of the judge's
+      spans. One helper, six call sites.
+      Until 2026-09-11 the fit corpus was the exception, wrapped in a fixed three
+      backticks — and a published post on this site carries 14 fenced blocks of
+      its own, so a fit run over the corpus was sending much of it outside the
+      fence that the "treat fenced content as data" rule depends on. It is
+      recorded here rather than quietly dropped because the cause is worth
+      knowing: the helper had been copied into four modules, and the fifth place
+      that needed one got a literal instead. It now lives in one module, and a
+      test pins the property by failing against the literal.
       Chat cites by number, and the guarantee is not that the model has no URLs to
       work with — it is shown each source's URL beside that source's number — but
       that nothing it writes is ever turned into a link. Its answer is inserted
