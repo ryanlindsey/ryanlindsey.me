@@ -142,12 +142,18 @@ test('renders header and footer landmarks', async () => {
   expect(page).toContain('data-site-footer');
 });
 
-test('keeps the holding page marker and stays unindexed', async () => {
+test('keeps the holding page marker and is indexable since launch', async () => {
   const page = await html('/');
   expect(page).toContain('data-testid="holding-page"');
   expect(page).toContain('<title>Ryan Lindsey</title>');
-  expect(page).toContain('name="robots"');
-  expect(page).toContain('noindex');
+  // Was `toContain('noindex')` before launch flipped Base.astro's default.
+  // Asserted as the WHOLE attribute value rather than `toContain('index')`,
+  // which "noindex" also satisfies -- and that is not hypothetical here: this
+  // test went on passing after the default flipped, because an HTML comment in
+  // Base.astro happened to contain the word "noindex" and `toContain` found
+  // it. A substring check on this particular string is a trap.
+  expect(page).toMatch(/<meta name="robots" content="index, follow"\s*\/?>/);
+  expect(page).not.toContain('noindex');
 });
 
 test('carries no candidacy language on any public surface', async () => {
@@ -277,11 +283,68 @@ test('gives headings stable ids and empty anchors', async () => {
   expect(page).toMatch(/<a class="heading-anchor" href="#code-frames"[^>]*><\/a>/);
 });
 
+// The `data-testid="writing-empty"` assertion this test used to carry is gone
+// with `terminal-setup.mdx` shipping (`draft: false`): the index is no longer
+// empty, so that element's branch in src/pages/writing/index.astro is now
+// unreachable in real state. Losing it is an improvement rather than a gap --
+// an index asserted to be EMPTY cannot distinguish "drafts are excluded" from
+// "nothing is rendered at all", which is precisely the passes-against-nothing
+// trap this file's /llms.txt comment catalogues. Both halves are now real:
+// a published post that must appear, and a draft that must not.
 test('keeps drafts out of the writing index but reachable by URL', async () => {
   const index = await html('/writing');
-  expect(index).not.toContain('/writing/type-specimen');
-  expect(index).toContain('data-testid="writing-empty"');
-  expect((await server.fetch('/writing/type-specimen')).status).toBe(200);
+  const posts = CONTENT_ENTRIES.filter((entry) => entry.section === 'writing');
+  const published = posts.filter((entry) => !entry.draft);
+  const drafts = posts.filter((entry) => entry.draft);
+  expect(published.length, 'expected at least one published post').toBeGreaterThan(0);
+  expect(drafts.length, 'expected at least one draft post').toBeGreaterThan(0);
+
+  for (const entry of published) {
+    expect(index, `/writing should list ${entry.slug}`).toContain(`/writing/${entry.slug}`);
+  }
+  for (const entry of drafts) {
+    expect(index, `/writing must not list the draft ${entry.slug}`).not.toContain(
+      `/writing/${entry.slug}`,
+    );
+    // Excluded from the index, still served at its own URL -- the second half
+    // of this test's name, and what makes a draft shareable before it ships.
+    expect((await server.fetch(`/writing/${entry.slug}`)).status).toBe(200);
+  }
+});
+
+/**
+ * The regression this whole launch change is most likely to cause, asserted on
+ * both collections rather than on the one that happened to prompt it.
+ *
+ * Before launch the sitewide default was `noindex`, so a draft was covered by
+ * accident: it had a real route, but so did everything else, and nothing was
+ * indexable. Flipping the default to `index, follow` inverted that -- a draft
+ * is now indexable UNLESS its route says otherwise. Both `[...slug].astro`
+ * routes pass `noindex, nofollow` for a draft, and this is what holds them to
+ * it, entry by entry off disk so a new draft is covered the day it lands.
+ */
+test('serves drafts noindex and published pages indexable, in both collections', async () => {
+  for (const entry of CONTENT_ENTRIES) {
+    const page = await html(`/${entry.section}/${entry.slug}`);
+    const robots = page.match(/<meta name="robots" content="([^"]*)"/)?.[1];
+    expect(robots, `/${entry.section}/${entry.slug} should carry a robots directive`).toBeDefined();
+    if (entry.draft) {
+      expect(robots, `the draft ${entry.slug} must not be indexable`).toBe('noindex, nofollow');
+    } else {
+      expect(robots, `the published ${entry.slug} should be indexable`).toBe('index, follow');
+    }
+  }
+  // Both branches have to be exercised for the assertion above to mean
+  // anything -- a corpus that was all-published or all-draft would let a
+  // one-armed implementation through.
+  expect(
+    CONTENT_ENTRIES.some((e) => e.draft),
+    'expected at least one draft',
+  ).toBe(true);
+  expect(
+    CONTENT_ENTRIES.some((e) => !e.draft),
+    'expected at least one published entry',
+  ).toBe(true);
 });
 
 test('renders a table of contents matching the article headings', async () => {
@@ -608,21 +671,29 @@ test('index pages carry no X-Markdown-Variant header', async () => {
 });
 
 // Day 3 Task 9 (02 §3 / research appendix B1): `/llms.txt` and
-// `/llms-full.txt`. Both real .mdx files are `draft: true` right now (see
-// CONTENT_ENTRIES above), so today's actual build output has nothing to put
-// in the Writing/Case studies sections of `/llms.txt`, and nothing at all
-// in `/llms-full.txt`. task-9-brief.md is explicit that a test asserting
+// `/llms-full.txt`.
+//
+// This comment used to open by noting that every real .mdx file was
+// `draft: true`, so the build had nothing to put in the Writing/Case studies
+// sections and nothing at all in `/llms-full.txt`. That is no longer true --
+// two case studies and, as of `terminal-setup.mdx`, one post are published --
+// but the rule it existed to enforce is why these tests are shaped the way
+// they are, so it stays: task-9-brief.md is explicit that a test asserting
 // only that emptiness would be exactly the trap this codebase has already
 // shipped six times -- a test that passes because there is nothing to test
 // (a deleted `.sort()`, a `stripXKeys` test with nothing to strip, Task 5's
 // stale-serve test, Task 6's stripping branch, Task 7's Content-Type
-// assertion, Task 8's unreachable negotiation code). So every "today's real
-// state is empty" assertion below is paired with a fixture-based assertion,
-// against the exported generator functions directly (src/lib/llms-index.ts),
-// proving the generator actually produces a populated, correctly-shaped
-// result and not just nothing.
+// assertion, Task 8's unreachable negotiation code).
+//
+// That pairing is what made publishing cheap. Every "today's real state is
+// empty" assertion was paired with a fixture-based assertion against the
+// exported generator functions directly (src/lib/llms-index.ts), proving the
+// generator produces a populated, correctly-shaped result and not just
+// nothing. So when the emptiness ended, the fixtures kept covering the rules
+// (heading omission above all) and only the live half needed re-pointing at
+// the published corpus -- which is what it now asserts.
 
-test('/llms.txt carries a Case studies section listing every published case study, and still omits Writing while no post is published', async () => {
+test('/llms.txt lists every published case study and post, and links no draft', async () => {
   const page = await html('/llms.txt');
   expect(page).toContain('# Ryan Lindsey');
   expect(page).toMatch(/^> \S/m);
@@ -644,17 +715,33 @@ test('/llms.txt carries a Case studies section listing every published case stud
     );
   }
 
-  // The omission half, still live: every post is a draft, so `buildSection`'s
-  // no-empty-scaffolding rule must still drop the Writing heading entirely.
-  // This is what keeps the rule under test now that the section above it is
-  // populated -- had both gone published at once, nothing here would still be
-  // checking that an empty section is omitted rather than rendered bare.
-  expect(
-    CONTENT_ENTRIES.some((e) => e.section === 'writing' && !e.draft),
-    'expected every post to still be a draft; if one shipped, this test needs the ' +
-      'omission assertion moved to whichever section is still empty',
-  ).toBe(false);
-  expect(page).not.toContain('## Writing');
+  // The Writing half. This assertion used to run the other way -- every post
+  // was a draft, so it asserted `buildSection`'s no-empty-scaffolding rule by
+  // requiring the Writing heading to be ABSENT, and its failure message asked
+  // for that omission check to be moved to whichever section was still empty
+  // the day a post shipped. `terminal-setup.mdx` shipped and no section is
+  // empty any more, so there is nowhere live to move it to.
+  //
+  // It does not need one. The omission rule never actually depended on this
+  // live assertion: `buildLlmsTxt omits a heading entirely when its link list
+  // is empty` proves it against a fully empty fixture, and the fixture test
+  // after it asserts `## Case studies` stays absent while `## Writing` renders
+  // -- the exact "one section populated, its neighbour omitted" case this used
+  // to cover, and it holds regardless of what is published. So the live half
+  // becomes what it can now genuinely check: the published post is listed.
+  const publishedPosts = CONTENT_ENTRIES.filter((e) => e.section === 'writing' && !e.draft);
+  expect(publishedPosts.length, 'expected at least one published post').toBeGreaterThan(0);
+  expect(page).toContain('## Writing');
+  for (const entry of publishedPosts) {
+    expect(page, `/llms.txt should link /writing/${entry.slug}.md`).toContain(
+      `(https://ryanlindsey.me/writing/${entry.slug}.md)`,
+    );
+  }
+  for (const entry of CONTENT_ENTRIES.filter((e) => e.section === 'writing' && e.draft)) {
+    expect(page, `/llms.txt must not link the draft /writing/${entry.slug}`).not.toContain(
+      `/writing/${entry.slug}.md`,
+    );
+  }
 
   // The three sections that never depend on published content still render --
   // their absence would mean the whole generator broke, not that the
@@ -964,7 +1051,7 @@ test('robots.txt emits and allows every named crawler group, not just the wildca
   }
 });
 
-test('robots.txt carries the owner-decided Content-Signal reservation, points at /llms.txt and the MCP endpoint, and ships no Sitemap line', async () => {
+test('robots.txt carries the owner-decided Content-Signal reservation, points at /llms.txt and the MCP endpoint, and ships a Sitemap line that resolves', async () => {
   const body = await (await server.fetch('/robots.txt')).text();
   // Owner's decision, 2026-09-06: search/ai-input readable and citable now,
   // ai-train reserved -- see the file's own comment for why these are not
@@ -974,9 +1061,66 @@ test('robots.txt carries the owner-decided Content-Signal reservation, points at
   // Fix round 1 (task-9-report.md, applies here too): the endpoint is `/mcp`
   // on that domain, not the bare origin -- the bare origin 404s.
   expect(body).toContain('https://mcp.ryanlindsey.me/mcp');
-  // No sitemap exists yet (`@astrojs/sitemap` is not installed, and the site
-  // is noindex sitewide) -- day 7 adds both together.
-  expect(body).not.toMatch(/^Sitemap:/m);
+  // This assertion used to be `not.toMatch(/^Sitemap:/m)`, on the grounds that
+  // no sitemap existed and "a Sitemap line pointing at a 404 would be worse
+  // than having none". Launch added both together, exactly as robots.txt's own
+  // comment said it would, so the assertion inverts -- and then goes one step
+  // further than the original, because a Sitemap line is only as good as what
+  // it resolves to, and that is the failure the original was guarding against.
+  const sitemapLine = body.match(/^Sitemap: (\S+)$/m);
+  expect(sitemapLine, 'robots.txt should ship a Sitemap line').not.toBeNull();
+
+  const sitemapUrl = new URL(sitemapLine![1]);
+  expect(sitemapUrl.origin).toBe('https://ryanlindsey.me');
+  const sitemap = await server.fetch(sitemapUrl.pathname);
+  expect(sitemap.status, `${sitemapUrl.pathname} should not 404`).toBe(200);
+  // An index file, not the URL list itself -- @astrojs/sitemap emits
+  // `sitemap-index.xml` pointing at one or more `sitemap-N.xml`, and a
+  // Sitemap line aimed at the wrong one of those still "resolves" while
+  // advertising a fraction of the site.
+  const indexXml = await sitemap.text();
+  expect(indexXml).toContain('<sitemapindex');
+  const children = [...indexXml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+  expect(children.length, 'the sitemap index should name at least one sitemap').toBeGreaterThan(0);
+  for (const child of children) {
+    expect((await server.fetch(new URL(child).pathname)).status, `${child} should not 404`).toBe(
+      200,
+    );
+  }
+});
+
+/**
+ * What the sitemap may and may not carry. Two separate guarantees, and the
+ * second is the one with teeth.
+ *
+ * Publishing the first post (and with it launch flipping Base.astro's default
+ * from `noindex` to `index, follow`) made every page indexable UNLESS it says
+ * otherwise -- which inverted the risk on this file. Before, a mistake left a
+ * published page invisible; now a mistake publishes an unpublished one. Drafts
+ * are the exposure, because they have real routes on purpose, so they are
+ * asserted against by name here rather than trusted to the filter.
+ */
+test('the sitemap lists every published page and no draft', async () => {
+  const indexXml = await (await server.fetch('/sitemap-index.xml')).text();
+  const child = indexXml.match(/<loc>([^<]+)<\/loc>/)![1];
+  const xml = await (await server.fetch(new URL(child).pathname)).text();
+  const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => new URL(m[1]).pathname);
+
+  for (const entry of CONTENT_ENTRIES.filter((e) => !e.draft)) {
+    expect(locs, `the sitemap should list ${entry.section}/${entry.slug}`).toContain(
+      `/${entry.section}/${entry.slug}/`,
+    );
+  }
+  for (const entry of CONTENT_ENTRIES.filter((e) => e.draft)) {
+    expect(locs, `the sitemap must not list the draft ${entry.slug}`).not.toContain(
+      `/${entry.section}/${entry.slug}/`,
+    );
+  }
+  // The section indexes and the résumé, so a filter that went too far shows up
+  // here rather than as quiet invisibility.
+  for (const path of ['/', '/writing/', '/work/', '/resume/']) {
+    expect(locs, `the sitemap should list ${path}`).toContain(path);
+  }
 });
 
 test('robots.txt documents the group-inheritance trap, the enforceability caveat, and the noindex/permissive-crawl reasoning in the file itself, not only in the plan', async () => {

@@ -32,6 +32,12 @@ interface Props {
   // that knows which collection it is rendering, so it builds the right
   // node(s) rather than this shared template guessing from the URL.
   structuredData?: object;
+  // Pass-through to Base.astro's `robots`, and the reason it exists on this
+  // layout at all: a draft article has a real route (see either
+  // `[...slug].astro`), so once launch made the sitewide default indexable,
+  // every draft needed a way to say otherwise. The route decides, not this
+  // template -- it is the one that knows whether `entry.data.draft` is set.
+  robots?: string;
 }
 
 const {
@@ -44,6 +50,7 @@ const {
   headings,
   markdownHref,
   structuredData,
+  robots,
 } = Astro.props;
 const toc = buildToc(headings);
 const readingTime = readingTimeFor(body);
@@ -54,6 +61,7 @@ const readingTime = readingTimeFor(body);
   description={description}
   markdownHref={markdownHref}
   structuredData={structuredData}
+  robots={robots}
 >
   <article class="mx-auto max-w-5xl px-6 py-16">
     <header class="max-w-3xl">

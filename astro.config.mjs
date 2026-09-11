@@ -4,8 +4,10 @@ import cloudflare from '@astrojs/cloudflare';
 import tailwindcss from '@tailwindcss/vite';
 import mdx from '@astrojs/mdx';
 import expressiveCode from 'astro-expressive-code';
+import sitemap from '@astrojs/sitemap';
 import { satteri } from '@astrojs/markdown-satteri';
 import { headingAnchors } from './src/lib/heading-anchors.mjs';
+import { isUnindexed } from './src/lib/unindexed-routes.mjs';
 
 export default defineConfig({
   site: 'https://ryanlindsey.me',
@@ -48,6 +50,16 @@ export default defineConfig({
       },
     }),
     mdx(),
+    // Launch (was "day 7"): the sitemap and robots.txt's `Sitemap:` line ship
+    // together, which is what public/robots.txt's own closing comment said
+    // they would -- a Sitemap line pointing at a 404 is worse than none.
+    //
+    // `filter` is not a nicety. Every draft has a real route by design, so
+    // without it the sitemap would advertise exactly the unpublished documents
+    // the draft convention exists to keep out of navigation, and would publish
+    // the scoped token in a `/fit/r/<id>` URL. See src/lib/unindexed-routes.mjs
+    // for both reasons in full.
+    sitemap({ filter: (page) => !isUnindexed(page) }),
   ],
   markdown: {
     // Astro 7's default processor. `markdown.remarkPlugins` / `rehypePlugins`

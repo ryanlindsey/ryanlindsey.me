@@ -21,11 +21,26 @@ interface Props {
   // see below.
   structuredData?: object;
   /**
-   * This page's robots directive. The default is the SITEWIDE `noindex` that
-   * day 7 removes -- but an unlisted page (09 §1: absent from nav, sitemap and
-   * llms.txt) needs its own, which is why this is a prop rather than a
-   * constant. `/fit` passes `noindex, nofollow`, and that value survives day 7
-   * changing the default, which is the whole point of the prop existing now.
+   * This page's robots directive. The default WAS the sitewide `noindex` that
+   * kept the site out of search before launch; launch flipped it to
+   * `index, follow`, which is the state you are reading.
+   *
+   * The prop is why that flip was one line. An unlisted page (09 §1: absent
+   * from nav, sitemap and llms.txt) needs its own directive regardless of what
+   * the default happens to be, so `/fit` and `/fit/r/<id>` have always passed
+   * `noindex, nofollow` explicitly rather than leaning on the default -- and
+   * they kept it, untouched, when the default moved underneath them. That was
+   * the whole point of this being a prop before there was any second value for
+   * it to hold.
+   *
+   * DRAFTS ARE THE OTHER CALLER, and they are new as of that flip. Every draft
+   * has a real route on purpose (src/pages/writing/[...slug].astro: "work in
+   * progress is shareable by URL without entering the site's navigation"), so
+   * an indexable default would have made every unpublished document
+   * indexable. The two `[...slug].astro` routes now pass `noindex, nofollow`
+   * for a draft, and src/lib/unindexed-routes.mjs keeps the same documents out
+   * of the sitemap -- two independent mechanisms, because one of them being
+   * the only thing between a draft and Google is too thin.
    */
   robots?: string;
   /**
@@ -50,7 +65,7 @@ const {
   description = 'Engineering leadership and agentic systems.',
   markdownHref,
   structuredData,
-  robots = 'noindex',
+  robots = 'index, follow',
   referrer,
 } = Astro.props;
 
@@ -88,9 +103,19 @@ const jsonLdNodes = [
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
-    <!-- Removed at launch (day 7). Nothing here should be indexed before then. -->
-    <!-- Day 7 changes the DEFAULT above. It must not delete the tag, because
-         `/fit` and `/fit/r/<id>` pass their own value. -->
+    {
+      /* An Astro comment, NOT an HTML one, and that is the fix rather than a
+         style choice. The `<!-- -->` that stood here shipped into every page
+         of the site, and it named the unlisted routes (09 §1) it was warning
+         about -- publishing, on every page, the paths whose whole requirement
+         is not being advertised. It also contained the word "noindex", which
+         was enough to keep two `toContain('noindex')` tests green against a
+         page that had just become indexable.
+         The reasoning it carried lives on the `robots` prop above, where it
+         belongs and where it does not ship. The short version: the tag below
+         stays even though the default is now permissive, because the callers
+         that pass their own value depend on it being rendered. */
+    }
     <meta name="robots" content={robots} />
     {referrer && <meta name="referrer" content={referrer} />}
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />

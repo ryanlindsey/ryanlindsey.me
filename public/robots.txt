@@ -73,12 +73,20 @@
 # different stakes, and deliberately not conflated here.
 #
 # ---------------------------------------------------------------------------
-# WHY THIS FILE IS PERMISSIVE WHILE THE SITE IS noindex
+# WHY THIS FILE IS PERMISSIVE, AND WHY STILL NO Disallow
 # ---------------------------------------------------------------------------
-# Every page here currently carries <meta name="robots" content="noindex">
-# (src/layouts/Base.astro, removed at launch). This file stays wide open
-# anyway (`Allow: /` everywhere), and that combination is deliberate, not a
-# contradiction to "fix" by adding a Disallow before launch.
+# This section used to explain why a wide-open robots.txt sat alongside a
+# SITEWIDE <meta name="robots" content="noindex">. Launch removed that
+# sitewide noindex (src/layouts/Base.astro now defaults to `index, follow`),
+# so the tension it described is gone -- but its conclusion is unchanged and
+# is the reason this file still contains no Disallow anywhere.
+#
+# Some pages here are still deliberately unindexed: every draft article, plus
+# a small number of unlisted routes that are absent from nav, the sitemap and
+# /llms.txt by requirement (09 §1). Each carries its own `noindex, nofollow`
+# tag, and each is filtered out of the sitemap
+# (src/lib/unindexed-routes.mjs). The temptation is to "also" Disallow them
+# here. Do not.
 #
 # Crawling and indexing are different levers. `Disallow` stops a crawler
 # from fetching a page at all, which stops it from ever seeing that page's
@@ -86,13 +94,26 @@
 # is exactly how it ends up indexed anyway (a crawler with no other signal
 # can still index a disallowed URL from a link pointing at it elsewhere).
 # Permissive robots.txt plus `noindex` means crawlers fetch the page, read
-# the tag, and correctly decline to index it. Leave this as it is until day
-# 7 removes the `noindex` tag; do not add a Disallow in the meantime.
+# the tag, and correctly decline to index it. That is the arrangement in
+# place, and a Disallow would break it in the direction nobody wants.
 #
-# No `Sitemap:` line: there is no sitemap yet (`@astrojs/sitemap` is not
-# installed, and there is nothing worth indexing while the site is noindex
-# sitewide). A Sitemap line pointing at a 404 would be worse than having
-# none. Day 7 adds both together.
+# One of those unlisted routes takes a scoped token in its URL, which is a
+# second reason not to name any of them here -- and why this comment does not.
+# robots.txt is public, and a Disallow line is a list of the paths its author
+# finds interesting; naming an unlisted path in a file built to be crawled
+# un-lists it. Confinement lives at the tag and the sitemap filter, not in a
+# file that advertises the thing it is confining. The test suite enforces this
+# against the served file -- it greps this exact text for those paths -- so a
+# well-meaning edit that names one fails rather than ships.
+#
+# The `Sitemap:` line below arrived with launch, together with the sitemap
+# itself -- this comment previously promised exactly that pairing, on the
+# grounds that a Sitemap line pointing at a 404 is worse than none.
+
+# Per RFC 9309 §2.5 a Sitemap line is group-independent: it belongs to the
+# file, not to any one User-agent group, so unlike Content-Signal below it is
+# stated once and is not repeated per group.
+Sitemap: https://ryanlindsey.me/sitemap-index.xml
 
 User-agent: *
 Content-Signal: search=yes, ai-input=yes, ai-train=no, use=reference

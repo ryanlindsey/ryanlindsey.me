@@ -75,8 +75,8 @@ work:
       - >-
         Designed and built a delivery-forecasting toolchain for engineering
         managers, beginning as a set of Claude Skills and migrating to an
-        internal MCP server as adoption outgrew that packaging. Adopted by more
-        than 80% of engineering managers and absorbed into the org-wide
+        internal MCP server as adoption outgrew that packaging. Adopted by >80% 
+        of engineering managers and absorbed into the org-wide
         roadmapping and reporting process.
       - >-
         Publish agentic tooling as Claude Skills in a shared repository open to
@@ -121,7 +121,7 @@ work:
         they were handed.
       - >-
         Led image processing pipeline work spanning millions of unique assets,
-        improving engineering efficiency, cost, and time to market, and
+        improving engineering efficiency, vendor costs, application performance, and
         improved inter-service communication for business-critical APIs with a
         publish-subscribe message queue pattern.
       - >-

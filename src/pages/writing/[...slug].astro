@@ -9,7 +9,10 @@ import { buildBlogPosting, buildBreadcrumbList } from '../../lib/structured-data
 import type { GetStaticPaths } from 'astro';
 
 // Drafts get a route but never an index entry, so work in progress is
-// shareable by URL without entering the site's navigation.
+// shareable by URL without entering the site's navigation. Since launch made
+// the sitewide default indexable, "never an index entry" is no longer enough
+// on its own -- a draft also passes `noindex, nofollow` below, and
+// src/lib/unindexed-routes.mjs keeps it out of the sitemap.
 export const getStaticPaths = (async () => {
   const posts = await getCollection('posts');
   // Siblings ride along as props so SeriesNav does not re-query the collection
@@ -57,6 +60,7 @@ const structuredData = [
   headings={headings}
   markdownHref={`/writing/${post.id}.md`}
   structuredData={structuredData}
+  robots={post.data.draft ? 'noindex, nofollow' : undefined}
 >
   <Content />
   <SeriesNav slot="footer" current={post} siblings={siblings} />
