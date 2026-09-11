@@ -70,11 +70,13 @@ rows:
       directory, which enumerates that vocabulary in order to forbid it. What
       does not run in CI is the eval suite that probes the deployed public chat with
       eight questions and refuses to pass on a confirmation, a denial or an inference;
-      that is run by hand before a merge. No claim is made here about a published
-      metrics view: the audit trail carries the tier of every call, so such a view can
-      be filtered to the public tier, but the filter itself was not in this repository
-      on the date of this review and an unverified control does not belong in a
-      register.
+      that is run by hand before a merge. The published metrics page filters to the
+      public tier in SQL rather than in its template, which is the difference between
+      a page that cannot leak a row and one that leaks the first time somebody adds a
+      section and forgets a condition; it imports no list of gated tool names, because
+      a denylist by name would be correct only until the next tool is added; and a
+      test plants a private-tier row before rendering and asserts that neither the
+      gated tool name nor the audience label reaches the page.
     owner: Ryan Lindsey
     lastReviewed: '2026-09-11'
   - id: token-leakage
@@ -117,6 +119,10 @@ rows:
       sets by hand: nothing
       in this repository measures spend and trips it, so it is a kill switch rather
       than an automatic cut-off, and the caps above are what bound an unattended day.
+      The gateway's own thirty-day spend is published on that same operations page, so
+      an unexpected figure is visible on a page rather than discovered on an invoice —
+      though that read covers only the calls that name the gateway, which is chat, fit
+      and the judge, and not the embedding calls retrieval makes.
     owner: Ryan Lindsey
     lastReviewed: '2026-09-11'
   - id: tone-and-refusal
