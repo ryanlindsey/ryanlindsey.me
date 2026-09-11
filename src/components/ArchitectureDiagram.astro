@@ -1,0 +1,226 @@
+---
+/**
+ * What is actually deployed, drawn from the two wrangler.jsonc files and the
+ * two Worker entries rather than from a sketch.
+ *
+ * IT DISAGREES WITH 01 §2's ASCII DRAWING, DELIBERATELY. That diagram puts the
+ * chat and analysis endpoints on the site Worker; they are on the MCP Worker,
+ * because both need the `ai` binding and an `ai` binding cannot exist in the
+ * config `astro build` instantiates (the CI failure is written up in both
+ * wrangler.jsonc files). Publishing the spec's version on the page whose whole
+ * premise is that its figures are checkable would be self-refuting -- the first
+ * reader to `curl` the two endpoints would find the picture wrong.
+ *
+ * TWO CLAIMS IN THE FIRST DRAFT OF THIS FILE CAME FROM THAT SAME STALE DRAWING
+ * AND WERE FALSE. Recorded rather than quietly replaced, because both are the
+ * kind of detail a reader would actually reason from:
+ *
+ *   - "`/mcp` is a Durable Object" -- IT IS NOT. The endpoint is served by
+ *     `createMcpHandler` (agents/mcp/server), which this repo's own comments
+ *     twice describe as stateless: workers/mcp/src/index.ts builds "one
+ *     instance per HTTP request", and workers/mcp/src/define.ts's whole
+ *     `clientInfo` argument exists BECAUSE the server is rebuilt per request.
+ *     That Worker declares exactly one Durable Object class and it is the rate
+ *     limiter (workers/mcp/wrangler.jsonc's `RATE_LIMITER`/`RateLimiter`,
+ *     sqlite migration v1, re-exported from index.ts). The rate limiter now has
+ *     its own line, which is both true and the more interesting fact.
+ *   - "Analytics Engine feeds the events queue" -- IT DOES NOT. They are two
+ *     independent sinks written from the same handlers: AE through
+ *     `env.AE.writeDataPoint` (src/lib/agent-intel/record.ts, fire and forget),
+ *     the queue through `env.EVENTS.send` on the high-intent path
+ *     (src/worker.ts, via `highIntentFor`). The consumer
+ *     (src/lib/agent-intel/consume.ts) reads queue message bodies and never
+ *     touches AE, and nothing in either Worker reads AE at all --
+ *     src/lib/ops/analytics.ts's header says that binding "writes and cannot
+ *     query", which is why /ops reads it over HTTPS instead.
+ *
+ * Every other claim re-verified 2026-09-11 against ./wrangler.jsonc,
+ * workers/mcp/wrangler.jsonc, src/worker.ts, workers/mcp/src/index.ts,
+ * src/pages/chat/send.ts, migrations/0001-0004 and the five model call sites
+ * (src/lib/{chat,fit,judge}/engine.ts, src/lib/corpus.ts, src/lib/mcp/search.ts).
+ *
+ * THE TWO INFERENCE LINES NAME PATHS, NOT EXCLUSIONS. Saying so because the
+ * first draft of this comment offered a reason for them and the reason was
+ * wrong twice over -- it claimed "two" calls pass a `gateway:` option (there
+ * are THREE: chat, fit, and the judge in src/lib/judge/engine.ts, which is
+ * deployed and scope-gated), and it claimed the embedding path "carries no
+ * `gateway:` option, which is why only the Anthropic line names one" -- which
+ * implies embeddings bypass the gateway.
+ *
+ * THEY DO NOT, and this repo had already measured it. `env.AI.run()` bills
+ * through AI Gateway's UNIFIED BILLING whether or not a call names the gateway
+ * -- day 1's measurement, `gatewayMetadata.keySource: "Unified"`, recorded in
+ * src/lib/judge/engine.ts and evals/README.md (10 §5). A `gateway:` option buys
+ * attribution in the gateway's own logs (each call tags a `surface`), not a
+ * different route. Writing a causal story from the option's presence was
+ * exactly the failure this diagram's own corrections are about.
+ *
+ * What the two lines distinguish is the MODEL, and neither is a statement about
+ * the other: `AI Gateway -> Anthropic` is the third-party frontier route,
+ * `Workers AI -> Vectorize` the first-party embedding model feeding the vector
+ * index.
+ *
+ * NO UNLISTED ROUTE IS NAMED HERE, and that is the one thing this diagram
+ * deliberately leaves out. src/worker.ts flattens every refusal on the
+ * token-scoped prefix into the site's own 404 precisely so that a stranger
+ * cannot tell a real route from a dead one, src/lib/unindexed-routes.mjs keeps
+ * it out of the sitemap and src/pages/llms.txt.ts out of the index -- and /ops
+ * IS in the sitemap. Printing that path here would spend a documented
+ * requirement and three mechanisms for one word on a drawing. "the form
+ * surfaces" is the honest aggregate.
+ *
+ * INLINE SVG, NEVER AN `<img>`: the diagram has to follow the visitor's theme,
+ * and an image cannot. Strokes are `currentColor` so the box work inherits the
+ * ink token, the quieter lines take `--color-rule` through Tailwind's
+ * `stroke-rule`, and there is no hex anywhere in this file.
+ *
+ * THE TYPE HAS A FLOOR, AND IT IS THE SCALE'S OWN MINIMUM. The drawing scales
+ * rather than scrolls (`w-full` over a `viewBox`), so every label shrinks with
+ * it -- and a first draft at 11.5 and 10 user units landed near 10.1 and 8.8
+ * CSS px at a 400px viewport, under `--text-micro` (12px), the smallest size
+ * global.css defines. The arithmetic that fixes it: a 400px viewport inside
+ * `px-6` gives the svg 352px, so a user unit renders at 352/400 = 0.88px, and
+ * nothing may be set below 12/0.88 = 13.6. Hence 14 for every label and 17 for
+ * the box titles -- 12.3px and 15.0px at the small end, 15.7px and 19.0px at
+ * `max-w-md`. Changing the viewBox width without redoing that division puts the
+ * labels back under the floor.
+ *
+ * Line lengths are bounded by the same arithmetic: IBM Plex Mono advances
+ * 0.6em, so a 14-unit line inside a 360-wide box with 12 units of padding fits
+ * 40 characters. Every line below is at or under that.
+ *
+ * `<title>` and `<desc>` with `aria-labelledby` are what a screen reader gets;
+ * `role="img"` stops it from walking the 40-odd shapes underneath.
+ */
+---
+
+<figure class="mt-10">
+  <svg
+    viewBox="0 0 400 635"
+    class="h-auto w-full max-w-md"
+    role="img"
+    aria-labelledby="architecture-title architecture-desc"
+    fill="none"
+  >
+    <title id="architecture-title">How this site is deployed</title>
+    <desc id="architecture-desc">
+      Two Cloudflare Workers. Visitors and agents reach the site Worker at ryanlindsey.me, which
+      serves the pages, posts, case studies and the résumé, prerendered with some routes rendered on
+      demand, plus llms.txt, the markdown variants and the feeds; it hosts the chat page and the
+      form surfaces, and runs the queue consumer that sends the notification email. It calls the MCP
+      Worker at mcp.ryanlindsey.me over a service binding for the MCP endpoint, for chat and for
+      form posts; the MCP Worker calls back the same way to read published documents. The MCP Worker
+      serves the MCP endpoint statelessly, rebuilding the server for each request, alongside the
+      streamed chat inference and the discovery routes; it holds the one Durable Object in this
+      system, which enforces the rate limits, and it is where inference runs — through AI Gateway to
+      Anthropic, and through Workers AI into Vectorize for retrieval. Both Workers share D1 for the
+      audit log, tokens, transcripts and eval runs, KV for caches and flags, R2 for generated PDFs
+      and documents, Analytics Engine for request telemetry, and a queue that carries high-intent
+      events to the email. Analytics Engine and the queue are independent sinks; neither feeds the
+      other.
+    </desc>
+
+    {/* Visitors and agents */}
+    <rect x="90" y="4" width="220" height="40" class="fill-surface" stroke="currentColor"></rect>
+    <text x="200" y="29" text-anchor="middle" font-size="16" class="font-mono fill-current"
+      >Visitors and agents</text
+    >
+
+    {/* ... down to the site Worker */}
+    <path d="M200,44 L200,76" stroke="currentColor"></path>
+    <path d="M195,68 L200,76 L205,68" stroke="currentColor"></path>
+    <text x="208" y="64" font-size="14" class="font-mono fill-ink-muted">HTTPS</text>
+
+    {/* The site Worker */}
+    <rect x="20" y="76" width="360" height="146" class="fill-surface" stroke="currentColor"></rect>
+    <text x="32" y="102" font-size="17" class="font-mono fill-current"
+      >Site Worker &#183; ryanlindsey.me</text
+    >
+    <text x="32" y="128" font-size="14" class="font-mono fill-ink-muted"
+      >Astro, prerendered and on demand</text
+    >
+    <text x="32" y="147" font-size="14" class="font-mono fill-ink-muted"
+      >posts, case studies, the r&#233;sum&#233;</text
+    >
+    <text x="32" y="166" font-size="14" class="font-mono fill-ink-muted"
+      >/llms.txt, .md variants, RSS and JSON</text
+    >
+    <text x="32" y="185" font-size="14" class="font-mono fill-ink-muted"
+      >/chat page and the form surfaces</text
+    >
+    <text x="32" y="204" font-size="14" class="font-mono fill-ink-muted"
+      >the queue consumer and the email send</text
+    >
+
+    {/* The binding cycle: site to MCP, and MCP back to the site */}
+    <path d="M110,222 L110,278" stroke="currentColor"></path>
+    <path d="M105,270 L110,278 L115,270" stroke="currentColor"></path>
+    <text x="118" y="242" font-size="14" class="font-mono fill-ink-muted">/mcp, chat and forms</text
+    >
+    <path d="M290,278 L290,222" stroke="currentColor"></path>
+    <path d="M285,230 L290,222 L295,230" stroke="currentColor"></path>
+    <text x="282" y="268" text-anchor="end" font-size="14" class="font-mono fill-ink-muted"
+      >document reads</text
+    >
+
+    {/* The MCP Worker */}
+    <rect x="20" y="278" width="360" height="165" class="fill-surface" stroke="currentColor"></rect>
+    <text x="32" y="304" font-size="17" class="font-mono fill-current"
+      >MCP Worker &#183; mcp.ryanlindsey.me</text
+    >
+    <text x="32" y="330" font-size="14" class="font-mono fill-ink-muted"
+      >/mcp endpoint, stateless per request</text
+    >
+    <text x="32" y="349" font-size="14" class="font-mono fill-ink-muted"
+      >POST /chat, the streamed inference</text
+    >
+    <text x="32" y="368" font-size="14" class="font-mono fill-ink-muted"
+      >/robots.txt, /.well-known/mcp.json</text
+    >
+    <text x="32" y="387" font-size="14" class="font-mono fill-ink-muted"
+      >rate limits in a Durable Object</text
+    >
+    <text x="32" y="406" font-size="14" class="font-mono fill-ink-muted"
+      >AI Gateway &#8594; Anthropic</text
+    >
+    <text x="32" y="425" font-size="14" class="font-mono fill-ink-muted"
+      >Workers AI &#8594; Vectorize, for retrieval</text
+    >
+
+    {/* ... down to what both of them share */}
+    <path d="M200,443 L200,483" stroke="currentColor"></path>
+    <path d="M195,475 L200,483 L205,475" stroke="currentColor"></path>
+    <text x="208" y="468" font-size="14" class="font-mono fill-ink-muted">bindings</text>
+
+    {/* The shared stores, bussed to both Workers down the left margin */}
+    <path
+      d="M6,149 L6,556 M6,149 L20,149 M6,360 L20,360 M6,556 L20,556"
+      class="stroke-rule"
+      stroke-dasharray="3 4"></path>
+    <rect x="20" y="483" width="360" height="146" class="fill-surface" stroke="currentColor"></rect>
+    <text x="32" y="509" font-size="17" class="font-mono fill-current">Shared by both Workers</text>
+    <text x="32" y="535" font-size="14" class="font-mono fill-ink-muted"
+      >D1 &#183; audit, tokens, transcripts, evals</text
+    >
+    <text x="32" y="554" font-size="14" class="font-mono fill-ink-muted"
+      >KV &#183; caches and flags</text
+    >
+    <text x="32" y="573" font-size="14" class="font-mono fill-ink-muted"
+      >R2 &#183; generated PDFs and documents</text
+    >
+    <text x="32" y="592" font-size="14" class="font-mono fill-ink-muted"
+      >Analytics Engine &#183; request telemetry</text
+    >
+    <text x="32" y="611" font-size="14" class="font-mono fill-ink-muted"
+      >Queue &#183; high-intent events &#8594; email</text
+    >
+  </svg>
+
+  <figcaption class="mt-4 max-w-prose font-mono text-micro text-ink-muted">
+    Drawn from the deployed configuration &mdash; the two <code>wrangler.jsonc</code> files and the two
+    Worker entries in{' '}
+    <a class="text-accent underline" href="https://github.com/ryanlindsey/ryanlindsey.me"
+      >the repository</a
+    > &mdash; rather than from a sketch, so it can be checked against what is running.
+  </figcaption>
+</figure>

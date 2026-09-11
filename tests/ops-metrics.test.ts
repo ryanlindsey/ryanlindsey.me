@@ -86,6 +86,24 @@ beforeAll(async () => {
       `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed)
          VALUES ('2026-09-07T00:00:00.000Z', 'tier', 'm', 4, 4, 0)`,
     ),
+    // TWO ROWS OF ONE SUITE AT AN IDENTICAL `ran_at`, which is what the
+    // correlated MAX this query used to carry could not narrow: it filtered on
+    // the maximum timestamp rather than picking a row, so both of these came
+    // back and /ops rendered one suite twice under a heading reading "latest run
+    // per suite". Seeded here rather than in the test that reads it, like every
+    // other row in this file, so no test depends on declaration order.
+    //
+    // Inserted in a `batch`, so these two land in this order and the second gets
+    // the higher `id` -- which is the tie-break, and therefore the row that must
+    // win below.
+    db.prepare(
+      `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed)
+         VALUES ('2026-09-06T00:00:00.000Z', 'bisect', 'm', 6, 5, 1)`,
+    ),
+    db.prepare(
+      `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed)
+         VALUES ('2026-09-06T00:00:00.000Z', 'bisect', 'm', 6, 6, 0)`,
+    ),
   ]);
 });
 
@@ -137,13 +155,37 @@ describe('readOpsMetrics', () => {
   });
 
   test('eval runs are the LATEST run per suite, not every run', async () => {
-    // Three seeded rows, two of them the same suite: the older `chat` run must
-    // not appear at all.
+    // Five seeded rows across three suites: the older `chat` run must not appear
+    // at all, and `bisect`'s two tied rows must appear as one.
     const metrics = await readOpsMetrics(db, new Date('2026-09-09T12:00:00.000Z'), 30);
     expect(metrics.evalRuns).toEqual([
+      { ranAt: '2026-09-06T00:00:00.000Z', suite: 'bisect', total: 6, passed: 6, failed: 0 },
       { ranAt: '2026-09-08T00:00:00.000Z', suite: 'chat', total: 10, passed: 9, failed: 1 },
       { ranAt: '2026-09-07T00:00:00.000Z', suite: 'tier', total: 4, passed: 4, failed: 0 },
     ]);
+  });
+
+  test('two runs of one suite at the SAME timestamp yield one row, deterministically', async () => {
+    // The defect this query was shipped with, pinned directly rather than left
+    // to the array comparison above -- that one would fail on a tie for a reason
+    // its name does not mention, and somebody would "fix" it by editing the
+    // expectation. MEASURED on the page before the fix: a suite with five tied
+    // rows rendered five times.
+    //
+    // ONE row, and a NAMED one: `id DESC` breaks the tie, so the later-inserted
+    // of the two identical stamps wins. An implementation that returned either
+    // row "because they tie anyway" would still be wrong -- a page that shows a
+    // different number on each reload is worse than one that shows the older.
+    const metrics = await readOpsMetrics(db, new Date('2026-09-09T12:00:00.000Z'), 30);
+    const bisect = metrics.evalRuns.filter((run) => run.suite === 'bisect');
+    expect(bisect).toHaveLength(1);
+    expect(bisect[0]).toEqual({
+      ranAt: '2026-09-06T00:00:00.000Z',
+      suite: 'bisect',
+      total: 6,
+      passed: 6,
+      failed: 0,
+    });
   });
 
   test('the eval table is NOT windowed, unlike the other three', async () => {
@@ -155,6 +197,6 @@ describe('readOpsMetrics', () => {
     const narrow = await readOpsMetrics(db, new Date('2026-09-20T00:00:00.000Z'), 1);
     expect(narrow.toolCalls).toEqual([]);
     expect(narrow.chatTurns).toBe(0);
-    expect(narrow.evalRuns.map((run) => run.suite)).toEqual(['chat', 'tier']);
+    expect(narrow.evalRuns.map((run) => run.suite)).toEqual(['bisect', 'chat', 'tier']);
   });
 });

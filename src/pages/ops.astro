@@ -1,0 +1,756 @@
+---
+import { env } from 'cloudflare:workers';
+import Shell from '../layouts/Shell.astro';
+import ArchitectureDiagram from '../components/ArchitectureDiagram.astro';
+import OpsMetric from '../components/OpsMetric.astro';
+import changelog from '../../CHANGELOG.md?raw';
+import { CHAT_MODEL } from '../lib/chat/engine';
+import { CHAT_ERROR_COPY } from '../lib/chat/errors';
+import { CORPUS_EMBEDDING_MODEL } from '../lib/corpus';
+import { FIT_MODEL } from '../lib/fit/engine';
+import { JUDGE_MODEL } from '../lib/judge/engine';
+import { GLOBAL_LIMITS, LIMITS, type ToolCost } from '../lib/mcp/limits';
+import {
+  readAnalytics,
+  readSpend,
+  type AgentTraffic,
+  type GatewaySpend,
+} from '../lib/ops/analytics';
+import { cached } from '../lib/ops/cache';
+import { recentReleases } from '../lib/ops/changelog';
+import { readOpsMetrics, type OpsMetrics } from '../lib/ops/metrics';
+import { formatWindow, RETENTION } from '../lib/retention';
+
+/**
+ * The living colophon (06 §1): what this site is, what it has done lately, what
+ * it costs, and what it does when a part of it fails.
+ *
+ * ON-DEMAND, because every figure on it is read at request time. A prerendered
+ * /ops would publish the numbers the build machine happened to see, which is
+ * the one thing this page must not do.
+ *
+ * AGGREGATE AND PUBLIC-TIER ONLY (09 §2). No campaign label, no audience, no
+ * gated tool name, no per-token figure and no visitor's question renders here.
+ * The filtering is done in SQL, one layer down (src/lib/ops/metrics.ts), and is
+ * deliberately NOT repeated in this template: a page that receives only public
+ * rows cannot leak one by forgetting a condition, while a page that receives
+ * everything and filters on render leaks the first time somebody adds a
+ * section. Nothing below reads a field the read layer did not already narrow.
+ */
+export const prerender = false;
+
+/**
+ * How long a figure on this page may be, in one place: the KV entries below and
+ * the `Cache-Control` header are the same number and must never be two.
+ *
+ * An intermediary holding the page longer than the cache holds its figures
+ * would be publishing numbers this Worker has already replaced.
+ */
+const CACHE_TTL_SECONDS = 60;
+
+Astro.response.headers.set('Cache-Control', `public, max-age=${CACHE_TTL_SECONDS}`);
+
+/** The window every counted figure on this page is measured over. */
+const WINDOW_DAYS = 30;
+
+/**
+ * One read, cached under its own key, degrading to `null` on anything that
+ * throws.
+ *
+ * THREE KEYS RATHER THAN ONE, which the plan spelled as a single `ops:v1`. The
+ * key shape turned out to be load-bearing in two directions the single entry
+ * got wrong, and neither is theoretical:
+ *
+ *   - IT MISLABELLED WHICH SYSTEM WAS BROKEN. One `try` around all three reads
+ *     means a D1 rejection nulls `traffic` and `spend` as well, so the three
+ *     Analytics Engine tiles fall through to their default absence -- "this
+ *     needs the read-only analytics token" -- which is a FALSE sentence about
+ *     what is wrong. That is the exact error `D1_ABSENT` below was invented to
+ *     prevent, reintroduced one level up. It is harmless only while the token
+ *     is unconfigured and becomes a live falsehood the day it is populated.
+ *   - IT AMPLIFIED A D1 OUTAGE INTO AN API ONE. The `try` is outside `cached`
+ *     (see below), so a rejection means NOTHING is written -- including the
+ *     analytics half that answered perfectly well. Every request during a D1
+ *     blip would then re-run `readAnalytics`'s three api.cloudflare.com queries
+ *     uncached, against a rate-limited token, which is precisely the
+ *     amplification src/lib/ops/cache.ts exists to prevent.
+ *
+ * Per-key caching also restores the property that module documents and the
+ * single entry silently lost: `cached` never stores a bare `null`, so an
+ * unconfigured or failed read is retried on the next request rather than pinned
+ * as "not configured" for the whole TTL. Folded into a composite object, a
+ * `null` half was just a field and was stored with the rest.
+ *
+ * THE TRY IS AROUND THE CACHE CALL RATHER THAN INSIDE IT, and that placement is
+ * still the point. `readOpsMetrics` returns `Promise<OpsMetrics>`, not `| null`,
+ * and carries no internal try -- deliberately, since a caller that wants the
+ * numbers should hear about a D1 outage rather than receive a shape that looks
+ * like zero traffic. This page is the caller, and what it wants is to degrade:
+ * an unhandled rejection here is a 500 on a public page whose entire premise is
+ * that it tells you what it knows.
+ *
+ * WHAT THE PLACEMENT DOES NOT BUY, recorded rather than deleted because an
+ * earlier version of this comment claimed it did (final-review Minor 6): it is
+ * not what keeps a failed read out of the cache. `cached` awaits `fn` before it
+ * writes anything, so a rejection leaves the function before the `put` no
+ * matter where the caller's `try` sits. Not being pinned is
+ * src/lib/ops/cache.ts's own structure, and so is the separate property that a
+ * bare `null` is never stored. The 500 is the whole reason this `try` is here.
+ */
+async function readOrNull<T>(key: string, read: () => Promise<T>): Promise<T | null> {
+  try {
+    return await cached<T | null>(env.KV_CACHE, key, CACHE_TTL_SECONDS, read);
+  } catch (error) {
+    // The operator gets the exception in Workers observability; the reader gets
+    // a sentence saying that figure is not available. A stack trace on a public
+    // page would be both a worse answer and a disclosure.
+    console.error(`ops: ${key} could not be read`, error);
+    return null;
+  }
+}
+
+const now = new Date();
+const [metrics, traffic, spend]: [OpsMetrics | null, AgentTraffic | null, GatewaySpend | null] =
+  await Promise.all([
+    readOrNull('ops:metrics:v1', () => readOpsMetrics(env.DB, now, WINDOW_DAYS)),
+    readOrNull('ops:traffic:v1', () => readAnalytics(env, now, WINDOW_DAYS)),
+    readOrNull('ops:spend:v1', () => readSpend(env, now, WINDOW_DAYS)),
+  ]);
+
+/**
+ * The absence wording for the uncredentialed half. Different from the default
+ * on `OpsMetric` on purpose: when D1 does not answer, the read-only analytics
+ * token is not what is missing, and telling a reader to go and configure one
+ * would send them after the wrong thing.
+ */
+const D1_ABSENT = {
+  absentState: 'not available',
+  absentReason: 'the metrics store could not be read',
+};
+
+/**
+ * The absence wording for the gateway half.
+ *
+ * IT NAMES TWO CAUSES BECAUSE THERE ARE AT LEAST SEVEN, and a sentence naming
+ * one of them would be this page's own signature defect. `readSpend` returns
+ * `null` for an unreadable or empty token, a non-200, a 200 carrying a GraphQL
+ * `errors` array, an envelope that is not the measured one, an empty
+ * `accounts`, a group count other than one, and any figure that is not finite.
+ * Those fall into two classes a reader can act on -- the credential, and a
+ * response this build will not read -- so the line names the classes and
+ * claims nothing about which.
+ *
+ * WHAT IT MUST NOT SAY IS THAT SPENDING HAPPENED. An earlier version of the
+ * copy below promised a blank tile "is a different statement from nothing
+ * having been spent", which src/lib/ops/analytics.ts contradicts in writing: a
+ * window with no gateway traffic in it returns an empty groups array, which is
+ * deliberately a `null`, because an empty result cannot be told from a wrong
+ * filter. So a genuinely quiet month renders exactly like a broken read, and
+ * the page has to leave that open rather than rule it out.
+ *
+ * The previous clause it replaced -- "and the gateway read is unwritten" --
+ * went for a simpler reason: it was true of the empty `readSpend` it was
+ * written beside, and false the moment that function got its measured parse.
+ */
+const GATEWAY_ABSENT = {
+  absentReason:
+    'this needs the read-only analytics token, and a gateway response this build can read',
+};
+
+/** A figure with thousands separators, or `null` when there is no figure. */
+const count = (value: number | null | undefined): string | null =>
+  value === null || value === undefined ? null : value.toLocaleString('en-US');
+
+const toolCalls =
+  metrics === null ? null : metrics.toolCalls.reduce((total, row) => total + row.calls, 0);
+
+/**
+ * The two Analytics Engine breakdowns, in the shape the list below renders.
+ *
+ * THEY EXIST BECAUSE THE QUERIES ALREADY DID. `readAnalytics` has always issued
+ * three queries and /ops used to render one of them, so two thirds of a
+ * rate-limited token's round trips bought nothing a reader could see
+ * (final-review Important 2). Rendering both is what makes the cost honest.
+ *
+ * `null` ROWS MEAN "COULD NOT BE READ", the same distinction `OpsMetric` draws
+ * and with the same words, because a breakdown that simply vanished when the
+ * read failed would be indistinguishable from one with nothing in it -- which
+ * is the invisible zero in list form.
+ *
+ * NOTHING HERE IS NARROWED IN THE TEMPLATE, per this file's own rule: both
+ * label vocabularies are closed in src/lib/agent-intel/classify.ts
+ * (`Classification.agent` and `RouteClass`), neither carries raw user-agent
+ * text, and src/lib/ops/analytics.ts rejects a row whose label is not a
+ * non-empty string before it gets here.
+ */
+const TRAFFIC_BREAKDOWNS: { title: string; rows: { label: string; requests: number }[] | null }[] =
+  [
+    {
+      title: 'By agent',
+      rows:
+        traffic === null
+          ? null
+          : traffic.byAgent.map((row) => ({ label: row.agent, requests: row.requests })),
+    },
+    {
+      title: 'By route class',
+      rows:
+        traffic === null
+          ? null
+          : traffic.byRouteClass.map((row) => ({
+              label: row.routeClass,
+              requests: row.requests,
+            })),
+    },
+  ];
+
+/**
+ * A stored timestamp as a date and never a time (10 §1.4). The published rule
+ * is that this site does not publish a time of day for the owner's activity,
+ * and an eval feed stamped to the minute is a working-hours graph that nobody
+ * would think to audit because the numbers are all about software.
+ *
+ * Guarded the same shape as the fit permalink's own `dateLabel`, and for the
+ * same reason: `toISOString()` throws a `RangeError` on an `Invalid Date`, and
+ * a row this page did not write is not the place to assume it never will.
+ */
+function dateOnly(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'an unknown date' : date.toISOString().slice(0, 10);
+}
+
+/** A limiter period as the phrase a reader can hold in their head. */
+function per(seconds: number): string {
+  if (seconds === 60) return 'minute';
+  if (seconds === 3_600) return 'hour';
+  if (seconds === 86_400) return 'day';
+  return `${seconds / 60} minutes`;
+}
+
+const limitPhrase = (cost: ToolCost): string =>
+  `${LIMITS[cost].limit} per ${per(LIMITS[cost].periodSeconds)}`;
+
+/**
+ * The limits this page publishes, and what each one is in English.
+ *
+ * PUBLIC-TIER CLASSES ONLY. `LIMITS` also carries the `expensive` bucket, which
+ * belongs to a token-scoped surface; publishing its cap would say that surface
+ * exists and roughly what it costs, on the page most likely to be read by
+ * somebody probing for it. The numbers come from the constant either way --
+ * this is a choice about which rows to render, never a second copy of one.
+ */
+const LIMIT_ROWS: { cost: ToolCost; what: string }[] = [
+  { cost: 'cheap', what: 'Reading a published document over MCP' },
+  { cost: 'inference', what: 'Semantic search over the corpus' },
+  { cost: 'conversation', what: 'A chat message' },
+];
+
+/**
+ * What each retained table holds, in the reader's words rather than the
+ * schema's. The windows themselves come from `RETENTION`, so the sentence and
+ * the cron cannot drift; a table added there without an entry here falls back
+ * to its own name rather than rendering `undefined`.
+ */
+const RETENTION_LABELS: Record<string, string> = {
+  chat_turns: 'Chat questions and answers',
+  mcp_tool_calls: 'The MCP audit log',
+  fit_reports: 'Stored analysis reports',
+};
+
+const releases = recentReleases(changelog, 5);
+---
+
+<Shell
+  title="Ops — Ryan Lindsey"
+  description="What this site is running, what it has served in the last 30 days, which models it spends, how it degrades, and what shipped — every figure labelled with the system it was read from."
+>
+  <div class="mx-auto max-w-5xl px-6 py-16">
+    <p class="mb-6 border-t border-accent pt-3 font-mono text-micro uppercase text-accent">Ops</p>
+    <h1 class="font-display text-display text-ink">How this site runs</h1>
+    <p class="mt-6 max-w-2xl text-ink-muted">
+      This is a production system rather than a page about one, so here is what it is made of and
+      what it has actually been doing. Every figure below says which system it was read from, and
+      every one that could not be read says that instead of showing a zero. The numbers are read
+      when you load the page and held for sixty seconds.
+    </p>
+
+    {/* ---------------------------------------------------------------- 1 */}
+    <section class="mt-20" aria-labelledby="architecture">
+      <p class="font-mono text-micro uppercase text-accent">Deployed shape</p>
+      <h2
+        id="architecture"
+        class="mt-2 border-b border-rule pb-3 font-display text-heading text-ink"
+      >
+        Architecture
+      </h2>
+      <p class="mt-6 max-w-2xl text-ink-muted">
+        Two Cloudflare Workers. The site Worker renders the pages and serves the assets; the MCP
+        Worker holds the protocol endpoint and everything that spends inference, because the
+        bindings that call a model cannot live in the configuration the site is built from. They
+        call each other over service bindings in both directions, which is legal and deliberate: a
+        binding resolves when it is called, not when the Worker is defined.
+      </p>
+      <ArchitectureDiagram />
+    </section>
+
+    {/* ---------------------------------------------------------------- 2 */}
+    <section class="mt-20" aria-labelledby="live-metrics">
+      <p class="font-mono text-micro uppercase text-accent">Last {formatWindow(WINDOW_DAYS)}</p>
+      <h2
+        id="live-metrics"
+        class="mt-2 border-b border-rule pb-3 font-display text-heading text-ink"
+      >
+        Live metrics
+      </h2>
+      <div class="mt-8 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+        <OpsMetric
+          label="Public MCP tool calls"
+          value={count(toolCalls)}
+          source="D1"
+          {...D1_ABSENT}
+        />
+        <OpsMetric
+          label="Chat sessions"
+          value={count(metrics?.chatSessions)}
+          source="D1"
+          {...D1_ABSENT}
+        />
+        <OpsMetric
+          label="Chat turns"
+          value={count(metrics?.chatTurns)}
+          source="D1"
+          {...D1_ABSENT}
+        />
+        <OpsMetric
+          label="Fit analyses run"
+          value={count(metrics?.fitRuns)}
+          source="D1"
+          {...D1_ABSENT}
+        />
+        {
+          /*
+            The partial figure, and the label is the fix for the partiality
+            rather than more instrumentation. `run_worker_first` (wrangler.jsonc)
+            decides it: a request matching a prerendered file is served by the
+            Asset Worker and never reaches src/worker.ts, so it cannot be
+            classified and cannot be counted, while every on-demand route
+            reaches the Worker whether or not it is listed there.
+
+            THE NOTE ENUMERATES THE EXCEPTIONS RATHER THAN CLAIMING THERE ARE
+            NONE, and the difference is the correction (final-review Critical
+            1). It used to say every agent-signal route was counted. Checked
+            against the two lists rather than against that sentence:
+            `AGENT_SIGNAL_EXACT` and the `/.well-known/` rule in
+            src/lib/agent-intel/classify.ts name the routes, `run_worker_first`
+            names what reaches the Worker, and exactly two prerendered paths are
+            in the first and not the second -- `/resume.md` (listed as
+            `/resume`, `/resume/` and `/resume.json`, with no `/resume*`
+            pattern) and `/.well-known/mcp.json`. The `.md` variants under
+            `/writing` and `/work` ARE counted: `/writing/*` and `/work/*` match
+            them, which is why day 3 needed two `!.../*.md` negative patterns to
+            carve them back OUT and why day 6 deleting those put them back in.
+
+            Confirmed against the build output rather than against either
+            comment: `dist/client/resume.md` and
+            `dist/client/.well-known/mcp.json` both exist, so both are real
+            assets the Asset Worker will answer; `/resume.pdf` and this page
+            have no file at all, which is how an on-demand route reaches the
+            Worker with no entry in that list.
+
+            The home page stays off that list on purpose: adding an invocation
+            in front of the busiest and least informative path on the site to
+            improve this number would be paying for a better statistic rather
+            than a truer one. Whether the two routes above should join the list
+            is a deployed-behaviour change and the owner's call, not this
+            sentence's.
+          */
+        }
+        <OpsMetric
+          label="Requests that reached the Worker"
+          value={count(traffic?.requests)}
+          source="Analytics Engine"
+          note="Static sub-resources and the home page are served without a Worker invocation, so they are not in this figure — and neither are /resume.md or /.well-known/mcp.json, which are prerendered files that wrangler.jsonc's run_worker_first does not list. Every other agent-signal route is counted: /llms.txt, /llms-full.txt, the markdown variants under /writing and /work, both feeds, /robots.txt and /resume.json — along with every on-demand route, which reaches the Worker by having no file behind it."
+        />
+        <OpsMetric
+          label="Requests from agents"
+          value={count(traffic?.agentRequests)}
+          source="Analytics Engine"
+        />
+        {
+          /*
+            THE NOTE EXISTS BECAUSE THE LABEL OVERSTATES THE FIGURE, and saying
+            so is cheaper than a number nobody can check. `double2` is
+            `Date.now() - started` around the Worker's own routing, and a
+            Worker's clock does not advance during synchronous execution -- it
+            moves when the isolate waits on I/O. So this is the time the Worker
+            spent waiting on something else, with no network time in it at all.
+            The 2026-09-11 probe measured `p50: 0` over 1041 requests, which is
+            what that looks like for a site whose median request renders from
+            memory: a real measurement of a quantity the label's plain reading
+            gets wrong. Whether the label should change, or the figure be
+            dropped, is a spec question and the owner's; until then the tile
+            says what it is.
+          */
+        }
+        <OpsMetric
+          label="Median response time"
+          value={traffic === null || traffic.p50Ms === null
+            ? null
+            : `${Math.round(traffic.p50Ms)} ms`}
+          source="Analytics Engine"
+          note="Measured inside the Worker, where the clock advances only while a request is waiting on something else — a database, a cache, a model. It carries no network time, so a request served from memory is 0 ms here and this figure reads low by design."
+        />
+      </div>
+
+      {
+        metrics !== null && metrics.toolCalls.length > 0 && (
+          <div class="mt-12">
+            <p class="font-mono text-micro uppercase text-ink">By tool</p>
+            <ul class="mt-4 max-w-md divide-y divide-rule border-t border-rule">
+              {metrics.toolCalls.map((row) => (
+                <li class="flex items-baseline justify-between gap-6 py-2">
+                  <span class="font-mono text-small text-ink-muted">{row.tool}</span>
+                  <span class="font-mono text-small text-ink" data-numeric>
+                    {count(row.calls)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {/* Not an `OpsMetric`, so it carries its source itself. Live
+                metrics mixes D1 and Analytics Engine figures, and an
+                unlabelled column of numbers in that neighbourhood is a number
+                asking to be trusted. The two lists below do the same. */}
+            <p class="mt-2 max-w-md font-mono text-micro text-ink-muted">D1</p>
+          </div>
+        )
+      }
+
+      {
+        /*
+          `data-ops-breakdown` is a TEST HOOK, the same declared convention as
+          `OpsMetric`'s `data-ops-metric`: tests/ops-page.test.ts asserts that
+          these lists render their absence rather than an empty list, and
+          slicing the page on class names would make that assertion pass
+          vacuously the next time a margin changes.
+        */
+      }
+      {
+        TRAFFIC_BREAKDOWNS.map((breakdown) => (
+          <div class="mt-12" data-ops-breakdown={breakdown.title}>
+            <p class="font-mono text-micro uppercase text-ink">{breakdown.title}</p>
+            {breakdown.rows === null ? (
+              <p class="mt-4 max-w-md font-mono text-small text-ink-muted">not configured</p>
+            ) : breakdown.rows.length === 0 ? (
+              <p class="mt-4 max-w-md font-mono text-small text-ink-muted">
+                Nothing recorded in this window, which is a different statement from a read that
+                failed.
+              </p>
+            ) : (
+              <ul class="mt-4 max-w-md divide-y divide-rule border-t border-rule">
+                {breakdown.rows.map((row) => (
+                  <li class="flex items-baseline justify-between gap-6 py-2">
+                    <span class="font-mono text-small text-ink-muted">{row.label}</span>
+                    <span class="font-mono text-small text-ink" data-numeric>
+                      {count(row.requests)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {/* ONE EXPRESSION, not a literal beside a conditional: the two
+                would be separated by the source's own newline in the rendered
+                HTML, and the provenance line has to read as one sentence and
+                match as one string. */}
+            <p class="mt-2 max-w-md font-mono text-micro text-ink-muted">
+              {`Analytics Engine${
+                breakdown.rows === null ? ' — this needs the read-only analytics token' : ''
+              }`}
+            </p>
+          </div>
+        ))
+      }
+    </section>
+
+    {/* ---------------------------------------------------------------- 3 */}
+    <section class="mt-20" aria-labelledby="model-cost">
+      <p class="font-mono text-micro uppercase text-accent">Constants in this build</p>
+      <h2 id="model-cost" class="mt-2 border-b border-rule pb-3 font-display text-heading text-ink">
+        Model &amp; cost
+      </h2>
+      <p class="mt-6 max-w-2xl text-ink-muted">
+        Every model this build calls, named from the constant the calling code passes rather than
+        typed out here, so this list cannot describe a model the site has stopped using. Chat
+        answers and eval judging are separate constants that name the same model today; the fit
+        path's documented fallback has no call site, so it is not a model the site runs and is not
+        listed.
+      </p>
+
+      {
+        /*
+          FOUR ROWS, AND THE COUNT IS NO LONGER IN THE COPY (final-review Minor
+          7). The sentence used to say "Three models", which was true only
+          because `JUDGE_MODEL` happens to equal `CHAT_MODEL` -- change one
+          constant and the page would claim three while the site ran four. The
+          judge is not a hypothetical: `src/lib/judge/engine.ts` calls
+          `env.AI.run` with `gateway: { metadata: { surface: 'judge' } }`, and
+          the MCP Worker registers it behind a registration-time scope gate.
+
+          WHAT IT SCORES, checked rather than assumed, because the obvious
+          stronger sentence is false: of the four eval suites whose pass rates
+          this page publishes two sections down, only `chat` and `leak` use the
+          judge, and only on an answer that already passed the deterministic
+          checks (evals/run.mjs, evals/README.md's "The judge"). `tier` and
+          `fit` use none. So the judge is a model this build calls and part of
+          how two of those rates are produced -- not the thing that produces
+          them all.
+
+          Enumerated rather than assumed: every `AI.run`/`ai.run` call site in
+          src/ and workers/ passes one of these four constants (chat/engine.ts
+          and workers/mcp/src/chat.ts pass CHAT_MODEL, fit/engine.ts FIT_MODEL,
+          corpus.ts and mcp/search.ts CORPUS_EMBEDDING_MODEL, judge/engine.ts
+          JUDGE_MODEL). `FIT_FALLBACK_MODEL` is the fifth exported constant and
+          has no call site anywhere, which is why the copy above rules it out by
+          name rather than leaving a reader to wonder.
+
+          The gated tool the judge is reached through is NOT named here, and
+          must not be: 09 §2 keeps gated tool names off every public surface,
+          and a test asserts it. The model is a constant in a public file; the
+          tool name is the thing that would say which scoped surface exists.
+        */
+      }
+      <dl class="mt-8 max-w-2xl divide-y divide-rule border-t border-rule">
+        {
+          [
+            { what: 'Chat answers', model: CHAT_MODEL },
+            { what: 'Fit analysis', model: FIT_MODEL },
+            { what: 'Eval judging', model: JUDGE_MODEL },
+            { what: 'Corpus embeddings', model: CORPUS_EMBEDDING_MODEL },
+          ].map((row) => (
+            <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
+              <dt class="font-mono text-micro uppercase text-ink">{row.what}</dt>
+              <dd class="font-mono text-small break-words text-ink-muted">{row.model}</dd>
+            </div>
+          ))
+        }
+      </dl>
+
+      <div class="mt-10 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+        {
+          /*
+            THE NOTE IS ON THE COST TILE BECAUSE THAT IS THE ONE A READER WILL
+            TAKE FOR THE WHOLE BILL, and the same exclusion applies to all
+            three: the query filters on this gateway, so a call is counted only
+            if it passed a `gateway:` option to `env.AI.run`. Chat, fit and the
+            judge do; the two embedding call sites do not (src/lib/corpus.ts,
+            src/lib/mcp/search.ts). They are still BILLED -- `env.AI.run` goes
+            through Unified Billing either way, which this repo measured on day
+            1 -- so the honest word is attribution rather than spend, and the
+            note says which surfaces are in it rather than leaving "Inference
+            spend" to imply five.
+          */
+        }
+        <OpsMetric
+          label="Inference spend"
+          value={spend === null ? null : `$${spend.costUsd.toFixed(2)}`}
+          source="AI Gateway"
+          note="These three cover the calls that name the gateway — chat answers, fit analysis and eval judging. The corpus embedding calls pass no gateway option, so they are billed but not attributed here, and none of these figures is the account's whole inference bill."
+          {...GATEWAY_ABSENT}
+        />
+        <OpsMetric
+          label="Requests through the gateway"
+          value={count(spend?.requests)}
+          source="AI Gateway"
+          {...GATEWAY_ABSENT}
+        />
+        <OpsMetric
+          label="Served from the gateway cache"
+          value={count(spend?.cachedRequests)}
+          source="AI Gateway"
+          {...GATEWAY_ABSENT}
+        />
+      </div>
+      <p class="mt-8 max-w-2xl text-small text-ink-muted">
+        These three are the gateway's own accounting over the same window as everything above — its
+        computed cost for the calls it was asked to record, which is a closer thing to an invoice
+        than an estimate made here from token counts, and not the invoice itself. When they are
+        blank, the read did not produce a figure: no token, a response this build would not read, or
+        a window it could not tell from a misdirected query. A blank is not a claim that nothing was
+        spent — the two look identical from here, which is why neither is rendered as a zero. The
+        token counts behind the cost are deliberately not published: the dollar figure is the one
+        that means anything to a reader, and the rest is detail about other people's questions.
+      </p>
+    </section>
+
+    {/* ---------------------------------------------------------------- 4 */}
+    <section class="mt-20" aria-labelledby="evals">
+      <p class="font-mono text-micro uppercase text-accent">Latest run per suite</p>
+      <h2 id="evals" class="mt-2 border-b border-rule pb-3 font-display text-heading text-ink">
+        Evals
+      </h2>
+      <p class="mt-6 max-w-2xl text-ink-muted">
+        The suites that run against the deployed endpoints: grounded answers, citation integrity,
+        and the checks that the private surfaces stay invisible to an unscoped caller.
+      </p>
+
+      {
+        metrics === null ? (
+          <p class="mt-8 font-mono text-small text-ink-muted">
+            not available — the metrics store could not be read
+          </p>
+        ) : metrics.evalRuns.length === 0 ? (
+          <p class="mt-8 font-mono text-small text-ink-muted">
+            No runs recorded yet. The table exists and is empty, which is a different statement from
+            a run that failed.
+          </p>
+        ) : (
+          <div class="mt-8 overflow-x-auto">
+            <table class="w-full min-w-[22rem] border-collapse text-small">
+              <thead>
+                <tr class="border-b border-rule text-left font-mono text-micro uppercase text-ink">
+                  <th scope="col" class="py-2 pr-6 font-normal">
+                    Suite
+                  </th>
+                  <th scope="col" class="py-2 pr-6 font-normal">
+                    Ran
+                  </th>
+                  <th scope="col" class="py-2 pr-6 font-normal">
+                    Passed
+                  </th>
+                  <th scope="col" class="py-2 font-normal">
+                    Failed
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {metrics.evalRuns.map((run) => (
+                  <tr class="border-b border-rule">
+                    <td class="py-2 pr-6 font-mono text-ink">{run.suite}</td>
+                    <td class="py-2 pr-6 font-mono text-ink-muted" data-numeric>
+                      {dateOnly(run.ranAt)}
+                    </td>
+                    <td class="py-2 pr-6 font-mono text-ink-muted" data-numeric>
+                      {run.passed}/{run.total}
+                    </td>
+                    <td class="py-2 font-mono text-ink-muted" data-numeric>
+                      {run.failed}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+      <p class="mt-4 font-mono text-micro text-ink-muted">D1</p>
+    </section>
+
+    {/* ---------------------------------------------------------------- 5 */}
+    <section class="mt-20" aria-labelledby="status">
+      <p class="font-mono text-micro uppercase text-accent">What happens when a part fails</p>
+      <h2 id="status" class="mt-2 border-b border-rule pb-3 font-display text-heading text-ink">
+        Status &amp; degradation
+      </h2>
+      <p class="mt-6 max-w-2xl text-ink-muted">
+        Everything here degrades rather than disappearing, and says so while it does. This is the
+        ladder, in the order a reader would meet it.
+      </p>
+
+      <dl class="mt-8 max-w-2xl space-y-6">
+        <div class="border-t border-rule pt-4">
+          <dt class="font-mono text-micro uppercase text-ink">The budget breaker trips</dt>
+          <dd class="mt-2 text-ink-muted">{CHAT_ERROR_COPY.paused}</dd>
+        </div>
+        <div class="border-t border-rule pt-4">
+          <dt class="font-mono text-micro uppercase text-ink">A read this page needs fails</dt>
+          <dd class="mt-2 text-ink-muted">
+            The figure above it says so and the rest of the page still renders. No section here ever
+            shows a zero standing in for a number nobody could read, because a zero is the one wrong
+            answer a reader has no way to spot.
+          </dd>
+        </div>
+        <div class="border-t border-rule pt-4">
+          <dt class="font-mono text-micro uppercase text-ink">Retrieval finds nothing</dt>
+          <dd class="mt-2 text-ink-muted">
+            The answer says the corpus does not cover it rather than filling the gap. The whole
+            corpus is plain text at <a class="text-accent underline" href="/llms.txt">/llms.txt</a>,
+            and the <a class="text-accent underline" href="/mcp">MCP endpoint</a> answers the same questions
+            over a protocol.
+          </dd>
+        </div>
+      </dl>
+
+      <h3 class="mt-12 font-display text-subheading text-ink">Rate limits</h3>
+      <ul class="mt-4 max-w-2xl divide-y divide-rule border-t border-rule">
+        {
+          LIMIT_ROWS.map((row) => (
+            <li class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
+              <span class="text-ink-muted">{row.what}</span>
+              <span class="font-mono text-small text-ink" data-numeric>
+                {limitPhrase(row.cost)}
+              </span>
+            </li>
+          ))
+        }
+        <li class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
+          <span class="text-ink-muted">Chat, across everyone, before the breaker</span>
+          <span class="font-mono text-small text-ink" data-numeric>
+            {GLOBAL_LIMITS.chat.limit} per {per(GLOBAL_LIMITS.chat.periodSeconds)}
+          </span>
+        </li>
+      </ul>
+      <p class="mt-4 font-mono text-micro text-ink-muted">this build</p>
+
+      <h3 class="mt-12 font-display text-subheading text-ink">What is kept, and for how long</h3>
+      <ul class="mt-4 max-w-2xl divide-y divide-rule border-t border-rule">
+        {
+          RETENTION.map((entry) => (
+            <li class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
+              <span class="text-ink-muted">{RETENTION_LABELS[entry.table] ?? entry.table}</span>
+              <span class="font-mono text-small text-ink" data-numeric>
+                {formatWindow(entry.days)}
+              </span>
+            </li>
+          ))
+        }
+      </ul>
+      <p class="mt-4 font-mono text-micro text-ink-muted">
+        this build — a daily job enforces these, and the{' '}
+        <a class="text-accent underline" href="/ai-policy">policy</a> states them.
+      </p>
+    </section>
+
+    {/* ---------------------------------------------------------------- 6 */}
+    <section class="mt-20" aria-labelledby="releases">
+      <p class="font-mono text-micro uppercase text-accent">Generated from the release history</p>
+      <h2 id="releases" class="mt-2 border-b border-rule pb-3 font-display text-heading text-ink">
+        Changelog
+      </h2>
+      <p class="mt-6 max-w-2xl text-ink-muted">
+        Read out of the file release-please writes from merged pull request titles, so this list is
+        the deploy history rather than a second one kept by hand. Dates only, never times.
+      </p>
+
+      {
+        releases.length === 0 ? (
+          <p class="mt-8 font-mono text-small text-ink-muted">
+            No releases parsed from this build.
+          </p>
+        ) : (
+          <ul class="mt-8 max-w-2xl divide-y divide-rule border-t border-rule">
+            {releases.map((release) => (
+              <li class="flex items-baseline justify-between gap-6 py-3">
+                <span class="font-mono text-small text-ink" data-numeric>
+                  {release.version}
+                </span>
+                <span class="font-mono text-small text-ink-muted" data-numeric>
+                  {release.date}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+      <p class="mt-4 font-mono text-micro text-ink-muted">this build</p>
+    </section>
+  </div>
+</Shell>

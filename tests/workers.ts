@@ -107,22 +107,37 @@ export const SITE_WORKER = {
      * version of this comment claimed three, which the module's own order of
      * operations contradicts.
      *
-     * WHAT IT IS FOR: pinning the harness's /ops state at "not configured"
-     * DETERMINISTICALLY, by a var this repo controls rather than as a
-     * side effect of how a simulated binding happens to fail. The `null` above
-     * is real but incidental -- it depends on miniflare continuing to throw on
-     * an unpopulated store, which is emulator behaviour nobody here owns, and a
-     * future version that answered `''` or `undefined` instead would change
-     * which branch these tests take without changing a line of this repo. Under
-     * 'stub' the answer comes from the first three lines of the function and
-     * cannot drift.
+     * WHAT IT IS FOR: keeping a future emulator release from turning this
+     * credential-free suite into one that calls api.cloudflare.com, and pinning
+     * the harness's /ops state at "not configured" by a var this repo controls
+     * rather than as a side effect of how a simulated binding happens to fail.
+     *
+     * The `null` above is real but incidental: it depends on miniflare
+     * continuing to THROW on an unpopulated store, which is emulator behaviour
+     * nobody here owns. An emulator that answered a NON-EMPTY PLACEHOLDER
+     * STRING instead -- the plausible alternative, since the point of a
+     * simulated secret is to hand back something -- would pass `readToken`'s
+     * `typeof`/non-empty check, and `readAnalytics` would then issue its three
+     * real POSTs to api.cloudflare.com from CI, with a junk bearer token, plus
+     * `readSpend`'s GraphQL POST as a fourth, without a line of this repo
+     * changing. That is what this var buys, and it is why the seam earns its
+     * place.
+     *
+     * `''` AND `undefined` WOULD NOT DO THAT, and an earlier version of this
+     * sentence claimed they would "change which branch these tests take":
+     * `readToken` returns `null` for both, so nothing observable moves. The
+     * true justification is the placeholder-string one above; it was recorded
+     * as the weaker, false one (final-review Minor 5). Under 'stub' the answer
+     * comes from the first three lines of the function and cannot drift either
+     * way.
      *
      * So what a page test under this harness sees is /ops's "not configured"
      * rendering, and that is the only /ops state any test in this repo
-     * exercises. The parse of a REAL response is exercised nowhere -- the two
-     * API envelopes have never been measured (src/lib/ops/analytics.ts records
-     * why), and tests/ops-analytics.test.ts asserts only that a fixture of the
-     * assumed envelope maps correctly and that everything else fails closed.
+     * exercises. No test here calls the real service, and none ever should --
+     * but the envelopes are no longer guesses to be tested against: both were
+     * measured on 2026-09-11 (src/lib/ops/analytics.ts records the bodies), and
+     * tests/ops-analytics.test.ts parses copies of the recorded responses
+     * through an injected `fetch`, with everything else asserted to fail closed.
      */
     RLME_ANALYTICS_MODE: 'stub',
   },

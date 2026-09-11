@@ -1,0 +1,119 @@
+---
+/**
+ * One published figure on /ops, with the thing that makes it a measurement
+ * rather than a claim: where it came from.
+ *
+ * EVERY NUMBER STATES ITS SOURCE (06 §1). A page that publishes figures without
+ * saying which system produced them is asking to be trusted rather than
+ * checked, which is the opposite of what /ops is for -- so `source` is required
+ * and there is no arm of this component that renders a value without one.
+ *
+ * ABSENT IS A STATE, NOT A ZERO. `value === null` means this build could not
+ * read the figure, and it renders a quiet labelled absence in the slot the
+ * figure would have occupied: the same size band, the muted ink, no error
+ * colour and no empty box. A zero would be a lie in the one place nobody would
+ * think to audit -- "0 agents served" reads as a measurement, and a reader has
+ * no way to tell it from a query that never ran. The two causes this page
+ * actually has are told apart by `absentState`/`absentReason` rather than
+ * flattened into one sentence, because "the credential is missing" and "the
+ * store did not answer" call for different actions from whoever reads it.
+ */
+interface Props {
+  /** What the figure counts. Sentence case; the component does the styling. */
+  label: string;
+  /**
+   * The figure, ready to render. `null` means this build cannot say -- see the
+   * absence props below.
+   *
+   * A STRING OR A NUMBER, never a `Date` or an object: this value is rendered
+   * straight into the page, and the reader of /ops is owed a formatting
+   * decision made by the caller that knows what the number means rather than by
+   * `toString()`.
+   */
+  value: string | number | null;
+  /**
+   * Which system produced it. The closed set is the three systems /ops READS,
+   * one per call in its frontmatter; a fourth means a new read, not a new
+   * string.
+   *
+   * `'this build'` WAS A FOURTH ARM AND IS GONE (final-review Minor 8). No
+   * `OpsMetric` ever passed it: the figures sourced that way -- the rate
+   * limits, the retention windows, the changelog -- are lists rather than
+   * single figures, so they are not this component at all and carry their own
+   * hand-written provenance line. A stated closed set with a member nothing can
+   * reach is a small false claim about the page, which is the class of defect
+   * /ops exists to avoid.
+   */
+  source: 'D1' | 'Analytics Engine' | 'AI Gateway';
+  /** The absence, in the two words that go where the figure was. */
+  absentState?: string;
+  /** Why it is absent, rendered after the source so the two read as one line. */
+  absentReason?: string;
+  /**
+   * What this figure does NOT include, when that is not obvious from the label.
+   * One sentence. Used by the requests figure, whose partiality is structural
+   * (see wrangler.jsonc's `run_worker_first`) and whose label is the fix for it.
+   */
+  note?: string;
+}
+
+const {
+  label,
+  value,
+  source,
+  absentState = 'not configured',
+  absentReason = 'this needs the read-only analytics token',
+  note,
+} = Astro.props;
+---
+
+{
+  /*
+    A figure carrying a sentence takes two columns of the grid it sits in, so
+    the qualification reads as prose rather than as a narrow ragged stack
+    beside three tidy numbers. Derived from `note` rather than passed in: the
+    caller should decide what has to be said, not how many columns saying it
+    takes.
+  */
+}
+{
+  /*
+    `data-ops-metric` is a TEST HOOK and says so. tests/ops-page.test.ts has to
+    assert a property of ONE tile -- that the analytics figures render their
+    absence and never a rendered zero -- and slicing the page on class names
+    would make that assertion fail the next time a margin changes. Same
+    convention as `data-testid="resume"` and `data-gap-notice` elsewhere in this
+    repo. The label is the value because it is what the test looks a tile up by.
+  */
+}
+<div data-ops-metric={label} class:list={['border-t border-rule pt-3', note && 'sm:col-span-2']}>
+  {
+    /*
+      The figure, or the absence in its place. `data-numeric` is what
+      global.css turns into tabular figures -- so a column of these lines up
+      rather than shimmering, which is the whole reason that rule names /ops.
+    */
+  }
+  {
+    value === null ? (
+      <p class="font-mono text-heading text-ink-muted">{absentState}</p>
+    ) : (
+      <p class="font-mono text-title text-ink" data-numeric>
+        {value}
+      </p>
+    )
+  }
+  <p class="mt-3 font-mono text-micro uppercase text-ink">{label}</p>
+  {
+    /*
+      Provenance, quieter than the label on purpose: figure, then what it
+      counts, then where it came from. Lower case and unspaced against the
+      label's tracked capitals, which is what makes the third line read as the
+      third line without a fourth type size the scale does not have.
+    */
+  }
+  <p class="mt-1 font-mono text-micro normal-case text-ink-muted">
+    {source}{value === null ? ` — ${absentReason}` : ''}
+  </p>
+  {note && <p class="mt-3 max-w-prose text-small text-ink-muted">{note}</p>}
+</div>
