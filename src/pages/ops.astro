@@ -39,67 +39,76 @@ import { formatWindow, RETENTION } from '../lib/retention';
 export const prerender = false;
 
 /**
- * Sixty seconds, matching the KV TTL below. The figures are at most a minute
- * old, so an intermediary caching them for longer would be publishing a number
- * this page has already replaced.
+ * How long a figure on this page may be, in one place: the KV entries below and
+ * the `Cache-Control` header are the same number and must never be two.
+ *
+ * An intermediary holding the page longer than the cache holds its figures
+ * would be publishing numbers this Worker has already replaced.
  */
-Astro.response.headers.set('Cache-Control', 'public, max-age=60');
+const CACHE_TTL_SECONDS = 60;
+
+Astro.response.headers.set('Cache-Control', `public, max-age=${CACHE_TTL_SECONDS}`);
 
 /** The window every counted figure on this page is measured over. */
 const WINDOW_DAYS = 30;
 
-interface OpsSnapshot {
-  metrics: OpsMetrics;
-  traffic: AgentTraffic | null;
-  spend: GatewaySpend | null;
-}
-
 /**
- * The three reads, behind one 60-second cache entry.
+ * One read, cached under its own key, degrading to `null` on anything that
+ * throws.
  *
- * THE TRY IS AROUND THE CACHE CALL RATHER THAN INSIDE IT, and the placement is
- * the whole design. `readOpsMetrics` returns `Promise<OpsMetrics>`, not
- * `| null`, and carries no internal try -- deliberately, since a caller that
- * wants the numbers should hear about a D1 outage rather than receive a shape
- * that looks like zero traffic. This page is the caller, and what it wants is
- * to degrade: an unhandled rejection here is a 500 on a public page whose
- * entire premise is that it tells you what it knows. So the rejection is caught
- * here and the sections render the same labelled cannot-say state the
- * credentialed reads use, with their own wording.
+ * THREE KEYS RATHER THAN ONE, which the plan spelled as a single `ops:v1`. The
+ * key shape turned out to be load-bearing in two directions the single entry
+ * got wrong, and neither is theoretical:
  *
- * Catching OUTSIDE `cached` is what keeps the failure from being pinned.
- * `cached` writes nothing when `fn` rejects, so a D1 blip degrades this one
- * render and the next request retries -- where a `catch` inside the callback
- * would have stored a degraded snapshot and served it for the whole minute.
+ *   - IT MISLABELLED WHICH SYSTEM WAS BROKEN. One `try` around all three reads
+ *     means a D1 rejection nulls `traffic` and `spend` as well, so the three
+ *     Analytics Engine tiles fall through to their default absence -- "this
+ *     needs the read-only analytics token" -- which is a FALSE sentence about
+ *     what is wrong. That is the exact error `D1_ABSENT` below was invented to
+ *     prevent, reintroduced one level up. It is harmless only while the token
+ *     is unconfigured and becomes a live falsehood the day it is populated.
+ *   - IT AMPLIFIED A D1 OUTAGE INTO AN API ONE. The `try` is outside `cached`
+ *     (see below), so a rejection means NOTHING is written -- including the
+ *     analytics half that answered perfectly well. Every request during a D1
+ *     blip would then re-run `readAnalytics`'s three api.cloudflare.com queries
+ *     uncached, against a rate-limited token, which is precisely the
+ *     amplification src/lib/ops/cache.ts exists to prevent.
  *
- * WHAT THE SINGLE KEY COSTS, said out loud because the cache module's own
- * comment promises the opposite for a bare `null`: the snapshot is stored
- * whole, so a `null` HALF of it (an unconfigured analytics read) is cached
- * along with the D1 half and is not retried until the entry expires. That is
- * the plan's key shape and the cost is bounded at sixty seconds, which is the
- * same staleness every other figure here already carries.
+ * Per-key caching also restores the property that module documents and the
+ * single entry silently lost: `cached` never stores a bare `null`, so an
+ * unconfigured or failed read is retried on the next request rather than pinned
+ * as "not configured" for the whole TTL. Folded into a composite object, a
+ * `null` half was just a field and was stored with the rest.
+ *
+ * THE TRY IS AROUND THE CACHE CALL RATHER THAN INSIDE IT, and that placement is
+ * still the point. `readOpsMetrics` returns `Promise<OpsMetrics>`, not `| null`,
+ * and carries no internal try -- deliberately, since a caller that wants the
+ * numbers should hear about a D1 outage rather than receive a shape that looks
+ * like zero traffic. This page is the caller, and what it wants is to degrade:
+ * an unhandled rejection here is a 500 on a public page whose entire premise is
+ * that it tells you what it knows. Catching outside `cached` is also what keeps
+ * a failure from being pinned -- `cached` writes nothing when `fn` rejects, so
+ * the next request retries.
  */
-let snapshot: OpsSnapshot | null = null;
-try {
-  snapshot = await cached<OpsSnapshot>(env.KV_CACHE, 'ops:v1', 60, async () => {
-    const now = new Date();
-    const [metrics, traffic, spend] = await Promise.all([
-      readOpsMetrics(env.DB, now, WINDOW_DAYS),
-      readAnalytics(env, now, WINDOW_DAYS),
-      readSpend(env),
-    ]);
-    return { metrics, traffic, spend };
-  });
-} catch (error) {
-  // The operator gets the exception in Workers observability; the reader gets a
-  // sentence saying the figures are not available. A stack trace on a public
-  // page would be both a worse answer and a disclosure.
-  console.error('ops: the live figures could not be read', error);
+async function readOrNull<T>(key: string, read: () => Promise<T>): Promise<T | null> {
+  try {
+    return await cached<T | null>(env.KV_CACHE, key, CACHE_TTL_SECONDS, read);
+  } catch (error) {
+    // The operator gets the exception in Workers observability; the reader gets
+    // a sentence saying that figure is not available. A stack trace on a public
+    // page would be both a worse answer and a disclosure.
+    console.error(`ops: ${key} could not be read`, error);
+    return null;
+  }
 }
 
-const metrics = snapshot?.metrics ?? null;
-const traffic = snapshot?.traffic ?? null;
-const spend = snapshot?.spend ?? null;
+const now = new Date();
+const [metrics, traffic, spend]: [OpsMetrics | null, AgentTraffic | null, GatewaySpend | null] =
+  await Promise.all([
+    readOrNull('ops:metrics:v1', () => readOpsMetrics(env.DB, now, WINDOW_DAYS)),
+    readOrNull('ops:traffic:v1', () => readAnalytics(env, now, WINDOW_DAYS)),
+    readOrNull('ops:spend:v1', () => readSpend(env)),
+  ]);
 
 /**
  * The absence wording for the uncredentialed half. Different from the default
@@ -292,6 +301,11 @@ const releases = recentReleases(changelog, 5);
                 </li>
               ))}
             </ul>
+            {/* The one list on this page that is not an `OpsMetric`, so it
+                carries its source itself. Live metrics mixes D1 and Analytics
+                Engine figures, and an unlabelled column of numbers in that
+                neighbourhood is a number asking to be trusted. */}
+            <p class="mt-2 max-w-md font-mono text-micro text-ink-muted">D1</p>
           </div>
         )
       }

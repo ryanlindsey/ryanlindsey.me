@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { RETENTION, enforceRetention, retentionCutoff } from '../src/lib/retention';
+import { RETENTION, enforceRetention, formatWindow, retentionCutoff } from '../src/lib/retention';
 
 /**
  * Retention enforcement (06 §2), against a fake D1 rather than the harness.
@@ -20,6 +20,29 @@ describe('retentionCutoff', () => {
     expect(retentionCutoff(new Date('2026-09-09T05:47:00.000Z'), 30)).toBe(
       '2026-08-10T05:47:00.000Z',
     );
+  });
+});
+
+describe('formatWindow', () => {
+  test('renders the two windows RETENTION actually stores', () => {
+    // The whole reason this helper exists: `365` must not reach a reader as
+    // "365 days", because the published policy says a year.
+    expect(formatWindow(30)).toBe('30 days');
+    expect(formatWindow(365)).toBe('1 year');
+  });
+
+  test('the branches with no caller today are covered rather than assumed', () => {
+    // This function's own doc comment refuses to add a month arm on the grounds
+    // that "a branch with no caller is a claim about a future nobody has made
+    // yet" -- which makes shipping two UNTESTED branches with no caller the same
+    // mistake one step further along. Three lines is the cheaper of the two ways
+    // to settle that (the other being to delete them), and it keeps the helper
+    // honest for the second window `RETENTION` gains.
+    expect(formatWindow(730)).toBe('2 years');
+    expect(formatWindow(1)).toBe('1 day');
+    // Not a whole number of years, so it stays in days rather than rounding a
+    // retention window in the reader's favour.
+    expect(formatWindow(400)).toBe('400 days');
   });
 });
 

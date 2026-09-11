@@ -60,6 +60,28 @@ afterAll(async () => {
   await server.close();
 });
 
+/**
+ * One `OpsMetric` tile's markup, looked up by its label.
+ *
+ * By the `data-ops-metric` hook rather than by slicing on class names: a tile
+ * assertion keyed on `class="border-t border-rule pt-3"` would start passing
+ * vacuously the next time a margin changes, which is the failure mode that made
+ * the original version of the analytics test meaningless. A tile contains only
+ * `<p>` elements, so the first `</div>` after the hook is its own.
+ */
+function tile(label: string): string {
+  const hook = html.indexOf(`data-ops-metric="${label}"`);
+  expect(hook, `no metric tile is labelled ${label}`).toBeGreaterThan(-1);
+  return html.slice(html.lastIndexOf('<div', hook), html.indexOf('</div>', hook));
+}
+
+/** One `<li>` of a definition list, looked up by the text in it. */
+function row(text: string): string {
+  const at = html.indexOf(text);
+  expect(at, `no row contains ${text}`).toBeGreaterThan(-1);
+  return html.slice(html.lastIndexOf('<li', at), html.indexOf('</li>', at));
+}
+
 describe('/ops', () => {
   test('renders all six sections 06 §1 names', () => {
     for (const heading of [
@@ -86,8 +108,33 @@ describe('/ops', () => {
 
   test('an unconfigured analytics section says so instead of showing a zero', () => {
     // RLME_ANALYTICS_MODE is 'stub' under the harness, so readAnalytics is null.
-    expect(html).toMatch(/not configured/i);
-    expect(html).not.toMatch(/0 agents served/i);
+    //
+    // ASSERTED PER TILE, WHICH THE BRIEF'S VERSION WAS NOT, and the difference
+    // is the whole value of the test. That version was
+    // `not.toMatch(/0 agents served/i)` beside `toMatch(/not configured/i)`, and
+    // NEITHER HALF COULD FAIL for these three figures: the page never renders
+    // the words "agents served" anywhere, and "not configured" would still be
+    // found on the three permanently-null AI Gateway tiles even if all three
+    // Analytics Engine figures regressed to `?? 0`. So the property 06 §1 calls
+    // an invisible lie had no failing assertion behind it.
+    //
+    // `data-numeric` is the mechanism: `OpsMetric` puts that attribute on the
+    // figure paragraph and on nothing else, so its presence in a tile means a
+    // number was rendered there. MEASURED against a deliberate `?? 0` on
+    // `traffic?.requests` (fix round 1): red on the requests tile, and green
+    // again on revert.
+    for (const label of [
+      'Requests that reached the Worker',
+      'Requests from agents',
+      'Median response time',
+    ]) {
+      const metric = tile(label);
+      expect(metric, `${label} must render its absence`).toContain('not configured');
+      expect(metric, `${label} must name the missing credential`).toContain(
+        'Analytics Engine — this needs the read-only analytics token',
+      );
+      expect(metric, `${label} must not render a figure at all`).not.toContain('data-numeric');
+    }
   });
 
   test('the changelog shows dates and never a time', () => {
@@ -105,6 +152,14 @@ describe('/ops', () => {
   test('the retention windows on the page are the ones the cron enforces', () => {
     expect(html).toContain('30 days');
     expect(html).toContain('1 year');
+    // PINNED TO THEIR OWN ROWS, because the two assertions above are weaker than
+    // they look: the "Last 30 days" eyebrow over the metrics grid satisfies
+    // `toContain('30 days')` on its own, so the retention list could break
+    // entirely and half of this test would still pass. Each window is checked
+    // against the thing it is a window FOR.
+    expect(row('Chat questions and answers')).toContain('30 days');
+    expect(row('The MCP audit log')).toContain('1 year');
+    expect(row('Stored analysis reports')).toContain('1 year');
   });
 
   test('the architecture diagram is inline SVG using currentColor, not an image', () => {

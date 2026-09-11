@@ -67,7 +67,17 @@ const {
     takes.
   */
 }
-<div class:list={['border-t border-rule pt-3', note && 'sm:col-span-2']}>
+{
+  /*
+    `data-ops-metric` is a TEST HOOK and says so. tests/ops-page.test.ts has to
+    assert a property of ONE tile -- that the analytics figures render their
+    absence and never a rendered zero -- and slicing the page on class names
+    would make that assertion fail the next time a margin changes. Same
+    convention as `data-testid="resume"` and `data-gap-notice` elsewhere in this
+    repo. The label is the value because it is what the test looks a tile up by.
+  */
+}
+<div data-ops-metric={label} class:list={['border-t border-rule pt-3', note && 'sm:col-span-2']}>
   {
     /*
       The figure, or the absence in its place. `data-numeric` is what
