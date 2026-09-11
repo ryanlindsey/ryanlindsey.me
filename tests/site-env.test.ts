@@ -58,6 +58,11 @@ const SITE_BINDING_NAMES = [
   'BROWSER',
   'ASSETS',
   'RLME_AI_GATEWAY_ID',
+  // Day 6 Task 2 (06 §3): a PUBLIC identifier, not a secret -- the account the
+  // Analytics Engine dataset and AI Gateway live in, which /ops needs at
+  // request time because wrangler's own `account_id` is build-time config and
+  // is not exposed to the Worker.
+  'RLME_ACCOUNT_ID',
   'SITE_ORIGIN',
   'RLME_TURNSTILE_SITEKEY',
   'MCP',

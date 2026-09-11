@@ -22,22 +22,18 @@
   // static asset, so `Accept`-based negotiation would otherwise be dead code
   // for the one thing it exists to intercept.
   //
-  // Scoped to the content routes only (not `true`/global), so every other
-  // static asset -- `/_astro/*`, favicon, `robots.txt` (Task 12) -- keeps
-  // the fast, Worker-free asset-serving path. `*` matches across path
-  // segments (Cloudflare's own docs example has `/api/*` needing
-  // `!/api/docs/*` to exclude a nested path), so `/writing/*` alone would
-  // cover both `/writing/foo` and `/writing/foo/` -- but ALSO
-  // `/writing/foo.md` itself: an already-suffixed request `markdownAssetPathFor`
-  // rejects on sight (fix round 1), so routing it through the Worker bought
-  // nothing but an extra hop before falling to the same asset it would have
-  // been served directly anyway. The two `!.../*.md` negative patterns below
-  // carve that back out -- negative patterns win regardless of list order
-  // (Cloudflare's docs) -- which is also why `/resume.json`/`.md`/`.pdf`
-  // never needed one: there is no `/resume/*` positive pattern to catch
-  // them in the first place. The bare, no-slug forms (`/writing`, `/work`)
-  // are listed explicitly rather than relied on, since neither takes a
-  // markdown variant anyway and there is no reason to guess.
+  // Scoped to the content and agent-signal routes only (not `true`/global), so
+  // every other static asset -- `/_astro/*`, favicon, the images -- keeps the
+  // fast, Worker-free asset-serving path. `*` matches across path segments
+  // (Cloudflare's own docs example has `/api/*` needing `!/api/docs/*` to
+  // exclude a nested path), so `/writing/*` alone covers `/writing/foo`,
+  // `/writing/foo/` AND `/writing/foo.md`. Day 3 carved that last form back out
+  // with two `!.../*.md` negative patterns; DAY 6 DELETED THEM, and the reason
+  // is with the agent-signal block below. `/resume.json`/`.md`/`.pdf` never
+  // needed a negative pattern either way: there is no `/resume/*` positive
+  // pattern to catch them in the first place. The bare, no-slug forms
+  // (`/writing`, `/work`) are listed explicitly rather than relied on, since
+  // neither takes a markdown variant anyway and there is no reason to guess.
   "assets": {
     "directory": "./dist/client",
     "binding": "ASSETS",
@@ -46,10 +42,8 @@
       "/resume/",
       "/writing",
       "/writing/*",
-      "!/writing/*.md",
       "/work",
       "/work/*",
-      "!/work/*.md",
       // Day 4 Task 13 (03 §1): `/mcp` has no matching entry in `dist/client`
       // (confirmed: `find dist/client -iname '*mcp*'` is empty), so today it
       // already falls through to src/worker.ts's forward with no entry here
@@ -91,6 +85,41 @@
       // `/fit/*`.
       "/fit",
       "/fit/*",
+      // DAY 6 (06 §3) ADDED THE BLOCK BELOW AND DELETED TWO NEGATIVE PATTERNS,
+      // and the deletion is the part that needs the argument, because day 3's
+      // reasoning for them was correct at the time and is quoted here rather
+      // than lost: routing an already-suffixed `.md` request through the Worker
+      // "bought nothing but an extra hop before falling to the same asset it
+      // would have been served directly anyway".
+      //
+      // It buys something now. A request served by the Asset Worker never
+      // reaches src/worker.ts, so it cannot be classified and cannot be
+      // counted -- and `/llms.txt` and the `.md` variants are not incidental
+      // traffic, they are THE agent-signal routes, the ones "agents served"
+      // (06 §1's headline number) exists to measure. Leaving them off this list
+      // would have shipped an /ops page whose central statistic was blind to
+      // the requests it was about.
+      //
+      // The cost is one Worker invocation per request on these paths; the bytes
+      // still come from `ASSETS` either way. NOT added, deliberately:
+      // `/_astro/*`, fonts and images. Those are browser sub-resources -- they
+      // would multiply invocations by a factor of ten and tell us nothing an
+      // agent did, since an agent fetching a markdown file requests no CSS.
+      //
+      // `/` IS ALSO NOT HERE, and it was in a draft of this list. The home page
+      // is the busiest path on the site and the least informative one to count:
+      // a request for it is not an agent signal, it is everybody. Adding it
+      // would have put an invocation in front of the front page to improve a
+      // "requests served" figure that /ops already labels as partial. The
+      // labelling is the honest fix; the invocation was not.
+      "/llms.txt",
+      "/llms-full.txt",
+      "/resume.json",
+      "/rss.xml",
+      "/feed.json",
+      "/robots.txt",
+      "/chat",
+      "/chat/*",
     ],
   },
 
@@ -273,6 +302,12 @@
   // `astro dev`, override it in .dev.vars rather than editing this value.
   "vars": {
     "RLME_AI_GATEWAY_ID": "ryanlindsey-me",
+    // The account this Worker's Analytics Engine dataset and AI Gateway live
+    // in, for the two REST reads /ops makes (src/lib/ops/analytics.ts). A
+    // PUBLIC identifier (10 §2.6) and already the top-level `account_id` in
+    // this same file -- it is repeated here because `account_id` is wrangler's
+    // own field and is not exposed to the Worker at runtime.
+    "RLME_ACCOUNT_ID": "1b764d090899bf1ee61a8d1e87c10710",
     "SITE_ORIGIN": "https://ryanlindsey.me",
     // PUBLIC (10 §2.6), and here rather than in a `.env` for two reasons: the
     // one page that uses it is on-demand rendered, so it reads this at request

@@ -1,4 +1,6 @@
 import { handle } from '@astrojs/cloudflare/handler';
+import { classifyRequest, signalsFrom } from './lib/agent-intel/classify';
+import { recordAgentEvent, type Surface } from './lib/agent-intel/record';
 import { NOT_FOUND_PROBE } from './lib/not-found-probe';
 import { regenerateResumePdf } from './lib/resume-pdf';
 import { enforceRetention } from './lib/retention';
@@ -264,165 +266,220 @@ function siteNotFound(request: Request, env: Env, ctx: ExecutionContext): Promis
   return handle(probe, env, ctx);
 }
 
+/**
+ * Everything `fetch` used to be, unchanged, so the recording wrapper below has
+ * exactly one place to observe. The four early returns inside it are the
+ * reason this extraction happened rather than four `recordAgentEvent` calls:
+ * a fifth branch added later is counted automatically, and cannot be the one
+ * somebody forgot.
+ */
+async function route(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  // Day 4 Task 13 (03 §1): https://ryanlindsey.me/mcp is the PRIMARY MCP
+  // endpoint and mcp.ryanlindsey.me the vanity alias, so this origin must
+  // serve the protocol rather than a 404. One Worker owns the MCP server
+  // (workers/mcp/src/index.ts); this forwards to it over the `MCP` service
+  // binding rather than hosting a second copy, so the two origins cannot
+  // answer differently and this file grows no routing, CORS or origin-policy
+  // logic of its own.
+  //
+  // The request is passed through unchanged -- method, headers (Origin
+  // included, for Task 2's browser-connector CORS policy) and body. Nothing
+  // here touches the request object, so the hop is faithful by construction
+  // rather than by a field-by-field reconstruction that could drift.
+  //
+  // The MCP handler matches on the request's pathname via `route: '/mcp'`
+  // (workers/mcp/src/index.ts's HANDLER_OPTIONS). A service binding's
+  // `Fetcher.fetch()` delivers the request to the target Worker with its
+  // URL untouched -- verified here, not assumed: tests/pages.test.ts's
+  // "/mcp on the site origin completes the MCP handshake" only turns green
+  // once this forward is wired in, which would not be true if the pathname
+  // were rewritten or dropped somewhere along the hop.
+  if (new URL(request.url).pathname === '/mcp') return env.MCP.fetch(request);
+
+  // Day 5 Task 13 (04 §2, 09 §1): `/fit*` is unlisted and its URL carries a
+  // scoped token. Two things happen to whatever the route returns, and they
+  // pull in opposite directions on purpose.
+  //
+  // A REFUSAL IS REPLACED WITH THE SITE'S OWN 404, undecorated. The gates in
+  // src/pages/fit/*.ts answer a bare `404` and this turns it into exactly the
+  // response an unrouted path gets, because what a prober compares is the
+  // whole response and not the status. MEASURED, and it is why
+  // src/pages/404.astro now exists: before it, an unrouted path got Astro's
+  // stock 404 template -- `text/html`, ~4.3 KB, and it EMBEDS THE REQUESTED
+  // PATH -- so no refusal `/fit` could construct was ever byte-identical to
+  // it. `Astro.rewrite('/404')` from the page was tried and measured at 500
+  // (an on-demand route cannot rewrite to a prerendered one), so it is done
+  // here, where a second dispatch is available.
+  //
+  // THE 403 AND THE 500 ARE REFUSALS TOO, and they get the same treatment.
+  //
+  // The 403 is Astro's `security.checkOrigin` middleware answering a
+  // form-content-type POST that carries no `Origin`. That check does not run
+  // for every path, and WHAT DECIDES IT IS NOT `run_worker_first` -- an
+  // earlier revision of this comment said it was, and that was measured
+  // false: `POST /work/nope-nope` IS matched by that list, reaches this
+  // Worker (proved by `GET /work/nope-nope` carrying `Vary: Accept`, a header
+  // only this file adds) and still answers the 404 page rather than 403.
+  //
+  // The variable is whether the path resolves to a ROUTE. An unrouted path
+  // now lands on src/pages/404.astro, which is PRERENDERED, so Astro's
+  // `renderDefaultError` fetches it as an asset and skips middleware
+  // entirely. A matched on-demand route still reaches the check: `POST
+  // /resume.pdf` with no `Origin` answers 403. So `/fit/run` answering 403
+  // where a dead path answers the 404 page says "this path is a real
+  // on-demand route" -- which for an unlisted surface is the whole secret.
+  // Getting this backwards is worse than not writing it down: a maintainer
+  // who believed the `run_worker_first` story could remove `/fit` from that
+  // list expecting the asymmetry to go away, and would lose the referrer
+  // protection instead.
+  //
+  // The 500 is the same oracle with a third status. `POST /fit/run` with
+  // `content-type: application/json` MEASURED at 500 with an empty body and
+  // both headers attached, against 5,182 bytes of 404 page from every dead
+  // path -- `await request.formData()` throws on a body it cannot parse, and
+  // it runs before either gate. That is fixed at the route as well (see
+  // src/pages/fit/run.ts); this arm is the second half, because a throw
+  // anywhere else in the page would reopen it and only this end catches
+  // those.
+  //
+  // The cost of the 500 arm is real and worth stating: a genuine bug on the
+  // GRANTED path is now shown as a 404 rather than a 500. The exception is
+  // still logged (`observability` is on in wrangler.jsonc), so it is visible
+  // to the operator and not to the caller -- which is the right way round for
+  // a page whose refusal must not be distinguishable from a dead path.
+  //
+  // Merely leaving the two headers off these is not enough, and that was
+  // measured too: decorated, `/fit/run`'s was the only 403 on the site
+  // carrying them -- the same oracle wearing a different status code.
+  //
+  // EVERY OTHER `/fit` RESPONSE REQUIRES A VALID GRANT, and those get two
+  // headers. `X-Robots-Tag` is the header form of the page's own meta tag and
+  // covers the 303, which has no head to put a tag in. `Referrer-Policy:
+  // no-referrer` is the load-bearing one: the Turnstile widget on this page
+  // loads a script from challenges.cloudflare.com FROM A DOCUMENT WHOSE URL
+  // CARRIES THE TOKEN, and this header is what keeps the token out of the
+  // `Referer` on that subrequest. Base.astro emits the meta-tag form as well
+  // (see its `referrer` prop) so that confinement does not rest on one line.
+  // Neither header belongs on the 404: the site's 404 carries neither, and a
+  // refusal that carries a header nothing else on the site sets is the same
+  // oracle in a subtler form.
+  //
+  // BEFORE the negotiation block below rather than after it, deliberately:
+  // `/fit` is never a markdown route and must not acquire `Vary: Accept`.
+  // The prefix match is the `/fit*` this comment names; there is no other
+  // `/fit`-prefixed route on this site, and a future one that is not part of
+  // this surface would need to be excluded here.
+  if (new URL(request.url).pathname.startsWith('/fit')) {
+    let response: Response;
+    try {
+      response = await handle(request, env, ctx);
+    } catch (error) {
+      // A REJECTED promise, not a 500 `Response` -- a different shape from
+      // the one `REFUSAL_STATUSES` below flattens, and the one that used to
+      // escape this branch entirely (final-review Important 3). Anything
+      // that reaches the runtime's own error page renders a body no other
+      // path on this site produces, which reopens exactly the
+      // route-existence oracle the flattening exists to close: a stranger
+      // probing `/fit` would see a crash where an unrouted path shows a
+      // 404.
+      //
+      // LOGGED FIRST, and this is the half that keeps the seam contract
+      // honest. `verifyTurnstile` throws a plain `Error` on an unrecognised
+      // `RLME_TURNSTILE_MODE`, and every day-5 seam is documented as
+      // failing loudly on a bad value -- but "loudly" cannot mean "to the
+      // caller" on a surface engineered to be indistinguishable from a dead
+      // route. So the operator gets the stack in Workers observability and
+      // the caller gets the site 404, which is the only split that serves
+      // both properties. tests/mcp-env.test.ts pins the config guard that
+      // keeps the value from being set in the first place.
+      console.error('fit: the request threw before producing a response', error);
+      return siteNotFound(request, env, ctx);
+    }
+    // Every refusal leaves as the site's own 404 and undecorated; only a
+    // response that required a valid grant (the 200, the 303) is decorated
+    // below. A browser submitting this form always sends `Origin`, so the
+    // 403 arm costs a legitimate caller nothing.
+    if (REFUSAL_STATUSES.has(response.status)) return siteNotFound(request, env, ctx);
+    const headers = new Headers(response.headers);
+    headers.set('X-Robots-Tag', 'noindex, nofollow');
+    headers.set('Referrer-Policy', 'no-referrer');
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+
+  // `markdownPath` is non-null exactly on a content route being fetched
+  // with a negotiable method -- i.e. exactly the requests this module has
+  // an opinion about. It is computed once and used twice below: to decide
+  // whether to attempt serving markdown, AND (fix round 1, "Vary: Accept
+  // asymmetry") to decide whether the HTML `handle()` fallback on that
+  // same route needs `Vary: Accept` too. Without it, a shared cache could
+  // key an HTML response under a URL a markdown-preferring client later
+  // requests, and serve cached HTML in place of ever reaching this code
+  // again -- the same class of stale-representation bug the markdown
+  // side's `Vary` header guards against, just in the other direction.
+  const markdownPath = NEGOTIABLE_METHODS.has(request.method)
+    ? markdownAssetPathFor(new URL(request.url).pathname)
+    : null;
+
+  if (markdownPath && prefersMarkdown(request.headers.get('Accept'))) {
+    const negotiated = await serveMarkdownAsset(env, markdownPath, request);
+    if (negotiated) return negotiated;
+  }
+
+  const response = await handle(request, env, ctx);
+  return markdownPath ? withVaryAccept(response) : response;
+}
+
+/**
+ * NO CAMPAIGN DOMAINS ON THE HOT PATH, and this is a decision rather than a
+ * shortcut.
+ *
+ * `referrerClassFor` can label a referrer as `campaign` when it is handed the
+ * configured domains, and 06 §3 wants that label -- but the domains live in
+ * KV, and reading KV on EVERY request to attach a label to the small minority
+ * that carry a referrer at all would put a storage round trip in front of every
+ * page on the site to serve an analytics row.
+ *
+ * So the site Worker's rows carry `social`/`search`/`other`/`none`, and the
+ * campaign attribution is attached where it is both cheap and actually needed:
+ * the high-intent path (Task 3), which already reads campaign config to decide
+ * whether an event is high-intent, and which handles single-figure volumes.
+ */
+const CAMPAIGN_DOMAINS_OFF: readonly string[] = [];
+
+/**
+ * Which surface a request was served by, for the AE row (06 §3).
+ *
+ * Derived from the path rather than from the branch that answered, because the
+ * two can disagree in exactly one interesting case: a `/fit` request that was
+ * flattened into the site's 404. That is still `/fit` traffic -- somebody
+ * pointed a dead or absent token at an unlisted surface -- and counting it as
+ * ordinary site traffic would hide the probe the flattening exists to make
+ * uninteresting to the prober, not to us.
+ */
+function surfaceFor(pathname: string): Surface {
+  if (pathname === '/mcp') return 'mcp';
+  if (pathname.startsWith('/fit')) return 'fit';
+  if (pathname.startsWith('/chat')) return 'chat';
+  return 'site';
+}
+
 export default {
   fetch: async (request, env, ctx) => {
-    // Day 4 Task 13 (03 §1): https://ryanlindsey.me/mcp is the PRIMARY MCP
-    // endpoint and mcp.ryanlindsey.me the vanity alias, so this origin must
-    // serve the protocol rather than a 404. One Worker owns the MCP server
-    // (workers/mcp/src/index.ts); this forwards to it over the `MCP` service
-    // binding rather than hosting a second copy, so the two origins cannot
-    // answer differently and this file grows no routing, CORS or origin-policy
-    // logic of its own.
-    //
-    // The request is passed through unchanged -- method, headers (Origin
-    // included, for Task 2's browser-connector CORS policy) and body. Nothing
-    // here touches the request object, so the hop is faithful by construction
-    // rather than by a field-by-field reconstruction that could drift.
-    //
-    // The MCP handler matches on the request's pathname via `route: '/mcp'`
-    // (workers/mcp/src/index.ts's HANDLER_OPTIONS). A service binding's
-    // `Fetcher.fetch()` delivers the request to the target Worker with its
-    // URL untouched -- verified here, not assumed: tests/pages.test.ts's
-    // "/mcp on the site origin completes the MCP handshake" only turns green
-    // once this forward is wired in, which would not be true if the pathname
-    // were rewritten or dropped somewhere along the hop.
-    if (new URL(request.url).pathname === '/mcp') return env.MCP.fetch(request);
-
-    // Day 5 Task 13 (04 §2, 09 §1): `/fit*` is unlisted and its URL carries a
-    // scoped token. Two things happen to whatever the route returns, and they
-    // pull in opposite directions on purpose.
-    //
-    // A REFUSAL IS REPLACED WITH THE SITE'S OWN 404, undecorated. The gates in
-    // src/pages/fit/*.ts answer a bare `404` and this turns it into exactly the
-    // response an unrouted path gets, because what a prober compares is the
-    // whole response and not the status. MEASURED, and it is why
-    // src/pages/404.astro now exists: before it, an unrouted path got Astro's
-    // stock 404 template -- `text/html`, ~4.3 KB, and it EMBEDS THE REQUESTED
-    // PATH -- so no refusal `/fit` could construct was ever byte-identical to
-    // it. `Astro.rewrite('/404')` from the page was tried and measured at 500
-    // (an on-demand route cannot rewrite to a prerendered one), so it is done
-    // here, where a second dispatch is available.
-    //
-    // THE 403 AND THE 500 ARE REFUSALS TOO, and they get the same treatment.
-    //
-    // The 403 is Astro's `security.checkOrigin` middleware answering a
-    // form-content-type POST that carries no `Origin`. That check does not run
-    // for every path, and WHAT DECIDES IT IS NOT `run_worker_first` -- an
-    // earlier revision of this comment said it was, and that was measured
-    // false: `POST /work/nope-nope` IS matched by that list, reaches this
-    // Worker (proved by `GET /work/nope-nope` carrying `Vary: Accept`, a header
-    // only this file adds) and still answers the 404 page rather than 403.
-    //
-    // The variable is whether the path resolves to a ROUTE. An unrouted path
-    // now lands on src/pages/404.astro, which is PRERENDERED, so Astro's
-    // `renderDefaultError` fetches it as an asset and skips middleware
-    // entirely. A matched on-demand route still reaches the check: `POST
-    // /resume.pdf` with no `Origin` answers 403. So `/fit/run` answering 403
-    // where a dead path answers the 404 page says "this path is a real
-    // on-demand route" -- which for an unlisted surface is the whole secret.
-    // Getting this backwards is worse than not writing it down: a maintainer
-    // who believed the `run_worker_first` story could remove `/fit` from that
-    // list expecting the asymmetry to go away, and would lose the referrer
-    // protection instead.
-    //
-    // The 500 is the same oracle with a third status. `POST /fit/run` with
-    // `content-type: application/json` MEASURED at 500 with an empty body and
-    // both headers attached, against 5,182 bytes of 404 page from every dead
-    // path -- `await request.formData()` throws on a body it cannot parse, and
-    // it runs before either gate. That is fixed at the route as well (see
-    // src/pages/fit/run.ts); this arm is the second half, because a throw
-    // anywhere else in the page would reopen it and only this end catches
-    // those.
-    //
-    // The cost of the 500 arm is real and worth stating: a genuine bug on the
-    // GRANTED path is now shown as a 404 rather than a 500. The exception is
-    // still logged (`observability` is on in wrangler.jsonc), so it is visible
-    // to the operator and not to the caller -- which is the right way round for
-    // a page whose refusal must not be distinguishable from a dead path.
-    //
-    // Merely leaving the two headers off these is not enough, and that was
-    // measured too: decorated, `/fit/run`'s was the only 403 on the site
-    // carrying them -- the same oracle wearing a different status code.
-    //
-    // EVERY OTHER `/fit` RESPONSE REQUIRES A VALID GRANT, and those get two
-    // headers. `X-Robots-Tag` is the header form of the page's own meta tag and
-    // covers the 303, which has no head to put a tag in. `Referrer-Policy:
-    // no-referrer` is the load-bearing one: the Turnstile widget on this page
-    // loads a script from challenges.cloudflare.com FROM A DOCUMENT WHOSE URL
-    // CARRIES THE TOKEN, and this header is what keeps the token out of the
-    // `Referer` on that subrequest. Base.astro emits the meta-tag form as well
-    // (see its `referrer` prop) so that confinement does not rest on one line.
-    // Neither header belongs on the 404: the site's 404 carries neither, and a
-    // refusal that carries a header nothing else on the site sets is the same
-    // oracle in a subtler form.
-    //
-    // BEFORE the negotiation block below rather than after it, deliberately:
-    // `/fit` is never a markdown route and must not acquire `Vary: Accept`.
-    // The prefix match is the `/fit*` this comment names; there is no other
-    // `/fit`-prefixed route on this site, and a future one that is not part of
-    // this surface would need to be excluded here.
-    if (new URL(request.url).pathname.startsWith('/fit')) {
-      let response: Response;
-      try {
-        response = await handle(request, env, ctx);
-      } catch (error) {
-        // A REJECTED promise, not a 500 `Response` -- a different shape from
-        // the one `REFUSAL_STATUSES` below flattens, and the one that used to
-        // escape this branch entirely (final-review Important 3). Anything
-        // that reaches the runtime's own error page renders a body no other
-        // path on this site produces, which reopens exactly the
-        // route-existence oracle the flattening exists to close: a stranger
-        // probing `/fit` would see a crash where an unrouted path shows a
-        // 404.
-        //
-        // LOGGED FIRST, and this is the half that keeps the seam contract
-        // honest. `verifyTurnstile` throws a plain `Error` on an unrecognised
-        // `RLME_TURNSTILE_MODE`, and every day-5 seam is documented as
-        // failing loudly on a bad value -- but "loudly" cannot mean "to the
-        // caller" on a surface engineered to be indistinguishable from a dead
-        // route. So the operator gets the stack in Workers observability and
-        // the caller gets the site 404, which is the only split that serves
-        // both properties. tests/mcp-env.test.ts pins the config guard that
-        // keeps the value from being set in the first place.
-        console.error('fit: the request threw before producing a response', error);
-        return siteNotFound(request, env, ctx);
-      }
-      // Every refusal leaves as the site's own 404 and undecorated; only a
-      // response that required a valid grant (the 200, the 303) is decorated
-      // below. A browser submitting this form always sends `Origin`, so the
-      // 403 arm costs a legitimate caller nothing.
-      if (REFUSAL_STATUSES.has(response.status)) return siteNotFound(request, env, ctx);
-      const headers = new Headers(response.headers);
-      headers.set('X-Robots-Tag', 'noindex, nofollow');
-      headers.set('Referrer-Policy', 'no-referrer');
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers,
-      });
-    }
-
-    // `markdownPath` is non-null exactly on a content route being fetched
-    // with a negotiable method -- i.e. exactly the requests this module has
-    // an opinion about. It is computed once and used twice below: to decide
-    // whether to attempt serving markdown, AND (fix round 1, "Vary: Accept
-    // asymmetry") to decide whether the HTML `handle()` fallback on that
-    // same route needs `Vary: Accept` too. Without it, a shared cache could
-    // key an HTML response under a URL a markdown-preferring client later
-    // requests, and serve cached HTML in place of ever reaching this code
-    // again -- the same class of stale-representation bug the markdown
-    // side's `Vary` header guards against, just in the other direction.
-    const markdownPath = NEGOTIABLE_METHODS.has(request.method)
-      ? markdownAssetPathFor(new URL(request.url).pathname)
-      : null;
-
-    if (markdownPath && prefersMarkdown(request.headers.get('Accept'))) {
-      const negotiated = await serveMarkdownAsset(env, markdownPath, request);
-      if (negotiated) return negotiated;
-    }
-
-    const response = await handle(request, env, ctx);
-    return markdownPath ? withVaryAccept(response) : response;
+    const started = Date.now();
+    const response = await route(request, env, ctx);
+    // AFTER the response, so `status` is the real one, and OUTSIDE any branch,
+    // so there is one counter for the whole Worker.
+    recordAgentEvent(env, {
+      classification: classifyRequest(signalsFrom(request), CAMPAIGN_DOMAINS_OFF),
+      surface: surfaceFor(new URL(request.url).pathname),
+      status: response.status,
+      durationMs: Date.now() - started,
+    });
+    return response;
   },
 
   /**

@@ -232,6 +232,35 @@ test('carries no candidacy language on any public surface', async () => {
   }
 });
 
+// Day 6 Task 2 (06 §3): `run_worker_first` gained the agent-signal routes and
+// LOST the two `!.../*.md` negative patterns, so that every request this site
+// counts as an agent signal actually reaches src/worker.ts and can be recorded.
+//
+// WHAT THESE TWO TESTS PROVE, and it is less than the routing change claims.
+// They prove the change did not break serving: the `.md` variant still comes
+// back as markdown, and `/llms.txt` still comes back byte-for-byte from assets.
+// That is the regression worth pinning, because routing a path through the
+// Worker is exactly how one would accidentally start answering it with HTML.
+//
+// THEY DO NOT PROVE THE REQUEST REACHED THE WORKER. An earlier draft of this
+// task said `Vary: Accept` would be the proof, since only src/worker.ts sets
+// it; MEASURED, and it is absent on both paths (`vary=null`). It has to be:
+// `markdownAssetPathFor` rejects an already-suffixed path on sight, so
+// `markdownPath` is null and `withVaryAccept` never runs. The Worker's only
+// observable effect on these paths is the Analytics Engine row, which no test
+// in this repo can read. Live verification is Task 13's job.
+test('the markdown variants now reach the Worker, which is what makes them countable', async () => {
+  const response = await server.fetch('/writing/type-specimen.md');
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toContain('text/markdown');
+});
+
+test('/llms.txt reaches the Worker and is still served byte-for-byte from assets', async () => {
+  const response = await server.fetch('/llms.txt');
+  expect(response.status).toBe(200);
+  expect(await response.text()).toContain('# Ryan Lindsey');
+});
+
 test('renders an MDX article with Expressive Code frames', async () => {
   const page = await html('/writing/type-specimen');
   expect(page).toContain('class="expressive-code');
