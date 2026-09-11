@@ -558,16 +558,24 @@ describe('get_case_study', () => {
 
 /**
  * Task 8's tools, copying the `list_case_studies`/`get_case_study` group's
- * shape. Unlike case studies, `src/content/posts/` has exactly one entry
- * (`type-specimen.mdx`) and it is `draft: true`, so there is no published
- * post on this branch today -- `list_writing` genuinely returns `[]` and
- * `get_post` has no published slug to fetch. The tests below say so directly
- * rather than guarding an empty list with an early `return`: a `return` before
- * any assertion would make the "full markdown, not a summary" test (the one
- * enforcing 03 §2's "Full markdown of any published piece") pass without
- * checking anything, which is exactly what a credential-free CI with no real
- * content must not do (global constraints: a test needing absent content must
- * skip cleanly and say so, never silently pass against a fake).
+ * shape.
+ *
+ * THE EMPTY-CORPUS NOTE THIS COMMENT USED TO CARRY IS NOW HISTORY, and it is
+ * worth saying what changed rather than quietly deleting it. It described
+ * `src/content/posts/` as having exactly one entry (`type-specimen.mdx`,
+ * `draft: true`), so `list_writing` genuinely returned `[]` and `get_post`
+ * had no published slug to fetch; the tests asserted that emptiness directly
+ * rather than guarding it with an early `return`, because a `return` before
+ * any assertion would have made the "full markdown, not a summary" test (the
+ * one enforcing 03 §2's "Full markdown of any published piece") pass without
+ * checking anything.
+ *
+ * `terminal-setup.mdx` shipped (`draft: false`), so that era is over and the
+ * reasoning behind it paid off exactly as intended: the "full markdown"
+ * test now runs against a real document instead of skipping, with nothing in
+ * it to edit. `type-specimen.mdx` stays `draft: true`, so this group still
+ * has both halves to assert -- a published post to list and a draft to keep
+ * out -- which is the state the tests below are written against.
  */
 describe('list_writing', () => {
   async function callAudited(name: string, args?: Record<string, unknown>) {
@@ -581,11 +589,26 @@ describe('list_writing', () => {
   test('lists exactly the published posts', async () => {
     const { json } = await callAudited('list_writing');
     const listed = JSON.parse(json.result.content[0].text);
-    // A real assertion about real state, not a skip: no post is published on
-    // this branch today, so the correct answer is the empty list, and this
-    // goes green against a populated one automatically once a post ships,
-    // with nothing here to edit.
-    expect(listed).toEqual([]);
+    expect(Array.isArray(listed)).toBe(true);
+    // Not pinned to an exact count -- a second post publishing later should
+    // not fail this suite for a reason that has nothing to do with the tool
+    // under test, the same reasoning `list_case_studies` states above.
+    expect(listed.length).toBeGreaterThan(0);
+    for (const item of listed) {
+      // `https?`, not `https` only: this suite's SITE_ORIGIN is the harness's
+      // own loopback address (see `beforeAll`), so the scheme is genuinely
+      // `http` here.
+      expect(item.url).toMatch(/^https?:\/\/[^/]+\/writing\/[^/]+\/$/);
+      expect(item.title).toBeTruthy();
+    }
+    // The half that makes this "exactly the published posts" rather than
+    // "some posts": the draft specimen is still on disk, and a tool that
+    // listed it would be leaking an unpublished document to every agent that
+    // calls this endpoint.
+    expect(
+      listed.map((item: { slug: string }) => item.slug),
+      'list_writing must not leak the draft specimen',
+    ).not.toContain('type-specimen');
   });
 });
 
@@ -1038,17 +1061,24 @@ describe('resources', () => {
   /**
    * What the template enumerates TODAY, asserted rather than assumed.
    *
-   * No post is published on this branch (`src/content/posts/type-specimen.mdx`
-   * is the only one and it is `draft: true`), so the template advertises itself
-   * and lists nothing -- the same real state `list_writing` asserts against.
-   * The day a post ships this line fails and has to name it, which is the
-   * intended cost: a document appearing on the public resource surface should
-   * be a reviewed edit rather than a silent one.
+   * This test used to assert the empty list, and said that the day a post
+   * shipped the line would fail and have to name it -- "the intended cost: a
+   * document appearing on the public resource surface should be a reviewed
+   * edit rather than a silent one". `terminal-setup.mdx` shipped, the line
+   * failed exactly as designed, and this is that reviewed edit: the post is
+   * named below, and the draft it must not list is named beside it.
    */
-  test('lists no writing resource while no post is published', async () => {
+  test('lists every published post as a writing:// resource, and no draft', async () => {
     const { json } = await rpc({ jsonrpc: '2.0', id: 204, method: 'resources/list', params: {} });
     const uris: string[] = json.result.resources.map((r: { uri: string }) => r.uri);
-    expect(uris.filter((uri) => uri.startsWith('writing://'))).toEqual([]);
+    const writing = uris.filter((uri) => uri.startsWith('writing://'));
+    expect(writing).toContain('writing://terminal-setup');
+    // The leak assertion, and the reason this stays a named list rather than
+    // a bare length check: `type-specimen.mdx` is still `draft: true`, and an
+    // unpublished document must never reach the public resource surface.
+    expect(writing, 'the draft specimen must not be advertised').not.toContain(
+      'writing://type-specimen',
+    );
   });
 
   /**

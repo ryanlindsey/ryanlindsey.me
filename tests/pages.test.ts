@@ -277,11 +277,33 @@ test('gives headings stable ids and empty anchors', async () => {
   expect(page).toMatch(/<a class="heading-anchor" href="#code-frames"[^>]*><\/a>/);
 });
 
+// The `data-testid="writing-empty"` assertion this test used to carry is gone
+// with `terminal-setup.mdx` shipping (`draft: false`): the index is no longer
+// empty, so that element's branch in src/pages/writing/index.astro is now
+// unreachable in real state. Losing it is an improvement rather than a gap --
+// an index asserted to be EMPTY cannot distinguish "drafts are excluded" from
+// "nothing is rendered at all", which is precisely the passes-against-nothing
+// trap this file's /llms.txt comment catalogues. Both halves are now real:
+// a published post that must appear, and a draft that must not.
 test('keeps drafts out of the writing index but reachable by URL', async () => {
   const index = await html('/writing');
-  expect(index).not.toContain('/writing/type-specimen');
-  expect(index).toContain('data-testid="writing-empty"');
-  expect((await server.fetch('/writing/type-specimen')).status).toBe(200);
+  const posts = CONTENT_ENTRIES.filter((entry) => entry.section === 'writing');
+  const published = posts.filter((entry) => !entry.draft);
+  const drafts = posts.filter((entry) => entry.draft);
+  expect(published.length, 'expected at least one published post').toBeGreaterThan(0);
+  expect(drafts.length, 'expected at least one draft post').toBeGreaterThan(0);
+
+  for (const entry of published) {
+    expect(index, `/writing should list ${entry.slug}`).toContain(`/writing/${entry.slug}`);
+  }
+  for (const entry of drafts) {
+    expect(index, `/writing must not list the draft ${entry.slug}`).not.toContain(
+      `/writing/${entry.slug}`,
+    );
+    // Excluded from the index, still served at its own URL -- the second half
+    // of this test's name, and what makes a draft shareable before it ships.
+    expect((await server.fetch(`/writing/${entry.slug}`)).status).toBe(200);
+  }
 });
 
 test('renders a table of contents matching the article headings', async () => {
@@ -608,21 +630,29 @@ test('index pages carry no X-Markdown-Variant header', async () => {
 });
 
 // Day 3 Task 9 (02 §3 / research appendix B1): `/llms.txt` and
-// `/llms-full.txt`. Both real .mdx files are `draft: true` right now (see
-// CONTENT_ENTRIES above), so today's actual build output has nothing to put
-// in the Writing/Case studies sections of `/llms.txt`, and nothing at all
-// in `/llms-full.txt`. task-9-brief.md is explicit that a test asserting
+// `/llms-full.txt`.
+//
+// This comment used to open by noting that every real .mdx file was
+// `draft: true`, so the build had nothing to put in the Writing/Case studies
+// sections and nothing at all in `/llms-full.txt`. That is no longer true --
+// two case studies and, as of `terminal-setup.mdx`, one post are published --
+// but the rule it existed to enforce is why these tests are shaped the way
+// they are, so it stays: task-9-brief.md is explicit that a test asserting
 // only that emptiness would be exactly the trap this codebase has already
 // shipped six times -- a test that passes because there is nothing to test
 // (a deleted `.sort()`, a `stripXKeys` test with nothing to strip, Task 5's
 // stale-serve test, Task 6's stripping branch, Task 7's Content-Type
-// assertion, Task 8's unreachable negotiation code). So every "today's real
-// state is empty" assertion below is paired with a fixture-based assertion,
-// against the exported generator functions directly (src/lib/llms-index.ts),
-// proving the generator actually produces a populated, correctly-shaped
-// result and not just nothing.
+// assertion, Task 8's unreachable negotiation code).
+//
+// That pairing is what made publishing cheap. Every "today's real state is
+// empty" assertion was paired with a fixture-based assertion against the
+// exported generator functions directly (src/lib/llms-index.ts), proving the
+// generator produces a populated, correctly-shaped result and not just
+// nothing. So when the emptiness ended, the fixtures kept covering the rules
+// (heading omission above all) and only the live half needed re-pointing at
+// the published corpus -- which is what it now asserts.
 
-test('/llms.txt carries a Case studies section listing every published case study, and still omits Writing while no post is published', async () => {
+test('/llms.txt lists every published case study and post, and links no draft', async () => {
   const page = await html('/llms.txt');
   expect(page).toContain('# Ryan Lindsey');
   expect(page).toMatch(/^> \S/m);
@@ -644,17 +674,33 @@ test('/llms.txt carries a Case studies section listing every published case stud
     );
   }
 
-  // The omission half, still live: every post is a draft, so `buildSection`'s
-  // no-empty-scaffolding rule must still drop the Writing heading entirely.
-  // This is what keeps the rule under test now that the section above it is
-  // populated -- had both gone published at once, nothing here would still be
-  // checking that an empty section is omitted rather than rendered bare.
-  expect(
-    CONTENT_ENTRIES.some((e) => e.section === 'writing' && !e.draft),
-    'expected every post to still be a draft; if one shipped, this test needs the ' +
-      'omission assertion moved to whichever section is still empty',
-  ).toBe(false);
-  expect(page).not.toContain('## Writing');
+  // The Writing half. This assertion used to run the other way -- every post
+  // was a draft, so it asserted `buildSection`'s no-empty-scaffolding rule by
+  // requiring the Writing heading to be ABSENT, and its failure message asked
+  // for that omission check to be moved to whichever section was still empty
+  // the day a post shipped. `terminal-setup.mdx` shipped and no section is
+  // empty any more, so there is nowhere live to move it to.
+  //
+  // It does not need one. The omission rule never actually depended on this
+  // live assertion: `buildLlmsTxt omits a heading entirely when its link list
+  // is empty` proves it against a fully empty fixture, and the fixture test
+  // after it asserts `## Case studies` stays absent while `## Writing` renders
+  // -- the exact "one section populated, its neighbour omitted" case this used
+  // to cover, and it holds regardless of what is published. So the live half
+  // becomes what it can now genuinely check: the published post is listed.
+  const publishedPosts = CONTENT_ENTRIES.filter((e) => e.section === 'writing' && !e.draft);
+  expect(publishedPosts.length, 'expected at least one published post').toBeGreaterThan(0);
+  expect(page).toContain('## Writing');
+  for (const entry of publishedPosts) {
+    expect(page, `/llms.txt should link /writing/${entry.slug}.md`).toContain(
+      `(https://ryanlindsey.me/writing/${entry.slug}.md)`,
+    );
+  }
+  for (const entry of CONTENT_ENTRIES.filter((e) => e.section === 'writing' && e.draft)) {
+    expect(page, `/llms.txt must not link the draft /writing/${entry.slug}`).not.toContain(
+      `/writing/${entry.slug}.md`,
+    );
+  }
 
   // The three sections that never depend on published content still render --
   // their absence would mean the whole generator broke, not that the
