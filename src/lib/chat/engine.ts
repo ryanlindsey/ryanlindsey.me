@@ -5,6 +5,7 @@ import { fetchDocument, fetchDocumentIndex, pageUrlFor, type DocumentsEnv } from
 import { citationFor, embedQuery, parseChunkId, UNKNOWN_CHUNK_COUNT } from '../mcp/search';
 import type { ChatErrorCode } from './errors';
 import { CHAT_TOP_K, numberSources, renderChatContext, type ChatSource } from './context';
+import { fenceFor } from '../fence';
 
 // The grounded chat engine (04 §1). Retrieval, the guards, and the model call.
 // It returns a STREAM and the sources that stream was grounded on, and nothing
@@ -112,11 +113,6 @@ export interface ChatEnv extends DocumentsEnv {
  * data; what it cannot bound is what a steered model then writes, which is why
  * citation numbers rather than URLs are the second half of the defence.
  */
-function fenceFor(text: string): string {
-  let longest = 0;
-  for (const run of text.match(/`+/g) ?? []) longest = Math.max(longest, run.length);
-  return '`'.repeat(Math.max(3, longest + 1));
-}
 
 /**
  * The passages this question retrieves, numbered.

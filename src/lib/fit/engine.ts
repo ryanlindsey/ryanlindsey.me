@@ -6,6 +6,9 @@
 // does not know, and must never learn, what a target description is for.
 
 import { buildCorpusContext, type CorpusContext } from './corpus-context';
+import { fenceFor } from '../fence';
+// Re-exported: this was `fenceFor`'s home until it was needed in five places.
+export { fenceFor };
 import type { DocumentsEnv } from '../mcp/documents';
 import { enforceCitations, FitReport, FIT_REPORT_JSON_SCHEMA, type CitationAudit } from './schema';
 import FIT_PROMPT from '../../../prompts/fit.md?raw';
@@ -215,11 +218,6 @@ export function extractToolInput(raw: unknown, toolName: string): unknown {
  * own answer to this, and the minimum of three keeps the ordinary case
  * looking like ordinary markdown.
  */
-export function fenceFor(text: string): string {
-  let longest = 0;
-  for (const run of text.match(/`+/g) ?? []) longest = Math.max(longest, run.length);
-  return '`'.repeat(Math.max(3, longest + 1));
-}
 
 /**
  * Compares the published corpus against one target description.

@@ -1,4 +1,5 @@
 import type { Citation } from '../mcp/search';
+import { fenceFor } from '../fence';
 
 // The grounded half of 04 §1. PURE: retrieved citations in, prompt text out,
 // plus the arithmetic that decides which `[n]` in an answer means anything.
@@ -54,11 +55,6 @@ export function numberSources(citations: readonly Citation[]): ChatSource[] {
  * fenced code as a matter of course, so the case that breaks a fixed fence is
  * the ordinary one rather than the adversarial one.
  */
-function fenceFor(text: string): string {
-  let longest = 0;
-  for (const run of text.match(/`+/g) ?? []) longest = Math.max(longest, run.length);
-  return '`'.repeat(Math.max(3, longest + 1));
-}
 
 /**
  * The `# Sources` block, and exactly which sources survived into it.

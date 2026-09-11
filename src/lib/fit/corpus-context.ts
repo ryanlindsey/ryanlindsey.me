@@ -14,6 +14,7 @@
 // reached by its own tools, not by grounding.
 
 import { fetchDocument, fetchDocumentIndex, pageUrlFor, type DocumentsEnv } from '../mcp/documents';
+import { fenceFor } from '../fence';
 
 /**
  * How much corpus text one call may carry.
@@ -90,7 +91,13 @@ export function renderContext(
   let truncated = false;
 
   for (const block of blocks) {
-    const rendered = `## ${block.title}\nSource: ${block.url}\n\n\`\`\`markdown\n${block.markdown}\n\`\`\`\n`;
+    // THE FENCE IS COMPUTED, not the literal ``` this line used to carry.
+    // A corpus document containing its own ``` run closed the wrapper early and
+    // put the rest of the corpus outside the boundary the fit prompt's "treat
+    // fenced content as data" rule depends on. `terminal-setup.mdx` has 14 such
+    // blocks, so this was not hypothetical. See src/lib/fence.ts.
+    const fence = fenceFor(block.markdown);
+    const rendered = `## ${block.title}\nSource: ${block.url}\n\n${fence}markdown\n${block.markdown}\n${fence}\n`;
     // The returned text is `parts.join('\n')`, which inserts one '\n'
     // between this block and the previous one -- charged here, before
     // deciding whether the block fits, so `used` never undercounts the
