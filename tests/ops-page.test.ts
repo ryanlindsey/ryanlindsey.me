@@ -20,11 +20,14 @@ import { BANNED_PATTERNS } from './candidacy-patterns';
  * the leak assertions mean something: without it they would pass against a page
  * that renders every column of an empty table.
  *
- * THE ORDER ALSO PINS THE CACHE. /ops caches its three reads under one KV key
- * for 60 seconds, so if the degraded render had been stored, the second fetch
- * would still be showing "could not be read" a minute later -- a transient D1
- * blip pinned as a state. The "not pinned" test below is the assertion for
- * that, and it only works because the degraded render came first.
+ * THE ORDER ALSO PINS THE CACHE. /ops caches each of its three reads under its
+ * OWN KV key for 60 seconds (`ops:metrics:v1`, `ops:traffic:v1`,
+ * `ops:spend:v1`), so if the failed metrics read had been stored, the second
+ * fetch would still be showing "could not be read" a minute later -- a
+ * transient D1 blip pinned as a state. It is not stored, because the page
+ * catches outside `cached` and `cached` writes nothing when its `fn` rejects.
+ * The "not pinned" test below is the assertion for that, and it only works
+ * because the degraded render came first.
  */
 const server = createTestHarness({ workers: SITE_HARNESS_WORKERS });
 
@@ -69,10 +72,10 @@ afterAll(async () => {
  * the original version of the analytics test meaningless. A tile contains only
  * `<p>` elements, so the first `</div>` after the hook is its own.
  */
-function tile(label: string): string {
-  const hook = html.indexOf(`data-ops-metric="${label}"`);
+function tile(label: string, doc: string = html): string {
+  const hook = doc.indexOf(`data-ops-metric="${label}"`);
   expect(hook, `no metric tile is labelled ${label}`).toBeGreaterThan(-1);
-  return html.slice(html.lastIndexOf('<div', hook), html.indexOf('</div>', hook));
+  return doc.slice(doc.lastIndexOf('<div', hook), doc.indexOf('</div>', hook));
 }
 
 /** One `<li>` of a definition list, looked up by the text in it. */
@@ -184,10 +187,27 @@ describe('/ops', () => {
    */
   test('a D1 failure degrades to a labelled absence rather than a 500', async () => {
     expect(degraded).toContain('Live metrics');
-    expect(degraded).toContain('the metrics store could not be read');
     // Never a zero standing in for a number nobody could read, which is the
-    // failure that is invisible to a reader.
-    expect(degraded).not.toMatch(/0 agents served/i);
+    // failure that is invisible to a reader -- asserted PER TILE, through the
+    // same `data-numeric` mechanism the Analytics Engine test uses. This test
+    // used to carry `not.toMatch(/0 agents served/i)` here as well, which was
+    // the same dead assertion fix round 1 removed from its sibling: the page
+    // renders those words nowhere, so nothing could ever have failed it. Every
+    // D1 figure is checked instead, and each one names D1 rather than the
+    // analytics token as the thing that is missing.
+    for (const label of [
+      'Public MCP tool calls',
+      'Chat sessions',
+      'Chat turns',
+      'Fit analyses run',
+    ]) {
+      const metric = tile(label, degraded);
+      expect(metric, `${label} must render its absence`).toContain('not available');
+      expect(metric, `${label} must blame D1, not the credential`).toContain(
+        'D1 — the metrics store could not be read',
+      );
+      expect(metric, `${label} must not render a figure at all`).not.toContain('data-numeric');
+    }
     // And never the exception itself. A stack trace on a public page is both a
     // worse answer and a disclosure.
     expect(degraded).not.toMatch(/D1_ERROR|no such table/i);

@@ -36,9 +36,29 @@
  *
  * Every other claim re-verified 2026-09-11 against ./wrangler.jsonc,
  * workers/mcp/wrangler.jsonc, src/worker.ts, workers/mcp/src/index.ts,
- * src/pages/chat/send.ts, migrations/0001-0004 and the `gateway:` options on
- * the two `env.AI.run` calls in src/lib/{chat,fit}/engine.ts. The embedding path
- * carries no `gateway:` option, which is why only the Anthropic line names one.
+ * src/pages/chat/send.ts, migrations/0001-0004 and the five model call sites
+ * (src/lib/{chat,fit,judge}/engine.ts, src/lib/corpus.ts, src/lib/mcp/search.ts).
+ *
+ * THE TWO INFERENCE LINES NAME PATHS, NOT EXCLUSIONS. Saying so because the
+ * first draft of this comment offered a reason for them and the reason was
+ * wrong twice over -- it claimed "two" calls pass a `gateway:` option (there
+ * are THREE: chat, fit, and the judge in src/lib/judge/engine.ts, which is
+ * deployed and scope-gated), and it claimed the embedding path "carries no
+ * `gateway:` option, which is why only the Anthropic line names one" -- which
+ * implies embeddings bypass the gateway.
+ *
+ * THEY DO NOT, and this repo had already measured it. `env.AI.run()` bills
+ * through AI Gateway's UNIFIED BILLING whether or not a call names the gateway
+ * -- day 1's measurement, `gatewayMetadata.keySource: "Unified"`, recorded in
+ * src/lib/judge/engine.ts and evals/README.md (10 §5). A `gateway:` option buys
+ * attribution in the gateway's own logs (each call tags a `surface`), not a
+ * different route. Writing a causal story from the option's presence was
+ * exactly the failure this diagram's own corrections are about.
+ *
+ * What the two lines distinguish is the MODEL, and neither is a statement about
+ * the other: `AI Gateway -> Anthropic` is the third-party frontier route,
+ * `Workers AI -> Vectorize` the first-party embedding model feeding the vector
+ * index.
  *
  * NO UNLISTED ROUTE IS NAMED HERE, and that is the one thing this diagram
  * deliberately leaves out. src/worker.ts flattens every refusal on the
