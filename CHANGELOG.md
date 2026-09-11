@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.13.1...ryanlindsey-me-v1.13.2) (2026-09-11)
+
+
+### Bug Fixes
+
+* **governance:** the fit-corpus fence gap is closed ([#78](https://github.com/ryanlindsey/ryanlindsey.me/issues/78)) ([020d651](https://github.com/ryanlindsey/ryanlindsey.me/commit/020d6513789a9266cc686692e473b48fc003d2d9))
+
 ## [1.13.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.13.0...ryanlindsey-me-v1.13.1) (2026-09-11)
 
 
