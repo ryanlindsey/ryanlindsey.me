@@ -59,6 +59,18 @@ const SITE_BINDING_NAMES = [
   // because it is the owner's own address. Its public counterpart is
   // `RLME_NOTIFY_FROM` below.
   'RLME_NOTIFY_ADDRESS',
+  // Day 6 Task 10 (06 §1): the read-only account token /ops reads Analytics
+  // Engine and AI Gateway through, and the only credential this repo holds that
+  // is not a deploy credential Cloudflare holds for itself. Read by
+  // src/lib/ops/analytics.ts and nowhere else.
+  //
+  // Its test-only companion `RLME_ANALYTICS_MODE` is deliberately NOT here, and
+  // neither are `RESUME_PDF_RENDERER`, `RLME_TURNSTILE_MODE` or
+  // `RLME_NOTIFY_MODE`: this list is compared against `wrangler types --config
+  // wrangler.jsonc`, so it can only contain bindings THAT FILE declares. A seam
+  // appearing here would mean the seam had leaked into deployed config, which
+  // is one of the things this pin exists to catch.
+  'RLME_ANALYTICS_TOKEN',
   'BROWSER',
   'ASSETS',
   'RLME_AI_GATEWAY_ID',

@@ -90,6 +90,41 @@ export const SITE_WORKER = {
      * itself to Task 13's live check.
      */
     RLME_NOTIFY_MODE: 'stub',
+    /**
+     * Day 6 Task 10's /ops analytics seam (src/lib/ops/analytics.ts's
+     * `readAnalytics`). The same shape as the three above: no deployed config
+     * declares it, an unrecognised value throws, and 'stub' is the only
+     * accepted value here.
+     *
+     * WHAT IT IS NOT FOR, said first because the obvious reading is wrong:
+     * this seam is not what keeps the harness off the network. `readAnalytics`
+     * reads the Secrets Store secret BEFORE it fetches and returns `null` from
+     * that read's catch, and miniflare simulates `secrets_store_secrets`
+     * against a local store nothing has populated, so `.get()` raises
+     * `Secret "..." not found` here (measured in day 5 Task 2, recorded in
+     * tests/tier-grant.test.ts). Without this var the harness would therefore
+     * issue ZERO requests to api.cloudflare.com, not three -- an earlier
+     * version of this comment claimed three, which the module's own order of
+     * operations contradicts.
+     *
+     * WHAT IT IS FOR: pinning the harness's /ops state at "not configured"
+     * DETERMINISTICALLY, by a var this repo controls rather than as a
+     * side effect of how a simulated binding happens to fail. The `null` above
+     * is real but incidental -- it depends on miniflare continuing to throw on
+     * an unpopulated store, which is emulator behaviour nobody here owns, and a
+     * future version that answered `''` or `undefined` instead would change
+     * which branch these tests take without changing a line of this repo. Under
+     * 'stub' the answer comes from the first three lines of the function and
+     * cannot drift.
+     *
+     * So what a page test under this harness sees is /ops's "not configured"
+     * rendering, and that is the only /ops state any test in this repo
+     * exercises. The parse of a REAL response is exercised nowhere -- the two
+     * API envelopes have never been measured (src/lib/ops/analytics.ts records
+     * why), and tests/ops-analytics.test.ts asserts only that a fixture of the
+     * assumed envelope maps correctly and that everything else fails closed.
+     */
+    RLME_ANALYTICS_MODE: 'stub',
   },
   bindingOverrides: { BROWSER: 'mock-browser' },
 };
