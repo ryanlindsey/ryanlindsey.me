@@ -10,11 +10,16 @@ rows:
     mitigation: >-
       Every untrusted span is fenced with a fence computed to be longer than any
       backtick run inside it, and both system prompts say fenced content is data.
-      In chat the model is never shown a URL it could cite: citations are numbered
-      indices into a list the server holds, and the reader's page builds every link,
-      so a steered answer can produce a number that goes nowhere but not a link to
-      anywhere. A fit report does carry URLs, and any that do not resolve to a
-      document the model was shown are dropped before the report is stored. An
+      Chat cites by number, and the guarantee is not that the model has no URLs to
+      work with — it is shown each source's URL beside that source's number — but
+      that nothing it writes is ever turned into a link. Its answer is inserted
+      into the page as a text node, with no markdown pass over it, and the only
+      links rendered are built by looking a cited number up in the list the server
+      sent; a number with no entry in that list stays plain text. So a steered
+      answer can type a URL into its prose and still cannot produce a link to
+      anywhere. A fit report does carry URLs in its structured output, and any that
+      do not resolve to a document the model was shown are dropped before the
+      report is stored. An
       adversarial case in the chat eval suite exercises the boundary, but that suite
       runs by hand before a merge rather than in CI, because it needs a deployed
       endpoint and a scoped credential and this project's CI holds neither by
@@ -50,8 +55,10 @@ rows:
       path does not declare, which makes the separation a partition rather than a
       filter. The unlisted routes answer a byte-identical copy of the site's own 404,
       compared as a whole response — status, body and every header — against two dead
-      paths by a test that runs in CI, alongside a static scan of every tracked source
-      file for the vocabulary this rule exists to keep off the public surface. What
+      paths by a test that runs in CI, alongside a static scan of every tracked file
+      under the scanned roots for the vocabulary this rule exists to keep off the
+      public surface — those roots cover what ships and deliberately exclude the test
+      directory, which enumerates that vocabulary in order to forbid it. What
       does not run in CI is the eval suite that probes the deployed public chat with
       eight questions and refuses to pass on a confirmation, a denial or an inference;
       that is run by hand before a merge. No claim is made here about a published
@@ -119,9 +126,12 @@ rows:
     impact: moderate
     mitigation: >-
       Retention windows are one table-driven constant, read by the cron that enforces
-      them and pinned against the published policy's own sentences by a test that runs
-      in CI — so the number in the code and the number on the page cannot drift, even
-      though the page does not read the constant directly. The sweep has a daily cron
+      them. The policy page does not read that constant; instead a test that runs in
+      CI asserts, per table, that the page names that table beside the window the
+      constant sets — so a window changed in the code without changing the page turns
+      the build red, and adding a table to the constant without publishing its window
+      does the same. What the test does not cover is a second, contradictory sentence
+      added elsewhere on the page. The sweep has a daily cron
       slot of its own and logs one line naming every table and its row count, so
       "deleted nothing" and "did not run" are distinguishable from outside. No test
       proves the trigger fires; that is confirmed against the deployed Worker.

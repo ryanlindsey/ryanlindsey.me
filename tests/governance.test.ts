@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 import { isStale, reviewAgeDays, REVIEW_MAX_AGE_DAYS } from '../src/lib/governance/register';
 import { RETENTION } from '../src/lib/retention';
@@ -44,10 +44,24 @@ import { BANNED_PATTERNS } from './candidacy-patterns';
  * tests. The shape proper is enforced on every build by the zod schema in
  * src/content.config.ts.
  */
-const register = parse(readFileSync('governance/risk-register.yaml', 'utf8')) as {
-  rows: Record<string, unknown>[];
-};
+const registerText = readFileSync('governance/risk-register.yaml', 'utf8');
+const register = parse(registerText) as { rows: Record<string, unknown>[] };
 const policy = readFileSync('governance/ai-policy.md', 'utf8');
+
+/**
+ * What each `RETENTION` table is called on /ai-policy.
+ *
+ * A table name is a schema identifier and the policy is written for a reader, so
+ * the two cannot be the same string -- but they have to be bound to each other
+ * somewhere, and this is that somewhere. The test below asserts key-set equality
+ * with `RETENTION`, so this is a register rather than a lookup that can quietly
+ * go out of date.
+ */
+const PUBLISHED_AS: Record<string, string> = {
+  chat_turns: 'Chat transcripts',
+  mcp_tool_calls: 'The tool-call audit trail',
+  fit_reports: 'Fit reports',
+};
 
 describe('the register', () => {
   test('every row has every field 06 §2 requires', () => {
@@ -91,19 +105,72 @@ describe('the register', () => {
       expect(JSON.stringify(register)).not.toMatch(pattern);
     }
   });
+
+  test('stops denying a published metrics view the day one lands', () => {
+    // THE ONE CROSS-PR GAP THIS FILE CAN CLOSE, and the shape of it matters more
+    // than the assertion. `private-tier-disclosure` deliberately claims nothing
+    // about a metrics page, because none is in this repository: a register is a
+    // dated attestation, and a forward-looking claim would be false for the whole
+    // interval between this branch merging and /ops merging. The failure mode is
+    // the /ops branch landing and nobody remembering to re-review the row, which
+    // would leave the page denying a surface the site is serving.
+    //
+    // PRESENCE-COUPLED, NOT DATE-COUPLED, and that distinction is the same one
+    // this file's header makes about staleness. A test keyed on the calendar goes
+    // red on a morning when nothing changed, and gets disabled rather than acted
+    // on. This one can only go red as a CONSEQUENCE of a code change, in the very
+    // commit that causes it -- whoever adds src/lib/ops or src/pages/ops.astro
+    // gets a failure naming the sentence they have just falsified, while the
+    // context for fixing it is still in front of them.
+    //
+    // Both paths, because either one arriving alone is enough to make the denial
+    // wrong: the module is where a tier filter would live, and the page is what a
+    // reader would see.
+    const opsExists = existsSync('src/lib/ops') || existsSync('src/pages/ops.astro');
+    if (opsExists) {
+      expect(
+        registerText,
+        'a metrics surface now exists -- re-review private-tier-disclosure, state the tier filter, and move its lastReviewed forward',
+      ).not.toMatch(/not in this repository/);
+    } else {
+      // Pinned from the other side too, so the guard cannot be defeated by
+      // rewording the row: if that sentence is dropped while no metrics surface
+      // exists, the row has started claiming something about a page that is not
+      // here, which is the overclaim this whole register was rewritten to avoid.
+      expect(registerText).toMatch(/not in this repository/);
+    }
+  });
 });
 
 describe('the policy', () => {
-  test('publishes exactly the retention windows the cron enforces', () => {
-    // Computed from RETENTION rather than written down, which is the whole
-    // point: adding a table to that constant without publishing its window
-    // fails here. `formatWindow` is deliberately NOT imported -- it landed on a
-    // parallel branch, and a dependency on it would be a merge conflict bought
-    // for two lines of arithmetic.
+  test('publishes exactly the retention windows the cron enforces, table by table', () => {
+    // BOUND TABLE-TO-WINDOW, not window-to-anywhere. The version this replaces
+    // asserted only that the LITERALS '30 days' and '1 year' appeared somewhere
+    // in the file, which with RETENTION = [30, 365, 365] is nearly free:
+    // changing `chat_turns` to 60 days turns its phrase into '1 year', which the
+    // page still contains for two other tables, so the suite stayed green while
+    // the page said 30 and the cron enforced 60. The published NAME of each
+    // table has to sit next to its own window for this to mean anything.
+    //
+    // `formatWindow` is deliberately NOT imported -- it landed on a parallel
+    // branch, and a dependency on it would be a merge conflict bought for two
+    // lines of arithmetic.
     for (const { table, days } of RETENTION) {
+      const label = PUBLISHED_AS[table];
+      expect(label, `${table} has no published name in this test's table`).toBeDefined();
       const phrase = days === 30 ? '30 days' : '1 year';
-      expect(policy, `${table} window`).toContain(phrase);
+      expect(policy, `${table} window`).toContain(`${label} — ${phrase}`);
     }
+  });
+
+  test('names every retained table and no table it does not retain', () => {
+    // EQUALITY, the same reasoning as SCAN_EXCEPTIONS: adding a table to
+    // RETENTION without giving it a published name fails here rather than
+    // silently skipping it above, and dropping one leaves a stale entry that
+    // also fails. Without this, `PUBLISHED_AS[table]` would be `undefined` for a
+    // new table and the `toContain` above would be checking a string beginning
+    // "undefined —", which nobody would read as a missing disclosure.
+    expect(Object.keys(PUBLISHED_AS).sort()).toEqual(RETENTION.map((row) => row.table).sort());
   });
 
   test('states what is never stored', () => {

@@ -124,8 +124,10 @@ The windows above are a single constant in the code. A scheduled job runs once a
 day, deletes everything past its window table by table, and logs one line naming
 each table and the number of rows it removed — so a day on which nothing was old
 enough and a day on which the job did not run look different from outside. A test
-that runs on every build pins the sentences on this page against that constant,
-so the number published here and the number the job enforces cannot drift apart.
+that runs on every build checks, for each table above, that this page names that
+table beside the window the constant sets — so changing a window in the code
+without changing this page turns the build red, and so does adding a table the
+page does not mention.
 
 If a table's delete fails, the others still run and the failure is logged rather
 than swallowed. One table falling behind must not hold another table's data past
@@ -144,8 +146,10 @@ Agents are welcome here and are not treated as a problem to be managed.
   nothing here can stop a crawler that ignores it.
 - [`/llms.txt`](/llms.txt) is a curated index and
   [`/llms-full.txt`](/llms-full.txt) is the whole corpus as plain text.
-- Every content page has a **markdown variant** — append `.md`, or send
-  `Accept: text/markdown` and get the same bytes.
+- The résumé, every post and every case study have a **markdown variant** —
+  append `.md` to `/resume`, `/writing/<slug>` or `/work/<slug>`, or send
+  `Accept: text/markdown` to the page itself and get the same bytes. Those three
+  are the whole list, and this page is not on it.
 - An **MCP server** at `https://ryanlindsey.me/mcp` exposes the same corpus over
   a protocol, unauthenticated, with per-caller limits.
 
