@@ -588,10 +588,43 @@ function report(suite, results) {
     const sql = `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, notes)
        VALUES ('${new Date().toISOString()}', '${suite}', NULL, ${results.length}, ${passed},
                ${results.length - passed}, '${notes}')`;
-    execFileSync('npx', ['wrangler', 'd1', 'execute', DB, '--remote', '--command', sql], {
-      stdio: ['ignore', 'ignore', 'inherit'],
-      env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID },
-    });
+    // SWALLOWED AFTER LOGGING, and the results above are already on stdout by
+    // the time this runs -- which is the whole point of the ordering.
+    //
+    // RECORDING IS BOOKKEEPING; THE RESULTS ARE THE PRODUCT. This call used to
+    // be unguarded, and on 2026-09-11 one invocation failed after a full run:
+    // node exited with a stack trace, the process died before printing the
+    // closing summary, and the exit code stopped meaning what the suites said.
+    // Sixteen cases' worth of work -- six minutes and several dollars of
+    // inference -- reduced to a `Command failed` because a row would not insert.
+    //
+    // The cause was never established: the same 921-character statement
+    // succeeded against the same remote database minutes later, a previous run
+    // had recorded 748 characters of notes without complaint, and wrangler's own
+    // log was the only place the reason would have been. Transient, most likely.
+    // The fix does not depend on knowing: a failure to WRITE DOWN a result must
+    // not destroy the result.
+    //
+    // This is the trade src/lib/mcp/audit.ts's `recordToolCall` and
+    // workers/mcp/src/chat.ts's `writeTranscript` already make, in the same
+    // words -- "a transcript write that fails must not turn a working answer
+    // into an error". The Worker treats its own recording as non-essential; the
+    // harness did not, and should.
+    try {
+      execFileSync('npx', ['wrangler', 'd1', 'execute', DB, '--remote', '--command', sql], {
+        stdio: ['ignore', 'ignore', 'inherit'],
+        env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID },
+      });
+    } catch {
+      // Not `console.error`: this goes to stdout as well as stderr, for the
+      // same reason the SKIP lines do -- a redirected log keeps stdout, and a
+      // run whose results were not recorded should say so in the artifact
+      // somebody actually reads later.
+      process.stdout.write(
+        `${suite}: WARNING -- the results above ran but could not be recorded to eval_runs\n`,
+      );
+      process.stderr.write(`${suite}: the eval_runs row could not be written\n`);
+    }
   }
   return passed === results.length;
 }
