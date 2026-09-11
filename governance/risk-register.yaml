@@ -8,8 +8,17 @@ rows:
     likelihood: likely
     impact: moderate
     mitigation: >-
-      Every untrusted span is fenced with a fence computed to be longer than any
-      backtick run inside it, and both system prompts say fenced content is data.
+      Untrusted spans are fenced, and the prompts say that fenced content is data.
+      The fence is COMPUTED to be longer than any backtick run inside the text —
+      which is what makes it a boundary rather than a suggestion — for the chat
+      corpus, the chat question, the fit target description and both of the judge's
+      spans. It is fixed at three backticks for one span, the fit corpus, and that
+      is named here as a known gap rather than left to be discovered: a post
+      published on this site opens 28 fenced blocks of its own, so a fit run over
+      the corpus sends much of it outside the fence that the "treat fenced content
+      as data" rule depends on. That span is this site's own writing rather than a
+      stranger's paste, which is why it is a gap and not an incident — but it is
+      the weakest fence here and it is tracked for a change of its own.
       Chat cites by number, and the guarantee is not that the model has no URLs to
       work with — it is shown each source's URL beside that source's number — but
       that nothing it writes is ever turned into a link. Its answer is inserted
@@ -94,11 +103,18 @@ rows:
       Per-caller limits are enforced by a strongly consistent Durable Object rather
       than by the platform's own rate-limiting binding, which was measured serving 150
       strictly sequential calls against a 60-per-minute bucket without refusing once. A
-      global daily cap of 500 chat messages sits on the same mechanism, and both
-      browser forms carry a bot check verified where the spend happens rather than
-      where the form is served. A budget breaker is read before anything is spent and
-      refuses when it cannot be read, which is the safe answer to not knowing whether
-      the budget is exhausted. The breaker is a flag an operator sets by hand: nothing
+      global daily cap of 500 chat messages sits on the same mechanism, and it is the
+      only daily cap there is — fit analysis, the judge and retrieval have per-caller
+      limits and no global one. Both browser forms carry a bot check, and only one of
+      them is verified where the spend happens: the chat form's token is checked on
+      the Worker that makes the model call, while the fit form's is checked on the
+      Worker that served the form, after which the analysis call is gated by a scope
+      check and the limiter alone. A budget breaker is read before a chat turn or a
+      fit run spends anything and refuses when it cannot be read, which is the safe
+      answer to not knowing whether the budget is exhausted — but it is not read by
+      the judge, and not by the embedding call retrieval makes before a chat turn
+      reaches it, so it does not stop everything. The breaker is a flag an operator
+      sets by hand: nothing
       in this repository measures spend and trips it, so it is a kill switch rather
       than an automatic cut-off, and the caps above are what bound an unattended day.
     owner: Ryan Lindsey

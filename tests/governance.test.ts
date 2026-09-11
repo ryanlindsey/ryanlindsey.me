@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { parse } from 'yaml';
-import { isStale, reviewAgeDays, REVIEW_MAX_AGE_DAYS } from '../src/lib/governance/register';
+import {
+  isStale,
+  reviewAgeDays,
+  severityOf,
+  IMPACTS,
+  LIKELIHOODS,
+  REVIEW_MAX_AGE_DAYS,
+} from '../src/lib/governance/register';
 import { RETENTION } from '../src/lib/retention';
 import { BANNED_PATTERNS } from './candidacy-patterns';
 
@@ -62,6 +69,30 @@ const PUBLISHED_AS: Record<string, string> = {
   mcp_tool_calls: 'The tool-call audit trail',
   fit_reports: 'Fit reports',
 };
+
+/**
+ * How a window is spelled in prose, DERIVED FROM `days`.
+ *
+ * The second fix to this line, and the first one did not go far enough. It began
+ * as `days === 30 ? '30 days' : '1 year'`, which asserted only that two literals
+ * appeared somewhere in the file; fix round 1 bound each table to its own label
+ * but KEPT that two-valued lookup, which distinguishes exactly-30 from
+ * everything else and nothing more. MEASURED: `fit_reports` 365 -> 180 still
+ * produced '1 year', so the page kept publishing "Fit reports — 1 year" while
+ * the cron deleted at 180, with this suite green. The bucketing was the whole
+ * defect both times; binding the table only moved it.
+ *
+ * Derived, so every distinct window is a distinct phrase and there is no bucket
+ * left to hide in. `formatWindow` is NOT imported -- it lives on a parallel
+ * branch and would not resolve here.
+ */
+function windowPhrase(days: number): string {
+  if (days % 365 === 0) {
+    const years = days / 365;
+    return years === 1 ? '1 year' : `${years} years`;
+  }
+  return days === 1 ? '1 day' : `${days} days`;
+}
 
 describe('the register', () => {
   test('every row has every field 06 §2 requires', () => {
@@ -152,15 +183,26 @@ describe('the policy', () => {
     // the page said 30 and the cron enforced 60. The published NAME of each
     // table has to sit next to its own window for this to mean anything.
     //
-    // `formatWindow` is deliberately NOT imported -- it landed on a parallel
-    // branch, and a dependency on it would be a merge conflict bought for two
-    // lines of arithmetic.
+    // The phrase itself is derived -- see `windowPhrase` above for why the
+    // binding alone was not enough.
     for (const { table, days } of RETENTION) {
       const label = PUBLISHED_AS[table];
       expect(label, `${table} has no published name in this test's table`).toBeDefined();
-      const phrase = days === 30 ? '30 days' : '1 year';
-      expect(policy, `${table} window`).toContain(`${label} — ${phrase}`);
+      expect(policy, `${table} window`).toContain(`${label} — ${windowPhrase(days)}`);
     }
+  });
+
+  test('spells a distinct window as a distinct phrase', () => {
+    // The property the assertion above rests on, pinned directly: no two windows
+    // may share a phrase, or a changed window can land on the sentence already
+    // published for a different one. Both previous versions of this test failed
+    // exactly here.
+    expect(windowPhrase(30)).toBe('30 days');
+    expect(windowPhrase(365)).toBe('1 year');
+    expect(windowPhrase(180)).toBe('180 days');
+    expect(windowPhrase(60)).toBe('60 days');
+    expect(windowPhrase(730)).toBe('2 years');
+    expect(windowPhrase(1)).toBe('1 day');
   });
 
   test('names every retained table and no table it does not retain', () => {
@@ -174,8 +216,17 @@ describe('the policy', () => {
   });
 
   test('states what is never stored', () => {
-    expect(policy).toMatch(/no cookie/i);
-    expect(policy).toMatch(/IP address/i);
+    // DIRECTIONAL, because the grep this replaces was not. `/IP address/i` is
+    // satisfied just as well by "we store your IP address" as by the claim the
+    // test name promises, so it checked that the subject was mentioned rather
+    // than that anything was disclaimed -- a test that cannot fail on the
+    // opposite of what it asserts is not checking the assertion. Matching the
+    // claim's own opening words makes editing it a deliberate act, which is the
+    // right friction for a published promise.
+    expect(policy, 'the no-cookies claim').toMatch(/No cookies\.\*\*\s+This site sets none/);
+    expect(policy, 'the no-address claim').toMatch(
+      /No IP address in any table\.\*\*\s+There is no address column/,
+    );
   });
 
   test('matches no banned pattern', () => {
@@ -194,5 +245,61 @@ describe('staleness', () => {
     expect(isStale(row, new Date('2026-09-09T00:00:00.000Z'))).toBe(true);
     expect(isStale(row, new Date('2026-06-15T00:00:00.000Z'))).toBe(false);
     expect(REVIEW_MAX_AGE_DAYS).toBe(90);
+  });
+
+  test('turns over AFTER the window, not on it', () => {
+    // The boundary the `>` actually decides, which 100-and-14 never touched:
+    // with only those two cases, flipping `>` to `>=` breaks nothing and every
+    // row silently goes amber a day early. 2026-06-01 + 90 days is 2026-08-30.
+    expect(reviewAgeDays(row, new Date('2026-08-30T00:00:00.000Z'))).toBe(90);
+    expect(isStale(row, new Date('2026-08-30T00:00:00.000Z'))).toBe(false);
+    expect(isStale(row, new Date('2026-08-31T00:00:00.000Z'))).toBe(true);
+  });
+
+  test('refuses a date that is shaped right and is not a day', () => {
+    // MEASURED, and the obvious worry is the wrong one: `isoDate`'s regex
+    // already rejects every form that makes `Date.parse` return NaN
+    // (`2026-13-01`, `2026-01-32`), so NaN cannot arrive through the collection.
+    // What does arrive is the rollover class -- `2026-02-31` parses cleanly to
+    // 2026-03-03 -- and it fails in the direction that suppresses the marker,
+    // by reading as a LATER date than was typed. Both classes are refused.
+    const rolled = { id: 'rolled', lastReviewed: '2026-02-31' } as never;
+    expect(() => reviewAgeDays(rolled, new Date('2026-09-09T00:00:00.000Z'))).toThrow(
+      /not a real date/,
+    );
+    const nonsense = { id: 'nonsense', lastReviewed: '2026-13-01' } as never;
+    expect(() => reviewAgeDays(nonsense, new Date('2026-09-09T00:00:00.000Z'))).toThrow(
+      /not a real date/,
+    );
+    // And the register's own rows all survive it, which is the case that matters.
+    for (const row_ of register.rows) {
+      expect(() => reviewAgeDays(row_ as never, new Date())).not.toThrow();
+    }
+  });
+});
+
+describe('the severity ramp', () => {
+  test('pins both scales, because severityOf colours by position on them', () => {
+    // `severityOf` reads the INDEX, so inserting a value in the middle of either
+    // array re-colours published rows with nothing red. Its own doc comment warns
+    // about that and nothing enforced it until here.
+    expect(LIKELIHOODS).toEqual(['rare', 'unlikely', 'possible', 'likely', 'almost-certain']);
+    expect(IMPACTS).toEqual(['minor', 'moderate', 'major', 'severe']);
+  });
+
+  test('maps every scale value to the token the table paints it with', () => {
+    // The boundaries are hand-derived float comparisons (`< 1/3`, `< 2/3`) and
+    // were asserted only in prose. `moderate` at exactly 1/3 is the case that
+    // depends on two identical divisions comparing equal, so it is the one worth
+    // having written down.
+    expect(severityOf('rare')).toBe('ok');
+    expect(severityOf('unlikely')).toBe('ok');
+    expect(severityOf('possible')).toBe('warn');
+    expect(severityOf('likely')).toBe('danger');
+    expect(severityOf('almost-certain')).toBe('danger');
+    expect(severityOf('minor')).toBe('ok');
+    expect(severityOf('moderate')).toBe('warn');
+    expect(severityOf('major')).toBe('danger');
+    expect(severityOf('severe')).toBe('danger');
   });
 });

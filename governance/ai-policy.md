@@ -36,9 +36,11 @@ You are welcome to use everything here, including with an agent, including at
 volume within the published limits. Two things are not welcome, and both are
 enforced rather than requested:
 
-- **Driving spend.** Every inference path is rate limited per caller, a global
-  daily cap sits above that, and a budget breaker can stop all of it. Browser
-  forms carry a bot check.
+- **Driving spend.** Every inference path is rate limited per caller. Chat also
+  has a global daily cap of 500 messages, and it is the only path that has one.
+  A budget breaker can stop chat and fit analysis; it is not read by the
+  evaluation judge or by the embedding call retrieval makes, so it does not stop
+  everything. Both browser forms carry a bot check.
 - **Probing the private tier.** Routes that are not listed answer exactly what a
   path with no route answers. There is nothing to learn from the difference,
   because there is no difference.
@@ -90,7 +92,10 @@ nobody can be picked out of them.
   discarded with the request. Cloudflare's own edge logging is a separate system
   and is outside what this page can speak for.
 - **No fingerprinting.** Classification reads the user agent, the path, the
-  `Accept` header, `Sec-Fetch-Mode` and whether a referrer was present. It does
+  `Accept` header, `Sec-Fetch-Mode` and the referrer — the referrer's origin
+  specifically: it is parsed and its host matched against lists of campaign,
+  social and search domains to produce a class. That class is stored; the
+  referring URL never is. It does
   not read TLS fingerprints, header order, screen dimensions or anything else
   that identifies a person rather than a client, and it stores classes rather
   than raw values — never a full path, a query string or a referrer URL. The MCP

@@ -63,9 +63,34 @@ export const REVIEW_MAX_AGE_DAYS = 90;
  * NEGATIVE IS POSSIBLE and is left alone: a row dated in the future is a typo,
  * and reporting it as `-3` on the page is more useful than clamping it to 0 and
  * showing a fresh row that never was.
+ *
+ * THE ROUND-TRIP CHECK IS FOR A DATE THAT IS SHAPED RIGHT AND IS NOT A DATE.
+ * `isoDate` in src/content.config.ts pins the SHAPE -- four digits, a month in
+ * 01-12, a day in 01-31 -- which is not the same as pinning a day that exists.
+ * MEASURED rather than assumed, because the obvious worry turns out to be the
+ * wrong one: every form that makes `Date.parse` return NaN (`2026-13-01`,
+ * `2026-01-32`, `2026-00-10`) is already rejected by that regex, so NaN cannot
+ * reach here through the collection. What DOES get through is the rollover
+ * class -- `2026-02-31` parses cleanly to 2026-03-03 and `2026-04-31` to
+ * 2026-05-01 -- and it fails in the worse direction: a typo silently reads as a
+ * LATER date, so the row renders fresher than it is and the staleness marker
+ * this whole module exists to drive is the thing that gets suppressed.
+ *
+ * Comparing the parsed value back against the string catches both classes with
+ * one check. THROWN rather than rendered around: this runs at build time on a
+ * prerendered page, so a bad date fails the build with the row's id in the
+ * message, which is where a typo in a dated attestation should surface.
  */
 export function reviewAgeDays(row: RiskRow, now: Date): number {
   const reviewed = Date.parse(row.lastReviewed);
+  if (
+    Number.isNaN(reviewed) ||
+    new Date(reviewed).toISOString().slice(0, 10) !== row.lastReviewed
+  ) {
+    throw new Error(
+      `risk-register: ${row.id} has a lastReviewed that is not a real date: ${row.lastReviewed}`,
+    );
+  }
   return Math.floor((now.getTime() - reviewed) / 86_400_000);
 }
 
