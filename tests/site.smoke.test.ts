@@ -31,10 +31,14 @@ test('serves the holding page from static assets', async () => {
   expect(html).toContain('<title>Ryan Lindsey</title>');
 });
 
-test('is not indexable before launch', async () => {
+test('is indexable since launch', async () => {
   const html = await (await server.fetch('/')).text();
-  expect(html).toContain('name="robots"');
-  expect(html).toContain('noindex');
+  // Inverted at launch, and pinned to the exact attribute value rather than a
+  // `toContain('index')` substring, which "noindex" would also satisfy -- see
+  // the matching test in tests/pages.test.ts for why that is worth spelling
+  // out here instead of trusting the shorter form.
+  expect(html).toMatch(/<meta name="robots" content="index, follow"\s*\/?>/);
+  expect(html).not.toContain('noindex');
 });
 
 test('returns 404 for an unknown path', async () => {

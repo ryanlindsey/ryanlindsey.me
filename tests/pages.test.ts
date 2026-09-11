@@ -142,12 +142,18 @@ test('renders header and footer landmarks', async () => {
   expect(page).toContain('data-site-footer');
 });
 
-test('keeps the holding page marker and stays unindexed', async () => {
+test('keeps the holding page marker and is indexable since launch', async () => {
   const page = await html('/');
   expect(page).toContain('data-testid="holding-page"');
   expect(page).toContain('<title>Ryan Lindsey</title>');
-  expect(page).toContain('name="robots"');
-  expect(page).toContain('noindex');
+  // Was `toContain('noindex')` before launch flipped Base.astro's default.
+  // Asserted as the WHOLE attribute value rather than `toContain('index')`,
+  // which "noindex" also satisfies -- and that is not hypothetical here: this
+  // test went on passing after the default flipped, because an HTML comment in
+  // Base.astro happened to contain the word "noindex" and `toContain` found
+  // it. A substring check on this particular string is a trap.
+  expect(page).toMatch(/<meta name="robots" content="index, follow"\s*\/?>/);
+  expect(page).not.toContain('noindex');
 });
 
 test('carries no candidacy language on any public surface', async () => {
@@ -304,6 +310,41 @@ test('keeps drafts out of the writing index but reachable by URL', async () => {
     // of this test's name, and what makes a draft shareable before it ships.
     expect((await server.fetch(`/writing/${entry.slug}`)).status).toBe(200);
   }
+});
+
+/**
+ * The regression this whole launch change is most likely to cause, asserted on
+ * both collections rather than on the one that happened to prompt it.
+ *
+ * Before launch the sitewide default was `noindex`, so a draft was covered by
+ * accident: it had a real route, but so did everything else, and nothing was
+ * indexable. Flipping the default to `index, follow` inverted that -- a draft
+ * is now indexable UNLESS its route says otherwise. Both `[...slug].astro`
+ * routes pass `noindex, nofollow` for a draft, and this is what holds them to
+ * it, entry by entry off disk so a new draft is covered the day it lands.
+ */
+test('serves drafts noindex and published pages indexable, in both collections', async () => {
+  for (const entry of CONTENT_ENTRIES) {
+    const page = await html(`/${entry.section}/${entry.slug}`);
+    const robots = page.match(/<meta name="robots" content="([^"]*)"/)?.[1];
+    expect(robots, `/${entry.section}/${entry.slug} should carry a robots directive`).toBeDefined();
+    if (entry.draft) {
+      expect(robots, `the draft ${entry.slug} must not be indexable`).toBe('noindex, nofollow');
+    } else {
+      expect(robots, `the published ${entry.slug} should be indexable`).toBe('index, follow');
+    }
+  }
+  // Both branches have to be exercised for the assertion above to mean
+  // anything -- a corpus that was all-published or all-draft would let a
+  // one-armed implementation through.
+  expect(
+    CONTENT_ENTRIES.some((e) => e.draft),
+    'expected at least one draft',
+  ).toBe(true);
+  expect(
+    CONTENT_ENTRIES.some((e) => !e.draft),
+    'expected at least one published entry',
+  ).toBe(true);
 });
 
 test('renders a table of contents matching the article headings', async () => {
@@ -1010,7 +1051,7 @@ test('robots.txt emits and allows every named crawler group, not just the wildca
   }
 });
 
-test('robots.txt carries the owner-decided Content-Signal reservation, points at /llms.txt and the MCP endpoint, and ships no Sitemap line', async () => {
+test('robots.txt carries the owner-decided Content-Signal reservation, points at /llms.txt and the MCP endpoint, and ships a Sitemap line that resolves', async () => {
   const body = await (await server.fetch('/robots.txt')).text();
   // Owner's decision, 2026-09-06: search/ai-input readable and citable now,
   // ai-train reserved -- see the file's own comment for why these are not
@@ -1020,9 +1061,66 @@ test('robots.txt carries the owner-decided Content-Signal reservation, points at
   // Fix round 1 (task-9-report.md, applies here too): the endpoint is `/mcp`
   // on that domain, not the bare origin -- the bare origin 404s.
   expect(body).toContain('https://mcp.ryanlindsey.me/mcp');
-  // No sitemap exists yet (`@astrojs/sitemap` is not installed, and the site
-  // is noindex sitewide) -- day 7 adds both together.
-  expect(body).not.toMatch(/^Sitemap:/m);
+  // This assertion used to be `not.toMatch(/^Sitemap:/m)`, on the grounds that
+  // no sitemap existed and "a Sitemap line pointing at a 404 would be worse
+  // than having none". Launch added both together, exactly as robots.txt's own
+  // comment said it would, so the assertion inverts -- and then goes one step
+  // further than the original, because a Sitemap line is only as good as what
+  // it resolves to, and that is the failure the original was guarding against.
+  const sitemapLine = body.match(/^Sitemap: (\S+)$/m);
+  expect(sitemapLine, 'robots.txt should ship a Sitemap line').not.toBeNull();
+
+  const sitemapUrl = new URL(sitemapLine![1]);
+  expect(sitemapUrl.origin).toBe('https://ryanlindsey.me');
+  const sitemap = await server.fetch(sitemapUrl.pathname);
+  expect(sitemap.status, `${sitemapUrl.pathname} should not 404`).toBe(200);
+  // An index file, not the URL list itself -- @astrojs/sitemap emits
+  // `sitemap-index.xml` pointing at one or more `sitemap-N.xml`, and a
+  // Sitemap line aimed at the wrong one of those still "resolves" while
+  // advertising a fraction of the site.
+  const indexXml = await sitemap.text();
+  expect(indexXml).toContain('<sitemapindex');
+  const children = [...indexXml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+  expect(children.length, 'the sitemap index should name at least one sitemap').toBeGreaterThan(0);
+  for (const child of children) {
+    expect((await server.fetch(new URL(child).pathname)).status, `${child} should not 404`).toBe(
+      200,
+    );
+  }
+});
+
+/**
+ * What the sitemap may and may not carry. Two separate guarantees, and the
+ * second is the one with teeth.
+ *
+ * Publishing the first post (and with it launch flipping Base.astro's default
+ * from `noindex` to `index, follow`) made every page indexable UNLESS it says
+ * otherwise -- which inverted the risk on this file. Before, a mistake left a
+ * published page invisible; now a mistake publishes an unpublished one. Drafts
+ * are the exposure, because they have real routes on purpose, so they are
+ * asserted against by name here rather than trusted to the filter.
+ */
+test('the sitemap lists every published page and no draft', async () => {
+  const indexXml = await (await server.fetch('/sitemap-index.xml')).text();
+  const child = indexXml.match(/<loc>([^<]+)<\/loc>/)![1];
+  const xml = await (await server.fetch(new URL(child).pathname)).text();
+  const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => new URL(m[1]).pathname);
+
+  for (const entry of CONTENT_ENTRIES.filter((e) => !e.draft)) {
+    expect(locs, `the sitemap should list ${entry.section}/${entry.slug}`).toContain(
+      `/${entry.section}/${entry.slug}/`,
+    );
+  }
+  for (const entry of CONTENT_ENTRIES.filter((e) => e.draft)) {
+    expect(locs, `the sitemap must not list the draft ${entry.slug}`).not.toContain(
+      `/${entry.section}/${entry.slug}/`,
+    );
+  }
+  // The section indexes and the résumé, so a filter that went too far shows up
+  // here rather than as quiet invisibility.
+  for (const path of ['/', '/writing/', '/work/', '/resume/']) {
+    expect(locs, `the sitemap should list ${path}`).toContain(path);
+  }
 });
 
 test('robots.txt documents the group-inheritance trap, the enforceability caveat, and the noindex/permissive-crawl reasoning in the file itself, not only in the plan', async () => {

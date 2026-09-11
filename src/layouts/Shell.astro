@@ -10,9 +10,12 @@ interface Props {
   // Task 10 (02 §3): pure pass-through, same as `markdownHref` -- see
   // Base.astro for what this prop is and why Person is not part of it.
   structuredData?: object;
+  // Pure pass-through as well. Undefined here means "take Base's default"
+  // (`index, follow` since launch); a draft route passes `noindex, nofollow`.
+  robots?: string;
 }
 
-const { title, description, markdownHref, structuredData } = Astro.props;
+const { title, description, markdownHref, structuredData, robots } = Astro.props;
 ---
 
 <Base
@@ -20,6 +23,7 @@ const { title, description, markdownHref, structuredData } = Astro.props;
   description={description}
   markdownHref={markdownHref}
   structuredData={structuredData}
+  robots={robots}
 >
   <a
     href="#main"

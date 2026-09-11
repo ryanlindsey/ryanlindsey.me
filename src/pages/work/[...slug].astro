@@ -8,7 +8,10 @@ import type { GetStaticPaths } from 'astro';
 
 // 05 §3 puts case studies at /work + /work/<slug>. Same draft convention as
 // /writing: every entry gets a route, only published ones reach the index, so a
-// piece under review is shareable by URL without entering the navigation.
+// piece under review is shareable by URL without entering the navigation. And
+// the same launch consequence: the sitewide default is indexable now, so a
+// draft passes `noindex, nofollow` below and is filtered out of the sitemap by
+// src/lib/unindexed-routes.mjs.
 export const getStaticPaths = (async () => {
   const caseStudies = await getCollection('caseStudies');
   return caseStudies.map((study) => ({
@@ -48,6 +51,7 @@ const structuredData = buildTechArticle({
   headings={headings}
   markdownHref={`/work/${study.id}.md`}
   structuredData={structuredData}
+  robots={study.data.draft ? 'noindex, nofollow' : undefined}
 >
   <Content />
 </ArticleLayout>
