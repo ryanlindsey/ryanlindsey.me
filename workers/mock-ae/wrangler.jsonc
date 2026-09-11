@@ -1,0 +1,34 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+
+  // TEST-ONLY. Never deployed: no account_id, no routes, no workers.dev
+  // subdomain, and no deploy script references it. `workers_dev: false` is the
+  // mechanism rather than the convention, exactly as in workers/mock-ai and
+  // workers/mock-browser -- the absence of routes alone would not stop a stray
+  // `wrangler deploy --config workers/mock-ae/wrangler.jsonc`.
+  //
+  // It exists to close a gap those two siblings do not: task-13a-findings-r1.md
+  // (fix round 1) found that Miniflare's LOCAL Analytics Engine simulation is a
+  // `writeDataPoint` that does nothing at all -- no read-back, not even a log
+  // line -- so a `recordAgentEvent` call site can be deleted from
+  // workers/mcp/src/chat.ts with zero tests going red. `bindingOverrides: { AE:
+  // "mock-ae" }` (see the test file that uses it) points the `AE` binding here
+  // instead, the same mechanism `bindingOverrides: { AI: "mock-ai" }` already
+  // uses to replace a binding Miniflare cannot emulate usefully.
+  //
+  // UNLIKE mock-ai and mock-browser, this Worker's contract is not `fetch` --
+  // `AnalyticsEngineDataset.writeDataPoint()` is a plain method call, not an
+  // HTTP request, so this exports a `WorkerEntrypoint` with `writeDataPoint`
+  // (what the Worker under test calls through the `AE` binding) and `points`/
+  // `reset` (what the TEST calls directly on the SAME named worker via
+  // `server.getWorker('mock-ae')`, the way tests/resume-pdf.test.ts already
+  // calls `lastRenderUrl()`/`reset()` on mock-browser). Both paths share one
+  // module-scope array because they are the same running Worker instance.
+  //
+  // The name is what `bindingOverrides: { AE: "mock-ae" }` resolves.
+  "name": "mock-ae",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+}
