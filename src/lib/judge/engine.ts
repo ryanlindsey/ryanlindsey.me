@@ -1,6 +1,7 @@
 import JUDGE_PROMPT from '../../../prompts/judge.md?raw';
 import { extractToolInput } from '../fit/engine';
 import { JUDGE_VERDICT_JSON_SCHEMA, JudgeVerdict } from '../../../workers/mcp/src/judge-schema';
+import { fenceFor } from '../fence';
 
 // The LLM judge (04 §4). One Sonnet call, forced through a tool schema, scoring
 // a subject against criteria.
@@ -37,11 +38,6 @@ export const JUDGE_MAX_TOKENS = 1024;
 const EMIT_TOOL = 'emit_verdict';
 
 /** The subject is fenced as data, the same boundary the fit engine and chat use. */
-function fenceFor(text: string): string {
-  let longest = 0;
-  for (const run of text.match(/`+/g) ?? []) longest = Math.max(longest, run.length);
-  return '`'.repeat(Math.max(3, longest + 1));
-}
 
 export class JudgeUnavailable extends Error {
   constructor(message: string) {

@@ -22,6 +22,29 @@ test('each block is fenced and labelled with the URL that may cite it', () => {
   expect(text).toMatch(/```/);
 });
 
+test('a document carrying its own fence is wrapped in a longer one', () => {
+  // THE DEFECT THIS PINS. This render used to carry a literal ``` fence, so a
+  // corpus document containing its own ``` run closed the wrapper early and put
+  // everything after it OUTSIDE the boundary -- in the position where
+  // instructions live, in a prompt whose system text says fenced content is
+  // data. The published post terminal-setup.mdx has 14 such blocks, so this was
+  // live rather than theoretical.
+  //
+  // The assertion above (`toMatch(/```/)`) cannot catch it: a longer fence
+  // contains ``` too, so it passed either way.
+  const hostile = 'before\n```js\nalert(1)\n```\nafter';
+  const { text } = renderContext([{ ...block(1), markdown: hostile }]);
+
+  const open = text.indexOf('````markdown');
+  expect(open, 'the wrapper must be longer than the longest run inside it').toBeGreaterThan(-1);
+  const close = text.indexOf('````', open + '````markdown'.length);
+  expect(close).toBeGreaterThan(open);
+
+  // The load-bearing one: every byte of the document sits between the two
+  // wrapper fences. Under the old literal fence `after` fell outside.
+  expect(text.slice(open, close)).toContain('after');
+});
+
 test('the budget is respected and the shortfall is reported', () => {
   const { text, truncated } = renderContext([block(1, 500), block(2, 500)], 600);
   expect(text.length).toBeLessThanOrEqual(900); // body plus per-block framing
