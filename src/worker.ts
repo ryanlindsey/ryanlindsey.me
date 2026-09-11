@@ -271,24 +271,19 @@ const REFUSAL_STATUSES = new Set([403, 404, 500]);
  * `/fit/r/<id>` is the only success signal it has, and it is an unambiguous
  * one: src/pages/fit/run.ts sends every failure to `/fit?<query>` instead.
  *
- * THE AUDIENCE IS NOT AVAILABLE HERE, and that is a real gap rather than an
- * omission. Resolving the grant is the MCP Worker's job, so the site Worker
- * knows a report was made and not for whom. The label says so explicitly
- * instead of guessing: the operator gets the audience from the `gated-read`
- * event the MCP Worker queues for the same run, and two events a second apart
- * in one email is a smaller cost than an audience field that is sometimes a
- * real label and sometimes a fiction.
+ * THE AUDIENCE IS NOT AVAILABLE HERE, so the event omits it. Resolving the
+ * grant is the MCP Worker's job -- doing it here would mean a second verifier,
+ * which is the thing `resolveGrant` exists to prevent -- so the site Worker
+ * knows a report was made and not for whom. The operator gets the audience from
+ * the `gated-read` event the MCP Worker queues for the same run; two events a
+ * second apart in one email is a smaller cost than a field that is sometimes a
+ * real label and sometimes a placeholder standing where one should be.
  */
 function queueFitRunIntent(response: Response, env: Env, ctx: ExecutionContext): void {
   if (response.status !== 303) return;
   const reportId = /^\/fit\/r\/([^/?#]+)$/.exec(response.headers.get('Location') ?? '')?.[1];
   if (reportId === undefined) return;
-  const event = highIntentFor({
-    kind: 'fit-run',
-    at: new Date().toISOString(),
-    audience: 'unavailable-at-site',
-    reportId,
-  });
+  const event = highIntentFor({ kind: 'fit-run', at: new Date().toISOString(), reportId });
   if (event !== null) ctx.waitUntil(env.EVENTS.send(event));
 }
 

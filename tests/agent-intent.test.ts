@@ -14,6 +14,18 @@ describe('highIntentFor', () => {
     expect(JSON.stringify(event)).not.toContain('description');
   });
 
+  test('a fit run with no audience omits the key rather than carrying a placeholder', () => {
+    const event = highIntentFor({ kind: 'fit-run', at, reportId: 'abc' });
+    expect(event?.detail).toEqual({ report: 'abc' });
+    // The assertion that matters: `detail` is rendered into a notification email
+    // as `key=value` pairs, so an `undefined` value would ship the literal text
+    // `audience=undefined` to the operator. The key has to be absent, not empty.
+    expect(Object.hasOwn(event?.detail ?? {}, 'audience')).toBe(false);
+    expect(Object.entries(event?.detail ?? {}).map(([k, v]) => `${k}=${v}`)).toEqual([
+      'report=abc',
+    ]);
+  });
+
   test('any gated tool call is high intent, whichever tool it was', () => {
     expect(
       highIntentFor({ kind: 'gated-read', at, tool: 'get_references', audience: 'label-a' })?.kind,
