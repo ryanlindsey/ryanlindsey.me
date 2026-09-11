@@ -1,0 +1,187 @@
+---
+import { getEntry, render } from 'astro:content';
+import Shell from '../layouts/Shell.astro';
+import {
+  isStale,
+  reviewAgeDays,
+  severityOf,
+  REVIEW_MAX_AGE_DAYS,
+  type RiskRow,
+} from '../lib/governance/register';
+
+/**
+ * The governance page (06 §2): the acceptable-use and data-handling policy,
+ * followed by the risk register as a table.
+ *
+ * THE PATH IS FIXED AT `/ai-policy`. src/pages/chat.astro already links here in
+ * shipped copy, so this route is a dependency of a page that is live rather
+ * than a new address that can be moved.
+ *
+ * PRERENDERED, which has one consequence worth naming rather than discovering:
+ * "reviewed N days ago" is computed at BUILD time, so it advances when the site
+ * is rebuilt and not continuously. That is the right trade for this page -- it
+ * is a document, not a dashboard, and an on-demand route would spend a Worker
+ * invocation per read to make a number that changes once a day exact to the
+ * hour. It also means the staleness marker appears on the next deploy after a
+ * row goes overdue, which is the same day anybody would have acted on it.
+ */
+export const prerender = true;
+
+const policy = await getEntry('governance', 'ai-policy');
+const register = await getEntry('riskRegister', 'risk-register');
+// Thrown rather than rendered around, because either absence means the
+// collection globs stopped matching and a page that quietly rendered half of
+// itself would publish a governance document with its register missing.
+if (policy === undefined) throw new Error('governance/ai-policy.md did not load');
+if (register === undefined) throw new Error('governance/risk-register.yaml did not load');
+
+const { Content } = await render(policy);
+
+const now = new Date();
+const rows: RiskRow[] = register.data.rows;
+const stale = rows.filter((row) => isStale(row, now));
+
+/**
+ * The three token colours, spelled as whole class strings.
+ *
+ * Tailwind scans source text for complete class names, so a computed
+ * `border-${severity}` would be scanned as nothing and ship unstyled. The map
+ * is the price of that, and `severityOf` is what keeps it from being a
+ * per-value judgement.
+ */
+const SEVERITY_CLASS = {
+  ok: 'border-ok text-ok',
+  warn: 'border-warn text-warn',
+  danger: 'border-danger text-danger',
+} as const;
+
+function ageLabel(row: RiskRow): string {
+  const days = reviewAgeDays(row, now);
+  if (days < 0) return 'reviewed in the future';
+  if (days === 0) return 'reviewed today';
+  return `reviewed ${days} day${days === 1 ? '' : 's'} ago`;
+}
+---
+
+<Shell title="AI policy and risk register" description={policy.data.summary}>
+  <div class="mx-auto max-w-5xl px-6 py-16">
+    <p class="mb-6 border-t border-accent pt-3 font-mono text-micro uppercase text-accent">
+      Governance
+    </p>
+    <h1 class="max-w-3xl font-display text-title text-ink">{policy.data.title}</h1>
+    <p class="mt-3 font-mono text-micro uppercase text-ink-muted">
+      Updated <time datetime={policy.data.updated}>{policy.data.updated}</time>
+    </p>
+    <p class="mt-6 max-w-2xl text-ink-muted">{policy.data.summary}</p>
+
+    <div class="prose-rl prose mt-12">
+      <Content />
+    </div>
+
+    <section class="mt-20" aria-labelledby="risk-register">
+      <h2 id="risk-register" class="border-b border-rule pb-3 font-display text-heading text-ink">
+        {register.data.title}
+      </h2>
+      <p class="mt-4 max-w-2xl text-ink-muted">
+        Every row is a risk this system actually carries, with the control that is actually in place
+        rather than the one that would sound best. A row is marked when it has gone more than {
+          REVIEW_MAX_AGE_DAYS
+        } days without a review.
+      </p>
+      <p class="mt-3 font-mono text-micro uppercase text-ink-muted">
+        <span data-numeric
+          >{rows.length} rows · updated <time datetime={register.data.updated}
+            >{register.data.updated}</time
+          ></span
+        >
+        {stale.length > 0 && <span class="text-warn"> · {stale.length} overdue for review</span>}
+      </p>
+
+      <!-- The table scrolls inside this container rather than widening the page;
+           `tabindex` is what makes a scrollable region reachable without a
+           pointer, and the `role`/`aria-label` pair is what stops that tab stop
+           from being an unlabelled one. -->
+      <div
+        class="mt-8 overflow-x-auto border border-rule"
+        role="region"
+        aria-label="AI risk register table"
+        tabindex="0"
+      >
+        <table class="w-full min-w-[56rem] border-collapse text-left">
+          <caption class="sr-only">
+            One row per identified risk, with its likelihood, impact, the control in place, the
+            owner, and how long ago it was last reviewed.
+          </caption>
+          <thead>
+            <tr class="border-b border-rule bg-surface-raised">
+              <th
+                scope="col"
+                class="w-[19%] px-4 py-3 font-mono text-micro uppercase text-ink-muted">Risk</th
+              >
+              <th scope="col" class="w-[9%] px-4 py-3 font-mono text-micro uppercase text-ink-muted"
+                >Likelihood</th
+              >
+              <th scope="col" class="w-[9%] px-4 py-3 font-mono text-micro uppercase text-ink-muted"
+                >Impact</th
+              >
+              <th
+                scope="col"
+                class="w-[41%] px-4 py-3 font-mono text-micro uppercase text-ink-muted"
+                >Mitigation</th
+              >
+              <th
+                scope="col"
+                class="w-[10%] px-4 py-3 font-mono text-micro uppercase text-ink-muted">Owner</th
+              >
+              <th
+                scope="col"
+                class="w-[12%] px-4 py-3 font-mono text-micro uppercase text-ink-muted">Reviewed</th
+              >
+            </tr>
+          </thead>
+          <tbody>
+            {
+              rows.map((row) => (
+                <tr class="border-b border-rule align-top last:border-b-0">
+                  <th scope="row" class="px-4 py-5 text-left font-normal">
+                    <span class="block font-mono text-micro uppercase text-accent">{row.id}</span>
+                    <span class="mt-2 block text-small text-ink">{row.risk}</span>
+                  </th>
+                  <td class="px-4 py-5">
+                    <span
+                      class={`inline-block border px-2 py-1 font-mono text-micro uppercase ${SEVERITY_CLASS[severityOf(row.likelihood)]}`}
+                    >
+                      {row.likelihood}
+                    </span>
+                  </td>
+                  <td class="px-4 py-5">
+                    <span
+                      class={`inline-block border px-2 py-1 font-mono text-micro uppercase ${SEVERITY_CLASS[severityOf(row.impact)]}`}
+                    >
+                      {row.impact}
+                    </span>
+                  </td>
+                  <td class="px-4 py-5 text-small text-ink-muted">{row.mitigation}</td>
+                  <td class="px-4 py-5 text-small text-ink-muted">{row.owner}</td>
+                  <td class="px-4 py-5">
+                    <time
+                      datetime={row.lastReviewed}
+                      class={`block font-mono text-micro ${isStale(row, now) ? 'text-warn' : 'text-ink-muted'}`}
+                    >
+                      {ageLabel(row)}
+                    </time>
+                    {isStale(row, now) && (
+                      <span class="mt-2 inline-block border border-warn px-2 py-1 font-mono text-micro uppercase text-warn">
+                        Review overdue
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</Shell>

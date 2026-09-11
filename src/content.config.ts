@@ -1,6 +1,7 @@
 import { defineCollection } from 'astro:content';
 import { z } from 'astro/zod';
 import { glob } from 'astro/loaders';
+import { IMPACTS, LIKELIHOODS } from './lib/governance/register';
 
 // 02 §2: three pillars, fixed at launch. A post belongs to exactly one.
 const pillar = z.enum(['agentic-engineering', 'org-scaling', 'building-in-the-open']);
@@ -179,4 +180,52 @@ const resume = defineCollection({
   schema: resumeSchema,
 });
 
-export const collections = { posts, caseStudies, resume };
+// The governance artifacts (06 §2), both loaded from `governance/` at the repo
+// root rather than from src/content/. They are published documents ABOUT this
+// repository and are meant to be read next to it -- a reader who clones the
+// source finds them at a path that says what they are, not filed under the
+// site's content tree beside the posts.
+//
+// TWO COLLECTIONS OVER ONE DIRECTORY, split by extension, because they are
+// different kinds of thing: the policy is prose with a body Astro renders, and
+// the register is data with no body at all. A single collection would need a
+// schema that is the union of both and a page that branched on which it got.
+const governance = defineCollection({
+  loader: glob({ base: './governance', pattern: '**/*.md' }),
+  schema: z.object({
+    title: z.string(),
+    // Quoted in the frontmatter, and it has to be: Astro parses markdown
+    // frontmatter as YAML 1.1, which resolves a bare `2026-09-11` to a Date and
+    // would fail this regex. src/content/resume/ryan-lindsey.yaml quotes its
+    // own `lastModified` for the same reason.
+    updated: isoDate,
+    summary: z.string(),
+  }),
+});
+
+// The scales live in src/lib/governance/register.ts so the page's colour ramp
+// and this schema read one ordered list rather than two copies of it.
+const riskRegister = defineCollection({
+  loader: glob({ base: './governance', pattern: '**/*.yaml' }),
+  schema: z.object({
+    title: z.string(),
+    updated: isoDate,
+    rows: z
+      .array(
+        z.object({
+          id: z.string(),
+          risk: z.string(),
+          likelihood: z.enum(LIKELIHOODS),
+          impact: z.enum(IMPACTS),
+          mitigation: z.string(),
+          owner: z.string(),
+          lastReviewed: isoDate,
+        }),
+      )
+      // A register with no rows is a file somebody emptied, not a system with no
+      // risks. Failing the build is the right answer to that.
+      .min(1),
+  }),
+});
+
+export const collections = { posts, caseStudies, resume, governance, riskRegister };

@@ -1,0 +1,129 @@
+title: AI Risk Register
+updated: '2026-09-11'
+rows:
+  - id: prompt-injection
+    risk: >-
+      Text a visitor pastes or a page the corpus contains carries instructions the
+      model follows instead of treating as data.
+    likelihood: likely
+    impact: moderate
+    mitigation: >-
+      Every untrusted span is fenced with a fence computed to be longer than any
+      backtick run inside it, and both system prompts say fenced content is data.
+      In chat the model is never shown a URL it could cite: citations are numbered
+      indices into a list the server holds, and the reader's page builds every link,
+      so a steered answer can produce a number that goes nowhere but not a link to
+      anywhere. A fit report does carry URLs, and any that do not resolve to a
+      document the model was shown are dropped before the report is stored. An
+      adversarial case in the chat eval suite exercises the boundary, but that suite
+      runs by hand before a merge rather than in CI, because it needs a deployed
+      endpoint and a scoped credential and this project's CI holds neither by
+      design. The case is also not deterministic: it passed twice and failed twice
+      across four runs of the same prompt, so a green run is evidence about that run
+      and not a guarantee about the boundary.
+    owner: Ryan Lindsey
+    lastReviewed: '2026-09-11'
+  - id: citation-fabrication
+    risk: A cited claim points at a source that does not say it, or does not exist.
+    likelihood: possible
+    impact: major
+    mitigation: >-
+      Fit reports drop any citation whose URL is not in the set of documents the
+      model was shown, and store how many were checked and how many were dropped
+      beside the report itself. Chat answers can only cite numbers in the list they
+      were given; a number outside it renders as plain text rather than a link, and
+      is counted on the transcript. Both counts are asserted at zero on the golden
+      sets by the eval suite, which is run by hand before a merge rather than in CI,
+      so that assertion is only as current as the last run somebody performed.
+    owner: Ryan Lindsey
+    lastReviewed: '2026-09-11'
+  - id: private-tier-disclosure
+    risk: >-
+      Information held for a specific audience becomes visible on a public surface —
+      through a tool listing, an error that differs from a dead route's, a metrics
+      page, or an answer the model volunteers.
+    likelihood: unlikely
+    impact: major
+    mitigation: >-
+      Gated tools are registered per grant, so an unauthenticated listing cannot name
+      one. Gated documents live in a separate bucket whose binding the public code
+      path does not declare, which makes the separation a partition rather than a
+      filter. The unlisted routes answer a byte-identical copy of the site's own 404,
+      compared as a whole response — status, body and every header — against two dead
+      paths by a test that runs in CI, alongside a static scan of every tracked source
+      file for the vocabulary this rule exists to keep off the public surface. What
+      does not run in CI is the eval suite that probes the deployed public chat with
+      eight questions and refuses to pass on a confirmation, a denial or an inference;
+      that is run by hand before a merge. No claim is made here about a published
+      metrics view: the audit trail carries the tier of every call, so such a view can
+      be filtered to the public tier, but the filter itself was not in this repository
+      on the date of this review and an unverified control does not belong in a
+      register.
+    owner: Ryan Lindsey
+    lastReviewed: '2026-09-11'
+  - id: token-leakage
+    risk: A scoped access token is forwarded, logged or otherwise reaches someone it was not issued to.
+    likelihood: possible
+    impact: moderate
+    mitigation: >-
+      Tokens are scoped, expiring and revocable by one row update in a registry the
+      server consults on every call; the token's value is never stored, only its
+      claims. Pages that carry one in the URL send Referrer-Policy no-referrer as both
+      a response header and a meta tag, which is what keeps the token out of the
+      Referer on the bot-check script's own request to a third-party origin. Every
+      gated tool call is audited with the token's id, so revocation can be followed by
+      an exact answer to what that token read. One read is deliberately not covered by
+      that trail and is named rather than glossed: a fit report permalink is
+      unguessable and is itself the capability, so it takes no token, produces no audit
+      row, and stays readable by whoever holds the link until its retention window
+      closes.
+    owner: Ryan Lindsey
+    lastReviewed: '2026-09-11'
+  - id: cost-blowout
+    risk: Inference spend runs away, through enthusiasm or through abuse.
+    likelihood: possible
+    impact: moderate
+    mitigation: >-
+      Per-caller limits are enforced by a strongly consistent Durable Object rather
+      than by the platform's own rate-limiting binding, which was measured serving 150
+      strictly sequential calls against a 60-per-minute bucket without refusing once. A
+      global daily cap of 500 chat messages sits on the same mechanism, and both
+      browser forms carry a bot check verified where the spend happens rather than
+      where the form is served. A budget breaker is read before anything is spent and
+      refuses when it cannot be read, which is the safe answer to not knowing whether
+      the budget is exhausted. The breaker is a flag an operator sets by hand: nothing
+      in this repository measures spend and trips it, so it is a kill switch rather
+      than an automatic cut-off, and the caps above are what bound an unattended day.
+    owner: Ryan Lindsey
+    lastReviewed: '2026-09-11'
+  - id: tone-and-refusal
+    risk: >-
+      The chat persona embarrasses its author — by flattering, by lecturing, or by
+      declining in a way that reads as evasive.
+    likelihood: possible
+    impact: moderate
+    mitigation: >-
+      Prompts are versioned in git and changed by pull request, so a change to how this
+      thing speaks is reviewed the way a change to its code is. The eval suite scores
+      grounding, honesty and tone with an LLM judge against written criteria. Nothing
+      mechanical blocks a merge on that score: the suite runs by hand against a deployed
+      endpoint, because CI holds no credential that could reach one, and at the last
+      full run it stood at 13 of 16 cases rather than green. The control is a person
+      reading a run before merging, which is weaker than a gate and is what is actually
+      in place.
+    owner: Ryan Lindsey
+    lastReviewed: '2026-09-11'
+  - id: transcript-retention
+    risk: Text visitors typed is kept longer than the policy says, or kept after it should have gone.
+    likelihood: unlikely
+    impact: moderate
+    mitigation: >-
+      Retention windows are one table-driven constant, read by the cron that enforces
+      them and pinned against the published policy's own sentences by a test that runs
+      in CI — so the number in the code and the number on the page cannot drift, even
+      though the page does not read the constant directly. The sweep has a daily cron
+      slot of its own and logs one line naming every table and its row count, so
+      "deleted nothing" and "did not run" are distinguishable from outside. No test
+      proves the trigger fires; that is confirmed against the deployed Worker.
+    owner: Ryan Lindsey
+    lastReviewed: '2026-09-11'
