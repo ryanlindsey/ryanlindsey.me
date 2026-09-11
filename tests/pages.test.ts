@@ -193,10 +193,13 @@ test('carries no candidacy language on any public surface', async () => {
     // welcomes named crawlers by name -- it must carry no candidacy
     // language either.
     '/robots.txt',
-    // Day 6 Task 13: the two governance surfaces and the chat page this task
-    // put in the nav and the agent index -- reachable by URL since the PRs
-    // that built them, but not yet swept here until this task made them
-    // discoverable.
+    // Day 6 Task 13: `/ops` and `/ai-policy` are the two governance surfaces
+    // this task put in the nav and the agent index, which is what earns them
+    // a place in this sweep. `/chat` is added to the sweep for the same
+    // reason -- it was reachable and unswept before this task -- but its own
+    // role here stops there: it stays out of the primary nav by design (it
+    // lives in the footer instead), and its `SITE_LINKS` entry in
+    // llms.txt.ts already existed before this diff.
     '/chat',
     '/ops',
     '/ai-policy',
@@ -247,9 +250,11 @@ test('carries no candidacy language on any public surface', async () => {
 });
 
 // Day 6 Task 13's central claim, pinned directly rather than left to the two
-// scans above to imply between them: every public surface this day's build
-// track added carries neither a gated tool's name (which would name a
-// capability that only a granted caller may use) nor a private-tier/candidacy
+// scans above to imply between them: none of the four surfaces below --
+// /chat, /ops and /ai-policy, the three pages day 6's build track shipped,
+// plus /llms.txt, the pre-existing index (Day 3) this task just extended
+// with two of them -- carries a gated tool's name (which would name a
+// capability that only a granted caller may use) or a private-tier/candidacy
 // pattern. GATED_TOOL_NAMES comes from workers/mcp/src/gated.ts -- a plain
 // vitest process, same as tests/mcp-gated.test.ts:11 -- rather than from a
 // second, hand-typed list that could drift from the real tool map. Fetched as
