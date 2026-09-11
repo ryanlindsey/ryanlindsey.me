@@ -4,12 +4,19 @@ import type { RateLimiterObject } from '../../../src/lib/mcp/limits';
  * The bindings THIS Worker declares, from workers/mcp/wrangler.jsonc.
  *
  * It replaces `Env & Pick<CorpusEnv, ...>`. That intersection borrowed the
- * SITE's generated `Env`, which declares `EMAIL`, `EVENTS`, `BROWSER`,
- * `ASSETS`, `MCP` and `RLME_TURNSTILE_SECRET_KEY` -- none of which are bound
- * here. `env.EVENTS.send(...)` typechecked and would have thrown at runtime,
- * and day 4 is exactly when the events queue (06 §3, day 6's work) looks
- * reachable. A type that names bindings the Worker does not have is worse
- * than no type.
+ * SITE's generated `Env`, which declares `EMAIL`, `BROWSER`, `ASSETS`, `MCP`
+ * and `RLME_TURNSTILE_SECRET_KEY` -- none of which are bound here. A type that
+ * names bindings the Worker does not have is worse than no type.
+ *
+ * DAY 6 GAVE THIS WORKER `EVENTS` FOR REAL (06 §3). The paragraph here used to
+ * name it as the worked example of the problem -- `env.EVENTS.send(...)`
+ * typechecked against the borrowed type and would have thrown at runtime,
+ * because day 4 is exactly when the events queue looks reachable and is not.
+ * It is reachable now: the gated-tier events (a fit run, any gated tool call)
+ * are observed on THIS Worker, because this is the one that resolves the grant
+ * and knows the audience. The lesson the old example taught is unchanged and
+ * is what the test below enforces -- the binding is in the type because it is
+ * in the config, not because it is convenient.
  *
  * tests/mcp-env.test.ts regenerates the binding list with `wrangler types`
  * and fails if this drifts from the config in either direction.
@@ -23,6 +30,13 @@ export interface McpEnv {
   AE: AnalyticsEngineDataset;
   AI: Ai;
   VECTORIZE: VectorizeIndex;
+  /**
+   * The high-intent events queue (06 §3). Produced here, consumed on the site
+   * Worker -- a queue is the seam that lets one Worker report an event another
+   * one acts on, which is what keeps the `EMAIL` binding and the destination
+   * secret off this Worker entirely.
+   */
+  EVENTS: Queue;
   /**
    * The rate limiter (03 §3), a Durable Object namespace rather than the
    * `RateLimit` binding it was until #29 -- see workers/mcp/src/rate-limiter.ts
@@ -159,6 +173,7 @@ export const MCP_BINDING_NAMES = [
   'AE',
   'AI',
   'VECTORIZE',
+  'EVENTS',
   'RATE_LIMITER',
   'RLME_TOKEN_SIGNING_KEY',
   'SITE',
