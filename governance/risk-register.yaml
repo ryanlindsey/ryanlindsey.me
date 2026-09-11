@@ -1,0 +1,161 @@
+title: AI Risk Register
+updated: '2026-09-11'
+rows:
+  - id: prompt-injection
+    risk: >-
+      Text a visitor pastes or a page the corpus contains carries instructions the
+      model follows instead of treating as data.
+    likelihood: likely
+    impact: moderate
+    mitigation: >-
+      Untrusted spans are fenced, and the prompts say that fenced content is data.
+      The fence is COMPUTED to be longer than any backtick run inside the text —
+      which is what makes it a boundary rather than a suggestion — for the chat
+      corpus, the chat question, the fit target description and both of the judge's
+      spans. It is fixed at three backticks for one span, the fit corpus, and that
+      is named here as a known gap rather than left to be discovered: a post
+      published on this site opens 14 fenced blocks of its own, so a fit run over
+      the corpus sends much of it outside the fence that the "treat fenced content
+      as data" rule depends on. That span is this site's own writing rather than a
+      stranger's paste, which is why it is a gap and not an incident — but it is
+      the weakest fence here and it is tracked for a change of its own.
+      Chat cites by number, and the guarantee is not that the model has no URLs to
+      work with — it is shown each source's URL beside that source's number — but
+      that nothing it writes is ever turned into a link. Its answer is inserted
+      into the page as a text node, with no markdown pass over it, and the only
+      links rendered are built by looking a cited number up in the list the server
+      sent; a number with no entry in that list stays plain text. So a steered
+      answer can type a URL into its prose and still cannot produce a link to
+      anywhere. A fit report does carry URLs in its structured output, and any that
+      do not resolve to a document the model was shown are dropped before the
+      report is stored. An
+      adversarial case in the chat eval suite exercises the boundary, but that suite
+      runs by hand before a merge rather than in CI, because it needs a deployed
+      endpoint and a scoped credential and this project's CI holds neither by
+      design. The case is also not deterministic: it passed twice and failed twice
+      across four runs of the same prompt, so a green run is evidence about that run
+      and not a guarantee about the boundary.
+    owner: Ryan Lindsey
+    lastReviewed: '2026-09-11'
+  - id: citation-fabrication
+    risk: A cited claim points at a source that does not say it, or does not exist.
+    likelihood: possible
+    impact: major
+    mitigation: >-
+      Fit reports drop any citation whose URL is not in the set of documents the
+      model was shown, and store how many were checked and how many were dropped
+      beside the report itself. Chat answers can only cite numbers in the list they
+      were given; a number outside it renders as plain text rather than a link, and
+      is counted on the transcript. Both counts are asserted at zero on the golden
+      sets by the eval suite, which is run by hand before a merge rather than in CI,
+      so that assertion is only as current as the last run somebody performed.
+    owner: Ryan Lindsey
+    lastReviewed: '2026-09-11'
+  - id: private-tier-disclosure
+    risk: >-
+      Information held for a specific audience becomes visible on a public surface —
+      through a tool listing, an error that differs from a dead route's, a metrics
+      page, or an answer the model volunteers.
+    likelihood: unlikely
+    impact: major
+    mitigation: >-
+      Gated tools are registered per grant, so an unauthenticated listing cannot name
+      one. Gated documents live in a separate bucket whose binding the public code
+      path does not declare, which makes the separation a partition rather than a
+      filter. The unlisted routes answer a byte-identical copy of the site's own 404,
+      compared as a whole response — status, body and every header — against two dead
+      paths by a test that runs in CI, alongside a static scan of every tracked file
+      under the scanned roots for the vocabulary this rule exists to keep off the
+      public surface — those roots cover what ships and deliberately exclude the test
+      directory, which enumerates that vocabulary in order to forbid it. What
+      does not run in CI is the eval suite that probes the deployed public chat with
+      eight questions and refuses to pass on a confirmation, a denial or an inference;
+      that is run by hand before a merge. The published metrics page filters to the
+      public tier in SQL rather than in its template, which is the difference between
+      a page that cannot leak a row and one that leaks the first time somebody adds a
+      section and forgets a condition; it imports no list of gated tool names, because
+      a denylist by name would be correct only until the next tool is added; and a
+      test plants a private-tier row before rendering and asserts that neither the
+      gated tool name nor the audience label reaches the page.
+    owner: Ryan Lindsey
+    lastReviewed: '2026-09-11'
+  - id: token-leakage
+    risk: A scoped access token is forwarded, logged or otherwise reaches someone it was not issued to.
+    likelihood: possible
+    impact: moderate
+    mitigation: >-
+      Tokens are scoped, expiring and revocable by one row update in a registry the
+      server consults on every call; the token's value is never stored, only its
+      claims. Pages that carry one in the URL send Referrer-Policy no-referrer as both
+      a response header and a meta tag, which is what keeps the token out of the
+      Referer on the bot-check script's own request to a third-party origin. Every
+      gated tool call is audited with the token's id, so revocation can be followed by
+      an exact answer to what that token read. One read is deliberately not covered by
+      that trail and is named rather than glossed: a fit report permalink is
+      unguessable and is itself the capability, so it takes no token, produces no audit
+      row, and stays readable by whoever holds the link until its retention window
+      closes.
+    owner: Ryan Lindsey
+    lastReviewed: '2026-09-11'
+  - id: cost-blowout
+    risk: Inference spend runs away, through enthusiasm or through abuse.
+    likelihood: possible
+    impact: moderate
+    mitigation: >-
+      Per-caller limits are enforced by a strongly consistent Durable Object rather
+      than by the platform's own rate-limiting binding, which was measured serving 150
+      strictly sequential calls against a 60-per-minute bucket without refusing once. A
+      global daily cap of 500 chat messages sits on the same mechanism, and it is the
+      only daily cap there is — fit analysis, the judge and retrieval have per-caller
+      limits and no global one. Both browser forms carry a bot check, and only one of
+      them is verified where the spend happens: the chat form's token is checked on
+      the Worker that makes the model call, while the fit form's is checked on the
+      Worker that served the form, after which the analysis call is gated by a scope
+      check, the limiter and the breaker. A budget breaker is read before a chat turn or a
+      fit run spends anything and refuses when it cannot be read, which is the safe
+      answer to not knowing whether the budget is exhausted — but it is not read by
+      the judge, and not by the embedding call retrieval makes before a chat turn
+      reaches it, so it does not stop everything. The breaker is a flag an operator
+      sets by hand: nothing
+      in this repository measures spend and trips it, so it is a kill switch rather
+      than an automatic cut-off, and the caps above are what bound an unattended day.
+      The gateway's own thirty-day spend is published on that same operations page, so
+      an unexpected figure is visible on a page rather than discovered on an invoice —
+      though that read covers only the calls that name the gateway, which is chat, fit
+      and the judge, and not the embedding calls retrieval makes.
+    owner: Ryan Lindsey
+    lastReviewed: '2026-09-11'
+  - id: tone-and-refusal
+    risk: >-
+      The chat persona embarrasses its author — by flattering, by lecturing, or by
+      declining in a way that reads as evasive.
+    likelihood: possible
+    impact: moderate
+    mitigation: >-
+      Prompts are versioned in git and changed by pull request, so a change to how this
+      thing speaks is reviewed the way a change to its code is. The eval suite scores
+      grounding, honesty and tone with an LLM judge against written criteria. Nothing
+      mechanical blocks a merge on that score: the suite runs by hand against a deployed
+      endpoint, because CI holds no credential that could reach one, and at the last
+      full run it stood at 13 of 16 cases rather than green. The control is a person
+      reading a run before merging, which is weaker than a gate and is what is actually
+      in place.
+    owner: Ryan Lindsey
+    lastReviewed: '2026-09-11'
+  - id: transcript-retention
+    risk: Text visitors typed is kept longer than the policy says, or kept after it should have gone.
+    likelihood: unlikely
+    impact: moderate
+    mitigation: >-
+      Retention windows are one table-driven constant, read by the cron that enforces
+      them. The policy page does not read that constant; instead a test that runs in
+      CI asserts, per table, that the page names that table beside the window the
+      constant sets — so a window changed in the code without changing the page turns
+      the build red, and adding a table to the constant without publishing its window
+      does the same. What the test does not cover is a second, contradictory sentence
+      added elsewhere on the page. The sweep has a daily cron
+      slot of its own and logs one line naming every table and its row count, so
+      "deleted nothing" and "did not run" are distinguishable from outside. No test
+      proves the trigger fires; that is confirmed against the deployed Worker.
+    owner: Ryan Lindsey
+    lastReviewed: '2026-09-11'

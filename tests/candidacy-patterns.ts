@@ -89,6 +89,10 @@ export const SCAN_ROOTS = [
   'evals',
   'scripts',
   'public',
+  // Day 6 Task 12: published prose in the public repo, and exactly the kind of
+  // document that would reach for the forbidden vocabulary while describing the
+  // risk it exists to manage.
+  'governance',
   'migrations',
   'README.md',
   'CHANGELOG.md',
