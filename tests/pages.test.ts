@@ -141,6 +141,10 @@ test('renders header and footer landmarks', async () => {
   // checks the CSS side); assert they actually land on the rendered markup.
   expect(page).toContain('data-site-header');
   expect(page).toContain('data-site-footer');
+  // Day 6 Task 13: /ops and /ai-policy in SiteHeader's own links array --
+  // without this, deleting either nav entry leaves this test green.
+  expect(page).toContain('href="/ops"');
+  expect(page).toContain('href="/ai-policy"');
 });
 
 test('keeps the holding page marker and is indexable since launch', async () => {
@@ -258,16 +262,21 @@ test('carries no candidacy language on any public surface', async () => {
 // pattern. GATED_TOOL_NAMES comes from workers/mcp/src/gated.ts -- a plain
 // vitest process, same as tests/mcp-gated.test.ts:11 -- rather than from a
 // second, hand-typed list that could drift from the real tool map. Fetched as
-// { path, text } pairs rather than bare text, which is the only change to the
-// plan's body: a bare list cannot say WHICH surface failed.
+// { path, response, text } rather than bare text -- deviations from the
+// plan's body, both earning their keep: the path label says WHICH surface
+// failed, and the status check is what stops a 404 from passing both scans
+// vacuously against an empty body.
 test('no public surface added today names a gated tool, an audience, or a private-tier row', async () => {
   const surfaces = await Promise.all(
-    ['/chat', '/ops', '/ai-policy', '/llms.txt'].map(async (path) => ({
-      path,
-      text: await (await server.fetch(path)).text(),
-    })),
+    ['/chat', '/ops', '/ai-policy', '/llms.txt'].map(async (path) => {
+      const response = await server.fetch(path);
+      return { path, response, text: await response.text() };
+    }),
   );
-  for (const { path, text } of surfaces) {
+  for (const { path, response, text } of surfaces) {
+    // Without this, a route that 404s would pass the two scans below
+    // vacuously -- an empty/error body names nothing either.
+    expect(response.status, `${path} should be 200`).toBe(200);
     for (const name of GATED_TOOL_NAMES) {
       expect(text, `${path} must not name the gated tool ${name}`).not.toContain(name);
     }
@@ -791,6 +800,11 @@ test('/llms.txt lists every published case study and post, and links no draft', 
   // be -- it is unlisted by requirement (09 §1), pinned separately below.
   expect(page).toContain('## Site');
   expect(page).toContain('https://ryanlindsey.me/chat');
+  // Day 6 Task 13: /ops and /ai-policy joined /chat in SITE_LINKS -- pinned
+  // here for the same reason /chat already was, so deleting either entry
+  // fails this test rather than only the nav test below.
+  expect(page).toContain('https://ryanlindsey.me/ops');
+  expect(page).toContain('https://ryanlindsey.me/ai-policy');
   expect(page).toContain('## Full content');
 });
 

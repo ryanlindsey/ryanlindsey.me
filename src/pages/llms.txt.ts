@@ -111,15 +111,11 @@ const MCP_LINKS: LlmsLink[] = [
  *
  * TASK 13's INTEGRATION STEP -- 13b, the nav-and-index half that task's brief
  * split out from 13a -- added `/ops` and `/ai-policy` here, in the same edit
- * that put them in `SiteHeader.astro`. An earlier version of this comment said
- * "PR 2", which was wrong in the way that matters here: the branch that built
- * `/ops` IS that PR under a different shape, and it owned neither edit. Naming
- * a task that exists was what let the next reader check whether it had
- * landed -- and it has.
- *
- * `/ops` and `/ai-policy` are now both listed, in the same edit that put them
- * in `SiteHeader.astro` -- they went in together, as planned, once both routes
- * existed.
+ * that put them in `SiteHeader.astro`, once both routes existed. An earlier
+ * version of this comment said "PR 2", which was wrong in the way that
+ * matters here: the branch that built `/ops` IS that PR under a different
+ * shape, and it owned neither edit. Naming a task that exists was what let
+ * the next reader check whether it had landed -- and it has.
  */
 const SITE_LINKS: LlmsLink[] = [
   {

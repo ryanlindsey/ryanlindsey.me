@@ -18,12 +18,19 @@ const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`)
 ---
 
 <header data-site-header class="border-b border-rule">
-  <div class="mx-auto flex max-w-5xl items-baseline justify-between gap-6 px-6 py-5">
+  <!-- Day 6 Task 13 fix round: five links plus the wordmark no longer fit
+       this row's non-shrinkable floor at ~400px (COMPUTED from the class
+       list below, not rendered and measured -- a real visual pass across
+       both themes at that width is still owed and unscheduled). `flex-wrap`
+       on both this row and the nav is the mitigation: inert at wide widths,
+       and it turns what would be sitewide horizontal scroll into a header
+       that wraps to two lines instead. -->
+  <div class="mx-auto flex max-w-5xl flex-wrap items-baseline justify-between gap-6 px-6 py-5">
     <a href="/" class="font-display text-subheading tracking-tight text-ink hover:text-accent"
       >Ryan Lindsey</a
     >
 
-    <nav aria-label="Primary" class="flex items-baseline gap-6">
+    <nav aria-label="Primary" class="flex flex-wrap items-baseline gap-6">
       {
         links.map((link) => (
           <a
