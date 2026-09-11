@@ -4,6 +4,7 @@ import { createTestHarness } from 'wrangler';
 import type { CollectionEntry } from 'astro:content';
 import { SITE_HARNESS_WORKERS } from './workers';
 import { BANNED_PATTERNS } from './candidacy-patterns';
+import { GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
 import { formatDateRange } from '../src/lib/resume';
 import { buildLlmsTxt, buildLlmsFullTxt, type LlmsLink } from '../src/lib/llms-index';
 import { buildRssFeed, buildJsonFeed, RSS_MARKDOWN_NOTICE, type JsonFeed } from '../src/lib/feeds';
@@ -192,6 +193,13 @@ test('carries no candidacy language on any public surface', async () => {
     // welcomes named crawlers by name -- it must carry no candidacy
     // language either.
     '/robots.txt',
+    // Day 6 Task 13: the two governance surfaces and the chat page this task
+    // put in the nav and the agent index -- reachable by URL since the PRs
+    // that built them, but not yet swept here until this task made them
+    // discoverable.
+    '/chat',
+    '/ops',
+    '/ai-policy',
     // Day 3 Task 13: every discovered content entry's HTML page AND its
     // `.md` sibling (task-13-brief.md's "the .md variants"), read off
     // CONTENT_ENTRIES above rather than hardcoded as the two specimen
@@ -235,6 +243,32 @@ test('carries no candidacy language on any public surface', async () => {
   const fitRefusalBody = await fitRefusal.text();
   for (const pattern of BANNED_PATTERNS) {
     expect(fitRefusalBody, `/fit's refusal body must not match ${pattern}`).not.toMatch(pattern);
+  }
+});
+
+// Day 6 Task 13's central claim, pinned directly rather than left to the two
+// scans above to imply between them: every public surface this day's build
+// track added carries neither a gated tool's name (which would name a
+// capability that only a granted caller may use) nor a private-tier/candidacy
+// pattern. GATED_TOOL_NAMES comes from workers/mcp/src/gated.ts -- a plain
+// vitest process, same as tests/mcp-gated.test.ts:11 -- rather than from a
+// second, hand-typed list that could drift from the real tool map. Fetched as
+// { path, text } pairs rather than bare text, which is the only change to the
+// plan's body: a bare list cannot say WHICH surface failed.
+test('no public surface added today names a gated tool, an audience, or a private-tier row', async () => {
+  const surfaces = await Promise.all(
+    ['/chat', '/ops', '/ai-policy', '/llms.txt'].map(async (path) => ({
+      path,
+      text: await (await server.fetch(path)).text(),
+    })),
+  );
+  for (const { path, text } of surfaces) {
+    for (const name of GATED_TOOL_NAMES) {
+      expect(text, `${path} must not name the gated tool ${name}`).not.toContain(name);
+    }
+    for (const pattern of BANNED_PATTERNS) {
+      expect(text, `${path} must not match ${pattern}`).not.toMatch(pattern);
+    }
   }
 });
 

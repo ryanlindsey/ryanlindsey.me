@@ -3,11 +3,15 @@ import ThemeToggle from './ThemeToggle.astro';
 
 const path = Astro.url.pathname;
 
-// /about, /ops and /ai-policy arrive on days 4-6. Nav grows with them.
+// /about is the one still to come. /ops and /ai-policy have arrived (Day 6
+// Task 13) and are appended last, after /resume: they are about the site
+// rather than part of reading it.
 const links = [
   { href: '/writing', label: 'Writing' },
   { href: '/work', label: 'Work' },
   { href: '/resume', label: 'Resume' },
+  { href: '/ops', label: 'Ops' },
+  { href: '/ai-policy', label: 'AI Policy' },
 ];
 
 const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`);
