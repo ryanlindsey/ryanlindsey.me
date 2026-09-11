@@ -55,6 +55,10 @@ const SITE_BINDING_NAMES = [
   'EVENTS',
   'RLME_TOKEN_SIGNING_KEY',
   'RLME_TURNSTILE_SECRET_KEY',
+  // Day 6 Task 3 (06 §3): the notification destination, a Secrets Store secret
+  // because it is the owner's own address. Its public counterpart is
+  // `RLME_NOTIFY_FROM` below.
+  'RLME_NOTIFY_ADDRESS',
   'BROWSER',
   'ASSETS',
   'RLME_AI_GATEWAY_ID',
@@ -63,6 +67,10 @@ const SITE_BINDING_NAMES = [
   // request time because wrangler's own `account_id` is build-time config and
   // is not exposed to the Worker.
   'RLME_ACCOUNT_ID',
+  // Day 6 Task 3: the notification SENDER. Public -- it ships in the `From`
+  // header of every notification -- which is why it is a var and its
+  // destination counterpart is a secret.
+  'RLME_NOTIFY_FROM',
   'SITE_ORIGIN',
   'RLME_TURNSTILE_SITEKEY',
   'MCP',

@@ -75,6 +75,21 @@ export const SITE_WORKER = {
      * an injected `fetch`, not here.
      */
     RLME_TURNSTILE_MODE: 'stub',
+    /**
+     * Day 6 Task 3's notification seam (src/lib/agent-intel/notify.ts's
+     * `sendNotification`). The same shape as the two above: no deployed config
+     * declares it, an unrecognised value throws, and 'stub' is the only
+     * accepted value here.
+     *
+     * It exists for the same two reasons as `RLME_TURNSTILE_MODE` -- the
+     * harness has no populated local secrets store, so
+     * `RLME_NOTIFY_ADDRESS.get()` would throw, and it has no Email Routing
+     * binding that can deliver. Under 'stub' the consumer runs its validation
+     * and its batching and then stops before both, which is what keeps
+     * `handleEventBatch`'s drop path reachable here while leaving the send
+     * itself to Task 13's live check.
+     */
+    RLME_NOTIFY_MODE: 'stub',
   },
   bindingOverrides: { BROWSER: 'mock-browser' },
 };

@@ -1,9 +1,12 @@
 import { handle } from '@astrojs/cloudflare/handler';
-import { classifyRequest, signalsFrom } from './lib/agent-intel/classify';
+import { classifyRequest, referrerClassFor, signalsFrom } from './lib/agent-intel/classify';
+import { handleEventBatch } from './lib/agent-intel/consume';
+import { highIntentFor } from './lib/agent-intel/intent';
 import { recordAgentEvent, type Surface } from './lib/agent-intel/record';
 import { NOT_FOUND_PROBE } from './lib/not-found-probe';
 import { regenerateResumePdf } from './lib/resume-pdf';
 import { enforceRetention } from './lib/retention';
+import { listCampaigns } from './lib/tier/campaigns';
 
 /**
  * The site's Worker entry.
@@ -259,6 +262,63 @@ const REFUSAL_STATUSES = new Set([403, 404, 500]);
  * 404 rather than a `GET` one with a body attached; anything else asks as
  * `GET`, which is what an unrouted path's 404 is rendered from.
  */
+/**
+ * Queues a `fit-run` event when a `/fit` submission actually produced a report
+ * (06 §3). Producer one of two on this Worker.
+ *
+ * The report id comes off the `Location` header rather than from the page,
+ * because this Worker never sees the route's internals -- a 303 to
+ * `/fit/r/<id>` is the only success signal it has, and it is an unambiguous
+ * one: src/pages/fit/run.ts sends every failure to `/fit?<query>` instead.
+ *
+ * THE AUDIENCE IS NOT AVAILABLE HERE, and that is a real gap rather than an
+ * omission. Resolving the grant is the MCP Worker's job, so the site Worker
+ * knows a report was made and not for whom. The label says so explicitly
+ * instead of guessing: the operator gets the audience from the `gated-read`
+ * event the MCP Worker queues for the same run, and two events a second apart
+ * in one email is a smaller cost than an audience field that is sometimes a
+ * real label and sometimes a fiction.
+ */
+function queueFitRunIntent(response: Response, env: Env, ctx: ExecutionContext): void {
+  if (response.status !== 303) return;
+  const reportId = /^\/fit\/r\/([^/?#]+)$/.exec(response.headers.get('Location') ?? '')?.[1];
+  if (reportId === undefined) return;
+  const event = highIntentFor({
+    kind: 'fit-run',
+    at: new Date().toISOString(),
+    audience: 'unavailable-at-site',
+    reportId,
+  });
+  if (event !== null) ctx.waitUntil(env.EVENTS.send(event));
+}
+
+/**
+ * Queues a `resume-pdf-referred` event for a PDF download that arrived from a
+ * campaign or social referrer (06 §3). Producer two of two.
+ *
+ * THE ONE PLACE THE SITE WORKER READS CAMPAIGN DOMAINS. The hot path
+ * deliberately does not (see `CAMPAIGN_DOMAINS_OFF`): a KV read per request to
+ * label the minority that carry a referrer at all is a storage round trip in
+ * front of every page. Here it is affordable because `/resume.pdf` is one route
+ * with single-figure volume, and it is necessary because the campaign
+ * attribution is the whole condition on this event.
+ *
+ * The caller runs this inside `ctx.waitUntil`, so neither the KV read nor the
+ * queue send is on the download's critical path.
+ */
+async function queueResumePdfIntent(request: Request, env: Env, ctx: ExecutionContext) {
+  const campaigns = await listCampaigns(env);
+  const event = highIntentFor({
+    kind: 'resume-pdf',
+    at: new Date().toISOString(),
+    referrerClass: referrerClassFor(
+      request.headers.get('referer'),
+      campaigns.flatMap((campaign) => campaign.referrerDomains),
+    ),
+  });
+  if (event !== null) ctx.waitUntil(env.EVENTS.send(event));
+}
+
 function siteNotFound(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const probe = new Request(new URL(NOT_FOUND_PROBE, request.url), {
     method: request.method === 'HEAD' ? 'HEAD' : 'GET',
@@ -400,6 +460,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     // below. A browser submitting this form always sends `Origin`, so the
     // 403 arm costs a legitimate caller nothing.
     if (REFUSAL_STATUSES.has(response.status)) return siteNotFound(request, env, ctx);
+    // AFTER the refusal flattening, so a 303 that reaches here is a real report
+    // rather than anything a stranger's probe could have produced.
+    queueFitRunIntent(response, env, ctx);
     const headers = new Headers(response.headers);
     headers.set('X-Robots-Tag', 'noindex, nofollow');
     headers.set('Referrer-Policy', 'no-referrer');
@@ -420,6 +483,12 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   // requests, and serve cached HTML in place of ever reaching this code
   // again -- the same class of stale-representation bug the markdown
   // side's `Vary` header guards against, just in the other direction.
+  // Producer two (06 §3). Wrapped in `waitUntil` rather than awaited, so the
+  // campaign KV read this needs stays off the download's critical path.
+  if (new URL(request.url).pathname === '/resume.pdf') {
+    ctx.waitUntil(queueResumePdfIntent(request, env, ctx));
+  }
+
   const markdownPath = NEGOTIABLE_METHODS.has(request.method)
     ? markdownAssetPathFor(new URL(request.url).pathname)
     : null;
@@ -480,6 +549,24 @@ export default {
       durationMs: Date.now() - started,
     });
     return response;
+  },
+
+  /**
+   * The high-intent fan-out (06 §3). One message in, one email out; the batch
+   * is what `max_batch_timeout` in wrangler.jsonc collects.
+   *
+   * A two-line delegation on purpose: `handleEventBatch` lives in src/lib so a
+   * plain vitest process can call it, which this entry can never be. NOT YET
+   * PROVEN, the same caveat `scheduled()` below carries and for the same
+   * reason: Astro's adapter owns this entry, and a handler that compiles is not
+   * a handler the platform invokes. Task 13 settles it against the deployed
+   * Worker; if it turns out not to be invoked, the consumer moves to the MCP
+   * Worker, which is hand-written with no adapter in the way -- and
+   * `handleEventBatch` does not change, which is the entire reason it is where
+   * it is.
+   */
+  queue: async (batch, env) => {
+    await handleEventBatch(batch.messages, env);
   },
 
   /**

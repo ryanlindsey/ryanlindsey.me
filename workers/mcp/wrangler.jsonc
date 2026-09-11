@@ -61,6 +61,12 @@
 
   "analytics_engine_datasets": [{ "binding": "AE", "dataset": "ryanlindsey_me_events" }],
 
+  // Day 6 (06 §3). The gated-tier events -- a fit run, any gated tool call --
+  // are observed HERE, because this is the Worker that resolves the grant and
+  // knows the audience. The site Worker holds the consumer; a queue is the
+  // seam that lets one Worker report an event another one acts on.
+  "queues": { "producers": [{ "binding": "EVENTS", "queue": "ryanlindsey-me-events" }] },
+
   // Workers AI, for the publishing corpus's embedding job -- which runs HERE
   // rather than on the site Worker, and the reason is a build constraint rather
   // than a preference. @cloudflare/vite-plugin's binding table classifies `ai` as

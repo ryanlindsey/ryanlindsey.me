@@ -164,6 +164,24 @@
 
   "queues": {
     "producers": [{ "binding": "EVENTS", "queue": "ryanlindsey-me-events" }],
+    // Day 6 (06 §3). Small batches with a short timeout, because the value of
+    // these messages is TIMING -- "when a target's tools start probing, Ryan
+    // knows same-hour" -- and a large batch window would trade the only
+    // property they have for an email volume that is already single figures.
+    //
+    // The dead-letter queue is not optional-with-a-default: without one, a
+    // message that fails `max_retries` is DROPPED, and the failure mode this
+    // consumer is most likely to have (a misconfigured address) would silently
+    // discard exactly the events it exists to deliver.
+    "consumers": [
+      {
+        "queue": "ryanlindsey-me-events",
+        "max_batch_size": 10,
+        "max_batch_timeout": 30,
+        "max_retries": 3,
+        "dead_letter_queue": "ryanlindsey-me-events-dlq",
+      },
+    ],
   },
 
   "analytics_engine_datasets": [{ "binding": "AE", "dataset": "ryanlindsey_me_events" }],
@@ -291,6 +309,17 @@
       "store_id": "3b06d2a92de642d999509352cfd3ebed",
       "secret_name": "RLME_TURNSTILE_SECRET_KEY",
     },
+    // Day 6 (06 §3): the verified Email Routing destination high-intent
+    // notifications are delivered to. A secret because it is the owner's own
+    // address and must not appear in a public repo -- the SENDER is public and
+    // is the `RLME_NOTIFY_FROM` var below. Read by src/lib/agent-intel/notify.ts
+    // and nowhere else; its absence is a skipped send with a log line, never a
+    // failed batch, so this Worker deploys and runs correctly without it.
+    {
+      "binding": "RLME_NOTIFY_ADDRESS",
+      "store_id": "3b06d2a92de642d999509352cfd3ebed",
+      "secret_name": "RLME_NOTIFY_ADDRESS",
+    },
   ],
 
   // SITE_ORIGIN is what the Browser Run job navigates to. It is deliberately a
@@ -308,6 +337,12 @@
     // this same file -- it is repeated here because `account_id` is wrangler's
     // own field and is not exposed to the Worker at runtime.
     "RLME_ACCOUNT_ID": "1b764d090899bf1ee61a8d1e87c10710",
+    // The sender. PUBLIC -- it is an address on this site's own domain and it
+    // appears in the `From` header of every notification. The DESTINATION is
+    // the secret half and is never here (see `secrets_store_secrets` above);
+    // `send_email` deliberately declares no `destination_address`, which is
+    // what lets the binding send to whatever verified address that secret names.
+    "RLME_NOTIFY_FROM": "notifications@ryanlindsey.me",
     "SITE_ORIGIN": "https://ryanlindsey.me",
     // PUBLIC (10 §2.6), and here rather than in a `.env` for two reasons: the
     // one page that uses it is on-demand rendered, so it reads this at request
