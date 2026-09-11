@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.10.0...ryanlindsey-me-v1.10.1) (2026-09-11)
+
+
+### Bug Fixes
+
+* **agent-intel:** omit the fit-run audience instead of sending a placeholder ([#62](https://github.com/ryanlindsey/ryanlindsey.me/issues/62)) ([1df1ade](https://github.com/ryanlindsey/ryanlindsey.me/commit/1df1adea8a4c17bc9603b21169b0d28cc5c6a3e1))
+
 ## [1.10.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.9.2...ryanlindsey-me-v1.10.0) (2026-09-11)
 
 
