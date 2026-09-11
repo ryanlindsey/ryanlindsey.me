@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.10.1...ryanlindsey-me-v1.11.0) (2026-09-11)
+
+
+### Features
+
+* **chat:** close the two chat instrumentation seams ([#64](https://github.com/ryanlindsey/ryanlindsey.me/issues/64)) ([54c0734](https://github.com/ryanlindsey/ryanlindsey.me/commit/54c0734d04ff7e0d3c8de42dcd6080d349c753b4))
+
 ## [1.10.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.10.0...ryanlindsey-me-v1.10.1) (2026-09-11)
 
 
