@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.13.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.12.0...ryanlindsey-me-v1.13.0) (2026-09-11)
+
+
+### Features
+
+* **governance:** publish the acceptable-use policy and the AI risk register ([#70](https://github.com/ryanlindsey/ryanlindsey.me/issues/70)) ([5c26bd3](https://github.com/ryanlindsey/ryanlindsey.me/commit/5c26bd30459333bbdac7ba32fff260249be4903b))
+* **ops:** publish the live operations page ([#69](https://github.com/ryanlindsey/ryanlindsey.me/issues/69)) ([f13c841](https://github.com/ryanlindsey/ryanlindsey.me/commit/f13c8415c3413e65a97ceeb78f44ec4f2326d8df))
+* **ops:** read the metrics and the traffic behind a read-only token ([#68](https://github.com/ryanlindsey/ryanlindsey.me/issues/68)) ([a2820e3](https://github.com/ryanlindsey/ryanlindsey.me/commit/a2820e3f8f637d6ca29e7af7e2dfec7e796a4f0d))
+
 ## [1.12.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.11.0...ryanlindsey-me-v1.12.0) (2026-09-11)
 
 
