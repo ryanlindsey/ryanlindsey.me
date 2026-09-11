@@ -7,10 +7,22 @@ import { fenceFor } from '../fence';
 // WHY NUMBERS AND NOT URLS. The fit engine validates a finished document and
 // can drop a citation whose URL is not in `allowedUrls`. A stream cannot be
 // retracted -- by the time an invented URL is on screen it has been read -- so
-// chat's equivalent guarantee has to be structural rather than corrective: the
-// model is never shown a URL it could cite, only an index into a list the
-// server is holding. An invented `[9]` against four sources resolves to
-// nothing, renders as plain text, and is counted.
+// chat's equivalent guarantee has to be structural rather than corrective.
+//
+// THE GUARANTEE IS NOT THAT THE MODEL HAS NO URLS. It has one per source:
+// `renderChatContext` below emits a `Source:` line carrying the real URL, for
+// provenance, and `startAnswer` puts that block verbatim into the user message.
+// This comment claimed the opposite until 2026-09-11, and the claim had already
+// been copied into the published risk register before anyone checked it against
+// the function twenty lines down.
+//
+// What holds instead: the citation CHANNEL is numbers. The model is told never
+// to cite a URL, and -- the structural half -- the reader's page builds every
+// link by looking a cited number up in the list the server sent, and inserts the
+// answer as a text node with no markdown pass over it. So a steered model can
+// type a URL into its prose and still produce no link to anywhere, and an
+// invented `[9]` against four sources resolves to nothing, renders as plain
+// text, and is counted.
 //
 // The reader's page owns the link. That is the second half of the same
 // property: nothing the model emits is ever interpolated into an `href`.
