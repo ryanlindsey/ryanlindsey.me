@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { createTestHarness } from 'wrangler';
-import { MCP_WORKER, MOCK_AI_WORKER, MOCK_BROWSER_WORKER, SITE_WORKER } from './workers';
+import { MCP_HARNESS_WORKERS, MCP_WORKER } from './workers';
 import { LIMITS } from '../src/lib/mcp/limits';
 import { referrerClassFor } from '../src/lib/agent-intel/classify';
 import { mintToken, newJti, type Scope, type TokenClaims } from '../src/lib/tier/token';
 import { recordIssue } from '../src/lib/tier/registry';
 import { TEST_SIGNING_KEY } from '../src/lib/tier/grant';
-import { chatAgentEvent, firstOfSession } from '../workers/mcp/src/chat';
+import { chatAgentEvent, chatHighIntentEvent, firstOfSession } from '../workers/mcp/src/chat';
 import type { McpEnv } from '../workers/mcp/src/env';
 
 /**
@@ -37,15 +37,16 @@ const MOCK_AE_WORKER = { configPath: './workers/mock-ae/wrangler.jsonc' };
  * that nothing is fabricated when the engine is off.
  */
 const server = createTestHarness({
-  // The same four Workers `MCP_HARNESS_WORKERS` (./workers.ts) lists, plus
-  // `MOCK_AE_WORKER`, with `MCP_WORKER`'s own `bindingOverrides` merged
-  // (not replaced) so its existing `AI: 'mock-ai'` survives alongside the
-  // new `AE: 'mock-ae'`.
+  // DERIVED from `MCP_HARNESS_WORKERS` (./workers.ts) rather than hand-listed
+  // (task-13a-findings-final.md item 8): the earlier version named
+  // `SITE_WORKER`, `MOCK_BROWSER_WORKER` and `MOCK_AI_WORKER` explicitly,
+  // which meant a fifth worker added to the shared array in the future would
+  // silently never reach this suite. Filtering `MCP_WORKER` back out and
+  // re-adding it with the `AE` override merged in keeps every OTHER worker
+  // in that array reachable automatically, whatever it grows to.
   workers: [
     { ...MCP_WORKER, bindingOverrides: { ...MCP_WORKER.bindingOverrides, AE: 'mock-ae' } },
-    SITE_WORKER,
-    MOCK_BROWSER_WORKER,
-    MOCK_AI_WORKER,
+    ...MCP_HARNESS_WORKERS.filter((worker) => worker !== MCP_WORKER),
     MOCK_AE_WORKER,
   ],
 });
@@ -269,7 +270,9 @@ describe('POST /chat', () => {
 
 /**
  * Task 13a: the two seams chat.ts closes (06 §3) -- `firstOfSession`, the
- * high-intent decision; `chatAgentEvent`, the AE-event shape both
+ * corrected first-turn decision (task-13a-findings-final.md, Important 1);
+ * `chatHighIntentEvent`, which layers the server-minted-session gate on top
+ * of it (Important 2); `chatAgentEvent`, the AE-event shape both
  * `recordAgentEvent` call sites share; and (fix round 1,
  * task-13a-findings-r1.md) the `refuse` call site's actual effect, asserted
  * end to end below rather than only through the shape `chatAgentEvent` builds.
@@ -282,11 +285,15 @@ describe('POST /chat', () => {
  * length check -- and a question that fails that check throws even earlier,
  * with its own `empty`/`too-long` code, before `CHAT_ENGINE` is ever read. So
  * regardless of admission, grant, or question validity, `startAnswer` throws
- * and `handleChat` calls `refuse` instead. That is why every one of the 16
- * pre-existing tests above already reaches `refuse`, and why `firstOfSession`
- * and `chatAgentEvent` are asserted directly rather than through it -- see
- * each function's own doc comment in chat.ts for why that is the real
- * observation point rather than a workaround.
+ * and `handleChat` calls `refuse` instead. That is why 13 of the 16
+ * pre-existing tests above reach `refuse` (`GET is not the endpoint` and `a
+ * body that is not JSON` both return before `refuse` is even defined, and `no
+ * transcript row carries an IP or a user agent` makes no HTTP request at all
+ * -- Important 3 in the same findings file), and why `firstOfSession`,
+ * `chatHighIntentEvent` and `chatAgentEvent` are asserted directly rather
+ * than through the endpoint -- see each function's own doc comment in
+ * chat.ts for why that is the real observation point rather than a
+ * workaround.
  *
  * `refuse`'s `recordAgentEvent` call is DIFFERENT: it is not behind that
  * unreachable success, so once something could read `AE` back, the call site
@@ -304,12 +311,8 @@ describe('POST /chat', () => {
  * downstream of the `startAnswer` success explained above.
  */
 describe('firstOfSession', () => {
-  test('a fresh session id counts as the first turn', async () => {
-    expect(await firstOfSession(env, crypto.randomUUID())).toBe(true);
-  });
-
-  test('a session id with an existing chat_turns row does not', async () => {
-    const sessionId = crypto.randomUUID();
+  /** A `chat_turns` row with `outcome` controlled, everything else filler. */
+  async function seedTurn(sessionId: string, outcome: 'ok' | 'refused' | 'error'): Promise<void> {
     await env.DB.prepare(
       `INSERT INTO chat_turns
          (id, session_id, created_at, question, answer, model, sources_json,
@@ -326,12 +329,40 @@ describe('firstOfSession', () => {
         '[]',
         0,
         0,
-        'ok',
+        outcome,
         1,
         'direct',
       )
       .run();
+  }
+
+  test('a fresh session id counts as the first turn', async () => {
+    expect(await firstOfSession(env, crypto.randomUUID())).toBe(true);
+  });
+
+  test('a session id with an existing OK-outcome row does not', async () => {
+    const sessionId = crypto.randomUUID();
+    await seedTurn(sessionId, 'ok');
     expect(await firstOfSession(env, sessionId)).toBe(false);
+  });
+
+  test('a session id whose only row is a REFUSED turn still counts as first (Important 1)', async () => {
+    // The bug the corrected Ruling 4 exists to fix: a visitor's first
+    // interaction being refused (a fat-fingered empty submit, a Turnstile
+    // hiccup, a limiter trip) must not consume their session's one
+    // notification before they ever ask a real question.
+    const sessionId = crypto.randomUUID();
+    await seedTurn(sessionId, 'refused');
+    expect(await firstOfSession(env, sessionId)).toBe(true);
+  });
+
+  test('a session id whose only row is an ERROR-outcome turn still counts as first (the accepted trade)', async () => {
+    // Pins the trade `firstOfSession`'s own comment names explicitly: a
+    // session whose first answer broke mid-stream can notify a second time
+    // on its next turn, which is the safe direction to err in.
+    const sessionId = crypto.randomUUID();
+    await seedTurn(sessionId, 'error');
+    expect(await firstOfSession(env, sessionId)).toBe(true);
   });
 
   test('a failed read reports NOT first, and logs rather than throwing (Ruling 4)', async () => {
@@ -355,6 +386,54 @@ describe('firstOfSession', () => {
       logged.some((entry) => entry instanceof Error && entry.message === 'D1 unavailable'),
       'the original D1 failure must reach the log',
     ).toBe(true);
+  });
+});
+
+describe('chatHighIntentEvent', () => {
+  test('no session id supplied (the eval-harness shape) never queues, even for an otherwise-fresh session', async () => {
+    // task-13a-findings-final.md, Important 2: evals/run.mjs's askOnce sends
+    // `{ question }` with no `sessionId` at all. The session id this test
+    // passes is guaranteed fresh (nothing has ever seeded it), so
+    // `firstOfSession` alone WOULD say true -- this is the exact case the
+    // negative filter exists to catch, and it is what stops an eval run from
+    // paging the operator 12 times.
+    const event = await chatHighIntentEvent(env, crypto.randomUUID(), false);
+    expect(event).toBeNull();
+  });
+
+  test('a caller-supplied session id on its first turn queues a chat-session event', async () => {
+    // A direct caller that DOES send a session id must still fire the seam --
+    // that is `src/pages/chat.astro`'s own shape, and losing it would recreate
+    // the gap Important 1 closed.
+    const event = await chatHighIntentEvent(env, crypto.randomUUID(), true);
+    expect(event?.kind).toBe('chat-session');
+  });
+
+  test('a caller-supplied session id past its first (OK) turn does not requeue', async () => {
+    const sessionId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO chat_turns
+         (id, session_id, created_at, question, answer, model, sources_json,
+          cited, invalid_citations, outcome, duration_ms, surface)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        crypto.randomUUID(),
+        sessionId,
+        new Date().toISOString(),
+        'seed question',
+        'seed answer',
+        'seed-model',
+        '[]',
+        0,
+        0,
+        'ok',
+        1,
+        'direct',
+      )
+      .run();
+    const event = await chatHighIntentEvent(env, sessionId, true);
+    expect(event).toBeNull();
   });
 });
 
@@ -398,9 +477,13 @@ describe('chatAgentEvent', () => {
     expect(referrerClassFor(referer, ['a-campaign-domain.example'])).toBe('campaign');
 
     // The real call site uses CAMPAIGN_DOMAINS_OFF (empty), so the SAME
-    // referer through it is not labelled campaign.
+    // referer through it is not labelled campaign -- pinned to the actual
+    // label ('other': not social, not search, and campaignDomains is empty
+    // so it never matches) rather than the weaker `not.toBe('campaign')`
+    // (task-13a-findings-final.md item 7): the positive assertion is exactly
+    // as available and pins what the row actually says.
     const event = chatAgentEvent(requestWith({ referer }), 200, 1);
-    expect(event.classification.referrerClass).not.toBe('campaign');
+    expect(event.classification.referrerClass).toBe('other');
   });
 });
 
@@ -410,22 +493,33 @@ describe('chatAgentEvent', () => {
  * `chatAgentEvent` builds. `mockAe` is the SAME running `workers/mock-ae`
  * instance the `AE` binding override points `env.AE` at (see the top-of-file
  * comments), so a datapoint the Worker under test writes through the binding
- * is exactly what `mockAe.points()` reads back here -- no polling, no
- * timeout: measured across repeated runs, the write reliably lands before
- * `post()`'s response is fully read, because several `await`s still separate
- * `refuse`'s `recordAgentEvent` call from the response actually leaving the
- * Worker (see workers/mock-ae/src/index.ts's doc comment for why that is a
- * property of this route rather than a general guarantee).
+ * is exactly what `mockAe.points()` reads back here.
+ *
+ * `vi.waitFor` around the read (task-13a-findings-final.md item 12) rather
+ * than a single read: the write is a service-binding RPC call `refuse`
+ * neither awaits nor wraps in `ctx.waitUntil()` (workers/mock-ae/src/index.ts's
+ * own doc comment says why, and that it is MEASURED to land in time rather
+ * than guaranteed to). Polling removes the flake class outright without
+ * weakening what this test proves: with the production call site deleted,
+ * `points()` never reaches length 1 and `waitFor` still times out and fails
+ * the test, so the delete-the-line property survives intact.
  */
 describe('the refuse AE datapoint', () => {
   test('a refusal records exactly one AE point, shaped like chatAgentEvent says', async () => {
     await mockAe.reset();
+    const ip = '203.0.113.99';
+    const userAgent = 'ClaudeBot/1.0';
     await post(
       { question: 'ae-datapoint-probe' },
-      { 'cf-connecting-ip': '203.0.113.99', 'user-agent': 'ClaudeBot/1.0' },
+      { 'cf-connecting-ip': ip, 'user-agent': userAgent },
     );
-    const points = await mockAe.points();
-    expect(points).toHaveLength(1);
+
+    let points: Awaited<ReturnType<typeof mockAe.points>> = [];
+    await vi.waitFor(async () => {
+      points = await mockAe.points();
+      expect(points).toHaveLength(1);
+    });
+
     // AE_BLOB_FIELDS (src/lib/agent-intel/record.ts) is the published legend
     // this indexes against: ['agent_class', 'agent', 'route_class',
     // 'referrer_class', 'surface', 'status_class'].
@@ -434,5 +528,15 @@ describe('the refuse AE datapoint', () => {
     expect(points[0]?.blobs?.[5]).toBe('2xx');
     expect(points[0]?.doubles?.[0]).toBe(1);
     expect(points[0]?.doubles?.[1]).toBeGreaterThanOrEqual(0);
+
+    // The published /ai-policy promise (task-13a-findings-final.md item 11),
+    // defended end to end through the real binding for the first time in
+    // this repo: no blob carries the caller's IP or its raw user agent
+    // string (the recorded label is 'ClaudeBot', the bounded class -- not
+    // 'ClaudeBot/1.0', the string this request actually sent).
+    for (const blob of points[0]?.blobs ?? []) {
+      expect(blob).not.toContain(ip);
+      expect(blob).not.toContain(userAgent);
+    }
   });
 });

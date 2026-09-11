@@ -247,6 +247,18 @@ export const MOCK_BROWSER_WORKER = { configPath: './workers/mock-browser/wrangle
 export const MOCK_AI_WORKER = { configPath: './workers/mock-ai/wrangler.jsonc' };
 
 /**
+ * A THIRD mock lives in `workers/mock-ae`, for the `AE` (Analytics Engine)
+ * binding -- NOT exported here and not in `MCP_HARNESS_WORKERS` below, unlike
+ * its two siblings above. `tests/chat-endpoint.test.ts` is the only suite
+ * that needs a readable `AE`, so it builds its own worker list locally
+ * (`bindingOverrides: { AE: 'mock-ae' }` merged onto `MCP_WORKER`) rather than
+ * widening this shared config for one file's sake -- see that file's
+ * top-of-file comment for the reasoning, and workers/mock-ae's own
+ * wrangler.jsonc for why the mock exists at all. Noted here only so a reader
+ * of this file discovers it exists (task-13a-findings-final.md item 8).
+ */
+
+/**
  * All four, in the order every suite wants them: the site first, so it is the
  * primary Worker that relative `server.fetch()` URLs address and the one
  * `server.getWorker()` returns unnamed.
