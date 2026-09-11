@@ -83,8 +83,10 @@ const CAMPAIGN_DOMAINS_OFF: readonly string[] = [];
  * column's own, unrelated vocabulary, which happens to share the string
  * `'site'` with this one) the way an inline `{ ..., surface, ... }` could be
  * confused by a future edit. Tested directly in
- * tests/chat-endpoint.test.ts -- see that file's comment for why: neither
- * call site's actual effect is observable under this test harness.
+ * tests/chat-endpoint.test.ts, and (fix round 1, task-13a-findings-r1.md) so
+ * is `refuse`'s call site's actual effect, end to end -- see that file's
+ * comment for why the end-of-stream call site is the one still asserted only
+ * at this remove.
  */
 export function chatAgentEvent(request: Request, status: number, durationMs: number): AgentEvent {
   return {
@@ -178,7 +180,13 @@ export async function firstOfSession(env: McpEnv, sessionId: string): Promise<bo
     const row = await env.DB.prepare(`SELECT 1 FROM chat_turns WHERE session_id = ? LIMIT 1`)
       .bind(sessionId)
       .first();
-    return row === null;
+    // Loose equality, deliberately: D1's documented contract for `.first()`
+    // with no matching row is `null`, so `=== null` is correct today, but
+    // this comparison sits on a fail-closed path whose failure mode is "no
+    // email ever sent, silently" -- an `undefined` this comparison missed
+    // would be exactly as invisible as the gap this task exists to close.
+    // `== null` catches both without caring which one shows up.
+    return row == null;
   } catch (error) {
     console.error('chat: the first-of-session read failed; treating this turn as not first', error);
     return false;
@@ -233,7 +241,11 @@ export async function handleChat(
     // a request this route answered, and 06 §3 wants it counted the same as
     // a served one, UNCONDITIONALLY -- see `chatAgentEvent`'s own comment for
     // why that call, not an object literal here, is what keeps this from
-    // silently becoming the `surface` local two lines up.
+    // silently becoming the `surface` local two lines up. ASSERTED END TO END
+    // (fix round 1, task-13a-findings-r1.md, tests/chat-endpoint.test.ts's
+    // `describe('the refuse AE datapoint', ...)`) rather than only through
+    // the shape `chatAgentEvent` builds -- every test in this file reaches
+    // this line, which is what made an observable `AE` worth building.
     recordAgentEvent(env, chatAgentEvent(request, response.status, Date.now() - started));
     return response;
   };
@@ -422,15 +434,21 @@ export async function handleChat(
       // `errorResponse` above, whose "200 WITH AN ERROR FRAME" note is the
       // same protocol decision seen from the other side.
       //
-      // THE CALL ITSELF IS NOT ASSERTED BY A TEST: Miniflare's local
-      // Analytics Engine dataset (node_modules/miniflare/dist/src/workers/
-      // analytics-engine) is a `writeDataPoint` that does nothing at all, not
-      // even log -- there is no read-back for a test to observe, here or at
-      // any other AE call site in this repo (src/worker.ts's own is likewise
-      // unasserted). What IS covered: the event `chatAgentEvent` builds
-      // (tests/chat-endpoint.test.ts), `recordAgentEvent`'s own contract
-      // (tests/agent-record.test.ts), and that this route still answers
-      // correctly with the call in place (tests/chat-endpoint.test.ts).
+      // THIS CALL SITE ITSELF IS NOT ASSERTED BY A TEST, and for a different
+      // reason than the AE no-op that used to be the whole story: fix round 1
+      // (task-13a-findings-r1.md) gave `refuse`'s twin above an observable
+      // `AE` (a service-binding override to workers/mock-ae, the same
+      // mechanism `bindingOverrides: { AI: 'mock-ai' }` already uses for a
+      // binding Miniflare's local Analytics Engine simulator cannot emulate
+      // usefully -- it is a `writeDataPoint` that does nothing at all, not
+      // even log). What still makes THIS call site untestable is not that
+      // gap; it is that this whole callback is downstream of `startAnswer`
+      // succeeding, which no test here can make happen (see the Seam A
+      // comment above `handleChat`). What IS covered: the event
+      // `chatAgentEvent` builds (tests/chat-endpoint.test.ts),
+      // `recordAgentEvent`'s own contract (tests/agent-record.test.ts), and
+      // that this route still answers correctly with the call in place
+      // (tests/chat-endpoint.test.ts).
       recordAgentEvent(env, chatAgentEvent(request, 200, Date.now() - started));
     },
   });

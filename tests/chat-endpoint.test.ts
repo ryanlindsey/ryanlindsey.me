@@ -1,12 +1,25 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { createTestHarness } from 'wrangler';
-import { MCP_HARNESS_WORKERS } from './workers';
+import { MCP_WORKER, MOCK_AI_WORKER, MOCK_BROWSER_WORKER, SITE_WORKER } from './workers';
 import { LIMITS } from '../src/lib/mcp/limits';
+import { referrerClassFor } from '../src/lib/agent-intel/classify';
 import { mintToken, newJti, type Scope, type TokenClaims } from '../src/lib/tier/token';
 import { recordIssue } from '../src/lib/tier/registry';
 import { TEST_SIGNING_KEY } from '../src/lib/tier/grant';
 import { chatAgentEvent, firstOfSession } from '../workers/mcp/src/chat';
 import type { McpEnv } from '../workers/mcp/src/env';
+
+/**
+ * The AE binding double (fix round 1, task-13a-findings-r1.md's Important
+ * finding). NOT in `MCP_HARNESS_WORKERS` (./workers.ts): that array's
+ * `MCP_WORKER` is shared by every suite that boots this Worker, and no other
+ * suite has a use for a readable `AE`, so the override is built locally here
+ * instead of widening a shared config for one file's sake. `workers/mock-ae`
+ * carries the full reasoning for why this Worker, and what it costs, in its
+ * own wrangler.jsonc and src/index.ts.
+ */
+type MockAeModule = typeof import('../workers/mock-ae/src/index');
+const MOCK_AE_WORKER = { configPath: './workers/mock-ae/wrangler.jsonc' };
 
 /**
  * `POST /chat` (04 §1) -- everything AROUND the model call.
@@ -23,8 +36,23 @@ import type { McpEnv } from '../workers/mcp/src/env';
  * inspection: admission, the limiter, the refusal framing, the headers, and
  * that nothing is fabricated when the engine is off.
  */
-const server = createTestHarness({ workers: MCP_HARNESS_WORKERS });
+const server = createTestHarness({
+  // The same four Workers `MCP_HARNESS_WORKERS` (./workers.ts) lists, plus
+  // `MOCK_AE_WORKER`, with `MCP_WORKER`'s own `bindingOverrides` merged
+  // (not replaced) so its existing `AI: 'mock-ai'` survives alongside the
+  // new `AE: 'mock-ae'`.
+  workers: [
+    { ...MCP_WORKER, bindingOverrides: { ...MCP_WORKER.bindingOverrides, AE: 'mock-ae' } },
+    SITE_WORKER,
+    MOCK_BROWSER_WORKER,
+    MOCK_AI_WORKER,
+    MOCK_AE_WORKER,
+  ],
+});
 let env: McpEnv;
+let mockAe: Awaited<
+  ReturnType<ReturnType<typeof server.getWorker<unknown, MockAeModule>>['getExport']>
+>;
 
 beforeAll(async () => {
   await server.listen();
@@ -33,6 +61,7 @@ beforeAll(async () => {
   // assertions below fail on a missing table rather than on a missing row.
   await mcp.applyD1Migrations('DB');
   env = await mcp.getEnv();
+  mockAe = await server.getWorker<unknown, MockAeModule>('mock-ae').getExport();
 });
 
 afterAll(async () => {
@@ -240,24 +269,39 @@ describe('POST /chat', () => {
 
 /**
  * Task 13a: the two seams chat.ts closes (06 §3) -- `firstOfSession`, the
- * high-intent decision, and `chatAgentEvent`, the shared shape both
- * `recordAgentEvent` call sites pass. Neither is exercised by `describe('POST
- * /chat', ...)` above: `env.CHAT_ENGINE` is `'off'` on this Worker (see
- * MCP_WORKER in tests/workers.ts), so `startAnswer` throws before EITHER
- * seam's call site in chat.ts runs, on every turn, regardless of admission or
- * question validity. Both are asserted directly here instead -- see each
- * function's own doc comment in chat.ts for why that is the real observation
- * point rather than a workaround.
+ * high-intent decision; `chatAgentEvent`, the AE-event shape both
+ * `recordAgentEvent` call sites share; and (fix round 1,
+ * task-13a-findings-r1.md) the `refuse` call site's actual effect, asserted
+ * end to end below rather than only through the shape `chatAgentEvent` builds.
  *
- * What is NOT asserted anywhere, and cannot be under this harness: that
- * `recordAgentEvent`/`env.EVENTS.send` are actually CALLED at chat.ts's two
- * call sites. Miniflare's local Analytics Engine dataset is a `writeDataPoint`
- * that does nothing at all (node_modules/miniflare/dist/src/workers/
- * analytics-engine), so there is no AE read-back to assert against, and the
- * high-intent send is downstream of the same unreachable `startAnswer`
- * success this comment already explains. `describe('POST /chat', ...)`
- * above is what proves the route still answers correctly with both call
- * sites wired in.
+ * WHY SEAM A AND END-OF-STREAM SEAM B STILL CANNOT BE DRIVEN THROUGH THE
+ * ENDPOINT: `startAnswer` (src/lib/chat/engine.ts) always throws before either
+ * one runs, on every turn `describe('POST /chat', ...)` above sends.
+ * `env.CHAT_ENGINE` is `'off'` on this Worker (MCP_WORKER in
+ * tests/workers.ts), checked unconditionally once a question passes its own
+ * length check -- and a question that fails that check throws even earlier,
+ * with its own `empty`/`too-long` code, before `CHAT_ENGINE` is ever read. So
+ * regardless of admission, grant, or question validity, `startAnswer` throws
+ * and `handleChat` calls `refuse` instead. That is why every one of the 16
+ * pre-existing tests above already reaches `refuse`, and why `firstOfSession`
+ * and `chatAgentEvent` are asserted directly rather than through it -- see
+ * each function's own doc comment in chat.ts for why that is the real
+ * observation point rather than a workaround.
+ *
+ * `refuse`'s `recordAgentEvent` call is DIFFERENT: it is not behind that
+ * unreachable success, so once something could read `AE` back, the call site
+ * itself became testable. Miniflare's local Analytics Engine dataset offers no
+ * such read-back on its own -- `writeDataPoint` there does nothing at all, not
+ * even log (node_modules/miniflare/dist/src/workers/analytics-engine) -- but
+ * `bindingOverrides` sidesteps that the same way `{ AI: 'mock-ai' }` already
+ * does in tests/workers.ts for a binding Miniflare cannot emulate usefully:
+ * `workers/mock-ae` stands in for `AE` here (local to this file; see the
+ * `MOCK_AE_WORKER` comment above), and `describe('the refuse AE datapoint',
+ * ...)` below reads it back.
+ *
+ * What remains NOT asserted, and cannot be under this harness: the
+ * end-of-stream `recordAgentEvent` call and Seam A's `env.EVENTS.send`, both
+ * downstream of the `startAnswer` success explained above.
  */
 describe('firstOfSession', () => {
   test('a fresh session id counts as the first turn', async () => {
@@ -343,11 +387,52 @@ describe('chatAgentEvent', () => {
   });
 
   test("no campaign domains are read here, matching src/worker.ts's CAMPAIGN_DOMAINS_OFF", () => {
-    const event = chatAgentEvent(
-      requestWith({ referer: 'https://a-campaign-domain.example/post' }),
-      200,
-      1,
-    );
+    const referer = 'https://a-campaign-domain.example/post';
+    // Proof this referer is a genuine probe, not an arbitrary one that could
+    // never classify as 'campaign' regardless of what chat.ts does: under a
+    // real, non-empty campaign list that names it, referrerClassFor really
+    // does say 'campaign'. Without this line the test below would still pass
+    // if `chatAgentEvent` read a real campaign list, as long as that list
+    // didn't happen to name this particular domain -- exactly the assertion
+    // that cannot fail task-13a-findings-r1.md's Bundled finding 2 flagged.
+    expect(referrerClassFor(referer, ['a-campaign-domain.example'])).toBe('campaign');
+
+    // The real call site uses CAMPAIGN_DOMAINS_OFF (empty), so the SAME
+    // referer through it is not labelled campaign.
+    const event = chatAgentEvent(requestWith({ referer }), 200, 1);
     expect(event.classification.referrerClass).not.toBe('campaign');
+  });
+});
+
+/**
+ * Fix round 1 (task-13a-findings-r1.md, Important finding 1): the `refuse`
+ * half of Seam B, asserted end to end rather than only through the shape
+ * `chatAgentEvent` builds. `mockAe` is the SAME running `workers/mock-ae`
+ * instance the `AE` binding override points `env.AE` at (see the top-of-file
+ * comments), so a datapoint the Worker under test writes through the binding
+ * is exactly what `mockAe.points()` reads back here -- no polling, no
+ * timeout: measured across repeated runs, the write reliably lands before
+ * `post()`'s response is fully read, because several `await`s still separate
+ * `refuse`'s `recordAgentEvent` call from the response actually leaving the
+ * Worker (see workers/mock-ae/src/index.ts's doc comment for why that is a
+ * property of this route rather than a general guarantee).
+ */
+describe('the refuse AE datapoint', () => {
+  test('a refusal records exactly one AE point, shaped like chatAgentEvent says', async () => {
+    await mockAe.reset();
+    await post(
+      { question: 'ae-datapoint-probe' },
+      { 'cf-connecting-ip': '203.0.113.99', 'user-agent': 'ClaudeBot/1.0' },
+    );
+    const points = await mockAe.points();
+    expect(points).toHaveLength(1);
+    // AE_BLOB_FIELDS (src/lib/agent-intel/record.ts) is the published legend
+    // this indexes against: ['agent_class', 'agent', 'route_class',
+    // 'referrer_class', 'surface', 'status_class'].
+    expect(points[0]?.blobs?.[1]).toBe('ClaudeBot');
+    expect(points[0]?.blobs?.[4]).toBe('chat');
+    expect(points[0]?.blobs?.[5]).toBe('2xx');
+    expect(points[0]?.doubles?.[0]).toBe(1);
+    expect(points[0]?.doubles?.[1]).toBeGreaterThanOrEqual(0);
   });
 });
