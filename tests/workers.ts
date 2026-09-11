@@ -90,6 +90,31 @@ export const SITE_WORKER = {
      * itself to Task 13's live check.
      */
     RLME_NOTIFY_MODE: 'stub',
+    /**
+     * Day 6 Task 10's /ops analytics seam (src/lib/ops/analytics.ts's
+     * `readAnalytics`). The same shape as the three above: no deployed config
+     * declares it, an unrecognised value throws, and 'stub' is the only
+     * accepted value here.
+     *
+     * Two reasons, the first shared with `RLME_TURNSTILE_MODE` and
+     * `RLME_NOTIFY_MODE` and the second particular to this one. The harness has
+     * no populated local secrets store, so `RLME_ANALYTICS_TOKEN.get()` throws
+     * here -- and the module ALREADY treats that as `null`, so the seam is not
+     * what makes this suite credential-free. What it adds is the outbound half:
+     * without it, any page rendered under the harness that reaches
+     * `readAnalytics` would issue three real requests to api.cloudflare.com
+     * before the missing secret was noticed. Under 'stub' it returns `null`
+     * before the secret read and before the network, which is the same answer
+     * an unconfigured deployment gets.
+     *
+     * So what a page test under this harness sees is /ops's "not configured"
+     * rendering, and that is the only /ops state any test in this repo
+     * exercises. The parse of a REAL response is exercised nowhere -- the two
+     * API envelopes have never been measured (src/lib/ops/analytics.ts records
+     * why), and tests/ops-analytics.test.ts asserts only that a fixture of the
+     * assumed envelope maps correctly and that everything else fails closed.
+     */
+    RLME_ANALYTICS_MODE: 'stub',
   },
   bindingOverrides: { BROWSER: 'mock-browser' },
 };

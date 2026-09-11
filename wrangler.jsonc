@@ -320,6 +320,23 @@
       "store_id": "3b06d2a92de642d999509352cfd3ebed",
       "secret_name": "RLME_NOTIFY_ADDRESS",
     },
+    // Day 6 (06 §1): the read-only account token /ops reads its credentialed
+    // half through. Neither Analytics Engine nor AI Gateway has a binding-side
+    // READ -- the `AE` binding writes and cannot query, and the gateway's
+    // numbers live behind the GraphQL analytics API -- so this is the one
+    // credential in this repo that is not a deploy credential Cloudflare holds
+    // for itself (10 §3.1). Scoped to Account Analytics Read and AI Gateway
+    // Read on this account only; it can create, change and deploy nothing.
+    //
+    // Read by src/lib/ops/analytics.ts and nowhere else. Its absence is a
+    // labelled "not configured" section on /ops, never a zero and never a
+    // failed render, so this Worker deploys and serves correctly without it --
+    // which is the state every test in this repo runs in.
+    {
+      "binding": "RLME_ANALYTICS_TOKEN",
+      "store_id": "3b06d2a92de642d999509352cfd3ebed",
+      "secret_name": "RLME_ANALYTICS_TOKEN",
+    },
   ],
 
   // SITE_ORIGIN is what the Browser Run job navigates to. It is deliberately a
