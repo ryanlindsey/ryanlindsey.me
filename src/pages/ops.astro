@@ -8,6 +8,7 @@ import { CHAT_MODEL } from '../lib/chat/engine';
 import { CHAT_ERROR_COPY } from '../lib/chat/errors';
 import { CORPUS_EMBEDDING_MODEL } from '../lib/corpus';
 import { FIT_MODEL } from '../lib/fit/engine';
+import { JUDGE_MODEL } from '../lib/judge/engine';
 import { GLOBAL_LIMITS, LIMITS, type ToolCost } from '../lib/mcp/limits';
 import {
   readAnalytics,
@@ -86,9 +87,15 @@ const WINDOW_DAYS = 30;
  * numbers should hear about a D1 outage rather than receive a shape that looks
  * like zero traffic. This page is the caller, and what it wants is to degrade:
  * an unhandled rejection here is a 500 on a public page whose entire premise is
- * that it tells you what it knows. Catching outside `cached` is also what keeps
- * a failure from being pinned -- `cached` writes nothing when `fn` rejects, so
- * the next request retries.
+ * that it tells you what it knows.
+ *
+ * WHAT THE PLACEMENT DOES NOT BUY, recorded rather than deleted because an
+ * earlier version of this comment claimed it did (final-review Minor 6): it is
+ * not what keeps a failed read out of the cache. `cached` awaits `fn` before it
+ * writes anything, so a rejection leaves the function before the `put` no
+ * matter where the caller's `try` sits. Not being pinned is
+ * src/lib/ops/cache.ts's own structure, and so is the separate property that a
+ * bare `null` is never stored. The 500 is the whole reason this `try` is here.
  */
 async function readOrNull<T>(key: string, read: () => Promise<T>): Promise<T | null> {
   try {
@@ -132,6 +139,46 @@ const count = (value: number | null | undefined): string | null =>
 
 const toolCalls =
   metrics === null ? null : metrics.toolCalls.reduce((total, row) => total + row.calls, 0);
+
+/**
+ * The two Analytics Engine breakdowns, in the shape the list below renders.
+ *
+ * THEY EXIST BECAUSE THE QUERIES ALREADY DID. `readAnalytics` has always issued
+ * three queries and /ops used to render one of them, so two thirds of a
+ * rate-limited token's round trips bought nothing a reader could see
+ * (final-review Important 2). Rendering both is what makes the cost honest.
+ *
+ * `null` ROWS MEAN "COULD NOT BE READ", the same distinction `OpsMetric` draws
+ * and with the same words, because a breakdown that simply vanished when the
+ * read failed would be indistinguishable from one with nothing in it -- which
+ * is the invisible zero in list form.
+ *
+ * NOTHING HERE IS NARROWED IN THE TEMPLATE, per this file's own rule: both
+ * label vocabularies are closed in src/lib/agent-intel/classify.ts
+ * (`Classification.agent` and `RouteClass`), neither carries raw user-agent
+ * text, and src/lib/ops/analytics.ts rejects a row whose label is not a
+ * non-empty string before it gets here.
+ */
+const TRAFFIC_BREAKDOWNS: { title: string; rows: { label: string; requests: number }[] | null }[] =
+  [
+    {
+      title: 'By agent',
+      rows:
+        traffic === null
+          ? null
+          : traffic.byAgent.map((row) => ({ label: row.agent, requests: row.requests })),
+    },
+    {
+      title: 'By route class',
+      rows:
+        traffic === null
+          ? null
+          : traffic.byRouteClass.map((row) => ({
+              label: row.routeClass,
+              requests: row.requests,
+            })),
+    },
+  ];
 
 /**
  * A stored timestamp as a date and never a time (10 §1.4). The published rule
@@ -260,18 +307,45 @@ const releases = recentReleases(changelog, 5);
           /*
             The partial figure, and the label is the fix for the partiality
             rather than more instrumentation. `run_worker_first` (wrangler.jsonc)
-            names the content and agent-signal routes, so those requests reach
-            the Worker and are counted; the home page is deliberately not on that
-            list, because adding an invocation in front of the busiest and least
-            informative path on the site to improve this number would be paying
-            for a better statistic rather than a truer one.
+            decides it: a request matching a prerendered file is served by the
+            Asset Worker and never reaches src/worker.ts, so it cannot be
+            classified and cannot be counted, while every on-demand route
+            reaches the Worker whether or not it is listed there.
+
+            THE NOTE ENUMERATES THE EXCEPTIONS RATHER THAN CLAIMING THERE ARE
+            NONE, and the difference is the correction (final-review Critical
+            1). It used to say every agent-signal route was counted. Checked
+            against the two lists rather than against that sentence:
+            `AGENT_SIGNAL_EXACT` and the `/.well-known/` rule in
+            src/lib/agent-intel/classify.ts name the routes, `run_worker_first`
+            names what reaches the Worker, and exactly two prerendered paths are
+            in the first and not the second -- `/resume.md` (listed as
+            `/resume`, `/resume/` and `/resume.json`, with no `/resume*`
+            pattern) and `/.well-known/mcp.json`. The `.md` variants under
+            `/writing` and `/work` ARE counted: `/writing/*` and `/work/*` match
+            them, which is why day 3 needed two `!.../*.md` negative patterns to
+            carve them back OUT and why day 6 deleting those put them back in.
+
+            Confirmed against the build output rather than against either
+            comment: `dist/client/resume.md` and
+            `dist/client/.well-known/mcp.json` both exist, so both are real
+            assets the Asset Worker will answer; `/resume.pdf` and this page
+            have no file at all, which is how an on-demand route reaches the
+            Worker with no entry in that list.
+
+            The home page stays off that list on purpose: adding an invocation
+            in front of the busiest and least informative path on the site to
+            improve this number would be paying for a better statistic rather
+            than a truer one. Whether the two routes above should join the list
+            is a deployed-behaviour change and the owner's call, not this
+            sentence's.
           */
         }
         <OpsMetric
           label="Requests that reached the Worker"
           value={count(traffic?.requests)}
           source="Analytics Engine"
-          note="Static sub-resources and the home page are served without a Worker invocation, so they are not in this figure. Every agent-signal route — llms.txt, the markdown variants, the feeds, the résumé formats — is."
+          note="Static sub-resources and the home page are served without a Worker invocation, so they are not in this figure — and neither are /resume.md or /.well-known/mcp.json, which are prerendered files that wrangler.jsonc's run_worker_first does not list. Every other agent-signal route is counted: /llms.txt, /llms-full.txt, the markdown variants under /writing and /work, both feeds, /robots.txt and /resume.json — along with every on-demand route, which reaches the Worker by having no file behind it."
         />
         <OpsMetric
           label="Requests from agents"
@@ -301,13 +375,58 @@ const releases = recentReleases(changelog, 5);
                 </li>
               ))}
             </ul>
-            {/* The one list on this page that is not an `OpsMetric`, so it
-                carries its source itself. Live metrics mixes D1 and Analytics
-                Engine figures, and an unlabelled column of numbers in that
-                neighbourhood is a number asking to be trusted. */}
+            {/* Not an `OpsMetric`, so it carries its source itself. Live
+                metrics mixes D1 and Analytics Engine figures, and an
+                unlabelled column of numbers in that neighbourhood is a number
+                asking to be trusted. The two lists below do the same. */}
             <p class="mt-2 max-w-md font-mono text-micro text-ink-muted">D1</p>
           </div>
         )
+      }
+
+      {
+        /*
+          `data-ops-breakdown` is a TEST HOOK, the same declared convention as
+          `OpsMetric`'s `data-ops-metric`: tests/ops-page.test.ts asserts that
+          these lists render their absence rather than an empty list, and
+          slicing the page on class names would make that assertion pass
+          vacuously the next time a margin changes.
+        */
+      }
+      {
+        TRAFFIC_BREAKDOWNS.map((breakdown) => (
+          <div class="mt-12" data-ops-breakdown={breakdown.title}>
+            <p class="font-mono text-micro uppercase text-ink">{breakdown.title}</p>
+            {breakdown.rows === null ? (
+              <p class="mt-4 max-w-md font-mono text-small text-ink-muted">not configured</p>
+            ) : breakdown.rows.length === 0 ? (
+              <p class="mt-4 max-w-md font-mono text-small text-ink-muted">
+                Nothing recorded in this window, which is a different statement from a read that
+                failed.
+              </p>
+            ) : (
+              <ul class="mt-4 max-w-md divide-y divide-rule border-t border-rule">
+                {breakdown.rows.map((row) => (
+                  <li class="flex items-baseline justify-between gap-6 py-2">
+                    <span class="font-mono text-small text-ink-muted">{row.label}</span>
+                    <span class="font-mono text-small text-ink" data-numeric>
+                      {count(row.requests)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {/* ONE EXPRESSION, not a literal beside a conditional: the two
+                would be separated by the source's own newline in the rendered
+                HTML, and the provenance line has to read as one sentence and
+                match as one string. */}
+            <p class="mt-2 max-w-md font-mono text-micro text-ink-muted">
+              {`Analytics Engine${
+                breakdown.rows === null ? ' — this needs the read-only analytics token' : ''
+              }`}
+            </p>
+          </div>
+        ))
       }
     </section>
 
@@ -318,15 +437,52 @@ const releases = recentReleases(changelog, 5);
         Model &amp; cost
       </h2>
       <p class="mt-6 max-w-2xl text-ink-muted">
-        Three models, named from the constants the code calls rather than typed out here, so this
-        list cannot describe a model the site has stopped using.
+        Every model this build calls, named from the constant the calling code passes rather than
+        typed out here, so this list cannot describe a model the site has stopped using. Chat
+        answers and eval judging are separate constants that name the same model today; the fit
+        path's documented fallback has no call site, so it is not a model the site runs and is not
+        listed.
       </p>
 
+      {
+        /*
+          FOUR ROWS, AND THE COUNT IS NO LONGER IN THE COPY (final-review Minor
+          7). The sentence used to say "Three models", which was true only
+          because `JUDGE_MODEL` happens to equal `CHAT_MODEL` -- change one
+          constant and the page would claim three while the site ran four. The
+          judge is not a hypothetical: `src/lib/judge/engine.ts` calls
+          `env.AI.run` with `gateway: { metadata: { surface: 'judge' } }`, and
+          the MCP Worker registers it behind a registration-time scope gate.
+
+          WHAT IT SCORES, checked rather than assumed, because the obvious
+          stronger sentence is false: of the four eval suites whose pass rates
+          this page publishes two sections down, only `chat` and `leak` use the
+          judge, and only on an answer that already passed the deterministic
+          checks (evals/run.mjs, evals/README.md's "The judge"). `tier` and
+          `fit` use none. So the judge is a model this build calls and part of
+          how two of those rates are produced -- not the thing that produces
+          them all.
+
+          Enumerated rather than assumed: every `AI.run`/`ai.run` call site in
+          src/ and workers/ passes one of these four constants (chat/engine.ts
+          and workers/mcp/src/chat.ts pass CHAT_MODEL, fit/engine.ts FIT_MODEL,
+          corpus.ts and mcp/search.ts CORPUS_EMBEDDING_MODEL, judge/engine.ts
+          JUDGE_MODEL). `FIT_FALLBACK_MODEL` is the fifth exported constant and
+          has no call site anywhere, which is why the copy above rules it out by
+          name rather than leaving a reader to wonder.
+
+          The gated tool the judge is reached through is NOT named here, and
+          must not be: 09 §2 keeps gated tool names off every public surface,
+          and a test asserts it. The model is a constant in a public file; the
+          tool name is the thing that would say which scoped surface exists.
+        */
+      }
       <dl class="mt-8 max-w-2xl divide-y divide-rule border-t border-rule">
         {
           [
             { what: 'Chat answers', model: CHAT_MODEL },
             { what: 'Fit analysis', model: FIT_MODEL },
+            { what: 'Eval judging', model: JUDGE_MODEL },
             { what: 'Corpus embeddings', model: CORPUS_EMBEDDING_MODEL },
           ].map((row) => (
             <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">

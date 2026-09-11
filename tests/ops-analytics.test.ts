@@ -56,6 +56,32 @@ type FetchImpl = typeof fetch;
 const answering = (body: unknown, status = 200) =>
   vi.fn<FetchImpl>(async () => new Response(JSON.stringify(body), { status }));
 
+/** Three different bodies, one per query, in the order `Promise.all` issues them. */
+const inOrder = (bodies: unknown[]) => {
+  let call = -1;
+  return vi.fn<FetchImpl>(async () => {
+    call += 1;
+    return new Response(JSON.stringify(bodies[call]));
+  });
+};
+
+/**
+ * One row carrying every column all three queries read.
+ *
+ * `answering` gives the same body to all three, and the three want different
+ * shapes -- so a test about something OTHER than the parse (the blob guard, the
+ * secret-read count) needs a body that satisfies all of them at once to get a
+ * non-null result. `{ data: [] }` used to serve that purpose and no longer can:
+ * an empty `totals` is now a `null` by design (see "an empty totals array" in
+ * `failing closed` below), which is the correct answer and a useless fixture.
+ */
+const EVERY_SHAPE = {
+  data: [{ requests: 1, agent_requests: 1, p50: 1, agent: 'ClaudeBot', route_class: 'content' }],
+};
+
+/** A totals row with a real aggregate in it, for tests about the other two queries. */
+const TOTALS_ROW = { data: [{ requests: '120', agent_requests: '30', p50: '41.5' }] };
+
 /** A `fetch` that must never be reached; passed where the answer is "no request". */
 const never = () =>
   vi.fn<FetchImpl>(async () => {
@@ -222,6 +248,65 @@ describe('failing closed', () => {
     });
     expect(await readAnalytics(env(), NOW, 30, wire)).toBeNull();
   });
+
+  test('AN EMPTY totals ARRAY IS A NULL, NOT A PUBLISHED ZERO', async () => {
+    // The module's headline rule, in the one place the code used to invert it:
+    // `totals[0] ?? {}` turned zero rows into `Number(undefined ?? 0)` === 0,
+    // and /ops rendered a confident `0` for "Requests that reached the Worker"
+    // and "Requests from agents" -- the invisible lie that whole rule exists to
+    // prevent.
+    //
+    // WHY AN EMPTY `totals` IS DIFFERENT FROM AN EMPTY `byAgent`, which the
+    // test below asserts IS a real answer: the totals query carries no
+    // `GROUP BY`, so the engine returns exactly one row for any window,
+    // including a window nothing happened in -- where that row holds a genuine
+    // 0. Zero ROWS from an ungrouped aggregate is not "nothing happened", it is
+    // "this is not the envelope this build assumed". The breakdown queries DO
+    // group, so zero rows there is a measurement and is published as one.
+    expect(await readAnalytics(env(), NOW, 30, answering({ data: [] }))).toBeNull();
+  });
+
+  test('A NON-NUMERIC TOTAL IS A NULL, NOT THE STRING "NaN" ON THE PAGE', async () => {
+    // `Number()` alone is a null-shaped guard, not a number-shaped one: any
+    // non-null, non-numeric value became `NaN`, and /ops renders
+    // `NaN.toLocaleString()` as the literal text "NaN" beside a label that
+    // reads as a measurement.
+    const wire = inOrder([
+      { data: [{ requests: 'many', agent_requests: '30', p50: '41.5' }] },
+      { data: [] },
+      { data: [] },
+    ]);
+    expect(await readAnalytics(env(), NOW, 30, wire)).toBeNull();
+  });
+
+  test('a non-numeric agent_requests is a null too', async () => {
+    const wire = inOrder([
+      { data: [{ requests: '120', agent_requests: {}, p50: '41.5' }] },
+      { data: [] },
+      { data: [] },
+    ]);
+    expect(await readAnalytics(env(), NOW, 30, wire)).toBeNull();
+  });
+
+  test('a breakdown row this build cannot read fails the whole read', async () => {
+    // ALL OR NOTHING rather than skipping the bad row. A dropped line is the
+    // same invisible lie as a zero: the list still renders, still adds up to
+    // something, and nothing on the page says a row is missing.
+    const wire = inOrder([
+      TOTALS_ROW,
+      { data: [{ agent: 'ClaudeBot', requests: 'lots' }] },
+      { data: [] },
+    ]);
+    expect(await readAnalytics(env(), NOW, 30, wire)).toBeNull();
+  });
+
+  test('a breakdown row with no label at all fails the whole read', async () => {
+    // The `String(row.agent)` this replaced rendered the literal text
+    // "undefined" as an agent name, which is a row on a public page claiming a
+    // client by that name visited.
+    const wire = inOrder([TOTALS_ROW, { data: [{ requests: '20' }] }, { data: [] }]);
+    expect(await readAnalytics(env(), NOW, 30, wire)).toBeNull();
+  });
 });
 
 describe('the query text', () => {
@@ -269,15 +354,6 @@ describe('the query text', () => {
 });
 
 describe('a recognised envelope', () => {
-  /** Three different bodies, one per query, in the order `Promise.all` issues them. */
-  const inOrder = (bodies: unknown[]) => {
-    let call = -1;
-    return vi.fn<FetchImpl>(async () => {
-      call += 1;
-      return new Response(JSON.stringify(bodies[call]));
-    });
-  };
-
   const traffic = async (): Promise<AgentTraffic | null> =>
     await readAnalytics(
       env(),
@@ -312,10 +388,23 @@ describe('a recognised envelope', () => {
     });
   });
 
-  test('an empty result set is zeros rather than null -- silence is not failure', async () => {
+  test('an empty WINDOW is zeros rather than null -- silence is not failure', async () => {
     // The distinction the page depends on: `null` means "could not be read",
-    // and an empty dataset means "nothing happened", which is a real answer.
-    expect(await readAnalytics(env(), NOW, 30, answering({ data: [] }))).toEqual({
+    // and a window nothing happened in means "nothing happened", which is a
+    // real answer and is published as one.
+    //
+    // THE TOTALS ROW IS PRESENT AND HOLDS 0, which is what an ungrouped
+    // aggregate returns for an empty window; the two GROUPED queries return no
+    // rows, which is what THEY return for one. Those are different events and
+    // the module now tells them apart -- an empty `totals` array is a `null`
+    // (asserted in `failing closed` above), because an ungrouped aggregate
+    // cannot legitimately produce zero rows.
+    const wire = inOrder([
+      { data: [{ requests: 0, agent_requests: 0, p50: null }] },
+      { data: [] },
+      { data: [] },
+    ]);
+    expect(await readAnalytics(env(), NOW, 30, wire)).toEqual({
       windowDays: 30,
       requests: 0,
       agentRequests: 0,
@@ -323,6 +412,31 @@ describe('a recognised envelope', () => {
       byRouteClass: [],
       p50Ms: null,
     });
+  });
+
+  test('a non-numeric p50 drops the latency figure rather than publishing "NaN ms"', async () => {
+    // `quantileWeighted` over an empty window is exactly where
+    // ClickHouse-family engines emit `nan`/`inf`, on an envelope this build has
+    // never measured. /ops renders `${Math.round(p50Ms)} ms`, so an unguarded
+    // coercion published the literal string "NaN ms".
+    //
+    // A `null` HERE RATHER THAN A FAILED READ, unlike the two counts: dropping
+    // the latency figure and rendering its absence is the plan's pre-agreed
+    // fallback for this query, because it is the least valuable number on the
+    // page and the only one with no second source. The counts stay real.
+    const result = await readAnalytics(
+      env(),
+      NOW,
+      30,
+      inOrder([
+        { data: [{ requests: '120', agent_requests: '30', p50: 'nan' }] },
+        { data: [] },
+        { data: [] },
+      ]),
+    );
+    expect(result?.p50Ms).toBeNull();
+    expect(result?.requests).toBe(120);
+    expect(result?.agentRequests).toBe(30);
   });
 
   test('an absent p50 is null rather than 0 -- the fallback the plan pre-agreed', async () => {
@@ -367,7 +481,10 @@ describe('the AE_BLOB_FIELDS guard', () => {
   const REAL = ['agent_class', 'agent', 'route_class', 'referrer_class', 'surface', 'status_class'];
 
   test('the real order passes the guard', async () => {
-    await expect(withFields([...REAL], answering({ data: [] }))).resolves.not.toBeNull();
+    // `EVERY_SHAPE` rather than `{ data: [] }`: an empty `totals` is now a
+    // deliberate `null`, so the old fixture would have made this test pass for
+    // the wrong reason -- green whether the guard threw or the parse refused.
+    await expect(withFields([...REAL], answering(EVERY_SHAPE))).resolves.not.toBeNull();
   });
 
   test('swapping the first two positions throws before any query runs', async () => {

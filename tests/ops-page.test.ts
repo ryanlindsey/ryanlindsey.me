@@ -24,10 +24,14 @@ import { BANNED_PATTERNS } from './candidacy-patterns';
  * OWN KV key for 60 seconds (`ops:metrics:v1`, `ops:traffic:v1`,
  * `ops:spend:v1`), so if the failed metrics read had been stored, the second
  * fetch would still be showing "could not be read" a minute later -- a
- * transient D1 blip pinned as a state. It is not stored, because the page
- * catches outside `cached` and `cached` writes nothing when its `fn` rejects.
- * The "not pinned" test below is the assertion for that, and it only works
- * because the degraded render came first.
+ * transient D1 blip pinned as a state. It is not stored because `cached`
+ * (src/lib/ops/cache.ts) awaits its `fn` before it writes anything, so a
+ * rejection leaves that function before the `put`. An earlier version of this
+ * paragraph credited the page's `try` sitting OUTSIDE `cached` for that, which
+ * is not a cause: the `put` is skipped wherever the caller's catch sits, and
+ * the placement buys the page a labelled absence instead of a 500, which is a
+ * different property. The "not pinned" test below is the assertion for the
+ * cache half, and it only works because the degraded render came first.
  */
 const server = createTestHarness({ workers: SITE_HARNESS_WORKERS });
 
@@ -64,18 +68,28 @@ afterAll(async () => {
 });
 
 /**
- * One `OpsMetric` tile's markup, looked up by its label.
+ * The markup of the one element carrying `attribute="value"`.
  *
- * By the `data-ops-metric` hook rather than by slicing on class names: a tile
- * assertion keyed on `class="border-t border-rule pt-3"` would start passing
- * vacuously the next time a margin changes, which is the failure mode that made
- * the original version of the analytics test meaningless. A tile contains only
- * `<p>` elements, so the first `</div>` after the hook is its own.
+ * By a declared hook rather than by slicing on class names: an assertion keyed
+ * on `class="border-t border-rule pt-3"` would start passing vacuously the next
+ * time a margin changes, which is the failure mode that made the original
+ * version of the analytics test meaningless. Neither hooked element nests a
+ * `<div>`, so the first `</div>` after the hook is its own.
  */
-function tile(label: string, doc: string = html): string {
-  const hook = doc.indexOf(`data-ops-metric="${label}"`);
-  expect(hook, `no metric tile is labelled ${label}`).toBeGreaterThan(-1);
+function hooked(attribute: string, value: string, doc: string): string {
+  const hook = doc.indexOf(`${attribute}="${value}"`);
+  expect(hook, `nothing on the page carries ${attribute}="${value}"`).toBeGreaterThan(-1);
   return doc.slice(doc.lastIndexOf('<div', hook), doc.indexOf('</div>', hook));
+}
+
+/** One `OpsMetric` tile's markup, looked up by its label. */
+function tile(label: string, doc: string = html): string {
+  return hooked('data-ops-metric', label, doc);
+}
+
+/** One Analytics Engine breakdown list's markup, looked up by its title. */
+function breakdown(title: string, doc: string = html): string {
+  return hooked('data-ops-breakdown', title, doc);
 }
 
 /** One `<li>` of a definition list, looked up by the text in it. */
@@ -103,6 +117,11 @@ describe('/ops', () => {
     expect(html).not.toContain('analyze_fit');
     expect(html).not.toContain('label-a');
     expect(html).not.toContain('get_application_narrative');
+    // `judge_answer` joins the list with the "Eval judging" row below it: that
+    // row names the judge's MODEL, which is a constant in a public file, and
+    // the tool name is the separate thing that would say which scoped surface
+    // exists (09 §2). The row is the one edit that made naming it tempting.
+    expect(html).not.toContain('judge_answer');
   });
 
   test('no copy on the page matches a banned pattern', () => {
@@ -140,6 +159,25 @@ describe('/ops', () => {
     }
   });
 
+  test('the traffic breakdowns say they are unread rather than rendering as empty', () => {
+    // The two Analytics Engine lists /ops added when it stopped paying for two
+    // queries it never rendered. A breakdown that simply VANISHED on a failed
+    // read would be indistinguishable from one with nothing in it -- the
+    // invisible zero in list form -- so each one renders the same absence
+    // wording, and the same named cause, as the metric tiles beside it.
+    //
+    // `data-numeric` is the mechanism again: it is on the count in each row and
+    // nowhere else in these lists, so its presence means a row was rendered.
+    for (const title of ['By agent', 'By route class']) {
+      const list = breakdown(title);
+      expect(list, `${title} must render its absence`).toContain('not configured');
+      expect(list, `${title} must name the missing credential`).toContain(
+        'Analytics Engine — this needs the read-only analytics token',
+      );
+      expect(list, `${title} must not render a row`).not.toContain('data-numeric');
+    }
+  });
+
   test('the changelog shows dates and never a time', () => {
     const changelog = html.slice(html.indexOf('Changelog'));
     expect(changelog).toMatch(/\d{4}-\d{2}-\d{2}/);
@@ -150,6 +188,13 @@ describe('/ops', () => {
     expect(html).toContain('anthropic/claude-sonnet-5');
     expect(html).toContain('anthropic/claude-opus-5');
     expect(html).toContain('@cf/qwen/qwen3-embedding-0.6b');
+    // THE JUDGE ROW, which the three assertions above cannot see: `JUDGE_MODEL`
+    // is the same string as `CHAT_MODEL` today, so dropping the row would leave
+    // all three green while the page named three of the four models the site
+    // calls. The judge is a real deployed call site, not a spare constant --
+    // the `chat` and `leak` eval suites score through it, and this page
+    // publishes their pass rates two sections further down.
+    expect(html).toContain('Eval judging');
   });
 
   test('the retention windows on the page are the ones the cron enforces', () => {
@@ -232,5 +277,23 @@ describe('/ops', () => {
     // order are what this pins.
     expect(html).toMatch(/requests that reached the Worker/i);
     expect(html).toMatch(/home page/i);
+  });
+
+  test('the requests note names the two agent-signal routes that are NOT counted', () => {
+    // The sentence this replaces claimed "Every agent-signal route ... is"
+    // counted, and two are not: `/resume.md` and `/.well-known/mcp.json` are
+    // prerendered files, `run_worker_first` lists neither, and a request served
+    // by the Asset Worker never reaches src/worker.ts to be classified.
+    //
+    // THIS IS THE ONLY GUARD ON THAT SENTENCE and it is a weak one by nature --
+    // it pins the copy, not the config. Nothing here can prove a request
+    // reached the Worker (tests/pages.test.ts records why), so the failure this
+    // catches is the copy drifting back to the confident version, not the
+    // config drifting away from the copy. If `/resume.md` is ever added to
+    // `run_worker_first`, this test is what says the note must change with it.
+    const note = tile('Requests that reached the Worker');
+    expect(note).toContain('/resume.md');
+    expect(note).toContain('/.well-known/mcp.json');
+    expect(note).not.toMatch(/every agent-signal route[^.]*is\./i);
   });
 });

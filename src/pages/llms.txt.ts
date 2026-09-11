@@ -109,9 +109,16 @@ const MCP_LINKS: LlmsLink[] = [
  * that always exists. `/fit` is deliberately ABSENT and stays that way -- it is
  * unlisted by requirement (09 §1), and tests/pages.test.ts pins that.
  *
- * PR 2 adds `/ops` and `/ai-policy` here in the same edit that puts them in the
- * nav; neither exists yet, and listing a route that 404s would be worse than
- * listing nothing.
+ * TASK 13's INTEGRATION STEP -- 13b, the nav-and-index half that task's brief
+ * splits out from 13a -- adds `/ops` and `/ai-policy` here, in the same edit
+ * that puts them in `SiteHeader.astro`. An earlier version of this comment said
+ * "PR 2", which was wrong in the way that matters here: the branch that built
+ * `/ops` IS that PR under a different shape, and it owns neither edit. Naming a
+ * task that exists is what lets the next reader check whether it has landed.
+ *
+ * `/ops` NOW EXISTS AND IS STILL NOT LISTED. `/ai-policy` does not, the two go
+ * in together, and listing a route that 404s would be worse than listing
+ * nothing.
  */
 const SITE_LINKS: LlmsLink[] = [
   {

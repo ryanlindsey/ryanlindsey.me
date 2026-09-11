@@ -25,6 +25,14 @@ import { AE_BLOB_FIELDS } from '../agent-intel/record';
 // be an invisible one: nobody reading "0 agents served" thinks to check whether
 // the query ran.
 //
+// THAT RULE IS NUMBER-SHAPED, NOT NULL-SHAPED, and the difference is where it
+// used to leak (final-review Important 3 and 4). `Number(x ?? 0)` answers `NaN`
+// for any non-numeric `x` and `0` for an absent one, and both reach the page as
+// a rendered figure -- "NaN ms" and "0" respectively. So every value this
+// module publishes goes through `finiteNumber` below, an empty `totals` is a
+// `null` rather than a zero, and a breakdown row this build cannot read is a
+// `null` for the whole read rather than a silently dropped line.
+//
 // ------------------------------------------------------------------------
 // NEITHER API HAS BEEN MEASURED. Read this before trusting anything below.
 // ------------------------------------------------------------------------
@@ -178,6 +186,64 @@ async function query(
 }
 
 /**
+ * A response field as a real number, or `null` when it is not one.
+ *
+ * THE FAIL-CLOSED INSTINCT OF `Array.isArray` IN `query`, APPLIED TO A VALUE.
+ * `Number()` is the wrong guard on its own and was the one this file used:
+ * `Number(undefined)` is `NaN`, `Number(null)` and `Number('')` are `0`, and
+ * both land on /ops as a published figure ("NaN ms", "0") that a reader cannot
+ * tell from a measurement. `Number.isFinite` catches the first; refusing
+ * anything that is not a number or a non-blank string catches the second.
+ *
+ * A STRING IS ACCEPTED ON PURPOSE. A SQL API answering over HTTP is entitled to
+ * return numerics as JSON strings, and the envelope here has never been
+ * measured (see the block at the top of this file), so this cannot be strict
+ * about which of the two it gets. It can be strict about the result being a
+ * finite number, and that is the property /ops depends on.
+ *
+ * `nan` AND `inf` ARE THE REAL CASES, not hypotheticals: `quantileWeighted`
+ * over an empty window is exactly where ClickHouse-family engines emit them,
+ * and whether they arrive as those literals, as JSON `null`, or as something
+ * else, every spelling lands on `null` here.
+ */
+function finiteNumber(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * One `GROUP BY` query's rows as label/count pairs, or `null` if ANY row is not
+ * the shape this build recognises.
+ *
+ * ALL OR NOTHING, rather than skipping the rows it cannot read. A dropped row
+ * is the same invisible lie as a zero: the breakdown still renders, still adds
+ * up to something, and nothing on the page says a line is missing. An
+ * unrecognised row means the envelope is not what this build assumed, which is
+ * the `null` case the whole module is built around.
+ *
+ * The label must be a non-empty string because it is rendered verbatim. It
+ * comes from a bounded vocabulary either way -- `blob2` is
+ * `Classification.agent` and `blob3` is `Classification.routeClass`, both closed
+ * sets in src/lib/agent-intel/classify.ts, never raw user-agent text -- so this
+ * check is about the envelope rather than about sanitising the value.
+ */
+function breakdownRows(
+  rows: Record<string, unknown>[],
+  labelField: string,
+): { label: string; requests: number }[] | null {
+  const parsed: { label: string; requests: number }[] = [];
+  for (const row of rows) {
+    const label = row[labelField];
+    const requests = finiteNumber(row.requests);
+    if (typeof label !== 'string' || label === '' || requests === null) return null;
+    parsed.push({ label, requests });
+  }
+  return parsed;
+}
+
+/**
  * `fetchImpl` is injected, defaulted to the global `fetch`, so every existing
  * call site stays valid and the tests exercise the real request-shaping code
  * rather than a mock of it. The same pattern and the same reason as
@@ -259,6 +325,22 @@ export async function readAnalytics(
          FROM ${DATASET} WHERE timestamp >= ${since}`,
       fetchImpl,
     ),
+    // THE TWO BREAKDOWNS ARE BOTH RENDERED, and that is the answer to
+    // final-review Important 2 rather than a comment excusing it. They used to
+    // be built and referenced nowhere outside this module and its test, which
+    // meant every cache miss spent three round trips against a rate-limited
+    // token to publish one query's worth of numbers -- and, because the
+    // `null` check above is a conjunction, a failure in either unused query
+    // blanked the three figures that WERE rendered. /ops now publishes both
+    // beneath the metric grid, so all three round trips reach the page.
+    //
+    // THE LABELS ARE SAFE TO RENDER because neither column is free text.
+    // `blob2` is `Classification.agent` -- one of the named crawlers in
+    // `KNOWN_AGENTS`, or `first-party`/`http-client`/`other-bot`/`unknown` --
+    // and `blob3` is `RouteClass`, three values. src/lib/agent-intel/classify.ts
+    // is where both vocabularies are closed, and it reads no raw UA into either
+    // one. That is what keeps /ops aggregate-and-public-tier-only (09 §2) with
+    // a per-client breakdown on it.
     query(
       env,
       token,
@@ -278,20 +360,42 @@ export async function readAnalytics(
 
   if (totals === null || agents === null || routes === null) return null;
 
-  const first = totals[0] ?? {};
+  // AN EMPTY `totals` IS A NULL, NOT A ZERO. That query carries no `GROUP BY`,
+  // so the engine returns exactly one row for any window, including a window
+  // nothing happened in -- where the row is genuinely `0`, which is a real
+  // answer and is published as one. Zero ROWS is a different event: it means
+  // the response is not the shape this build assumed, and the previous
+  // `totals[0] ?? {}` answered that by rendering `0` for "Requests that reached
+  // the Worker" and "Requests from agents" (final-review Important 4). That is
+  // the module's own headline rule inverted, in the one place it mattered most.
+  //
+  // The contrast with `byAgent` below is the whole point and is why these two
+  // emptinesses are handled differently: those queries DO group, so zero rows
+  // there means no agent requests in the window, which is a measurement.
+  if (totals.length === 0) return null;
+
+  const first = totals[0];
+  const requests = finiteNumber(first.requests);
+  const agentRequests = finiteNumber(first.agent_requests);
+  if (requests === null || agentRequests === null) return null;
+
+  const byAgent = breakdownRows(agents, 'agent');
+  const byRouteClass = breakdownRows(routes, 'route_class');
+  if (byAgent === null || byRouteClass === null) return null;
+
   return {
     windowDays,
-    requests: Number(first.requests ?? 0),
-    agentRequests: Number(first.agent_requests ?? 0),
-    byAgent: agents.map((row) => ({
-      agent: String(row.agent),
-      requests: Number(row.requests),
-    })),
-    byRouteClass: routes.map((row) => ({
-      routeClass: String(row.route_class),
-      requests: Number(row.requests),
-    })),
-    p50Ms: first.p50 === undefined || first.p50 === null ? null : Number(first.p50),
+    requests,
+    agentRequests,
+    byAgent: byAgent.map((row) => ({ agent: row.label, requests: row.requests })),
+    byRouteClass: byRouteClass.map((row) => ({ routeClass: row.label, requests: row.requests })),
+    // `null` RATHER THAN A FAILED READ, and it is the only field treated this
+    // way. An absent or unreadable p50 is the plan's pre-agreed fallback (see
+    // the SQL-dialect note at the top of this file): /ops drops the latency
+    // figure and renders its absence, because it is the least valuable number
+    // on the page and the only one with no second source. The two counts above
+    // have no such fallback, so they fail the whole read instead.
+    p50Ms: finiteNumber(first.p50),
   };
 }
 

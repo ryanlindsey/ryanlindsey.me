@@ -32,10 +32,19 @@ interface Props {
    */
   value: string | number | null;
   /**
-   * Which system produced it. The closed set is the four this page can draw
-   * from; a fifth means a new read, not a new string.
+   * Which system produced it. The closed set is the three systems /ops READS,
+   * one per call in its frontmatter; a fourth means a new read, not a new
+   * string.
+   *
+   * `'this build'` WAS A FOURTH ARM AND IS GONE (final-review Minor 8). No
+   * `OpsMetric` ever passed it: the figures sourced that way -- the rate
+   * limits, the retention windows, the changelog -- are lists rather than
+   * single figures, so they are not this component at all and carry their own
+   * hand-written provenance line. A stated closed set with a member nothing can
+   * reach is a small false claim about the page, which is the class of defect
+   * /ops exists to avoid.
    */
-  source: 'D1' | 'Analytics Engine' | 'AI Gateway' | 'this build';
+  source: 'D1' | 'Analytics Engine' | 'AI Gateway';
   /** The absence, in the two words that go where the figure was. */
   absentState?: string;
   /** Why it is absent, rendered after the source so the two read as one line. */
