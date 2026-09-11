@@ -47,14 +47,14 @@ hold above.
 `--silent` is load-bearing: without it `npm run` prepends its own banner lines to
 **stdout**, and the command substitution folds them into the token.
 
-**A full run takes a few minutes, deliberately.** Cases are paced five seconds
-apart, and a refused call gets exactly one retry after a ten-second wait. That is
-not politeness: AI Gateway's Unified Billing has its own **wholesale** rate limit,
-separate from the per-gateway limit in the dashboard and not published by
-Cloudflare, and it binds at the volume one run produces. Exceeding it returns
-`2018: Invalid User Credentials` — an auth error's wording on a rate-limit
-fault — which the endpoint reports as `unreachable`. If you see a burst of those,
-it is the ceiling and not the prompt.
+**Pacing alone adds five minutes to a full run, deliberately.** Cases are paced
+twenty-five seconds apart, and a refused call gets exactly one retry after a
+ten-second wait. That is not politeness: AI Gateway's Unified Billing has its own
+**wholesale** rate limit, separate from the per-gateway limit in the dashboard
+and not published by Cloudflare, and it binds at the volume one run produces.
+Exceeding it returns `2018: Invalid User Credentials` — an auth error's wording
+on a rate-limit fault — which the endpoint reports as `unreachable`. If you see
+a burst of those, it is the ceiling and not the prompt.
 
 **Pacing is the fix; the retry is the fallback.** The gateway has its own retry
 rule (4 attempts, exponential backoff), so one call from here is already up to
