@@ -29,8 +29,13 @@ export interface Release {
  *   `## 1.0.0 (2026-09-01)`                                         -- the first one, unlinked
  *
  * `##` and not `###`: the section headings inside a release ("### Features",
- * "### Bug Fixes") are one level deeper, and the `\s` after the second `#` is
- * what excludes them.
+ * "### Bug Fixes") are one level deeper, and the `[ \t]+` after the second `#`
+ * is what excludes them -- a third `#` is neither a space nor a tab.
+ *
+ * `[ \t]` rather than `\s` in all three places, deliberately: `\s` also matches
+ * a newline, and this pattern is applied per line only because `recentReleases`
+ * splits first. Spelling the class out keeps the regex correct if it is ever
+ * run against the whole file.
  */
 const HEADING = /^##[ \t]+(?:\[([^\]]+)\]\([^)]*\)|([^\s[]+))[ \t]+\((\d{4}-\d{2}-\d{2})\)[ \t]*$/;
 

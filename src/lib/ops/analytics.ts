@@ -3,7 +3,16 @@ import { AE_BLOB_FIELDS } from '../agent-intel/record';
 // The credentialed half of /ops (06 §1). Two HTTPS reads, both of which need an
 // account API token, because NEITHER Analytics Engine NOR AI Gateway has a
 // binding-side read -- the `AE` binding writes and cannot query, and the
-// gateway's numbers live behind its own REST API.
+// gateway's numbers are not exposed to a Worker at all.
+//
+// WHICH gateway endpoint carries those numbers is UNDETERMINED, and saying so
+// is the honest state rather than a hedge: nobody here has called either of the
+// two possibilities. They are the REST route
+// `/accounts/{account}/ai-gateway/gateways/{id}` and the GraphQL dataset
+// `aiGatewayRequestsAdaptiveGroups`, and the plan's Step 3 probe is what
+// decides between them. `readSpend` below is empty for exactly this reason.
+// wrangler.jsonc's comment beside `RLME_ANALYTICS_TOKEN` says the same thing;
+// if one of these is ever edited, edit the other.
 //
 // That token is the only credential this project has that is not a deploy
 // credential Cloudflare holds for itself (10 §3.1), so it is scoped to two
@@ -106,20 +115,48 @@ const DATASET = 'ryanlindsey_me_events';
  */
 const COUNT = 'SUM(_sample_interval)';
 
-async function query(env: AnalyticsEnv, sql: string): Promise<Record<string, unknown>[] | null> {
-  let token: string;
+/**
+ * The Secrets Store read, ONCE per `readAnalytics` call rather than once per
+ * query.
+ *
+ * It used to sit inside `query`, which meant three reads of the same secret for
+ * one page render -- three chances to fail independently, and a state where two
+ * queries could carry a token the third could not get.
+ *
+ * `null` for every way the read can fail to produce a usable token:
+ *
+ *   - IT THROWS. The expected state before the owner's prerequisite lands, and
+ *     also the state under the test harness: miniflare simulates
+ *     `secrets_store_secrets` against a local store nothing has populated, so
+ *     `.get()` raises `Secret "..." not found` (measured in day 5 Task 2 and
+ *     recorded in tests/tier-grant.test.ts).
+ *   - IT ANSWERS SOMETHING THAT IS NOT A NON-EMPTY STRING. The binding's type
+ *     says `Promise<string>`, so the `typeof` check looks redundant and is not:
+ *     a rotated-to-empty secret is a real state this repo has already had to
+ *     handle once (tests/tier-grant.test.ts again), and without the check an
+ *     `undefined` would reach the wire as the literal text `Bearer undefined`.
+ *     That still fails closed on the 401, but it spends a round trip and puts a
+ *     nonsense credential in someone's edge logs to do it.
+ */
+async function readToken(env: AnalyticsEnv): Promise<string | null> {
+  let token: unknown;
   try {
     token = await env.RLME_ANALYTICS_TOKEN.get();
   } catch {
-    // The expected state before the owner's prerequisite lands. Not an error:
-    // `readAnalytics` returns null and the page says the section is not
-    // configured.
     return null;
   }
-  if (token === '') return null;
+  if (typeof token !== 'string' || token === '') return null;
+  return token;
+}
 
+async function query(
+  env: AnalyticsEnv,
+  token: string,
+  sql: string,
+  fetchImpl: typeof fetch,
+): Promise<Record<string, unknown>[] | null> {
   try {
-    const response = await fetch(SQL_URL(env.RLME_ACCOUNT_ID), {
+    const response = await fetchImpl(SQL_URL(env.RLME_ACCOUNT_ID), {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'text/plain' },
       body: sql,
@@ -140,10 +177,19 @@ async function query(env: AnalyticsEnv, sql: string): Promise<Record<string, unk
   }
 }
 
+/**
+ * `fetchImpl` is injected, defaulted to the global `fetch`, so every existing
+ * call site stays valid and the tests exercise the real request-shaping code
+ * rather than a mock of it. The same pattern and the same reason as
+ * `verifyTurnstile` (src/lib/turnstile.ts): the assertions worth having are
+ * that the account id shapes the URL and that the token reaches the wire as a
+ * bearer, and those are only available from inside the call.
+ */
 export async function readAnalytics(
   env: AnalyticsEnv,
   now: Date,
   windowDays = 30,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<AgentTraffic | null> {
   const mode = env.RLME_ANALYTICS_MODE;
   if (mode !== undefined && mode !== 'stub') {
@@ -179,6 +225,13 @@ export async function readAnalytics(
     throw new Error('ops: AE_BLOB_FIELDS was reordered; every query below is now wrong');
   }
 
+  // ONE Secrets Store read for the whole page render, taken before the three
+  // queries rather than inside each of them. An absent or unusable token is the
+  // same `null` the queries would have produced, arrived at without opening a
+  // socket.
+  const token = await readToken(env);
+  if (token === null) return null;
+
   const [totals, agents, routes] = await Promise.all([
     // `double2` is the request duration (`doubles: [1, durationMs]` in
     // src/lib/agent-intel/record.ts), and this median is SITEWIDE -- chat is
@@ -199,21 +252,27 @@ export async function readAnalytics(
     // separately (group by `blob5`, the surface) rather than to hide one.
     query(
       env,
+      token,
       `SELECT ${COUNT} AS requests,
               sumIf(_sample_interval, blob1 = 'agent') AS agent_requests,
               quantileWeighted(0.5)(double2, _sample_interval) AS p50
          FROM ${DATASET} WHERE timestamp >= ${since}`,
+      fetchImpl,
     ),
     query(
       env,
+      token,
       `SELECT blob2 AS agent, ${COUNT} AS requests FROM ${DATASET}
         WHERE timestamp >= ${since} AND blob1 = 'agent'
         GROUP BY agent ORDER BY requests DESC LIMIT 15`,
+      fetchImpl,
     ),
     query(
       env,
+      token,
       `SELECT blob3 AS route_class, ${COUNT} AS requests FROM ${DATASET}
         WHERE timestamp >= ${since} GROUP BY route_class ORDER BY requests DESC`,
+      fetchImpl,
     ),
   ]);
 
@@ -247,8 +306,15 @@ export async function readAnalytics(
  * AN OVERSIGHT. The AI Gateway response shape was NEVER MEASURED -- the probe
  * that was supposed to measure it could not be run at all, for the two reasons
  * recorded at the top of this file. No field name, no nesting and no unit
- * (dollars? micro-dollars? a string?) is known here, and the request path is a
- * guess as well.
+ * (dollars? micro-dollars? a string?) is known here.
+ *
+ * NOR IS THE ENDPOINT ITSELF SETTLED. Two possibilities, neither of them
+ * called: the REST route `/accounts/{account}/ai-gateway/gateways/{id}` and the
+ * GraphQL dataset `aiGatewayRequestsAdaptiveGroups`. They differ in more than
+ * spelling -- one is
+ * a GET against this account's `RLME_AI_GATEWAY_ID`, the other a POST of a
+ * query document to a different host path -- so "write the parse" is not the
+ * whole of the remaining work. Step 1 below decides which.
  *
  * The alternative was a plausible-looking parse, and it is strictly worse: it
  * would typecheck, read as finished, and return `null` forever against a real
@@ -258,12 +324,14 @@ export async function readAnalytics(
  *
  * TO FINISH THIS, in order:
  *   1. Run the plan's Step 3 probe (a temporary route on the site Worker, read
- *      through the binding, `wrangler dev --remote`) and RECORD the raw body --
+ *      through the binding, `wrangler dev --remote`) against BOTH of the
+ *      possibilities above, and RECORD which one answers and its raw body --
  *      the envelope, the field names, the units, and what an empty window looks
  *      like -- in this comment.
  *   2. Write a parse against WHAT WAS RECORDED, returning `null` on anything
  *      that does not match it, exactly as `query` above does with
- *      `Array.isArray`.
+ *      `Array.isArray`. Take an injected `fetchImpl` while you are here, as
+ *      `readAnalytics` does, so the request can be asserted from inside.
  *   3. Delete the probe route before committing AND before deploying:
  *      `wrangler deploy` bundles the working tree, not the committed tree, and
  *      this repo has already shipped a temporary token-signing endpoint to

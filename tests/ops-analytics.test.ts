@@ -23,12 +23,14 @@ import {
  * yields `null` rather than a zero, and that property holds whatever the real
  * shape turns out to be.
  *
- * `fetch` IS STUBBED GLOBALLY rather than injected. Every other network-reading
- * module in this repo takes a `fetchImpl` parameter (src/lib/turnstile.ts), and
- * that is the better pattern; `readAnalytics`'s signature is fixed by the plan's
- * published interface, so the seam here is `vi.stubGlobal`. The stub throws by
- * default, so a test that expects NO request proves it by passing rather than by
- * quietly reaching the real api.cloudflare.com.
+ * `fetch` IS INJECTED, as `readAnalytics`'s fourth parameter, the same way
+ * `verifyTurnstile` (src/lib/turnstile.ts) takes its `fetchImpl` -- so the
+ * request-shaping assertions read the real call rather than a mock of it, and
+ * no test depends on ambient global state. The global IS still replaced in
+ * `beforeEach`, with a stub that throws: it is the backstop that turns "this
+ * code path forgot to use the injected fetch" from a silent real request into a
+ * failure, and it is what makes `expect(...).not.toHaveBeenCalled()` a positive
+ * proof rather than an absence of evidence.
  */
 
 const NOW = new Date('2026-09-09T12:00:00.000Z');
@@ -48,18 +50,28 @@ const env = (over: Partial<AnalyticsEnv> = {}): AnalyticsEnv => ({
  * and `npm test` would never say so, because vitest does not typecheck. The
  * same note is on `AiRun` in tests/chat-engine.test.ts, for the same reason.
  */
-type FetchImpl = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+type FetchImpl = typeof fetch;
 
 /** One stubbed `fetch` returning the same body to all three queries. */
 const answering = (body: unknown, status = 200) =>
   vi.fn<FetchImpl>(async () => new Response(JSON.stringify(body), { status }));
 
+/** A `fetch` that must never be reached; passed where the answer is "no request". */
+const never = () =>
+  vi.fn<FetchImpl>(async () => {
+    throw new Error('this test must not make a request');
+  });
+
+/** The body of one recorded call, as the string that reached the wire. */
+const bodyOf = (call: Parameters<FetchImpl>) => String((call[1] as RequestInit).body);
+
 beforeEach(() => {
-  // The default: any request at all is a failure, not a pass-through.
+  // The ambient backstop. Every test passes its own `fetchImpl`; if any code
+  // path ignores it, this throws instead of reaching api.cloudflare.com.
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => {
-      throw new Error('this suite must not make a request');
+      throw new Error('this suite must not use the global fetch');
     }),
   );
   vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -74,15 +86,19 @@ afterEach(() => {
 describe('the seam', () => {
   test("'stub' returns null without reading the secret or fetching", async () => {
     const read = vi.fn(async () => 'a-fixture-token');
+    const wire = never();
     const result = await readAnalytics(
       env({
         RLME_ANALYTICS_MODE: 'stub',
         RLME_ANALYTICS_TOKEN: { get: read } as unknown as SecretsStoreSecret,
       }),
       NOW,
+      30,
+      wire,
     );
     expect(result).toBeNull();
     expect(read).not.toHaveBeenCalled();
+    expect(wire).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -90,17 +106,20 @@ describe('the seam', () => {
     // The same shape as every other seam in this repo: a value nobody meant to
     // set must be loud, because the alternative is a page that silently says
     // "not configured" forever.
-    await expect(readAnalytics(env({ RLME_ANALYTICS_MODE: 'maybe' }), NOW)).rejects.toThrow(
-      /unrecognised RLME_ANALYTICS_MODE/,
-    );
-    expect(fetch).not.toHaveBeenCalled();
+    const wire = never();
+    await expect(
+      readAnalytics(env({ RLME_ANALYTICS_MODE: 'maybe' }), NOW, 30, wire),
+    ).rejects.toThrow(/unrecognised RLME_ANALYTICS_MODE/);
+    expect(wire).not.toHaveBeenCalled();
   });
 });
 
 describe('failing closed', () => {
   test('an unreadable secret is a null, not a zero and not a throw', async () => {
     // The expected state until the owner's Secrets Store entry is populated,
-    // and the state every test in this repo runs in.
+    // and the state every harness test in this repo runs in: miniflare's
+    // `secrets_store_secrets` simulation makes `.get()` throw exactly this.
+    const wire = never();
     const result = await readAnalytics(
       env({
         RLME_ANALYTICS_TOKEN: {
@@ -110,41 +129,75 @@ describe('failing closed', () => {
         } as SecretsStoreSecret,
       }),
       NOW,
+      30,
+      wire,
     );
     expect(result).toBeNull();
-    expect(fetch).not.toHaveBeenCalled();
+    expect(wire).not.toHaveBeenCalled();
   });
 
   test('an empty secret is a null, and is not sent as a bearer token', async () => {
+    const wire = never();
     const result = await readAnalytics(
       env({ RLME_ANALYTICS_TOKEN: { get: async () => '' } as SecretsStoreSecret }),
       NOW,
+      30,
+      wire,
     );
     expect(result).toBeNull();
-    expect(fetch).not.toHaveBeenCalled();
+    expect(wire).not.toHaveBeenCalled();
+  });
+
+  test('a secret that is not a string never reaches the wire as "Bearer undefined"', async () => {
+    // The binding's type says `Promise<string>`, so this looks impossible and is
+    // not: a rotated or mis-bound secret is a real state, and without the
+    // `typeof` check the module would spend a round trip to be told 401 while
+    // putting the literal text `Bearer undefined` in an edge log.
+    const wire = never();
+    const result = await readAnalytics(
+      env({
+        RLME_ANALYTICS_TOKEN: {
+          get: async () => undefined,
+        } as unknown as SecretsStoreSecret,
+      }),
+      NOW,
+      30,
+      wire,
+    );
+    expect(result).toBeNull();
+    expect(wire).not.toHaveBeenCalled();
+  });
+
+  test('THE SECRET IS READ ONCE PER CALL, not once per query', async () => {
+    // Three queries used to mean three Secrets Store reads for one page render
+    // -- three independent chances to fail, and a state where two queries could
+    // carry a token the third could not get.
+    const read = vi.fn(async () => 'a-fixture-token');
+    const wire = answering({ data: [] });
+    await readAnalytics(
+      env({ RLME_ANALYTICS_TOKEN: { get: read } as unknown as SecretsStoreSecret }),
+      NOW,
+      30,
+      wire,
+    );
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(wire).toHaveBeenCalledTimes(3);
   });
 
   test('a non-200 is a null', async () => {
-    vi.stubGlobal('fetch', answering({ data: [] }, 403));
-    expect(await readAnalytics(env(), NOW)).toBeNull();
+    expect(await readAnalytics(env(), NOW, 30, answering({ data: [] }, 403))).toBeNull();
   });
 
   test('a network failure is a null', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => {
-        throw new TypeError('network');
-      }),
-    );
-    expect(await readAnalytics(env(), NOW)).toBeNull();
+    const wire = vi.fn<FetchImpl>(async () => {
+      throw new TypeError('network');
+    });
+    expect(await readAnalytics(env(), NOW, 30, wire)).toBeNull();
   });
 
   test('a body that is not JSON is a null', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('<html>an error page</html>')),
-    );
-    expect(await readAnalytics(env(), NOW)).toBeNull();
+    const wire = vi.fn<FetchImpl>(async () => new Response('<html>an error page</html>'));
+    expect(await readAnalytics(env(), NOW, 30, wire)).toBeNull();
   });
 
   test('AN ENVELOPE THIS BUILD DOES NOT RECOGNISE IS A NULL', async () => {
@@ -152,8 +205,8 @@ describe('failing closed', () => {
     // most given that the real envelope has never been measured. `result` here
     // is a plausible alternative spelling of `data`; if that is what the API
     // actually returns, /ops says "not configured" rather than "0 requests".
-    vi.stubGlobal('fetch', answering({ result: [{ requests: 5 }], success: true }));
-    expect(await readAnalytics(env(), NOW)).toBeNull();
+    const wire = answering({ result: [{ requests: 5 }], success: true });
+    expect(await readAnalytics(env(), NOW, 30, wire)).toBeNull();
   });
 
   test('one failing query out of three fails the whole read', async () => {
@@ -161,16 +214,13 @@ describe('failing closed', () => {
     // a request total with an empty agent breakdown reads as "no agents came",
     // which is a different claim from "this could not be read".
     let call = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => {
-        call += 1;
-        return call === 2
-          ? new Response('nope', { status: 500 })
-          : new Response(JSON.stringify({ data: [] }));
-      }),
-    );
-    expect(await readAnalytics(env(), NOW)).toBeNull();
+    const wire = vi.fn<FetchImpl>(async () => {
+      call += 1;
+      return call === 2
+        ? new Response('nope', { status: 500 })
+        : new Response(JSON.stringify({ data: [] }));
+    });
+    expect(await readAnalytics(env(), NOW, 30, wire)).toBeNull();
   });
 });
 
@@ -179,36 +229,34 @@ describe('the query text', () => {
     // The module's own comment calls this "the single most likely way for /ops
     // to be quietly wrong": `count()` counts STORED rows and under-reports
     // exactly when traffic is high enough for the page to be interesting.
-    const stub = answering({ data: [] });
-    vi.stubGlobal('fetch', stub);
-    await readAnalytics(env(), NOW);
+    const wire = answering({ data: [] });
+    await readAnalytics(env(), NOW, 30, wire);
 
-    const bodies = stub.mock.calls.map((call) => String((call[1] as RequestInit).body));
+    const bodies = wire.mock.calls.map(bodyOf);
     expect(bodies).toHaveLength(3);
     for (const body of bodies) {
       expect(body).toContain('SUM(_sample_interval)');
-      expect(body).not.toMatch(/\bcount\(\)/);
+      // CASE-INSENSITIVE: SQL keywords are conventionally upper-cased, so a
+      // `COUNT()` that slipped in is the likelier spelling of this defect and a
+      // case-sensitive pattern would wave it straight through.
+      expect(body).not.toMatch(/\bcount\(\)/i);
     }
   });
 
   test('the window bound reaches the wire as a toDateTime with no timezone suffix', async () => {
-    const stub = answering({ data: [] });
-    vi.stubGlobal('fetch', stub);
-    await readAnalytics(env(), NOW, 30);
+    const wire = answering({ data: [] });
+    await readAnalytics(env(), NOW, 30, wire);
 
-    for (const call of stub.mock.calls) {
-      expect(String((call[1] as RequestInit).body)).toContain(
-        "timestamp >= toDateTime('2026-08-10 12:00:00')",
-      );
+    for (const call of wire.mock.calls) {
+      expect(bodyOf(call)).toContain("timestamp >= toDateTime('2026-08-10 12:00:00')");
     }
   });
 
   test('the account id shapes the URL and the token is sent as a bearer', async () => {
-    const stub = answering({ data: [] });
-    vi.stubGlobal('fetch', stub);
-    await readAnalytics(env(), NOW);
+    const wire = answering({ data: [] });
+    await readAnalytics(env(), NOW, 30, wire);
 
-    const [url, init] = stub.mock.calls[0] as [string, RequestInit];
+    const [url, init] = wire.mock.calls[0] as [string, RequestInit];
     expect(url).toBe(
       'https://api.cloudflare.com/client/v4/accounts/an-account/analytics_engine/sql',
     );
@@ -230,9 +278,11 @@ describe('a recognised envelope', () => {
     });
   };
 
-  const traffic = async (): Promise<AgentTraffic | null> => {
-    vi.stubGlobal(
-      'fetch',
+  const traffic = async (): Promise<AgentTraffic | null> =>
+    await readAnalytics(
+      env(),
+      NOW,
+      30,
       inOrder([
         { data: [{ requests: '120', agent_requests: '30', p50: '41.5' }] },
         {
@@ -244,8 +294,6 @@ describe('a recognised envelope', () => {
         { data: [{ route_class: 'writing', requests: '80' }] },
       ]),
     );
-    return await readAnalytics(env(), NOW, 30);
-  };
 
   test('the three responses become one AgentTraffic, with numbers as numbers', async () => {
     // The strings are deliberate. A SQL API answering over HTTP is entitled to
@@ -267,8 +315,7 @@ describe('a recognised envelope', () => {
   test('an empty result set is zeros rather than null -- silence is not failure', async () => {
     // The distinction the page depends on: `null` means "could not be read",
     // and an empty dataset means "nothing happened", which is a real answer.
-    vi.stubGlobal('fetch', answering({ data: [] }));
-    expect(await readAnalytics(env(), NOW, 30)).toEqual({
+    expect(await readAnalytics(env(), NOW, 30, answering({ data: [] }))).toEqual({
       windowDays: 30,
       requests: 0,
       agentRequests: 0,
@@ -283,15 +330,16 @@ describe('a recognised envelope', () => {
     // SQL API. If it is not supported the agreed answer is to drop the figure
     // and have /ops render "not published"; either way the value that must
     // never appear is a 0 ms median.
-    vi.stubGlobal(
-      'fetch',
+    const result = await readAnalytics(
+      env(),
+      NOW,
+      30,
       inOrder([
         { data: [{ requests: 5, agent_requests: 1, p50: null }] },
         { data: [] },
         { data: [] },
       ]),
     );
-    const result = await readAnalytics(env(), NOW, 30);
     expect(result?.p50Ms).toBeNull();
     expect(result?.requests).toBe(5);
   });
@@ -304,12 +352,12 @@ describe('the AE_BLOB_FIELDS guard', () => {
    * anywhere that the guard can actually fail -- which was the point of making
    * it a throw rather than `void AE_BLOB_FIELDS`.
    */
-  const withFields = async (fields: string[]) => {
+  const withFields = async (fields: string[], wire: ReturnType<typeof answering>) => {
     vi.resetModules();
     vi.doMock('../src/lib/agent-intel/record', () => ({ AE_BLOB_FIELDS: fields }));
     const module = await import('../src/lib/ops/analytics');
     try {
-      return await module.readAnalytics(env(), NOW);
+      return await module.readAnalytics(env(), NOW, 30, wire);
     } finally {
       vi.doUnmock('../src/lib/agent-intel/record');
       vi.resetModules();
@@ -319,15 +367,15 @@ describe('the AE_BLOB_FIELDS guard', () => {
   const REAL = ['agent_class', 'agent', 'route_class', 'referrer_class', 'surface', 'status_class'];
 
   test('the real order passes the guard', async () => {
-    vi.stubGlobal('fetch', answering({ data: [] }));
-    await expect(withFields([...REAL])).resolves.not.toBeNull();
+    await expect(withFields([...REAL], answering({ data: [] }))).resolves.not.toBeNull();
   });
 
   test('swapping the first two positions throws before any query runs', async () => {
-    await expect(withFields(['agent', 'agent_class', ...REAL.slice(2)])).rejects.toThrow(
+    const wire = never();
+    await expect(withFields(['agent', 'agent_class', ...REAL.slice(2)], wire)).rejects.toThrow(
       /AE_BLOB_FIELDS was reordered/,
     );
-    expect(fetch).not.toHaveBeenCalled();
+    expect(wire).not.toHaveBeenCalled();
   });
 
   test('moving ONLY blob3 throws too', async () => {
@@ -335,21 +383,49 @@ describe('the AE_BLOB_FIELDS guard', () => {
     // `route_class`, which the by-route-class query groups by -- a reorder that
     // left the first two alone would have relabelled that whole breakdown while
     // passing a two-position check.
-    await expect(withFields(['agent_class', 'agent', 'surface', 'route_class'])).rejects.toThrow(
-      /AE_BLOB_FIELDS was reordered/,
-    );
-    expect(fetch).not.toHaveBeenCalled();
+    const wire = never();
+    await expect(
+      withFields(['agent_class', 'agent', 'surface', 'route_class'], wire),
+    ).rejects.toThrow(/AE_BLOB_FIELDS was reordered/);
+    expect(wire).not.toHaveBeenCalled();
+  });
+
+  test('the guard runs BEFORE the secret is read', async () => {
+    // Ordering worth pinning: a reorder is a programming error and must be loud
+    // whether or not the page is configured. If the token read came first, the
+    // throw would be unreachable in every unconfigured environment -- which is
+    // all of them today.
+    const read = vi.fn(async () => 'a-fixture-token');
+    vi.resetModules();
+    vi.doMock('../src/lib/agent-intel/record', () => ({
+      AE_BLOB_FIELDS: ['agent', 'agent_class', ...REAL.slice(2)],
+    }));
+    const module = await import('../src/lib/ops/analytics');
+    try {
+      await expect(
+        module.readAnalytics(
+          env({ RLME_ANALYTICS_TOKEN: { get: read } as unknown as SecretsStoreSecret }),
+          NOW,
+          30,
+          never(),
+        ),
+      ).rejects.toThrow(/AE_BLOB_FIELDS was reordered/);
+      expect(read).not.toHaveBeenCalled();
+    } finally {
+      vi.doUnmock('../src/lib/agent-intel/record');
+      vi.resetModules();
+    }
   });
 });
 
 describe('readSpend', () => {
   test('RETURNS NULL UNCONDITIONALLY, because the response was never measured', async () => {
-    // Pinning a deliberate gap, not a behaviour. The AI Gateway envelope has
-    // never been seen (see the head of src/lib/ops/analytics.ts for why the
-    // probe could not run), so there is no parse to test -- and a plausible
-    // parse written blind would look finished, typecheck, and return null
-    // forever against a real response that differs by one field name, which is
-    // indistinguishable on the page from "not configured".
+    // Pinning a deliberate gap, not a behaviour. Neither the AI Gateway
+    // ENDPOINT nor its envelope has been settled -- the two possibilities are
+    // named at the head of src/lib/ops/analytics.ts -- so there is no parse to
+    // test, and a plausible parse written blind would look finished, typecheck,
+    // and return null forever against a real response that differs by one field
+    // name, which is indistinguishable on the page from "not configured".
     //
     // WHOEVER WRITES THAT PARSE MUST DELETE THIS TEST. That is the point of it:
     // it fails the moment the function starts working, so the gap cannot be

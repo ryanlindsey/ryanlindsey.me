@@ -30,6 +30,12 @@ beforeAll(async () => {
   db = (await site.getEnv()).DB;
   const now = new Date('2026-09-09T12:00:00.000Z').toISOString();
   const old = new Date('2026-06-01T12:00:00.000Z').toISOString();
+  // EVERY row this file asserts on is seeded here, including the chat turns and
+  // the eval runs. An earlier version seeded those two inside the tests that
+  // read them, which made the zero-window test below pass only because it was
+  // DECLARED FIRST -- and `evalRuns` is deliberately un-windowed, so no date
+  // argument could have isolated it. A reorder, a `.only`, or
+  // `--sequence.shuffle` would have turned that into a spurious failure.
   await db.batch([
     db
       .prepare(
@@ -55,6 +61,31 @@ beforeAll(async () => {
        VALUES (?, 'get_resume', 'h', 'public', NULL, 'ok', 12)`,
       )
       .bind(old),
+    // Two turns in one session and one in another, so `chatSessions` and
+    // `chatTurns` differ and a query counting rows for both would fail.
+    ...['a', 'b', 'c'].map((id, index) =>
+      db
+        .prepare(
+          `INSERT INTO chat_turns (id, session_id, created_at, question, answer, model,
+                                   sources_json, cited, invalid_citations, outcome, duration_ms, surface)
+           VALUES (?, ?, ?, 'what-a-visitor-typed', 'an-answer', 'm', '[]', 0, 0, 'ok', 10, 'site')`,
+        )
+        .bind(id, index === 2 ? 'session-2' : 'session-1', '2026-09-09T09:00:00.000Z'),
+    ),
+    // Two runs of one suite and one of another, so "latest per suite" has
+    // something to be wrong about.
+    db.prepare(
+      `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed)
+         VALUES ('2026-09-01T00:00:00.000Z', 'chat', 'm', 10, 5, 5)`,
+    ),
+    db.prepare(
+      `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed)
+         VALUES ('2026-09-08T00:00:00.000Z', 'chat', 'm', 10, 9, 1)`,
+    ),
+    db.prepare(
+      `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed)
+         VALUES ('2026-09-07T00:00:00.000Z', 'tier', 'm', 4, 4, 0)`,
+    ),
   ]);
 });
 
@@ -81,30 +112,21 @@ describe('readOpsMetrics', () => {
     expect(wide.toolCalls).toEqual([{ tool: 'get_resume', calls: 3 }]);
   });
 
-  test('an empty database reports zeros rather than throwing', async () => {
+  test('a window containing no row reports zeros rather than throwing', async () => {
+    // Every WINDOWED figure, against a window seeded rows cannot reach. This
+    // holds whatever else has run, which is the point of it -- the brief's
+    // version also asserted `evalRuns` was empty, and that was only ever true
+    // because the eval rows had not been inserted yet. `evalRuns` is
+    // deliberately un-windowed, so it is asserted in the two tests below
+    // instead, where the property is actually the subject.
     const metrics = await readOpsMetrics(db, new Date('2020-01-01T00:00:00.000Z'), 1);
     expect(metrics.toolCalls).toEqual([]);
     expect(metrics.chatSessions).toBe(0);
-    expect(metrics.evalRuns).toEqual([]);
+    expect(metrics.chatTurns).toBe(0);
+    expect(metrics.fitRuns).toBe(0);
   });
 
   test('chat sessions are distinct sessions, and turns are turns', async () => {
-    // Two turns in one session and one in another: the two numbers differ, so a
-    // query that had counted rows for both would pass a single-session fixture
-    // and fail here.
-    const at = '2026-09-09T09:00:00.000Z';
-    await db.batch(
-      ['a', 'b', 'c'].map((id, index) =>
-        db
-          .prepare(
-            `INSERT INTO chat_turns (id, session_id, created_at, question, answer, model,
-                                     sources_json, cited, invalid_citations, outcome, duration_ms, surface)
-             VALUES (?, ?, ?, 'what-a-visitor-typed', 'an-answer', 'm', '[]', 0, 0, 'ok', 10, 'site')`,
-          )
-          .bind(id, index === 2 ? 'session-2' : 'session-1', at),
-      ),
-    );
-
     const metrics = await readOpsMetrics(db, new Date('2026-09-09T12:00:00.000Z'), 30);
     expect(metrics.chatSessions).toBe(2);
     expect(metrics.chatTurns).toBe(3);
@@ -115,21 +137,8 @@ describe('readOpsMetrics', () => {
   });
 
   test('eval runs are the LATEST run per suite, not every run', async () => {
-    await db.batch([
-      db.prepare(
-        `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed)
-           VALUES ('2026-09-01T00:00:00.000Z', 'chat', 'm', 10, 5, 5)`,
-      ),
-      db.prepare(
-        `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed)
-           VALUES ('2026-09-08T00:00:00.000Z', 'chat', 'm', 10, 9, 1)`,
-      ),
-      db.prepare(
-        `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed)
-           VALUES ('2026-09-07T00:00:00.000Z', 'tier', 'm', 4, 4, 0)`,
-      ),
-    ]);
-
+    // Three seeded rows, two of them the same suite: the older `chat` run must
+    // not appear at all.
     const metrics = await readOpsMetrics(db, new Date('2026-09-09T12:00:00.000Z'), 30);
     expect(metrics.evalRuns).toEqual([
       { ranAt: '2026-09-08T00:00:00.000Z', suite: 'chat', total: 10, passed: 9, failed: 1 },

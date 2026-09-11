@@ -96,16 +96,26 @@ export const SITE_WORKER = {
      * declares it, an unrecognised value throws, and 'stub' is the only
      * accepted value here.
      *
-     * Two reasons, the first shared with `RLME_TURNSTILE_MODE` and
-     * `RLME_NOTIFY_MODE` and the second particular to this one. The harness has
-     * no populated local secrets store, so `RLME_ANALYTICS_TOKEN.get()` throws
-     * here -- and the module ALREADY treats that as `null`, so the seam is not
-     * what makes this suite credential-free. What it adds is the outbound half:
-     * without it, any page rendered under the harness that reaches
-     * `readAnalytics` would issue three real requests to api.cloudflare.com
-     * before the missing secret was noticed. Under 'stub' it returns `null`
-     * before the secret read and before the network, which is the same answer
-     * an unconfigured deployment gets.
+     * WHAT IT IS NOT FOR, said first because the obvious reading is wrong:
+     * this seam is not what keeps the harness off the network. `readAnalytics`
+     * reads the Secrets Store secret BEFORE it fetches and returns `null` from
+     * that read's catch, and miniflare simulates `secrets_store_secrets`
+     * against a local store nothing has populated, so `.get()` raises
+     * `Secret "..." not found` here (measured in day 5 Task 2, recorded in
+     * tests/tier-grant.test.ts). Without this var the harness would therefore
+     * issue ZERO requests to api.cloudflare.com, not three -- an earlier
+     * version of this comment claimed three, which the module's own order of
+     * operations contradicts.
+     *
+     * WHAT IT IS FOR: pinning the harness's /ops state at "not configured"
+     * DETERMINISTICALLY, by a var this repo controls rather than as a
+     * side effect of how a simulated binding happens to fail. The `null` above
+     * is real but incidental -- it depends on miniflare continuing to throw on
+     * an unpopulated store, which is emulator behaviour nobody here owns, and a
+     * future version that answered `''` or `undefined` instead would change
+     * which branch these tests take without changing a line of this repo. Under
+     * 'stub' the answer comes from the first three lines of the function and
+     * cannot drift.
      *
      * So what a page test under this harness sees is /ops's "not configured"
      * rendering, and that is the only /ops state any test in this repo
