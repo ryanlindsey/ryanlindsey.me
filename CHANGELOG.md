@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.9.2...ryanlindsey-me-v1.10.0) (2026-09-11)
+
+
+### Features
+
+* **agent-intel:** classify agent traffic, record datapoints and notify on high intent ([#60](https://github.com/ryanlindsey/ryanlindsey.me/issues/60)) ([e80f7dc](https://github.com/ryanlindsey/ryanlindsey.me/commit/e80f7dc29a16d9631a50b18d04fdc7405c99a4ff))
+
 ## [1.9.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.9.1...ryanlindsey-me-v1.9.2) (2026-09-11)
 
 
