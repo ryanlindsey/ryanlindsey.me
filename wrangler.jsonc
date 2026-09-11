@@ -328,16 +328,26 @@
     // for itself (10 §3.1). Scoped to Account Analytics Read and AI Gateway
     // Read on this account only; it can create, change and deploy nothing.
     //
-    // WHICH gateway endpoint it will be spent against is UNDETERMINED. Two
-    // possibilities, neither of them called by anyone here: the REST route
-    // `/accounts/{account}/ai-gateway/gateways/{id}` and the GraphQL dataset
-    // `aiGatewayRequestsAdaptiveGroups`. The plan's Step 3 probe decides, and
-    // until it runs `readSpend` in src/lib/ops/analytics.ts is empty on purpose
-    // -- that module's comment says the same thing at more length, and the two
-    // are meant to be edited together. The Analytics Engine half is settled by
-    // comparison: its SQL API is a POST to
-    // `/accounts/{account}/analytics_engine/sql`, though its response envelope
-    // is an equally unmeasured guess.
+    // WHICH gateway endpoint it is spent against is DETERMINED, MEASURED
+    // 2026-09-11 against this account with this token, through a temporary
+    // Worker route under `wrangler dev --remote` (deleted before committing):
+    //
+    //   - THE GRAPHQL DATASET `aiGatewayRequestsAdaptiveGroups` ANSWERS 200
+    //     with the spend, request and cache-hit numbers /ops publishes. POST to
+    //     `https://api.cloudflare.com/client/v4/graphql`. This is the one
+    //     `readSpend` in src/lib/ops/analytics.ts now calls.
+    //   - THE REST ROUTE `/accounts/{account}/ai-gateway/gateways/{id}` ANSWERS
+    //     403 `{"code":10000,"message":"Authentication error"}`. Ruled out for
+    //     this token; do not reach for it again on the assumption that the
+    //     GraphQL query is the awkward way round.
+    //
+    // The Analytics Engine half was measured in the same run: a POST to
+    // `/accounts/{account}/analytics_engine/sql` answering
+    // `{ meta, data, rows, rows_before_limit_at_least }`, with `UInt64` columns
+    // as JSON strings and `Float64` as numbers. src/lib/ops/analytics.ts
+    // transcribes the recorded envelopes at more length -- the probe's raw
+    // output is in gitignored working notes, so those comments and this one are
+    // the record, and the two are meant to be edited together.
     //
     // Read by src/lib/ops/analytics.ts and nowhere else. Its absence is a
     // labelled "not configured" section on /ops, never a zero and never a

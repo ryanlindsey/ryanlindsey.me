@@ -118,9 +118,10 @@ export const SITE_WORKER = {
      * STRING instead -- the plausible alternative, since the point of a
      * simulated secret is to hand back something -- would pass `readToken`'s
      * `typeof`/non-empty check, and `readAnalytics` would then issue its three
-     * real POSTs to api.cloudflare.com from CI, with a junk bearer token,
-     * without a line of this repo changing. That is what this var buys, and it
-     * is why the seam earns its place.
+     * real POSTs to api.cloudflare.com from CI, with a junk bearer token, plus
+     * `readSpend`'s GraphQL POST as a fourth, without a line of this repo
+     * changing. That is what this var buys, and it is why the seam earns its
+     * place.
      *
      * `''` AND `undefined` WOULD NOT DO THAT, and an earlier version of this
      * sentence claimed they would "change which branch these tests take":
@@ -132,10 +133,11 @@ export const SITE_WORKER = {
      *
      * So what a page test under this harness sees is /ops's "not configured"
      * rendering, and that is the only /ops state any test in this repo
-     * exercises. The parse of a REAL response is exercised nowhere -- the two
-     * API envelopes have never been measured (src/lib/ops/analytics.ts records
-     * why), and tests/ops-analytics.test.ts asserts only that a fixture of the
-     * assumed envelope maps correctly and that everything else fails closed.
+     * exercises. No test here calls the real service, and none ever should --
+     * but the envelopes are no longer guesses to be tested against: both were
+     * measured on 2026-09-11 (src/lib/ops/analytics.ts records the bodies), and
+     * tests/ops-analytics.test.ts parses copies of the recorded responses
+     * through an injected `fetch`, with everything else asserted to fail closed.
      */
     RLME_ANALYTICS_MODE: 'stub',
   },

@@ -114,7 +114,7 @@ const [metrics, traffic, spend]: [OpsMetrics | null, AgentTraffic | null, Gatewa
   await Promise.all([
     readOrNull('ops:metrics:v1', () => readOpsMetrics(env.DB, now, WINDOW_DAYS)),
     readOrNull('ops:traffic:v1', () => readAnalytics(env, now, WINDOW_DAYS)),
-    readOrNull('ops:spend:v1', () => readSpend(env)),
+    readOrNull('ops:spend:v1', () => readSpend(env, now, WINDOW_DAYS)),
   ]);
 
 /**
@@ -128,9 +128,19 @@ const D1_ABSENT = {
   absentReason: 'the metrics store could not be read',
 };
 
-/** The absence wording for the gateway half -- see `readSpend`'s own comment. */
+/**
+ * The absence wording for the gateway half.
+ *
+ * THE SECOND CLAUSE IS GONE, and its removal is the point rather than a tidy-up:
+ * it used to read "and the gateway read is unwritten", which was true of the
+ * empty `readSpend` it was written beside and became false the moment that
+ * function got its measured parse. The read is written; what is missing when
+ * these three tiles are blank is the token, exactly as it is for the Analytics
+ * Engine tiles above -- which is the state of every test run and of production
+ * until the Secrets Store entry is populated.
+ */
 const GATEWAY_ABSENT = {
-  absentReason: 'this needs the read-only analytics token, and the gateway read is unwritten',
+  absentReason: 'this needs the read-only analytics token',
 };
 
 /** A figure with thousands separators, or `null` when there is no figure. */
@@ -514,11 +524,13 @@ const releases = recentReleases(changelog, 5);
         />
       </div>
       <p class="mt-8 max-w-2xl text-small text-ink-muted">
-        The gateway's own figures are not published yet, and the reason is worth stating plainly
-        rather than hiding behind the label: the shape of its response has never been measured from
-        this account, so there is no parse to trust and a plausible-looking number here would be
-        indistinguishable from a real one. It stays blank until somebody records what the API
-        actually returns.
+        These three are the gateway's own accounting, read from its GraphQL API over the same window
+        as everything above — what the account was actually billed, rather than an estimate worked
+        out from token counts here. When they are blank it is because the read-only token this site
+        reads them with was not available, which is a different statement from nothing having been
+        spent. The token counts behind the cost are deliberately not published: the dollar figure is
+        the one that means anything to a reader, and the rest is detail about other people's
+        questions.
       </p>
     </section>
 
