@@ -68,12 +68,34 @@ export async function readOpsMetrics(
     db
       .prepare(`SELECT COUNT(*) AS runs FROM fit_reports WHERE created_at >= ? AND created_at <= ?`)
       .bind(since, until),
-    // The latest row per suite. A correlated MAX rather than a window function:
-    // D1 is SQLite and supports both, and this shape reads the same to whoever
-    // checks it against the table by hand.
+    // The latest row per suite. A correlated subquery rather than a window
+    // function: D1 is SQLite and supports both, and this shape reads the same to
+    // whoever checks it against the table by hand.
+    //
+    // IT CORRELATES ON `id`, NOT ON `MAX(ran_at)`, AND THAT IS A BUG FIX RATHER
+    // THAN A PREFERENCE. `WHERE ran_at = (SELECT MAX(ran_at) ...)` is a filter,
+    // not a picker: EVERY row tied at a suite's maximum timestamp satisfies it.
+    // MEASURED on /ops against a seeded database (day 6 Task 11 fix round 1):
+    // five `eval_runs` rows shared one `(suite, ran_at)` and the page rendered
+    // that suite five times under a heading reading "latest run per suite",
+    // which is indistinguishable from a broken page.
+    //
+    // Ties are not a contrivance. `ran_at` is TEXT written by the eval harness,
+    // so two suites -- or two runs of one suite -- finishing inside the same
+    // stamped instant collide exactly, and a re-run of a recorded timestamp
+    // collides deliberately.
+    //
+    // `ORDER BY ran_at DESC, id DESC LIMIT 1` picks ONE row and always the same
+    // one: newest by stamp, and among equal stamps the row inserted last, which
+    // is the only thing this table knows about the order two identical
+    // timestamps actually happened in. `id` is `INTEGER PRIMARY KEY
+    // AUTOINCREMENT` (migrations/0002), so it is never reused and never NULL.
     db.prepare(
       `SELECT ran_at, suite, total, passed, failed FROM eval_runs
-        WHERE ran_at = (SELECT MAX(ran_at) FROM eval_runs AS inner WHERE inner.suite = eval_runs.suite)
+        WHERE id = (SELECT id FROM eval_runs AS latest
+                     WHERE latest.suite = eval_runs.suite
+                     ORDER BY latest.ran_at DESC, latest.id DESC
+                     LIMIT 1)
         ORDER BY suite ASC`,
     ),
   ]);
