@@ -156,7 +156,7 @@ describe('/ops', () => {
     for (const label of [
       'Requests that reached the Worker',
       'Requests from agents',
-      'Median response time',
+      'Median Worker time per request',
     ]) {
       const metric = tile(label);
       expect(metric, `${label} must render its absence`).toContain('not configured');

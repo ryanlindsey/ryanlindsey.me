@@ -474,7 +474,9 @@ export async function readAnalytics(
     // THE MEASURED 0 IS THAT, NOT A FAST SITE. The 2026-09-11 probe returned
     // `p50: 0` over 1041 requests, which is what a Worker whose median request
     // renders from memory looks like -- it is structural, and a reader seeing
-    // "Median response time — 0 ms" would take it for a claim about speed.
+    // "Median Worker time per request — 0 ms" is the honest framing; the label
+    // this replaced, "Median response time", would have been read as a claim
+    // about how fast the site answers, which this number does not measure.
     // /ops therefore carries a note on that tile saying what the figure is; the
     // label itself overstates it and is the owner's to settle (see the task
     // report). Recorded here so nobody "fixes" a 0 that is not broken.

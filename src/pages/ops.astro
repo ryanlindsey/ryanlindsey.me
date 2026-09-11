@@ -393,7 +393,7 @@ const releases = recentReleases(changelog, 5);
           */
         }
         <OpsMetric
-          label="Median response time"
+          label="Median Worker time per request"
           value={traffic === null || traffic.p50Ms === null
             ? null
             : `${Math.round(traffic.p50Ms)} ms`}
