@@ -1,0 +1,527 @@
+---
+import { env } from 'cloudflare:workers';
+import Shell from '../layouts/Shell.astro';
+import ArchitectureDiagram from '../components/ArchitectureDiagram.astro';
+import OpsMetric from '../components/OpsMetric.astro';
+import changelog from '../../CHANGELOG.md?raw';
+import { CHAT_MODEL } from '../lib/chat/engine';
+import { CHAT_ERROR_COPY } from '../lib/chat/errors';
+import { CORPUS_EMBEDDING_MODEL } from '../lib/corpus';
+import { FIT_MODEL } from '../lib/fit/engine';
+import { GLOBAL_LIMITS, LIMITS, type ToolCost } from '../lib/mcp/limits';
+import {
+  readAnalytics,
+  readSpend,
+  type AgentTraffic,
+  type GatewaySpend,
+} from '../lib/ops/analytics';
+import { cached } from '../lib/ops/cache';
+import { recentReleases } from '../lib/ops/changelog';
+import { readOpsMetrics, type OpsMetrics } from '../lib/ops/metrics';
+import { formatWindow, RETENTION } from '../lib/retention';
+
+/**
+ * The living colophon (06 §1): what this site is, what it has done lately, what
+ * it costs, and what it does when a part of it fails.
+ *
+ * ON-DEMAND, because every figure on it is read at request time. A prerendered
+ * /ops would publish the numbers the build machine happened to see, which is
+ * the one thing this page must not do.
+ *
+ * AGGREGATE AND PUBLIC-TIER ONLY (09 §2). No campaign label, no audience, no
+ * gated tool name, no per-token figure and no visitor's question renders here.
+ * The filtering is done in SQL, one layer down (src/lib/ops/metrics.ts), and is
+ * deliberately NOT repeated in this template: a page that receives only public
+ * rows cannot leak one by forgetting a condition, while a page that receives
+ * everything and filters on render leaks the first time somebody adds a
+ * section. Nothing below reads a field the read layer did not already narrow.
+ */
+export const prerender = false;
+
+/**
+ * Sixty seconds, matching the KV TTL below. The figures are at most a minute
+ * old, so an intermediary caching them for longer would be publishing a number
+ * this page has already replaced.
+ */
+Astro.response.headers.set('Cache-Control', 'public, max-age=60');
+
+/** The window every counted figure on this page is measured over. */
+const WINDOW_DAYS = 30;
+
+interface OpsSnapshot {
+  metrics: OpsMetrics;
+  traffic: AgentTraffic | null;
+  spend: GatewaySpend | null;
+}
+
+/**
+ * The three reads, behind one 60-second cache entry.
+ *
+ * THE TRY IS AROUND THE CACHE CALL RATHER THAN INSIDE IT, and the placement is
+ * the whole design. `readOpsMetrics` returns `Promise<OpsMetrics>`, not
+ * `| null`, and carries no internal try -- deliberately, since a caller that
+ * wants the numbers should hear about a D1 outage rather than receive a shape
+ * that looks like zero traffic. This page is the caller, and what it wants is
+ * to degrade: an unhandled rejection here is a 500 on a public page whose
+ * entire premise is that it tells you what it knows. So the rejection is caught
+ * here and the sections render the same labelled cannot-say state the
+ * credentialed reads use, with their own wording.
+ *
+ * Catching OUTSIDE `cached` is what keeps the failure from being pinned.
+ * `cached` writes nothing when `fn` rejects, so a D1 blip degrades this one
+ * render and the next request retries -- where a `catch` inside the callback
+ * would have stored a degraded snapshot and served it for the whole minute.
+ *
+ * WHAT THE SINGLE KEY COSTS, said out loud because the cache module's own
+ * comment promises the opposite for a bare `null`: the snapshot is stored
+ * whole, so a `null` HALF of it (an unconfigured analytics read) is cached
+ * along with the D1 half and is not retried until the entry expires. That is
+ * the plan's key shape and the cost is bounded at sixty seconds, which is the
+ * same staleness every other figure here already carries.
+ */
+let snapshot: OpsSnapshot | null = null;
+try {
+  snapshot = await cached<OpsSnapshot>(env.KV_CACHE, 'ops:v1', 60, async () => {
+    const now = new Date();
+    const [metrics, traffic, spend] = await Promise.all([
+      readOpsMetrics(env.DB, now, WINDOW_DAYS),
+      readAnalytics(env, now, WINDOW_DAYS),
+      readSpend(env),
+    ]);
+    return { metrics, traffic, spend };
+  });
+} catch (error) {
+  // The operator gets the exception in Workers observability; the reader gets a
+  // sentence saying the figures are not available. A stack trace on a public
+  // page would be both a worse answer and a disclosure.
+  console.error('ops: the live figures could not be read', error);
+}
+
+const metrics = snapshot?.metrics ?? null;
+const traffic = snapshot?.traffic ?? null;
+const spend = snapshot?.spend ?? null;
+
+/**
+ * The absence wording for the uncredentialed half. Different from the default
+ * on `OpsMetric` on purpose: when D1 does not answer, the read-only analytics
+ * token is not what is missing, and telling a reader to go and configure one
+ * would send them after the wrong thing.
+ */
+const D1_ABSENT = {
+  absentState: 'not available',
+  absentReason: 'the metrics store could not be read',
+};
+
+/** The absence wording for the gateway half -- see `readSpend`'s own comment. */
+const GATEWAY_ABSENT = {
+  absentReason: 'this needs the read-only analytics token, and the gateway read is unwritten',
+};
+
+/** A figure with thousands separators, or `null` when there is no figure. */
+const count = (value: number | null | undefined): string | null =>
+  value === null || value === undefined ? null : value.toLocaleString('en-US');
+
+const toolCalls =
+  metrics === null ? null : metrics.toolCalls.reduce((total, row) => total + row.calls, 0);
+
+/**
+ * A stored timestamp as a date and never a time (10 §1.4). The published rule
+ * is that this site does not publish a time of day for the owner's activity,
+ * and an eval feed stamped to the minute is a working-hours graph that nobody
+ * would think to audit because the numbers are all about software.
+ *
+ * Guarded the same shape as the fit permalink's own `dateLabel`, and for the
+ * same reason: `toISOString()` throws a `RangeError` on an `Invalid Date`, and
+ * a row this page did not write is not the place to assume it never will.
+ */
+function dateOnly(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'an unknown date' : date.toISOString().slice(0, 10);
+}
+
+/** A limiter period as the phrase a reader can hold in their head. */
+function per(seconds: number): string {
+  if (seconds === 60) return 'minute';
+  if (seconds === 3_600) return 'hour';
+  if (seconds === 86_400) return 'day';
+  return `${seconds / 60} minutes`;
+}
+
+const limitPhrase = (cost: ToolCost): string =>
+  `${LIMITS[cost].limit} per ${per(LIMITS[cost].periodSeconds)}`;
+
+/**
+ * The limits this page publishes, and what each one is in English.
+ *
+ * PUBLIC-TIER CLASSES ONLY. `LIMITS` also carries the `expensive` bucket, which
+ * belongs to a token-scoped surface; publishing its cap would say that surface
+ * exists and roughly what it costs, on the page most likely to be read by
+ * somebody probing for it. The numbers come from the constant either way --
+ * this is a choice about which rows to render, never a second copy of one.
+ */
+const LIMIT_ROWS: { cost: ToolCost; what: string }[] = [
+  { cost: 'cheap', what: 'Reading a published document over MCP' },
+  { cost: 'inference', what: 'Semantic search over the corpus' },
+  { cost: 'conversation', what: 'A chat message' },
+];
+
+/**
+ * What each retained table holds, in the reader's words rather than the
+ * schema's. The windows themselves come from `RETENTION`, so the sentence and
+ * the cron cannot drift; a table added there without an entry here falls back
+ * to its own name rather than rendering `undefined`.
+ */
+const RETENTION_LABELS: Record<string, string> = {
+  chat_turns: 'Chat questions and answers',
+  mcp_tool_calls: 'The MCP audit log',
+  fit_reports: 'Stored analysis reports',
+};
+
+const releases = recentReleases(changelog, 5);
+---
+
+<Shell
+  title="Ops — Ryan Lindsey"
+  description="What this site is running, what it has served in the last 30 days, which models it spends, how it degrades, and what shipped — every figure labelled with the system it was read from."
+>
+  <div class="mx-auto max-w-5xl px-6 py-16">
+    <p class="mb-6 border-t border-accent pt-3 font-mono text-micro uppercase text-accent">Ops</p>
+    <h1 class="font-display text-display text-ink">How this site runs</h1>
+    <p class="mt-6 max-w-2xl text-ink-muted">
+      This is a production system rather than a page about one, so here is what it is made of and
+      what it has actually been doing. Every figure below says which system it was read from, and
+      every one that could not be read says that instead of showing a zero. The numbers are read
+      when you load the page and held for sixty seconds.
+    </p>
+
+    {/* ---------------------------------------------------------------- 1 */}
+    <section class="mt-20" aria-labelledby="architecture">
+      <p class="font-mono text-micro uppercase text-accent">Deployed shape</p>
+      <h2
+        id="architecture"
+        class="mt-2 border-b border-rule pb-3 font-display text-heading text-ink"
+      >
+        Architecture
+      </h2>
+      <p class="mt-6 max-w-2xl text-ink-muted">
+        Two Cloudflare Workers. The site Worker renders the pages and serves the assets; the MCP
+        Worker holds the protocol endpoint and everything that spends inference, because the
+        bindings that call a model cannot live in the configuration the site is built from. They
+        call each other over service bindings in both directions, which is legal and deliberate: a
+        binding resolves when it is called, not when the Worker is defined.
+      </p>
+      <ArchitectureDiagram />
+    </section>
+
+    {/* ---------------------------------------------------------------- 2 */}
+    <section class="mt-20" aria-labelledby="live-metrics">
+      <p class="font-mono text-micro uppercase text-accent">Last {formatWindow(WINDOW_DAYS)}</p>
+      <h2
+        id="live-metrics"
+        class="mt-2 border-b border-rule pb-3 font-display text-heading text-ink"
+      >
+        Live metrics
+      </h2>
+      <div class="mt-8 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+        <OpsMetric
+          label="Public MCP tool calls"
+          value={count(toolCalls)}
+          source="D1"
+          {...D1_ABSENT}
+        />
+        <OpsMetric
+          label="Chat sessions"
+          value={count(metrics?.chatSessions)}
+          source="D1"
+          {...D1_ABSENT}
+        />
+        <OpsMetric
+          label="Chat turns"
+          value={count(metrics?.chatTurns)}
+          source="D1"
+          {...D1_ABSENT}
+        />
+        <OpsMetric
+          label="Fit analyses run"
+          value={count(metrics?.fitRuns)}
+          source="D1"
+          {...D1_ABSENT}
+        />
+        {
+          /*
+            The partial figure, and the label is the fix for the partiality
+            rather than more instrumentation. `run_worker_first` (wrangler.jsonc)
+            names the content and agent-signal routes, so those requests reach
+            the Worker and are counted; the home page is deliberately not on that
+            list, because adding an invocation in front of the busiest and least
+            informative path on the site to improve this number would be paying
+            for a better statistic rather than a truer one.
+          */
+        }
+        <OpsMetric
+          label="Requests that reached the Worker"
+          value={count(traffic?.requests)}
+          source="Analytics Engine"
+          note="Static sub-resources and the home page are served without a Worker invocation, so they are not in this figure. Every agent-signal route — llms.txt, the markdown variants, the feeds, the résumé formats — is."
+        />
+        <OpsMetric
+          label="Requests from agents"
+          value={count(traffic?.agentRequests)}
+          source="Analytics Engine"
+        />
+        <OpsMetric
+          label="Median response time"
+          value={traffic === null || traffic.p50Ms === null
+            ? null
+            : `${Math.round(traffic.p50Ms)} ms`}
+          source="Analytics Engine"
+        />
+      </div>
+
+      {
+        metrics !== null && metrics.toolCalls.length > 0 && (
+          <div class="mt-12">
+            <p class="font-mono text-micro uppercase text-ink">By tool</p>
+            <ul class="mt-4 max-w-md divide-y divide-rule border-t border-rule">
+              {metrics.toolCalls.map((row) => (
+                <li class="flex items-baseline justify-between gap-6 py-2">
+                  <span class="font-mono text-small text-ink-muted">{row.tool}</span>
+                  <span class="font-mono text-small text-ink" data-numeric>
+                    {count(row.calls)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      }
+    </section>
+
+    {/* ---------------------------------------------------------------- 3 */}
+    <section class="mt-20" aria-labelledby="model-cost">
+      <p class="font-mono text-micro uppercase text-accent">Constants in this build</p>
+      <h2 id="model-cost" class="mt-2 border-b border-rule pb-3 font-display text-heading text-ink">
+        Model &amp; cost
+      </h2>
+      <p class="mt-6 max-w-2xl text-ink-muted">
+        Three models, named from the constants the code calls rather than typed out here, so this
+        list cannot describe a model the site has stopped using.
+      </p>
+
+      <dl class="mt-8 max-w-2xl divide-y divide-rule border-t border-rule">
+        {
+          [
+            { what: 'Chat answers', model: CHAT_MODEL },
+            { what: 'Fit analysis', model: FIT_MODEL },
+            { what: 'Corpus embeddings', model: CORPUS_EMBEDDING_MODEL },
+          ].map((row) => (
+            <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
+              <dt class="font-mono text-micro uppercase text-ink">{row.what}</dt>
+              <dd class="font-mono text-small break-words text-ink-muted">{row.model}</dd>
+            </div>
+          ))
+        }
+      </dl>
+
+      <div class="mt-10 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+        <OpsMetric
+          label="Inference spend"
+          value={spend === null ? null : `$${spend.costUsd.toFixed(2)}`}
+          source="AI Gateway"
+          {...GATEWAY_ABSENT}
+        />
+        <OpsMetric
+          label="Requests through the gateway"
+          value={count(spend?.requests)}
+          source="AI Gateway"
+          {...GATEWAY_ABSENT}
+        />
+        <OpsMetric
+          label="Served from the gateway cache"
+          value={count(spend?.cachedRequests)}
+          source="AI Gateway"
+          {...GATEWAY_ABSENT}
+        />
+      </div>
+      <p class="mt-8 max-w-2xl text-small text-ink-muted">
+        The gateway's own figures are not published yet, and the reason is worth stating plainly
+        rather than hiding behind the label: the shape of its response has never been measured from
+        this account, so there is no parse to trust and a plausible-looking number here would be
+        indistinguishable from a real one. It stays blank until somebody records what the API
+        actually returns.
+      </p>
+    </section>
+
+    {/* ---------------------------------------------------------------- 4 */}
+    <section class="mt-20" aria-labelledby="evals">
+      <p class="font-mono text-micro uppercase text-accent">Latest run per suite</p>
+      <h2 id="evals" class="mt-2 border-b border-rule pb-3 font-display text-heading text-ink">
+        Evals
+      </h2>
+      <p class="mt-6 max-w-2xl text-ink-muted">
+        The suites that run against the deployed endpoints: grounded answers, citation integrity,
+        and the checks that the private surfaces stay invisible to an unscoped caller.
+      </p>
+
+      {
+        metrics === null ? (
+          <p class="mt-8 font-mono text-small text-ink-muted">
+            not available — the metrics store could not be read
+          </p>
+        ) : metrics.evalRuns.length === 0 ? (
+          <p class="mt-8 font-mono text-small text-ink-muted">
+            No runs recorded yet. The table exists and is empty, which is a different statement from
+            a run that failed.
+          </p>
+        ) : (
+          <div class="mt-8 overflow-x-auto">
+            <table class="w-full min-w-[22rem] border-collapse text-small">
+              <thead>
+                <tr class="border-b border-rule text-left font-mono text-micro uppercase text-ink">
+                  <th scope="col" class="py-2 pr-6 font-normal">
+                    Suite
+                  </th>
+                  <th scope="col" class="py-2 pr-6 font-normal">
+                    Ran
+                  </th>
+                  <th scope="col" class="py-2 pr-6 font-normal">
+                    Passed
+                  </th>
+                  <th scope="col" class="py-2 font-normal">
+                    Failed
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {metrics.evalRuns.map((run) => (
+                  <tr class="border-b border-rule">
+                    <td class="py-2 pr-6 font-mono text-ink">{run.suite}</td>
+                    <td class="py-2 pr-6 font-mono text-ink-muted" data-numeric>
+                      {dateOnly(run.ranAt)}
+                    </td>
+                    <td class="py-2 pr-6 font-mono text-ink-muted" data-numeric>
+                      {run.passed}/{run.total}
+                    </td>
+                    <td class="py-2 font-mono text-ink-muted" data-numeric>
+                      {run.failed}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+      <p class="mt-4 font-mono text-micro text-ink-muted">D1</p>
+    </section>
+
+    {/* ---------------------------------------------------------------- 5 */}
+    <section class="mt-20" aria-labelledby="status">
+      <p class="font-mono text-micro uppercase text-accent">What happens when a part fails</p>
+      <h2 id="status" class="mt-2 border-b border-rule pb-3 font-display text-heading text-ink">
+        Status &amp; degradation
+      </h2>
+      <p class="mt-6 max-w-2xl text-ink-muted">
+        Everything here degrades rather than disappearing, and says so while it does. This is the
+        ladder, in the order a reader would meet it.
+      </p>
+
+      <dl class="mt-8 max-w-2xl space-y-6">
+        <div class="border-t border-rule pt-4">
+          <dt class="font-mono text-micro uppercase text-ink">The budget breaker trips</dt>
+          <dd class="mt-2 text-ink-muted">{CHAT_ERROR_COPY.paused}</dd>
+        </div>
+        <div class="border-t border-rule pt-4">
+          <dt class="font-mono text-micro uppercase text-ink">A read this page needs fails</dt>
+          <dd class="mt-2 text-ink-muted">
+            The figure above it says so and the rest of the page still renders. No section here ever
+            shows a zero standing in for a number nobody could read, because a zero is the one wrong
+            answer a reader has no way to spot.
+          </dd>
+        </div>
+        <div class="border-t border-rule pt-4">
+          <dt class="font-mono text-micro uppercase text-ink">Retrieval finds nothing</dt>
+          <dd class="mt-2 text-ink-muted">
+            The answer says the corpus does not cover it rather than filling the gap. The whole
+            corpus is plain text at <a class="text-accent underline" href="/llms.txt">/llms.txt</a>,
+            and the <a class="text-accent underline" href="/mcp">MCP endpoint</a> answers the same questions
+            over a protocol.
+          </dd>
+        </div>
+      </dl>
+
+      <h3 class="mt-12 font-display text-subheading text-ink">Rate limits</h3>
+      <ul class="mt-4 max-w-2xl divide-y divide-rule border-t border-rule">
+        {
+          LIMIT_ROWS.map((row) => (
+            <li class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
+              <span class="text-ink-muted">{row.what}</span>
+              <span class="font-mono text-small text-ink" data-numeric>
+                {limitPhrase(row.cost)}
+              </span>
+            </li>
+          ))
+        }
+        <li class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
+          <span class="text-ink-muted">Chat, across everyone, before the breaker</span>
+          <span class="font-mono text-small text-ink" data-numeric>
+            {GLOBAL_LIMITS.chat.limit} per {per(GLOBAL_LIMITS.chat.periodSeconds)}
+          </span>
+        </li>
+      </ul>
+      <p class="mt-4 font-mono text-micro text-ink-muted">this build</p>
+
+      <h3 class="mt-12 font-display text-subheading text-ink">What is kept, and for how long</h3>
+      <ul class="mt-4 max-w-2xl divide-y divide-rule border-t border-rule">
+        {
+          RETENTION.map((entry) => (
+            <li class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
+              <span class="text-ink-muted">{RETENTION_LABELS[entry.table] ?? entry.table}</span>
+              <span class="font-mono text-small text-ink" data-numeric>
+                {formatWindow(entry.days)}
+              </span>
+            </li>
+          ))
+        }
+      </ul>
+      <p class="mt-4 font-mono text-micro text-ink-muted">
+        this build — a daily job enforces these, and the{' '}
+        <a class="text-accent underline" href="/ai-policy">policy</a> states them.
+      </p>
+    </section>
+
+    {/* ---------------------------------------------------------------- 6 */}
+    <section class="mt-20" aria-labelledby="releases">
+      <p class="font-mono text-micro uppercase text-accent">Generated from the release history</p>
+      <h2 id="releases" class="mt-2 border-b border-rule pb-3 font-display text-heading text-ink">
+        Changelog
+      </h2>
+      <p class="mt-6 max-w-2xl text-ink-muted">
+        Read out of the file release-please writes from merged pull request titles, so this list is
+        the deploy history rather than a second one kept by hand. Dates only, never times.
+      </p>
+
+      {
+        releases.length === 0 ? (
+          <p class="mt-8 font-mono text-small text-ink-muted">
+            No releases parsed from this build.
+          </p>
+        ) : (
+          <ul class="mt-8 max-w-2xl divide-y divide-rule border-t border-rule">
+            {releases.map((release) => (
+              <li class="flex items-baseline justify-between gap-6 py-3">
+                <span class="font-mono text-small text-ink" data-numeric>
+                  {release.version}
+                </span>
+                <span class="font-mono text-small text-ink-muted" data-numeric>
+                  {release.date}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+      <p class="mt-4 font-mono text-micro text-ink-muted">this build</p>
+    </section>
+  </div>
+</Shell>

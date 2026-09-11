@@ -1,0 +1,159 @@
+---
+/**
+ * What is actually deployed, drawn from the two wrangler.jsonc files and the
+ * two Worker entries rather than from a sketch.
+ *
+ * IT DISAGREES WITH 01 §2's ASCII DRAWING, DELIBERATELY. That diagram puts the
+ * chat and analysis endpoints on the site Worker; they are on the MCP Worker,
+ * because both need the `ai` binding and an `ai` binding cannot exist in the
+ * config `astro build` instantiates (the CI failure is written up in both
+ * wrangler.jsonc files). Publishing the spec's version on the page whose whole
+ * premise is that its figures are checkable would be self-refuting -- the first
+ * reader to `curl` the two endpoints would find the picture wrong. Verified
+ * 2026-09-11 against ./wrangler.jsonc, workers/mcp/wrangler.jsonc,
+ * src/worker.ts and workers/mcp/src/index.ts.
+ *
+ * NO UNLISTED ROUTE IS NAMED HERE, and that is the one thing this diagram
+ * deliberately leaves out. src/worker.ts flattens every refusal on the
+ * token-scoped prefix into the site's own 404 precisely so that a stranger
+ * cannot tell a real route from a dead one; printing that path on a public page
+ * would hand back the route-existence oracle the flattening exists to close.
+ * "the form surfaces" is the honest aggregate, and it is all this page owes.
+ *
+ * INLINE SVG, NEVER AN `<img>`: the diagram has to follow the visitor's theme,
+ * and an image cannot. Strokes are `currentColor` so the box work inherits the
+ * ink token, the quieter lines take `--color-rule` through Tailwind's
+ * `stroke-rule`, and there is no hex anywhere in this file.
+ *
+ * It is SCALED rather than scrolled -- `w-full` inside a `viewBox` -- so the
+ * whole picture survives a 400px viewport. The cost is honest: the type inside
+ * it shrinks with the drawing, which is why `max-w-md` caps how large it gets
+ * on a wide screen (a diagram scaled to 1000px would have 32px labels) and why
+ * the line count per box is kept low enough that 11.5 user units is legible at
+ * the small end.
+ *
+ * `<title>` and `<desc>` with `aria-labelledby` are what a screen reader gets;
+ * `role="img"` stops it from walking the 40-odd shapes underneath.
+ */
+---
+
+<figure class="mt-10">
+  <svg
+    viewBox="0 0 400 542"
+    class="h-auto w-full max-w-md"
+    role="img"
+    aria-labelledby="architecture-title architecture-desc"
+    fill="none"
+  >
+    <title id="architecture-title">How this site is deployed</title>
+    <desc id="architecture-desc">
+      Two Cloudflare Workers. Visitors and agents reach the site Worker at ryanlindsey.me, which
+      serves the pages, the résumé in four formats, llms.txt, the markdown variants and the feeds,
+      hosts the chat page and the form surfaces, and runs the queue consumer that sends the
+      notification email. It calls the MCP Worker at mcp.ryanlindsey.me over a service binding for
+      the MCP endpoint, for chat and for form posts; the MCP Worker calls back the same way to read
+      published documents. The MCP Worker holds the MCP endpoint as a Durable Object, the streamed
+      chat inference, the discovery routes, the AI Gateway path to Anthropic and the Workers AI path
+      to Vectorize. Both Workers share D1 for the audit log, tokens, transcripts and eval runs, KV
+      for caches and flags, R2 for generated PDFs and documents, and Analytics Engine feeding the
+      events queue.
+    </desc>
+
+    {/* Visitors and agents */}
+    <rect x="90" y="4" width="220" height="34" class="fill-surface" stroke="currentColor"></rect>
+    <text x="200" y="26" text-anchor="middle" font-size="13" class="font-mono fill-current"
+      >Visitors and agents</text
+    >
+
+    {/* ... down to the site Worker */}
+    <path d="M200,38 L200,64" stroke="currentColor"></path>
+    <path d="M196,58 L200,64 L204,58" stroke="currentColor"></path>
+    <text x="208" y="55" font-size="10" class="font-mono fill-ink-muted">HTTPS</text>
+
+    {/* The site Worker */}
+    <rect x="20" y="64" width="360" height="134" class="fill-surface" stroke="currentColor"></rect>
+    <text x="32" y="86" font-size="14" class="font-mono fill-current"
+      >Site Worker &#183; ryanlindsey.me</text
+    >
+    <text x="32" y="108" font-size="11.5" class="font-mono fill-ink-muted"
+      >Astro SSR over the static assets</text
+    >
+    <text x="32" y="124" font-size="11.5" class="font-mono fill-ink-muted"
+      >pages, posts, case studies, r&#233;sum&#233;</text
+    >
+    <text x="32" y="140" font-size="11.5" class="font-mono fill-ink-muted"
+      >/llms.txt, .md variants, RSS and JSON</text
+    >
+    <text x="32" y="156" font-size="11.5" class="font-mono fill-ink-muted"
+      >/chat page and the form surfaces</text
+    >
+    <text x="32" y="172" font-size="11.5" class="font-mono fill-ink-muted"
+      >the queue consumer that sends the email</text
+    >
+
+    {/* The binding cycle: site to MCP, and MCP back to the site */}
+    <path d="M120,198 L120,250" stroke="currentColor"></path>
+    <path d="M116,244 L120,250 L124,244" stroke="currentColor"></path>
+    <text x="128" y="214" font-size="10" class="font-mono fill-ink-muted">/mcp, chat and forms</text
+    >
+    <path d="M280,250 L280,198" stroke="currentColor"></path>
+    <path d="M276,204 L280,198 L284,204" stroke="currentColor"></path>
+    <text x="272" y="240" text-anchor="end" font-size="10" class="font-mono fill-ink-muted"
+      >document reads</text
+    >
+
+    {/* The MCP Worker */}
+    <rect x="20" y="250" width="360" height="134" class="fill-surface" stroke="currentColor"></rect>
+    <text x="32" y="272" font-size="14" class="font-mono fill-current"
+      >MCP Worker &#183; mcp.ryanlindsey.me</text
+    >
+    <text x="32" y="294" font-size="11.5" class="font-mono fill-ink-muted"
+      >/mcp endpoint, a Durable Object</text
+    >
+    <text x="32" y="310" font-size="11.5" class="font-mono fill-ink-muted"
+      >POST /chat, the streamed inference</text
+    >
+    <text x="32" y="326" font-size="11.5" class="font-mono fill-ink-muted"
+      >/robots.txt, /.well-known/mcp.json</text
+    >
+    <text x="32" y="342" font-size="11.5" class="font-mono fill-ink-muted"
+      >AI Gateway &#8594; Anthropic</text
+    >
+    <text x="32" y="358" font-size="11.5" class="font-mono fill-ink-muted"
+      >Workers AI &#8594; Vectorize, for retrieval</text
+    >
+
+    {/* ... down to what both of them share */}
+    <path d="M200,384 L200,416" stroke="currentColor"></path>
+    <path d="M196,410 L200,416 L204,410" stroke="currentColor"></path>
+    <text x="208" y="404" font-size="10" class="font-mono fill-ink-muted">bindings</text>
+
+    {/* The shared stores, bussed to both Workers down the left margin */}
+    <path
+      d="M6,131 L6,474 M6,131 L20,131 M6,317 L20,317 M6,474 L20,474"
+      class="stroke-rule"
+      stroke-dasharray="3 4"></path>
+    <rect x="20" y="416" width="360" height="116" class="fill-surface" stroke="currentColor"></rect>
+    <text x="32" y="438" font-size="14" class="font-mono fill-current">Shared by both Workers</text>
+    <text x="32" y="460" font-size="11.5" class="font-mono fill-ink-muted"
+      >D1 &#183; audit, tokens, transcripts, evals</text
+    >
+    <text x="32" y="476" font-size="11.5" class="font-mono fill-ink-muted"
+      >KV &#183; caches and flags</text
+    >
+    <text x="32" y="492" font-size="11.5" class="font-mono fill-ink-muted"
+      >R2 &#183; generated PDFs and documents</text
+    >
+    <text x="32" y="508" font-size="11.5" class="font-mono fill-ink-muted"
+      >Analytics Engine &#8594; the events queue</text
+    >
+  </svg>
+
+  <figcaption class="mt-4 max-w-prose font-mono text-micro text-ink-muted">
+    Drawn from the deployed configuration &mdash; the two <code>wrangler.jsonc</code> files and the two
+    Worker entries in{' '}
+    <a class="text-accent underline" href="https://github.com/ryanlindsey/ryanlindsey.me"
+      >the repository</a
+    > &mdash; rather than from a sketch, so it can be checked against what is running.
+  </figcaption>
+</figure>

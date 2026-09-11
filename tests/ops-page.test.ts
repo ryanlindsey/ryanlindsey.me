@@ -1,0 +1,161 @@
+import { createTestHarness } from 'wrangler';
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { SITE_HARNESS_WORKERS } from './workers';
+import { BANNED_PATTERNS } from './candidacy-patterns';
+
+/**
+ * The public /ops page (06 §1), rendered by the real Worker against a real D1.
+ *
+ * TWO RENDERS ARE CAPTURED HERE, AND THE ORDER IS THE MECHANISM RATHER THAN AN
+ * ACCIDENT OF SETUP. The first fetch happens BEFORE `applyD1Migrations`, so the
+ * four tables `readOpsMetrics` reads do not exist and its `db.batch` rejects --
+ * which is the only way this repo can produce a genuine D1 failure without a
+ * seam, and it is the exact failure a public page must not answer with a 500.
+ * `readOpsMetrics` returns `Promise<OpsMetrics>` and has no internal try (its
+ * signature is not this task's to change), so the degradation has to live at
+ * the page, and `degraded` below is what proves it does.
+ *
+ * The second fetch, after the migrations and after a PRIVATE-TIER row is
+ * planted, is what every other assertion reads. The planted row is what makes
+ * the leak assertions mean something: without it they would pass against a page
+ * that renders every column of an empty table.
+ *
+ * THE ORDER ALSO PINS THE CACHE. /ops caches its three reads under one KV key
+ * for 60 seconds, so if the degraded render had been stored, the second fetch
+ * would still be showing "could not be read" a minute later -- a transient D1
+ * blip pinned as a state. The "not pinned" test below is the assertion for
+ * that, and it only works because the degraded render came first.
+ */
+const server = createTestHarness({ workers: SITE_HARNESS_WORKERS });
+
+/** The render with no tables behind it. */
+let degraded: string;
+/** The render every other test reads. */
+let html: string;
+
+beforeAll(async () => {
+  await server.listen();
+  // The type argument goes on `getWorker`, not on `getEnv` -- `getEnv()` takes
+  // none (wrangler-dist/cli.d.ts). Same note as tests/ops-metrics.test.ts.
+  const site = server.getWorker<{ DB: D1Database }>();
+
+  // FIRST, while `mcp_tool_calls` and friends still do not exist.
+  degraded = await (await server.fetch('/ops')).text();
+
+  await site.applyD1Migrations('DB');
+  const db = (await site.getEnv()).DB;
+  // A private-tier row, planted so the assertions below are testing a filter
+  // that had something to filter. Without it they pass vacuously.
+  await db
+    .prepare(
+      `INSERT INTO mcp_tool_calls (called_at, tool, args_hash, tier, audience, outcome, duration_ms)
+       VALUES (?, 'analyze_fit', 'h', 'private', 'label-a', 'ok', 900)`,
+    )
+    .bind(new Date().toISOString())
+    .run();
+  html = await (await server.fetch('/ops')).text();
+});
+
+afterAll(async () => {
+  await server.close();
+});
+
+describe('/ops', () => {
+  test('renders all six sections 06 §1 names', () => {
+    for (const heading of [
+      'Architecture',
+      'Live metrics',
+      'Model &amp; cost',
+      'Evals',
+      'Status &amp; degradation',
+      'Changelog',
+    ]) {
+      expect(html).toContain(heading);
+    }
+  });
+
+  test('no gated tool name and no audience label reaches the page', () => {
+    expect(html).not.toContain('analyze_fit');
+    expect(html).not.toContain('label-a');
+    expect(html).not.toContain('get_application_narrative');
+  });
+
+  test('no copy on the page matches a banned pattern', () => {
+    for (const pattern of BANNED_PATTERNS) expect(html).not.toMatch(pattern);
+  });
+
+  test('an unconfigured analytics section says so instead of showing a zero', () => {
+    // RLME_ANALYTICS_MODE is 'stub' under the harness, so readAnalytics is null.
+    expect(html).toMatch(/not configured/i);
+    expect(html).not.toMatch(/0 agents served/i);
+  });
+
+  test('the changelog shows dates and never a time', () => {
+    const changelog = html.slice(html.indexOf('Changelog'));
+    expect(changelog).toMatch(/\d{4}-\d{2}-\d{2}/);
+    expect(changelog).not.toMatch(/\d{2}:\d{2}/);
+  });
+
+  test('every model in use is named, from the constants rather than by hand', () => {
+    expect(html).toContain('anthropic/claude-sonnet-5');
+    expect(html).toContain('anthropic/claude-opus-5');
+    expect(html).toContain('@cf/qwen/qwen3-embedding-0.6b');
+  });
+
+  test('the retention windows on the page are the ones the cron enforces', () => {
+    expect(html).toContain('30 days');
+    expect(html).toContain('1 year');
+  });
+
+  test('the architecture diagram is inline SVG using currentColor, not an image', () => {
+    expect(html).toContain('<svg');
+    expect(html).toContain('currentColor');
+    expect(html).not.toMatch(/<img[^>]+architecture/i);
+  });
+
+  test('the page is not cached by an intermediary for longer than the data is fresh', async () => {
+    const response = await server.fetch('/ops');
+    expect(response.headers.get('cache-control')).toContain('max-age=60');
+  });
+
+  /**
+   * Ruling 2. `readOpsMetrics` can reject -- D1 has outages, and this page is
+   * public and linked -- and an unhandled rejection here is a 500 on the one
+   * page whose premise is that it tells you what it knows. "Absent is a state,
+   * not a zero" has to hold for the uncredentialed half too, so the page
+   * catches and renders the same labelled cannot-say state it uses for a
+   * missing analytics token, with its own wording: the token is not what is
+   * missing here.
+   */
+  test('a D1 failure degrades to a labelled absence rather than a 500', async () => {
+    expect(degraded).toContain('Live metrics');
+    expect(degraded).toContain('the metrics store could not be read');
+    // Never a zero standing in for a number nobody could read, which is the
+    // failure that is invisible to a reader.
+    expect(degraded).not.toMatch(/0 agents served/i);
+    // And never the exception itself. A stack trace on a public page is both a
+    // worse answer and a disclosure.
+    expect(degraded).not.toMatch(/D1_ERROR|no such table/i);
+  });
+
+  test('the degraded render is not pinned in the cache once D1 answers again', () => {
+    // The exact absence sentence, not a loose /could not be read/: the page's
+    // own intro explains that a figure it cannot read says so, and matching
+    // that prose would make this test green for the wrong reason.
+    expect(html).not.toContain('the metrics store could not be read');
+  });
+
+  /**
+   * 06 §1's headline figure is partial by construction: the home page and every
+   * static sub-resource are served without a Worker invocation, so they are not
+   * in it. The label is the fix (wrangler.jsonc's `run_worker_first` comment
+   * makes the same argument from the other end), so the label has to be there.
+   */
+  test('the requests figure says what it does not count', () => {
+    // Case-insensitive only because the label renders in the page's sentence
+    // case and the requirement quotes it in running prose; the words and their
+    // order are what this pins.
+    expect(html).toMatch(/requests that reached the Worker/i);
+    expect(html).toMatch(/home page/i);
+  });
+});

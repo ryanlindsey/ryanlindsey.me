@@ -28,6 +28,31 @@ export function retentionCutoff(now: Date, days: number): string {
 }
 
 /**
+ * A window in `days` as the phrase the published policy says out loud.
+ *
+ * ONE SPELLING FOR TWO SURFACES, which is the whole reason this is a function
+ * rather than an expression at each call site. `RETENTION` stores integers, and
+ * the policy sentence for the audit trail is "a year" -- rendering `days`
+ * directly gives "365 days", which is arithmetically the same statement and not
+ * the one 06 §2 published. /ops and /ai-policy both render these numbers, so
+ * without this they would be two hand-written translations of one constant,
+ * free to disagree the first time either is edited.
+ *
+ * Years only when the window divides evenly into them, and plain days
+ * otherwise: "547 days" is a worse sentence than "1.5 years" only until you
+ * consider that a retention window nobody can restate exactly is not a policy.
+ * No month arm, deliberately -- `RETENTION` has no such window today, and a
+ * branch with no caller is a claim about a future nobody has made yet.
+ */
+export function formatWindow(days: number): string {
+  if (days % 365 === 0) {
+    const years = days / 365;
+    return years === 1 ? '1 year' : `${years} years`;
+  }
+  return days === 1 ? '1 day' : `${days} days`;
+}
+
+/**
  * Deletes what is past its window, and reports what it deleted.
  *
  * `-1` for a table whose delete threw, rather than 0 or an exception: this runs
