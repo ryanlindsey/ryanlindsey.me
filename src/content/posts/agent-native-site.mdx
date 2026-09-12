@@ -1,0 +1,132 @@
+---
+title: An agent-native personal site on Cloudflare
+description: 'Two Workers, a Model Context Protocol server, a resume in four formats, and 791 tests. What this site is built from, and the five findings that cost the most to learn, four of which are versions of one sentence: a green check is not evidence.'
+publishedAt: 2026-09-11
+pillar: building-in-the-open
+series:
+  name: Building in the open
+  order: 1
+draft: false
+---
+
+**TL;DR.** This site is two Cloudflare Workers. One serves the pages, the resume in four formats, the chat endpoint, a queue consumer and two crons; the other serves a Model Context Protocol server with eight public tools, three resources and a scoped-token tier behind it. It was built in seven days, nearly all of the code written by agents, and the source is [public](https://github.com/ryanlindsey/ryanlindsey.me). This post is the build log. The first half is what is actually running. The second half is the five findings that cost the most, and four of them are versions of one sentence: a green check is not evidence.
+
+## The dry run passed and the Worker could not start
+
+On the first day of this build, `wrangler deploy --dry-run` reported success on a Worker that workerd would refuse to boot.
+
+The reason is specific and it is worth having. An assets-only Worker cannot hold an `ASSETS` binding. With zero on-demand routes, Astro emits no server bundle, and a Worker that binds assets with no script is not a thing that starts. The dry run did not catch it because a dry run resolves the adapter's redirected configuration, and that configuration has already stripped the binding. It was answering a question about a file that would never be deployed.
+
+What caught it was a smoke harness that reads the real configuration and boots the real runtime. Nothing clever, and I want to be flat about that: the harness was not a sophisticated test, it was the only thing in the loop looking at the artifact instead of at a description of the artifact.
+
+That is the first day, and it turned out to be the whole build.
+
+## What is actually running here
+
+Two Workers, and the split is not cosmetic.
+
+`ryanlindsey-me` serves the site: static assets, the on-demand routes, a queue consumer, and two daily crons, one that refreshes the resume PDF at 05:17 UTC and one that runs the transcript retention sweep at 05:47. `ryanlindsey-me-mcp` serves the protocol endpoint, the chat backend, the fit engine, the model judge, a rate limiter Durable Object, and its own cron at 05:32 that refreshes the retrieval corpus.
+
+They exist as two Workers because of one binding. Workers AI has no local emulator and never will; the Vite plugin's own table names it as permanently remote. Once the site gained its first on-demand route it gained a server bundle, and `astro build` began instantiating the site Worker's bindings at build time. An `ai` binding in the site's configuration therefore makes a plain build open a remote proxy session and demand an API token. The check suite in CI is designed to hold no Cloudflare credential at all, so that build can never run there. Moving `ai` and `vectorize` onto the Worker that actually queries the corpus fixed it, and it was the better architecture anyway: the Worker that reads the index became the Worker that fills it.
+
+The two Workers name each other. The site's `MCP` binding forwards protocol, fit and chat work; the protocol Worker's `SITE` binding reads published documents back. That cycle is legal because a service binding resolves when it is called rather than when the Worker is defined. Its practical consequence is that any test harness booting one Worker has to declare the other, or workerd will not start.
+
+Everything else is ordinary. Pages prerender by default and individual routes opt out. D1 holds the audit trail, KV holds configuration and caches, two R2 buckets hold published and private documents, Queues carries notifications, Analytics Engine carries traffic.
+
+The one design decision I would defend hardest is the authorization boundary, and it is a boundary rather than a filter. A request is resolved into a grant in exactly one module, on the protocol Worker only. Site routes treat the token as an opaque string and ask over the service binding what it unlocks, because a second implementation that agrees with the first proves nothing and drifts the moment either changes. The private document bucket is not a flag on the public document layer; it is a different bucket with a single reader, and the public layer's environment interface does not name it. A test asserts that at the type level. A public code path cannot leak a private document by forgetting a condition, because it holds no reference to the thing.
+
+Tools on the scoped tier are registered only for a request whose grant already carries the matching scope, so an unauthenticated listing cannot enumerate a name that exists.
+
+As of this build: 791 tests across 52 files, run against real Workers inside workerd rather than against mocks, with the site Worker booted from the adapter's build output so the tests exercise the artifact that ships.
+
+## A green check is not evidence
+
+This is the spine of the whole week, and I did not arrive at it once. I arrived at it five times, each time in a form that the previous one would not have caught.
+
+**Deleting the code left the tests green.** The series navigation had an ordering guarantee. Removing the `.sort()` call that provided it left all six of its tests passing. The guarantee was not being tested; the shape of the output was, and the shape happened to be right for the fixture.
+
+**A feature that never executed once, while four of its six tests passed.** Every content route on this site serves markdown, either at a `.md` path or by content negotiation on the `Accept` header. The negotiation code was unreachable. `assets.run_worker_first` defaults to false, so a request matching a prerendered asset is served from the asset store and never arrives at the Worker at all. Four of that feature's six required tests passed anyway, because four of them assert that HTML comes back, and HTML is what you get by default. Only the two that asserted markdown could ever have noticed.
+
+The fix is the part worth copying. Rather than adding assertions, I changed what the passing ones were looking at: the HTML branch now sets `Vary: Accept`, a header only the negotiation code writes. Disabling the feature had previously failed 4 of 19 tests. After the change it failed 16. The vacuity was closed by changing the subject.
+
+**A tripwire whose patterns matched nothing.** A guard existed to fire if the RSS feed ever shipped unrendered markdown. It carried three patterns, for a heading, a link and a code fence. Measured against real feed output, they matched an empty list. Every item in that feed opened with a YAML frontmatter block, which none of the three patterns describe. A sibling test asserted that the frontmatter was the desired output. So the guard was inert, and the thing it was guarding against had a test certifying it as correct.
+
+**A check whose calls never reached the code it guards.** This one is the one I tell people. The protocol server has an adversarial check: fire hostile queries at a tool and assert that the response cannot contain a class of language the server is not permitted to produce. It is the highest-stakes assertion in the repository, because every string in that tool surface is read by strangers' agents by design. It passed for days. It had never reached the handler. A sibling test in the same block had drained that tool's rate limit bucket milliseconds earlier, so both hostile calls were refused by the limiter, and the string they were asserting against was the refusal message. A refusal message satisfies the condition trivially. The test's own comment claimed the opposite. It now uses its own client address, and asserts the specific sentence that a rate-limit refusal cannot produce.
+
+There is a general rule sitting under that one. A guard that works by enumerating the strings it forbids has to write those strings down, in a file, in a repository, permanently. The check on the server's instruction text inverts that: it asserts the text matches the reviewed version exactly. It carries only sanctioned language, so the guard cannot be the thing that introduces the problem it exists to prevent.
+
+**And the fourth kind, which is mine.** Every local gate passed: clean install, typecheck, lint, build, and the full suite. The pull request opened, both platform builds went green, and GitHub Actions failed on `npm run build`, the one command that had passed on my machine minutes earlier. The reason is the `ai` binding described above. It passed locally only because a developer machine has a wrangler login, and CI deliberately does not.
+
+I had verified this exact class of assumption on day 1, by running the whole check sequence against an isolated `HOME` to prove it needed no credentials. I had the technique. I had written it down. I did not apply it to the build.
+
+```sh
+TMPHOME=$(mktemp -d); HOME="$TMPHOME" npm run build
+```
+
+The first three instances were tests certifying code they did not exercise. This one was a complete local verification suite certifying a build that could not run anywhere but my laptop. **A green check is not evidence, including when the check is the one you ran yourself, carefully, on purpose.**
+
+There is a quieter version of the same problem that ran underneath everything for two days. A measurement partway through the week found that `node_modules` did not match `package-lock.json`: the installed wrangler and Astro adapter were each one version behind what the lockfile pinned. CI runs `npm ci`. So every green local run had been made against a dependency tree CI would never install, and the adapter is the package that generates the configuration the test harness boots. Reinstalling and re-running gave identical counts, so the drift had changed no behavior. That is not the point. The point is that the local run is the primary evidence in a repository whose CI cannot run most of these tests, and local evidence gathered against a tree CI will never install is weak evidence whether or not it happens to agree.
+
+## Some questions only production can answer
+
+The escalation of all of the above is that verifying against the local runtime is also not enough, because the local runtime is a different system. Three findings landed on the same afternoon, from one scripted round trip run immediately after a deploy whose only job was to fail.
+
+**Seven of eight tools failed on the primary endpoint.** The protocol is reachable at two hosts, the apex and a dedicated subdomain. In production the subdomain was perfect and the apex returned 522 on everything that read a document. The apex is a Cloudflare custom domain, and a Worker on a custom domain fetching its own hostname does not resolve outward, it fails. For a request that arrived on the apex, the document read was a fetch to the hostname of the request being served.
+
+No test could have expressed that. The harness points the site origin at a local address with both Workers running locally, so the two entry paths are indistinguishable there. The gap exists only in deployed edge routing. The fix was a service binding, which dropped in cleanly because the type it satisfies was already narrow enough to accept either. The regression guard is the sharp part: the smoke suite now reads documents with the site origin pointed at a host that resolves nowhere, so the test can only pass if the read never leaves the runtime.
+
+**The rate limiter did not limit anything.** Both origins served 140 requests in one second against a documented sixty-per-minute bucket, with zero refusals, and the audit table had never recorded a single refusal against 310 successes. The binding was present and correctly configured. Cloudflare documents that API as "permissive, eventually consistent, and intentionally designed to not be used as an accurate accounting system," with counters cached on the machine the Worker happens to run on and updated asynchronously. That is a shield in front of a busy origin, and it is not a control. It had been adopted because the plan asked for a rate limit and the platform offers a thing called a rate limiter. It is now a Durable Object: one object per tool and client, a token bucket, single-threaded and strongly consistent.
+
+The probing is more useful than the bug. The first two attempts, 65 sequential calls and then 121, both returned zero refusals, and both were inconclusive rather than damning: a burst that straddles a wall-clock minute boundary produces zero refusals against a perfectly healthy fixed-window limiter. Only the parallel burst inside a single second could settle it. The same arithmetic had already produced a flaky test earlier the same day, and two independent investigations were nearly misread in the same way by the same mechanism.
+
+**And one tool's success path had never executed anywhere.** The plan said the vector index was locally simulated under the harness. It is not; the binding throws. The right response, and the one taken, was to delete the passing test that had been written for it rather than stub the index or assert the failure, because a green test there would have proven nothing. That was recorded as a risk with a named consequence: the live round trip would be the first execution of that path anywhere, not a confirmation of one. It ran, and it worked, and it was verified by string-searching the returned excerpt against the fetched document rather than by reading it, because a chunk-index mismatch degrades into the document's opening paragraph, which looks entirely plausible to a human skimming.
+
+The honest version of this theme is not "test in production." It is that a local simulation is a different system, and the cheapest way to find out which parts differ is a scripted live round trip, run once, immediately after deploy, whose job is to fail.
+
+## A comment is part of the code, and it rots
+
+This repository documents why rather than what, and the comments are unusually rich. That turned out to be a hazard in a way I did not anticipate.
+
+The worst instance took the primary endpoint down. A comment written on day 3 explained why reading published documents over the site's public origin was safe: the two hostnames are different Workers, so the fetch could not loop back. It was true when it was written. A change the following day added the forward from the site origin, which made it false. Both changes were reviewed thoroughly. They were never reviewed together, and nothing re-read the comment. That is the 522 above.
+
+Later in the week a single session produced eleven false claims about the code, in comments, in page copy, in a published risk register and in an architecture diagram. Every one entered the same way: a comment about the code was trusted in place of the code. The sharpest was a comment stating that the chat model is never shown a URL it could cite. It is shown one per source, by a function twenty lines below the comment. That sentence was copied into the published risk register before anyone checked it, so a document whose entire purpose is to state controls precisely enough that a reader can verify them shipped with a verifiably false sentence in it.
+
+The transferable rule is narrower than "comments rot," and I think it is the more useful one. **In a repository whose comments are rich and confident, the comments are an untrusted source for any document that claims to be checkable.** Richness reads as authority, and that is exactly what makes them dangerous as a citation.
+
+The standing ruling for the code itself is four words: make the claim true, or make it honest. A published metrics tile on this site read "Median response time: 0 ms." That was not a bug. The duration is measured inside the Worker, and Workers pin the clock across synchronous execution, so a request served from memory measures exactly zero and carries no network time at all. The number was right and the label was wrong, and only one of those is what a reader takes away. The tile now says "Median Worker time per request."
+
+And the best finding of the week arrived from the same direction, backwards. Writing the risk register is what exposed a real defect in a control. One module wrapped untrusted corpus documents in a hard-coded three-backtick fence, while every other untrusted span in the system computed a fence from the content it was wrapping. CommonMark closes a fenced block at the first fence at least as long as the opener, so a document carrying its own fence run closed the wrapper early and put its remainder outside the boundary, in the position where instructions live, in a prompt whose system text promises that fenced content is data. A published post on this site has fourteen such blocks. This was live. The cause was that the helper had been copied into four modules and the fifth site that needed it got a literal instead; it is now one module and six call sites, with a test proven red against the literal first.
+
+It was found by writing the document, not by reading the code. **Having to state a control precisely enough to publish it is itself a test of the control,** and it is cheaper than the test you would otherwise have written.
+
+## The platform's helpful suggestion was wrong
+
+Trusting a platform's remediation is a distinct skill from trusting its documentation, and I learned it on day 1.
+
+Workers Builds validates the Worker name in the dashboard against the `name` in the wrangler configuration it finds in the configured root directory. Two Workers, one repository root, and only one of them can satisfy that. The mismatch failed the build, and the dashboard offered to fix it by rewriting the site Worker's configuration to carry the protocol Worker's name. Applying that would have pointed the site's configuration at the wrong Worker and broken the site deploy. The remedy was worse than the fault, and it was presented as a one-click fix.
+
+The stronger version of the same mistake is mine, not the platform's, and it is the rate limiter above: the plan asked for a rate limit, the platform offers a thing called a rate limiter, and the thing called a rate limiter says in its own documentation that it is not an accounting system. Nobody misled me. I read the name and not the paragraph.
+
+A smaller one, worth it for the second-order lesson. A single unsatisfiable peer dependency, a checker pinned below the TypeScript major that had just shipped, failed at install before any check could run. The real problem was not the red pull request. It was that the update configuration grouped every package into one, so one unsatisfiable dependency blocked every dependency update in the repository indefinitely. Left alone, nothing would ever have updated again. The fix ignores exactly one major version of exactly one package, with a comment naming the upstream constraint so a future reader knows when to remove it. The note I kept from that day is the useful part: **a standing red check trains you to stop reading them.**
+
+## What is deliberately still open
+
+A build log that only lists what closed is a brochure. These are open as of publication.
+
+- **A schema-rejected tool call is neither audited nor rate limited.** The protocol SDK throws at input validation before the handler runs, so a caller can hammer every tool with invalid arguments without appearing in the audit table or drawing from a bucket. This was identified two days before the audit table started being used as evidence, was handed forward in prose rather than as a task, and was not picked up. Two items were handed forward that way and neither was picked up, which is its own finding: **a handoff that is not in the next day's plan is not a handoff.**
+- **Nothing audits `git log`.** The vocabulary scan reads tracked files. Pull request titles were considered, because the release tooling consumes them. Commit message bodies were never in scope, and a message body is a published surface.
+- **A predeploy guard that refuses a dirty tree.** `wrangler deploy` bundles the working tree, not the committed tree, which is a sharper fact than it looks when a temporary route is what you are holding locally. Proposed, not built.
+- **An eval suite that publishes an honest fraction.** One probe in eight fails per run, and it is a different probe each run, on unchanged inputs. **A failure that moves is a measurement problem, not a bug,** and this repository has now hit that shape three times. The trap is a prompt that grows three paragraphs of increasingly specific instruction with no measured improvement. The deeper version is that a control requiring an invariant output is a poor fit for a stochastic generator, and the right answer is probably to move the check off the model rather than to write more prompt. The measurement that decides it has not been run, so the page publishes the fraction rather than a rounder number.
+- **A gateway rate limit that reports itself as an authentication failure.** The inference gateway has a wholesale limit separate from the per-gateway setting, which is not published, and exceeding it returns `2018: Invalid User Credentials`. That cost three diagnostic runs chasing a credential problem that did not exist. Raising the gateway's own limit sixfold did not clear it, because it was never the binding constraint. Pacing calls twenty-five seconds apart did.
+
+The last one has a second half I am still annoyed about. The remedy Cloudflare's own error message recommends is to add your own provider key. Adding one to this gateway broke all inference: every call failed, and the gateway log asked for a balance top-up while unspent credit sat on the account. Removing the key restored service immediately. Both features are in beta and the reproduction is clean.
+
+## What I would keep
+
+The pattern I would carry to any build, and it is not about Cloudflare.
+
+Almost every finding above is the same shape at a different altitude. A dry run answering for a file that will not deploy. A test asserting the shape of an output rather than the guarantee that produced it. A test suite certifying a feature that never executed. A local verification run certifying a build that only runs locally. A comment describing a system that has since changed underneath it. A published document repeating a comment nobody checked.
+
+In every case the check was green, and in every case the green was about something adjacent to the thing I cared about. So the question I now ask of a passing check is not whether it passes. It is what would have to break for this to go red, and is that the thing I am actually afraid of. Four times this week the answer was no, and one of those was a suite I had run myself and trusted completely.
+
+The site's source is [on GitHub](https://github.com/ryanlindsey/ryanlindsey.me), the [AI policy](/ai-policy) states the controls and the risk register beside it, and [the metrics page](/ops) publishes the traffic, the spend and the eval pass rates, including the fraction that is not a whole number yet.
