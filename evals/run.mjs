@@ -262,41 +262,14 @@ async function runFit() {
 const CHAT_SKIP_REASON = 'RLME_EVAL_TOKEN is not set in this shell';
 
 /**
- * Reads one chat turn off the wire, returning the frames the contract defines.
- *
- * THE TOKEN IS MANDATORY HERE, unlike in `runFit` where it gates one suite:
- * `POST /chat` admits a Turnstile token or an `evals` grant and nothing else,
- * and this process cannot solve a challenge. So the chat and leak suites SKIP
- * loudly without `RLME_EVAL_TOKEN` rather than reporting a run of refusals as
- * failures -- a suite that reports "the model would not answer" when the truth
- * is "the harness was not admitted" is worse than one that does not run.
- *
- * `error` may arrive INSTEAD of `sources` (a guard refused) or AFTER deltas
- * (the upstream stream broke mid-answer). Both are collected; the caller
- * decides which matters.
- */
-/**
- * How many times a transient refusal is retried, and how long the backoff is.
- *
- * MEASURED, 2026-09-10. The AI Gateway returns `2018: Invalid User Credentials`
- * when its rate limit is hit -- an auth error's wording on a rate-limit fault,
- * recorded in 10 §5 -- and `handleChat` maps that to the `unreachable` code. The
- * dashboard attributed 19 HTTP 429s to the runs that afternoon, so this is rate
- * limiting rather than a broken credential, whatever the message says.
- *
- * A suite of thirteen cases that each make one chat call and one judge call is a
- * burst by construction, and a single refusal anywhere in it fails a case for a
- * reason that has nothing to do with the answer. Retrying is what a rate limit
- * asks for. Two seconds because the limit is per-minute and the run is
- * sequential -- a short pause is enough to fall behind the window, and a long
- * one would make a full run tedious enough to stop being run.
- *
- * NOT A SUBSTITUTE FOR THE LIMIT BEING RIGHT. The gateway was raised to 300/min
- * the same day. This exists so that the next transient does not read as a
- * prompt regression, which is the failure that wastes an afternoon.
- */
-/**
  * ONE client retry, and the number is small because it is not the first one.
+ *
+ * WHAT IS BEING RETRIED, measured 2026-09-10: the AI Gateway answers `2018:
+ * Invalid User Credentials` when a rate limit is hit -- an auth error's wording
+ * on a rate-limit fault, recorded in 10 §5 -- and `handleChat` maps it to the
+ * `unreachable` code, which is the one `TRANSIENT` (below) matches. The gateway
+ * dashboard attributed 19 HTTP 429s to that afternoon's runs, so it is rate
+ * limiting rather than a broken credential, whatever the message says.
  *
  * THE GATEWAY ALREADY RETRIES. The `ryanlindsey-me` gateway has a retry rule --
  * up to 4 attempts, 2s delay, exponential backoff -- so a single call from here
@@ -371,6 +344,20 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Codes worth retrying: the endpoint could not reach the model, for now. */
 const TRANSIENT = new Set(['unreachable']);
 
+/**
+ * Reads one chat turn off the wire, returning the frames the contract defines.
+ *
+ * THE TOKEN IS MANDATORY HERE, unlike in `runFit` where it gates one suite:
+ * `POST /chat` admits a Turnstile token or an `evals` grant and nothing else,
+ * and this process cannot solve a challenge. So the chat and leak suites SKIP
+ * loudly without `RLME_EVAL_TOKEN` rather than reporting a run of refusals as
+ * failures -- a suite that reports "the model would not answer" when the truth
+ * is "the harness was not admitted" is worse than one that does not run.
+ *
+ * `error` may arrive INSTEAD of `sources` (a guard refused) or AFTER deltas
+ * (the upstream stream broke mid-answer). Both are collected; the caller
+ * decides which matters.
+ */
 async function askOnce(question, token) {
   const response = await fetch(`${endpoint}/chat`, {
     method: 'POST',

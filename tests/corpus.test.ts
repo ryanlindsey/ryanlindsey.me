@@ -69,13 +69,27 @@ const LLMS_TXT_FULL_SECTION = `
 `;
 
 /**
- * `/llms.txt` exactly as this repo builds it TODAY: both `.mdx` files are
- * `draft: true`, so the aggregation filter leaves the Writing and Case studies
- * sections omitted entirely and only the Resume format manifest, the MCP link
- * and the bulk-ingest link survive. Copied from dist/client/llms.txt rather
- * than paraphrased.
+ * A MINIMAL `/llms.txt`: the Resume format manifest, the MCP link and the
+ * bulk-ingest link, with no Writing or Case studies sections at all.
+ *
+ * REPRESENTATIVE, NOT A SNAPSHOT. Until 2026-09-12 this was named
+ * `LLMS_TXT_MINIMAL` and described as `/llms.txt` "exactly as this repo builds it
+ * TODAY", "Copied from dist/client/llms.txt rather than paraphrased", on the
+ * grounds that "both `.mdx` files are `draft: true`". Every part of that had
+ * stopped being true: there are five content entries, not two, and three of
+ * them are published -- so the real file carries populated Writing and Case
+ * studies sections -- and day 6 added a `## Site` section this fixture has
+ * never had.
+ *
+ * It does not need to be a snapshot, which is why the rename and this comment
+ * are the fix rather than a re-copy. `corpusSources` accepts only same-origin
+ * `/writing/*.md` and `/work/*.md` links (`DOCUMENT_ASSET_PATH`,
+ * src/lib/corpus.ts:162), so every section this fixture leaves out is a shape
+ * it has to DECLINE, and declining is what `LLMS_TXT_POPULATED` below and the
+ * foreign-link cases already exercise. A fixture re-copied from each build
+ * would churn on every content change and prove nothing more.
  */
-const LLMS_TXT_TODAY = `${LLMS_TXT_HEADER}${LLMS_TXT_FULL_SECTION}`;
+const LLMS_TXT_MINIMAL = `${LLMS_TXT_HEADER}${LLMS_TXT_FULL_SECTION}`;
 
 /**
  * The same file once something is published. This is the case the empty one
@@ -154,7 +168,7 @@ const headingsAt = (text: string, depth: number): string[] =>
 
 describe('corpusSources', () => {
   test('today, with both specimens draft, the corpus is the résumé and nothing else', () => {
-    expect(corpusSources(LLMS_TXT_TODAY)).toEqual([RESUME_SOURCE]);
+    expect(corpusSources(LLMS_TXT_MINIMAL)).toEqual([RESUME_SOURCE]);
   });
 
   test('picks up published posts and case studies, résumé first, /llms.txt order after', () => {
@@ -169,12 +183,12 @@ describe('corpusSources', () => {
   test('does not embed the résumé four times over its own format manifest', () => {
     // /llms.txt's Resume section links the SAME document as .md, .json, .pdf
     // and HTML. Parsing it as a document list would produce four sources.
-    const resumeSources = corpusSources(LLMS_TXT_TODAY).filter((s) => s.type === 'resume');
+    const resumeSources = corpusSources(LLMS_TXT_MINIMAL).filter((s) => s.type === 'resume');
     expect(resumeSources).toHaveLength(1);
   });
 
   test('ignores links on other origins, including the MCP endpoint', () => {
-    const withForeignMarkdown = `${LLMS_TXT_TODAY}
+    const withForeignMarkdown = `${LLMS_TXT_MINIMAL}
 - [Elsewhere](https://example.invalid/writing/not-ours.md): Not this site.
 `;
     expect(corpusSources(withForeignMarkdown)).toEqual([RESUME_SOURCE]);
@@ -185,18 +199,18 @@ describe('corpusSources', () => {
     // and is emphatically not a document to embed -- it is every document at
     // once. The `/writing|work/<slug>.md` shape is what excludes it, and this
     // pins that rather than leaving it to the two fixtures' silence.
-    expect(corpusSources(LLMS_TXT_TODAY).map((s) => s.path)).toEqual(['/resume.md']);
+    expect(corpusSources(LLMS_TXT_MINIMAL).map((s) => s.path)).toEqual(['/resume.md']);
   });
 
   test('ignores HTML page links, which have no .md suffix', () => {
-    const withPageLink = `${LLMS_TXT_TODAY}
+    const withPageLink = `${LLMS_TXT_MINIMAL}
 - [A Post](https://ryanlindsey.me/writing/a-post/): The page, not the export.
 `;
     expect(corpusSources(withPageLink)).toEqual([RESUME_SOURCE]);
   });
 
   test('lists a document once even when it is linked twice', () => {
-    const linkedTwice = `${LLMS_TXT_TODAY}
+    const linkedTwice = `${LLMS_TXT_MINIMAL}
 - [A Post](https://ryanlindsey.me/writing/a-post.md): One.
 - [A Post again](https://ryanlindsey.me/writing/a-post.md): Two.
 `;
@@ -204,7 +218,7 @@ describe('corpusSources', () => {
   });
 
   test('keeps a nested slug intact', () => {
-    const nested = `${LLMS_TXT_TODAY}
+    const nested = `${LLMS_TXT_MINIMAL}
 - [Nested](https://ryanlindsey.me/writing/2026/a-post.md): Nested slug.
 `;
     expect(corpusSources(nested)[1]).toEqual({
@@ -710,7 +724,7 @@ describe('refreshCorpus', () => {
     // under the old order (delete AFTER the embed loop) meant the delete never
     // ran at all and an unpublished document kept answering queries.
     const corpus = fakeCorpus({
-      assets: { '/llms.txt': LLMS_TXT_TODAY, '/resume.md': RESUME_MARKDOWN },
+      assets: { '/llms.txt': LLMS_TXT_MINIMAL, '/resume.md': RESUME_MARKDOWN },
       manifest: {
         'post:gone': entry({ key: 'post:gone', hash: 'gone-hash', chunks: 2 }),
       },
@@ -738,7 +752,7 @@ describe('refreshCorpus', () => {
     const longSlug = 'a'.repeat(52);
     const corpus = fakeCorpus({
       assets: {
-        '/llms.txt': `${LLMS_TXT_TODAY}
+        '/llms.txt': `${LLMS_TXT_MINIMAL}
 ## Case studies
 
 - [Long](https://ryanlindsey.me/work/${longSlug}.md): Too long by one byte.
