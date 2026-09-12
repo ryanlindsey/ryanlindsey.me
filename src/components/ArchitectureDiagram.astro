@@ -91,7 +91,19 @@
  *
  * `<title>` and `<desc>` with `aria-labelledby` are what a screen reader gets;
  * `role="img"` stops it from walking the 40-odd shapes underneath.
+ *
+ * THE PROSE MOVED OUT, and the two audiences for it are the reason. An SVG is
+ * nothing at all in the markdown src/lib/markdown-export.ts produces, so when
+ * agent-native-site.mdx started using this component, every consumer of the
+ * portable document got a hole where the architecture was. The `<desc>` string
+ * was already the best prose statement of this architecture in the repo and was
+ * reaching screen readers only, so it became src/lib/architecture.ts and the
+ * exporter substitutes it for the tag. Do NOT re-inline either string here: a
+ * copy is how the drawing and the markdown start disagreeing, which is the
+ * failure the two corrections above are already about.
+ * tests/markdown-export.test.ts asserts this file imports rather than inlines.
  */
+import { ARCHITECTURE_DESCRIPTION, ARCHITECTURE_TITLE } from '../lib/architecture';
 ---
 
 <figure class="mt-10">
@@ -102,23 +114,8 @@
     aria-labelledby="architecture-title architecture-desc"
     fill="none"
   >
-    <title id="architecture-title">How this site is deployed</title>
-    <desc id="architecture-desc">
-      Two Cloudflare Workers. Visitors and agents reach the site Worker at ryanlindsey.me, which
-      serves the pages, posts, case studies and the résumé, prerendered with some routes rendered on
-      demand, plus llms.txt, the markdown variants and the feeds; it hosts the chat page and the
-      form surfaces, and runs the queue consumer that sends the notification email. It calls the MCP
-      Worker at mcp.ryanlindsey.me over a service binding for the MCP endpoint, for chat and for
-      form posts; the MCP Worker calls back the same way to read published documents. The MCP Worker
-      serves the MCP endpoint statelessly, rebuilding the server for each request, alongside the
-      streamed chat inference and the discovery routes; it holds the one Durable Object in this
-      system, which enforces the rate limits, and it is where inference runs — through AI Gateway to
-      Anthropic, and through Workers AI into Vectorize for retrieval. Both Workers share D1 for the
-      audit log, tokens, transcripts and eval runs, KV for caches and flags, R2 for generated PDFs
-      and documents, Analytics Engine for request telemetry, and a queue that carries high-intent
-      events to the email. Analytics Engine and the queue are independent sinks; neither feeds the
-      other.
-    </desc>
+    <title id="architecture-title">{ARCHITECTURE_TITLE}</title>
+    <desc id="architecture-desc">{ARCHITECTURE_DESCRIPTION}</desc>
 
     {/* Visitors and agents */}
     <rect x="90" y="4" width="220" height="40" class="fill-surface" stroke="currentColor"></rect>

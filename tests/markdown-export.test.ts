@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 import type { CollectionEntry } from 'astro:content';
 import {
@@ -8,6 +9,7 @@ import {
   toMarkdown,
   type ExportableEntry,
 } from '../src/lib/markdown-export';
+import { ARCHITECTURE_DESCRIPTION, ARCHITECTURE_TITLE } from '../src/lib/architecture';
 
 const post = (overrides: {
   id?: string;
@@ -413,5 +415,81 @@ describe('ExportableEntry', () => {
   test('accepts both posts and case studies at the type level', () => {
     const entries: ExportableEntry[] = [post({ id: 'p' }), caseStudy({ id: 'c' })];
     expect(entries).toHaveLength(2);
+  });
+});
+
+// --- The architecture diagram's text fallback -------------------------------
+//
+// `<ArchitectureDiagram />` renders an inline SVG, which is nothing at all in
+// the markdown an agent reads. Stripping it silently is what the exporter did
+// until now, and it left agent-native-site.mdx's own prose pointing at a
+// drawing that was not there in the `.md` variant -- the exact class of defect
+// the post containing that tag is about.
+//
+// THE FALLBACK IS NOT A SECOND DESCRIPTION. It is the same `<desc>` string the
+// SVG already carries for screen readers, lifted into src/lib/architecture.ts
+// so the drawing and the markdown cannot drift apart. ArchitectureDiagram.astro
+// documents two claims in its own first draft that came from a stale copy of
+// the architecture and were false; a hand-written second description here would
+// be that same mistake with a longer fuse. The last test in this block is what
+// makes the extraction safe, and it is the reason this is one module and not
+// two strings.
+describe('the architecture diagram exports a text fallback', () => {
+  test('substitutes the shared description for the component tag', () => {
+    const stripped = stripNonPortableMdx('Before.\n\n<ArchitectureDiagram />\n\nAfter.');
+    expect(stripped).toContain(ARCHITECTURE_TITLE);
+    expect(stripped).toContain(ARCHITECTURE_DESCRIPTION);
+    expect(stripped).not.toContain('<ArchitectureDiagram');
+    expect(stripped).toContain('Before.');
+    expect(stripped).toContain('After.');
+  });
+
+  test('leaves the tag verbatim inside inline code, which the build-log post does', () => {
+    const input = 'The post names `<ArchitectureDiagram />` in prose.';
+    expect(stripNonPortableMdx(input)).toBe(input);
+  });
+
+  test('leaves the tag verbatim inside a fence', () => {
+    const input = 'Prose.\n\n```mdx\n<ArchitectureDiagram />\n```\n\nMore prose.';
+    expect(stripNonPortableMdx(input)).toContain('```mdx\n<ArchitectureDiagram />\n```');
+  });
+
+  test('a component with no fallback is still dropped rather than substituted', () => {
+    const stripped = stripNonPortableMdx('<RelatedPosts slugs="a,b" />\n\nProse.');
+    expect(stripped).not.toContain('RelatedPosts');
+    expect(stripped).toContain('Prose.');
+  });
+
+  test('the drawing and the markdown read one string, not two copies', () => {
+    const astro = readFileSync(
+      new URL('../src/components/ArchitectureDiagram.astro', import.meta.url),
+      'utf8',
+    );
+    expect(astro).toContain("from '../lib/architecture'");
+    // If someone re-inlines the prose here, the SVG a visitor sees and the
+    // markdown an agent reads can disagree with no test noticing. That is the
+    // whole failure this block exists to prevent, so it is asserted directly
+    // rather than trusted to review.
+    //
+    // WHITESPACE IS COLLAPSED ON BOTH SIDES, and the first version of this
+    // assertion was wrong for want of it. It picked one phrase, "independent
+    // sinks", and asserted its absence -- but that phrase also appears in this
+    // component's own header comment, where it describes why Analytics Engine
+    // does not feed the queue, so the assertion was already true before the
+    // extraction and would have passed against a fully inlined copy. Comparing
+    // the whole string is what makes it discriminating; collapsing whitespace
+    // is what survives Prettier wrapping an inlined copy across lines.
+    const collapse = (text: string) => text.replace(/\s+/g, ' ');
+    expect(collapse(astro)).not.toContain(collapse(ARCHITECTURE_DESCRIPTION));
+  });
+
+  test('the shared description carries no em dash, because it ships as published prose', () => {
+    // house-style targets zero in published prose, and check-prose.mjs cannot
+    // see this string: it classifies any line indented four spaces or more as
+    // indented code, and every continuation line in an Astro template is
+    // indented, so the `<desc>` block passed the checker vacuously for as long
+    // as it lived there. Now that the same string is emitted into `.md`,
+    // `/llms-full.txt`, the feeds and the corpus, the rule plainly applies.
+    expect(ARCHITECTURE_DESCRIPTION).not.toMatch(/[—–]/);
   });
 });
