@@ -9,6 +9,8 @@ series:
 draft: false
 ---
 
+import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
+
 **TL;DR.** This site is two Cloudflare Workers. One serves the pages, the resume in four formats, the chat endpoint, a queue consumer and two crons; the other serves a Model Context Protocol server with eight public tools, three resources and a scoped-token tier behind it. It was built in seven days, nearly all of the code written by agents, and the source is [public](https://github.com/ryanlindsey/ryanlindsey.me). This post is the build log. The first half is what is actually running. The second half is what it cost to learn, and most of that is versions of one sentence: a green check is not evidence.
 
 ## The dry run passed and the Worker could not start
@@ -21,6 +23,10 @@ What caught it was a smoke harness that reads the real configuration and boots t
 
 That is the first day, and it turned out to be the whole build.
 
+A fair objection before any of this counts for anything: this is a personal site. It serves a resume, some writing and a protocol endpoint, and on most days nobody is looking. Findings from a system under no load are cheap, and I am not going to pretend otherwise.
+
+What I would say for them is that almost none of these are load problems. Most are checks that were green about the wrong thing, and a check can be wrong about the wrong thing at any traffic level. The low stakes are also why I found them at all, because I had time to go looking. The one finding below that did need traffic to surface took 140 requests to produce, which is not much traffic either.
+
 ## What is actually running here
 
 Two Workers, and the split is not cosmetic.
@@ -32,6 +38,10 @@ They exist as two Workers because of one binding. Workers AI has no local emulat
 The two Workers name each other. The site's `MCP` binding forwards protocol, fit and chat work; the protocol Worker's `SITE` binding reads published documents back. That cycle is legal because a service binding resolves when it is called rather than when the Worker is defined. Its practical consequence is that any test harness booting one Worker has to declare the other, or workerd will not start.
 
 Everything else is ordinary. Pages prerender by default and individual routes opt out. D1 holds the audit trail, KV holds configuration and caches, two R2 buckets hold published and private documents, Queues carries notifications, Analytics Engine carries traffic.
+
+<ArchitectureDiagram />
+
+One note for anyone comparing this against the architecture document the site was built from: that document puts the chat and analysis endpoints on the site Worker, and they are on the other one, for the binding reason above. Every figure and diagram published here is generated from the two `wrangler.jsonc` files and the two Worker entry points instead, because printing the plan's version on a page whose premise is that its numbers are checkable would be self-refuting.
 
 The one design decision I would defend hardest is the authorization boundary, and it is a boundary rather than a filter. A request is resolved into a grant in exactly one module, on the protocol Worker only. Site routes treat the token as an opaque string and ask over the service binding what it unlocks, because a second implementation that agrees with the first proves nothing and drifts the moment either changes. The private document bucket is not a flag on the public document layer; it is a different bucket with a single reader, and the public layer's environment interface does not name it. A test asserts that at the type level. A public code path cannot leak a private document by forgetting a condition, because it holds no reference to the bucket.
 
@@ -66,6 +76,12 @@ TMPHOME=$(mktemp -d); HOME="$TMPHOME" npm run build
 The first four were tests certifying code they did not exercise. This one was a complete local verification suite certifying a build that could not run anywhere but my laptop. **A green check is not evidence, including when the check is the one you ran yourself, carefully, on purpose.**
 
 There is a quieter version of the same problem that ran underneath everything for two days. A measurement partway through the week found that `node_modules` did not match `package-lock.json`: the installed wrangler and Astro adapter were each one version behind what the lockfile pinned. CI runs `npm ci`. So every green local run had been made against a dependency tree CI would never install, and the adapter is the package that generates the configuration the test harness boots. Reinstalling and re-running gave identical counts, so the drift had changed no behavior. That is not the point. The point is that the local run is the primary evidence in a repository whose CI cannot run most of these tests, and local evidence gathered against a tree CI will never install is weak evidence whether or not it happens to agree.
+
+One more thing belongs in this section, and it is not a check that was green. It is where the wrong things came from in the first place.
+
+**The plan was wrong eight times in one day, and that was the normal case.** Every one of those was mine. I wrote a value into a plan and then trusted the plan instead of the artifact it described: a verification gate demanding a build file this adapter version never emits, a draft rule stated backwards, an instruction to add a canonical link that had been on every page since day 2. The sharpest was a task I spent writing a warning that RFC 9309 named groups do not inherit from the wildcard, which then specified the line for the wildcard group only. Stated once, in the one group the crawlers it names would never read.
+
+Six of the eight were caught by an implementer asking instead of complying. Nearly all of the code here is written by agents, and that ratio is the argument for working this way rather than a footnote about tooling. The plan being wrong is the expected case. What matters is how fast wrong surfaces, and a question asked before the work starts surfaces it faster than a review at the end does.
 
 ## Some questions only production can answer
 
@@ -123,7 +139,7 @@ A build log that only lists what closed is a brochure. These are open as of publ
 
 The last one has a second half I am still annoyed about. The remedy Cloudflare's own error message recommends is to add your own provider key. Adding one to this gateway broke all inference: every call failed, and the gateway log asked for a balance top-up while unspent credit sat on the account. Removing the key restored service immediately. Both features are in beta and the reproduction is clean.
 
-## What I would keep
+## What I now ask of a passing check
 
 The pattern I would carry to any build, and it is not about Cloudflare.
 
