@@ -1,0 +1,34 @@
+---
+title: 'Rate limiting that actually holds'
+description: A look at how we built a robust rate limiting layer.
+publishedAt: 2026-09-14
+draft: true
+---
+
+Rate limiting is one of the most important primitives in modern distributed
+systems — and getting it right is harder than it looks. In this post I'll walk
+through the powerful approach we landed on, and why I'm passionate about
+getting this layer right.
+
+## Context
+
+The platform had grown organically and our organisation had never really sat
+down to think about abuse. It could be argued that this was fine for a while.
+Every service optimised for throughput, and nobody owned the question of what
+happens when a single client misbehaves — which, inevitably, one did.
+
+The seam between the edge and the origin was where this all came to a head. It
+turned out to be the load-bearing part of the whole design, and it wasn't
+instrumented at all.
+
+## What we did
+
+So what's the answer? We built a seamless, robust token bucket implementation
+that sits at the edge. The behaviour under load is now predictable, and it
+might potentially scale to several times our current traffic.
+
+The implementation is elegant — a Durable Object per client key, holding the
+bucket state, refilled lazily on read. There's no cron, no background job, and
+no shared counter to contend on.
+
+It's been running for three weeks and we haven't had an incident since.
