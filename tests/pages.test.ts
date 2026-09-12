@@ -4,6 +4,7 @@ import { createTestHarness } from 'wrangler';
 import type { CollectionEntry } from 'astro:content';
 import { SITE_HARNESS_WORKERS } from './workers';
 import { BANNED_PATTERNS } from './candidacy-patterns';
+import { GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
 import { formatDateRange } from '../src/lib/resume';
 import { buildLlmsTxt, buildLlmsFullTxt, type LlmsLink } from '../src/lib/llms-index';
 import { buildRssFeed, buildJsonFeed, RSS_MARKDOWN_NOTICE, type JsonFeed } from '../src/lib/feeds';
@@ -140,6 +141,10 @@ test('renders header and footer landmarks', async () => {
   // checks the CSS side); assert they actually land on the rendered markup.
   expect(page).toContain('data-site-header');
   expect(page).toContain('data-site-footer');
+  // Day 6 Task 13: /ops and /ai-policy in SiteHeader's own links array --
+  // without this, deleting either nav entry leaves this test green.
+  expect(page).toContain('href="/ops"');
+  expect(page).toContain('href="/ai-policy"');
 });
 
 test('keeps the holding page marker and is indexable since launch', async () => {
@@ -192,6 +197,16 @@ test('carries no candidacy language on any public surface', async () => {
     // welcomes named crawlers by name -- it must carry no candidacy
     // language either.
     '/robots.txt',
+    // Day 6 Task 13: `/ops` and `/ai-policy` are the two governance surfaces
+    // this task put in the nav and the agent index, which is what earns them
+    // a place in this sweep. `/chat` is added to the sweep for the same
+    // reason -- it was reachable and unswept before this task -- but its own
+    // role here stops there: it stays out of the primary nav by design (it
+    // lives in the footer instead), and its `SITE_LINKS` entry in
+    // llms.txt.ts already existed before this diff.
+    '/chat',
+    '/ops',
+    '/ai-policy',
     // Day 3 Task 13: every discovered content entry's HTML page AND its
     // `.md` sibling (task-13-brief.md's "the .md variants"), read off
     // CONTENT_ENTRIES above rather than hardcoded as the two specimen
@@ -235,6 +250,39 @@ test('carries no candidacy language on any public surface', async () => {
   const fitRefusalBody = await fitRefusal.text();
   for (const pattern of BANNED_PATTERNS) {
     expect(fitRefusalBody, `/fit's refusal body must not match ${pattern}`).not.toMatch(pattern);
+  }
+});
+
+// Day 6 Task 13's central claim, pinned directly rather than left to the two
+// scans above to imply between them: none of the four surfaces below --
+// /chat, /ops and /ai-policy, the three pages day 6's build track shipped,
+// plus /llms.txt, the pre-existing index (Day 3) this task just extended
+// with two of them -- carries a gated tool's name (which would name a
+// capability that only a granted caller may use) or a private-tier/candidacy
+// pattern. GATED_TOOL_NAMES comes from workers/mcp/src/gated.ts -- a plain
+// vitest process, same as tests/mcp-gated.test.ts:11 -- rather than from a
+// second, hand-typed list that could drift from the real tool map. Fetched as
+// { path, response, text } rather than bare text -- deviations from the
+// plan's body, both earning their keep: the path label says WHICH surface
+// failed, and the status check is what stops a 404 from passing both scans
+// vacuously against an empty body.
+test('no public surface added today names a gated tool, an audience, or a private-tier row', async () => {
+  const surfaces = await Promise.all(
+    ['/chat', '/ops', '/ai-policy', '/llms.txt'].map(async (path) => {
+      const response = await server.fetch(path);
+      return { path, response, text: await response.text() };
+    }),
+  );
+  for (const { path, response, text } of surfaces) {
+    // Without this, a route that 404s would pass the two scans below
+    // vacuously -- an empty/error body names nothing either.
+    expect(response.status, `${path} should be 200`).toBe(200);
+    for (const name of GATED_TOOL_NAMES) {
+      expect(text, `${path} must not name the gated tool ${name}`).not.toContain(name);
+    }
+    for (const pattern of BANNED_PATTERNS) {
+      expect(text, `${path} must not match ${pattern}`).not.toMatch(pattern);
+    }
   }
 });
 
@@ -752,6 +800,11 @@ test('/llms.txt lists every published case study and post, and links no draft', 
   // be -- it is unlisted by requirement (09 §1), pinned separately below.
   expect(page).toContain('## Site');
   expect(page).toContain('https://ryanlindsey.me/chat');
+  // Day 6 Task 13: /ops and /ai-policy joined /chat in SITE_LINKS -- pinned
+  // here for the same reason /chat already was, so deleting either entry
+  // fails this test rather than only the nav test below.
+  expect(page).toContain('https://ryanlindsey.me/ops');
+  expect(page).toContain('https://ryanlindsey.me/ai-policy');
   expect(page).toContain('## Full content');
 });
 

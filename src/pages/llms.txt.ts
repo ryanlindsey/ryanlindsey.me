@@ -110,15 +110,12 @@ const MCP_LINKS: LlmsLink[] = [
  * unlisted by requirement (09 §1), and tests/pages.test.ts pins that.
  *
  * TASK 13's INTEGRATION STEP -- 13b, the nav-and-index half that task's brief
- * splits out from 13a -- adds `/ops` and `/ai-policy` here, in the same edit
- * that puts them in `SiteHeader.astro`. An earlier version of this comment said
- * "PR 2", which was wrong in the way that matters here: the branch that built
- * `/ops` IS that PR under a different shape, and it owns neither edit. Naming a
- * task that exists is what lets the next reader check whether it has landed.
- *
- * `/ops` NOW EXISTS AND IS STILL NOT LISTED. `/ai-policy` does not, the two go
- * in together, and listing a route that 404s would be worse than listing
- * nothing.
+ * split out from 13a -- added `/ops` and `/ai-policy` here, in the same edit
+ * that put them in `SiteHeader.astro`, once both routes existed. An earlier
+ * version of this comment said "PR 2", which was wrong in the way that
+ * matters here: the branch that built `/ops` IS that PR under a different
+ * shape, and it owned neither edit. Naming a task that exists was what let
+ * the next reader check whether it had landed -- and it has.
  */
 const SITE_LINKS: LlmsLink[] = [
   {
@@ -126,6 +123,18 @@ const SITE_LINKS: LlmsLink[] = [
     url: `${SITE_ORIGIN}/chat`,
     description:
       'A grounded chat over everything published here: it answers from the résumé, the case studies and the posts, and cites the page each claim comes from.',
+  },
+  {
+    title: 'How this site runs',
+    url: `${SITE_ORIGIN}/ops`,
+    description:
+      'Live operations: what this site has served over the last 30 days, which models it spends on, how it degrades, and what shipped -- every figure labelled with the system it was read from.',
+  },
+  {
+    title: 'AI policy and risk register',
+    url: `${SITE_ORIGIN}/ai-policy`,
+    description:
+      'What the AI features here do, what they store, for how long, and what they never touch -- with the risk register that backs it, every row carrying a review date.',
   },
 ];
 
