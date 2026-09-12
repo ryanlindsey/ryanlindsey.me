@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.15.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.14.0...ryanlindsey-me-v1.15.0) (2026-09-12)
+
+
+### Features
+
+* **writing:** add the armature post as a draft ([#88](https://github.com/ryanlindsey/ryanlindsey.me/issues/88)) ([8f0d055](https://github.com/ryanlindsey/ryanlindsey.me/commit/8f0d055c2c6a23ab46dbb40245c878867c066168))
+* **writing:** publish the armature post ([#89](https://github.com/ryanlindsey/ryanlindsey.me/issues/89)) ([3a73243](https://github.com/ryanlindsey/ryanlindsey.me/commit/3a73243a45cab23a16222ebaa0a51549354a6c1a))
+
+
+### Documentation
+
+* **house-style:** add a prose drafting and audit skill for src/content ([#86](https://github.com/ryanlindsey/ryanlindsey.me/issues/86)) ([e0598ce](https://github.com/ryanlindsey/ryanlindsey.me/commit/e0598ced2a00a482ae5630c8455bc2de0da42c3e))
+
 ## [1.14.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.13.2...ryanlindsey-me-v1.14.0) (2026-09-12)
 
 
