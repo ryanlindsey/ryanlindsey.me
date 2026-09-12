@@ -1,0 +1,156 @@
+{
+  "skill_name": "house-style",
+  "notes": "Test cases for the house-style skill. The mechanical assertions are graded by scripts/grade.mjs, which reuses check-prose.mjs so the grader and the skill can never disagree about what a violation is. The judgment assertions are graded by reading the output.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "draft-from-notes",
+      "prompt": "I've got raw notes at <inputs>/queue-backlog-notes.md about a queue backlog incident on my sim racing platform. Write me the opening and the Context section for a case study on it, the same as the ones at /work.",
+      "expected_output": "An opening that starts on a concrete fact or number from the notes rather than a thesis, and a Context section, in the practitioner-teacher voice. Zero em dashes, zero contractions, American spelling, no disallow-list words, one line per paragraph.",
+      "files": ["inputs/queue-backlog-notes.md"],
+      "output_file": "draft.mdx",
+      "assertions": [
+        {
+          "id": "mech-em-dash",
+          "text": "Draft contains no em dashes in body prose",
+          "kind": "mechanical"
+        },
+        {
+          "id": "mech-contraction",
+          "text": "Draft contains no contractions",
+          "kind": "mechanical"
+        },
+        {
+          "id": "mech-spelling",
+          "text": "Draft uses American spelling throughout",
+          "kind": "mechanical"
+        },
+        {
+          "id": "mech-disallowed",
+          "text": "Draft avoids the disallow-list words seam and load-bearing",
+          "kind": "mechanical"
+        },
+        {
+          "id": "mech-unwrapped",
+          "text": "Every prose paragraph occupies a single line (no hard wrapping)",
+          "kind": "mechanical"
+        },
+        {
+          "id": "struct-context",
+          "text": "Draft includes a Context section heading",
+          "kind": "mechanical"
+        },
+        {
+          "id": "voice-concrete-open",
+          "text": "Opening leads with a concrete fact, number or scene rather than a thesis statement",
+          "kind": "judgment"
+        },
+        {
+          "id": "voice-real-numbers",
+          "text": "Uses real figures from the notes (47 sessions, 11 days, 6 drivers, 99.4%) and invents none",
+          "kind": "judgment"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "name": "audit-before-publish",
+      "prompt": "Can you review <inputs>/rate-limiting-draft.mdx before I publish it? I want to know what needs fixing.",
+      "expected_output": "A review naming the planted mechanical violations (3 em dashes, 7 contractions, 3 British spellings, seam and load-bearing, 5 wrapped paragraphs) plus the voice problems, without modifying the input file.",
+      "files": ["inputs/rate-limiting-draft.mdx"],
+      "output_file": "review.md",
+      "ground_truth": {
+        "em-dash": 3,
+        "contraction": 7,
+        "spelling": 3,
+        "disallowed": 2,
+        "wrapping": 5
+      },
+      "assertions": [
+        { "id": "find-em-dash", "text": "Review flags the em dashes", "kind": "mechanical" },
+        { "id": "find-contraction", "text": "Review flags the contractions", "kind": "mechanical" },
+        {
+          "id": "find-spelling",
+          "text": "Review flags the British spellings (organisation, optimised, behaviour)",
+          "kind": "mechanical"
+        },
+        {
+          "id": "find-disallowed",
+          "text": "Review flags both disallow-list words as violations, not merely quoting the lines they appear on",
+          "kind": "mechanical"
+        },
+        {
+          "id": "review-no-disallowed",
+          "text": "Review does not itself use a disallow-list word in its own prose",
+          "kind": "mechanical"
+        },
+        {
+          "id": "find-wrapping",
+          "text": "Review flags the hard line wrapping",
+          "kind": "mechanical"
+        },
+        {
+          "id": "no-mutation",
+          "text": "The input draft file was left unmodified by the audit",
+          "kind": "mechanical"
+        },
+        {
+          "id": "review-in-style",
+          "text": "The review prose itself contains no em dashes",
+          "kind": "mechanical"
+        },
+        {
+          "id": "find-voice",
+          "text": "Review identifies at least one voice problem beyond mechanics (empty adjectives, hedging, passionate about, thesis-first opening)",
+          "kind": "judgment"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "tighten-a-paragraph",
+      "prompt": "Tighten this paragraph for me, it's going in the caching post: [a marketing-register paragraph containing 2 em dashes, 4 contractions, British 'optimisations', stacked empty adjectives, a hedge, and the empty claim 'the results speak for themselves']",
+      "expected_output": "A rewritten paragraph in voice: no em dashes, no contractions, American spelling, empty adjectives replaced by mechanism, hedge and empty claim removed. Numbers are absent from the source, so the response should ask for them or mark their absence rather than invent them.",
+      "files": [],
+      "output_file": "answer.md",
+      "assertions": [
+        { "id": "mech-em-dash", "text": "Rewrite contains no em dashes", "kind": "mechanical" },
+        {
+          "id": "mech-contraction",
+          "text": "Rewrite contains no contractions",
+          "kind": "mechanical"
+        },
+        {
+          "id": "mech-spelling",
+          "text": "Rewrite uses American spelling (optimizations, not optimisations)",
+          "kind": "mechanical"
+        },
+        {
+          "id": "mech-unwrapped",
+          "text": "Rewritten paragraph is on a single line",
+          "kind": "mechanical"
+        },
+        {
+          "id": "cut-hedge",
+          "text": "The hedge 'it could be argued' is gone",
+          "kind": "mechanical"
+        },
+        {
+          "id": "cut-empty-claim",
+          "text": "The empty claim 'the results speak for themselves' is gone",
+          "kind": "mechanical"
+        },
+        {
+          "id": "no-invented-numbers",
+          "text": "Does not invent latency figures or percentages that were not in the source; asks for real numbers or marks the gap instead",
+          "kind": "judgment"
+        },
+        {
+          "id": "mechanism-over-praise",
+          "text": "Replaces the empty adjectives (game-changer, sophisticated, intelligent, robust) with mechanism or removes them",
+          "kind": "judgment"
+        }
+      ]
+    }
+  ]
+}
