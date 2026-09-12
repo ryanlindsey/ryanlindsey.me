@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.14.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.13.2...ryanlindsey-me-v1.14.0) (2026-09-12)
+
+
+### Features
+
+* **nav:** put /ops and /ai-policy in the nav and the agent index ([#80](https://github.com/ryanlindsey/ryanlindsey.me/issues/80)) ([4360f63](https://github.com/ryanlindsey/ryanlindsey.me/commit/4360f63e29a5a0897a28052f22cefc872479b655))
+
+
+### Bug Fixes
+
+* **chat:** make the private-tier phrase fixed instead of derived ([#85](https://github.com/ryanlindsey/ryanlindsey.me/issues/85)) ([047b9f6](https://github.com/ryanlindsey/ryanlindsey.me/commit/047b9f6e5760b3b03cc88976abfcbf8193b060f9))
+* **evals:** raise PACE_MS to 25s so leak probes stop dying to the wholesale limit ([#81](https://github.com/ryanlindsey/ryanlindsey.me/issues/81)) ([fb40cf4](https://github.com/ryanlindsey/ryanlindsey.me/commit/fb40cf4360e92afad57f8f42b612fb85179b1c00))
+* **evals:** say what the leak criterion means about availability ([#83](https://github.com/ryanlindsey/ryanlindsey.me/issues/83)) ([c5a9f26](https://github.com/ryanlindsey/ryanlindsey.me/commit/c5a9f26f74e0f637bfaa30818e10c71e504c5bca))
+
+
+### Documentation
+
+* fix three comments that did not describe the code they sat above ([#84](https://github.com/ryanlindsey/ryanlindsey.me/issues/84)) ([0cf2d3a](https://github.com/ryanlindsey/ryanlindsey.me/commit/0cf2d3a04c746f99ab248fbb14315434ed8c30d6))
+
 ## [1.13.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.13.1...ryanlindsey-me-v1.13.2) (2026-09-11)
 
 
