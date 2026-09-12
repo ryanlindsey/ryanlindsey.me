@@ -1,0 +1,89 @@
+---
+title: Agents that deliver across repositories
+description: 'Armature is a Claude Code plugin that gives an agent a GitHub Projects board to work from: it picks the next item across every repository the board covers, claims it, works it on a branch, and opens a pull request it is not allowed to merge. Why it is shaped that way, and what publishing it cost.'
+publishedAt: 2026-09-09
+pillar: agentic-engineering
+draft: true
+---
+
+**TL;DR.** [armature](https://github.com/ryanlindsey/armature) is a Claude Code plugin that gives an agent a GitHub Projects board to work from, and is a companion to the [superpowers](https://github.com/obra/superpowers) plugin set. It picks the next actionable item across every repository the board covers, claims it before any code is written, works it on a branch, and opens a pull request that it is not permitted to merge. It exists because a platform built from several repositories does not answer "what is next" from inside any one of them, because my businesses require implementation artifacts in a tracker rather than a docs folder, and because my work does not happen in a single sitting. Version 0.3.4, MIT, and it builds itself.
+
+## Two things a repository cannot hold
+
+I am an engineering leader who still ships code, and nearly all of it is written by agents. They run asynchronously and I check in on them through the day rather than watch them work. This toolchain is how I run all of that consistently and reliably. Two requirements shape it, and neither of them is interesting on its own.
+
+The first is that epics and tickets have to live somewhere real. Not somewhere convenient for me, and not somewhere convenient for the agent: somewhere that counts as a record. A tracker that other people can read, link to, and audit after the fact is part of what running software as a business means to me right now, and a plan that exists only as a file inside the repository it describes is not that.
+
+The second is that my work does not happen in one continuous stretch. I start something, I get pulled away, and I come back to it hours or days later. Whatever I build has to survive being put down. That means the state of what is in flight cannot live in my head or in a session transcript.
+
+With a single repository, both requirements are easy and you can meet them by hand. They stop being easy the moment the platform is more than one repository.
+
+## What a single checkout cannot see
+
+Here is the thing that actually forces the issue. A platform composed of several repositories will routinely need changes in more than one codebase to deliver a single bug fix or feature. The API changes in one repository, the client that consumes it changes in another, and the types they share change in a third. That is not a design failure. It is the normal shape of a system that has been split along sensible lines.
+
+The consequence is that "what should I work on next" is not a question any single repository can answer. Nor is "what does this piece of work touch." Standing inside one checkout, an agent can see the code and the git history and nothing else. It cannot see that the item it is about to pick up has a sibling two repositories over, and it cannot see the epic that explains why either of them exists.
+
+GitHub already solves the tracking half of this properly, and it is worth being precise about that, because the tempting version of this post is one that invents a deficiency to fix. A Project spans repositories. It can have a default repository set. Issues should be enabled on every repository you work in. None of that is missing, and a post that claimed otherwise would deserve to lose the reader at that sentence.
+
+What is missing sits on the agent's side. The board knows where the work is. The agent has no way to read it, no way to choose from it, and no way to record what it has taken. Armature is that layer, and nothing more ambitious than that.
+
+In practice it means three tools do the deciding. `board_next` returns the next actionable item along with the reason it won, ordering by epic and then by issue number, and returning a blocked explanation instead when nothing is actionable. `item_get` reads one item and reports the epic it belongs to together with the repository that epic lives in, which is frequently not the repository the agent is currently standing in. `item_claim` moves the item to the board's claimed status and verifies the state on both sides of the write, refusing if something else moved it first.
+
+Epic membership is not a convention armature invented. It is GitHub's native sub-issue parent link, read back off the board, so the structure a human sees in the Projects UI and the structure the agent works from are the same structure.
+
+## Where spec-driven development puts its artifacts
+
+Armature is built on spec-driven development, and specifically on the version of it that the [superpowers](https://github.com/obra/superpowers) skillset encodes: brainstorm the design, write the spec, turn the spec into a plan, execute the plan with tests first. That loop works, and it is most of why agent output is reviewable at all in my experience.
+
+Left alone, it writes its artifacts into the repository. The spec becomes a markdown file, the plan becomes another one, and both end up in a docs directory next to the code. For the agent that is fine. For everyone else it is the wrong place: the plan for a feature that spans three repositories has to be committed to one of them, where it is invisible from the other two and invisible to anyone who is reading the tracker rather than the codebase.
+
+Combined with superpowers, armature moves that artifact layer. The specs and the implementation detail become epics and issues on the board, and the repository goes back to holding code. That is the part of this I would defend hardest, because it is the part that makes the loop legitimate rather than merely convenient. The record of what was planned and why lives where a record belongs.
+
+I should be exact about how much of that armature does today, because the direction and the shipped behavior are not the same thing. The reading side is complete: armature resolves the board, walks epics and children across repositories, and works items off it. The authoring side is partial. `item_create` will create an issue, add it to the board, and set it to the board's todo status so that `board_next` can return it without a second call, but it cannot parent that issue to an epic, and you have to set that link yourself afterward. A dedicated planning command is designed and not yet shipped. In 0.3.4, armature is very good at working a board that has been populated and only somewhat helpful at populating it.
+
+## What the model costs in plumbing
+
+Once work legitimately crosses repositories, three things follow that a single-repository tool never has to think about. Each one is a consequence of the model rather than a complaint about GitHub, and each is a few lines you can read.
+
+**A reference has to say which repository it means.** Issue number 278 exists in every repository that has had 278 issues, and they are unrelated. Armature refuses a bare number outright, in [`server/ref.ts`](https://github.com/ryanlindsey/armature/blob/main/server/ref.ts):
+
+> "278" is not a work item reference. Issue numbers are not unique across repositories on a board, so a bare number names a different issue in each. Use owner/repo#number, for example acme/web#278.
+
+Every reference into and out of the tool surface is qualified, and armature never emits a bare number itself. This is the rule that stops an agent from confidently editing the right issue number in the wrong repository.
+
+**Qualified references are correct and tedious**, so a repository may claim a short name for itself in its own `.armature.json`, and other repositories on the board can then write `checkout#278`. Armature reads that file from every repository on the board over GraphQL rather than keeping a central registry. The rule that makes it safe is in [`server/providers/github/aliases.ts`](https://github.com/ryanlindsey/armature/blob/main/server/providers/github/aliases.ts):
+
+> Both acme/web and acme/checkout declare the alias "checkout". An alias is a fact a repository states about itself, so exactly one may claim it. Change one .armature.json.
+
+**Armature has to find the board at all**, and the answer is a precedence chain in [`server/config.ts`](https://github.com/ryanlindsey/armature/blob/main/server/config.ts): an environment variable, then the repository's own `.armature.json`, then a user-level default, then derivation. Derivation asks GitHub which boards contain this repository and takes the answer only when there is exactly one, which is why most repositories need no configuration file. A repository can legitimately sit on several boards, and when it does, armature stops and names them rather than guessing. Only the repository can say which board governs its work, so that is where the answer goes.
+
+## Claiming, and why a human merges
+
+The claim is what makes stopping safe, and it is the piece that answers my second requirement rather than my first.
+
+An item is claimed on the board before a line of code is written. The state is on the board, not in the session, so an interrupted run leaves a visible fact behind: this item is in progress, in this repository, and here is the branch. When I come back tomorrow, or when a different session starts, the board is the thing that remembers. That is the whole reason the claim happens first rather than at the end, and it is why `item_claim` verifies state before and after its write instead of assuming the move landed.
+
+The other rule is that armature never merges. It opens the pull request, moves the item to the board's review status, reports the link, and stops. There is no flag for this and no configuration option, and the skill that carries the loop states it three times.
+
+That was deliberate from the beginning of the public version rather than a lesson learned afterward. It is written into the design spec dated 2026-09-03, the day the repository was created: _"Armature never merges."_ An agent that can both write the code and decide the code is acceptable has removed the only checkpoint that was doing any work. I am willing to let an agent choose what to work on next. I am not willing to let it decide what lands.
+
+## What publishing it cost
+
+Armature is the open-source and mature iteration of a private, local set of skills I had been running for several months, which tied spec-driven development, subagent-driven workflows, and Projects-with-epics-and-children together for my own work. Armature runs every day, delivering production features for [Pixelsonly Racing](https://ryanlindsey.me/work/silent-failure). The public repository is days old. The practice is not, and the repository's creation date is a publication date rather than the age of the idea.
+
+The difference between those two things is most of the engineering. A private set of skills can hardcode my board and my repositories, because I am the only person who will ever run it and I know the answers. A published plugin meets personal repositories and organization repositories, boards it has never seen, and repositories that sit on more than one of them. The three mechanisms above are what that cost. So is the release history, which is a short run of fixes with names like _start the server before resolving config_ and _name the classic token in the missing-credential message_: extraction friction surfacing the moment the thing met a repository its author had not been thinking about.
+
+The clearest artifact of the conversion is in the repository, in the design spec, and I would rather point at it than describe it. It contains a table titled "What the prior command loses," which walks line by line through what the private version encoded in prose and sorts each line into deleted or survived. The pattern the table exposes is that everything encoding API behavior was deleted and became a typed tool, and everything encoding policy survived into the skill. The spec's own summary of it:
+
+> Roughly 68 lines become 20. What survives is judgment, which does not rot.
+
+That is the argument for the shape of the whole plugin in one sentence, and I did not find it by theorizing. I found it by counting what was left.
+
+## What you can check
+
+Armature builds armature. The repository is public, its own `.armature.json` is committed at the root and points at the board that governs it, the release history is on GitHub, and every pull request in it was merged by a human because the tool that opened them cannot merge. The design spec, the skill, and every error message quoted above are readable in the source. If you want to know whether the loop described here is the loop that actually runs, that is the place to check, and it will answer.
+
+One last thing is worth ending on. Armature's design spec names its governing failure rule as **fail loud, never partial**, and attributes it directly to an incident on the Pixelsonly Racing platform: a workflow that discarded hundreds of driver sessions while every run stayed green. Anything that could return a partially correct answer raises instead. There is deliberately no fallback to raw `gh` commands when the tool surface is unavailable, because degrading to prose would route every write back through exactly the traps the design removes, and would make the plugin safest when it works and most dangerous when it breaks.
+
+Two tools, built for unrelated reasons, where I drew the same line in the same place: build the capability, then constrain it on purpose. That is not a preference I would have claimed about myself before I noticed I had done it twice.
