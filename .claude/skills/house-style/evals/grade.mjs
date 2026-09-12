@@ -19,9 +19,10 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHECKER = join(HERE, '..', 'scripts', 'check-prose.mjs');
-const WORKSPACE =
-  '/private/tmp/claude-501/-Users-ryan-GitHub-ryanlindsey-me/ebbd7b74-58c1-4d23-b100-d2672ee5fd75/scratchpad/house-style-workspace';
-const INPUTS = join(WORKSPACE, 'inputs');
+// Fixtures live beside this script so the suite is reproducible from a lone
+// checkout. Run outputs go wherever the caller puts them, which is deliberately
+// not in the repo: they are large, disposable, and not worth reviewing.
+const INPUTS = process.env.HOUSE_STYLE_INPUTS || join(HERE, 'inputs');
 
 const ORIGINAL_PARAGRAPH =
   'Our new caching layer has been a game-changer for performance. By leveraging a sophisticated multi-tier strategy — combining edge caching with an intelligent origin shield — we’ve been able to dramatically reduce latency across the board. It’s a robust solution that we’re really excited about, and it could be argued that it’s one of the most impactful optimisations we’ve shipped this year. The results speak for themselves.';
