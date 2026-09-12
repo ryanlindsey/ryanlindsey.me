@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.16.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.15.0...ryanlindsey-me-v1.16.0) (2026-09-12)
+
+
+### Features
+
+* **writing:** publish the build log post ([#93](https://github.com/ryanlindsey/ryanlindsey.me/issues/93)) ([bdd4d17](https://github.com/ryanlindsey/ryanlindsey.me/commit/bdd4d171bdddf985a1492c75526b20ea9a36ad02))
+
+
+### Documentation
+
+* **claude:** add a repository guide for Claude Code sessions ([#90](https://github.com/ryanlindsey/ryanlindsey.me/issues/90)) ([55a414e](https://github.com/ryanlindsey/ryanlindsey.me/commit/55a414eca2d012c848234773312cbd866abed9fe))
+
 ## [1.15.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.14.0...ryanlindsey-me-v1.15.0) (2026-09-12)
 
 
