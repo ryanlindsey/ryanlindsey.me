@@ -17,3 +17,6 @@ worker-configuration.d.ts.bak
 # generic (the plan's generic-engine rule), same split as private-doc.mjs
 # keeps between this repo and the documents it deploys.
 evals/cases/**/*.local.json
+
+# design-sync build output (regenerate with node .design-sync/build-styles.mjs)
+ds-bundle/
