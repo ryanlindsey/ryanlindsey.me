@@ -341,10 +341,21 @@ const BACKOFF_MS = 10_000;
  * derived: the failures cluster at the TAIL of a run, which is the shape of a
  * sliding window filling up.
  *
- * Five seconds between cases, on top of the seconds each streamed answer already
- * takes. A full run gains about a minute. Day 1 (10 §5) suggested 25-30s between
- * probes, which would be thirteen minutes here -- too slow to keep running, and
- * a gate nobody runs is not a gate.
+ * Twenty-five seconds between cases, on top of the seconds each streamed answer
+ * already takes. MEASURED, 2026-09-10: at 5s, three of eight leak probes died to
+ * `2018: Invalid User Credentials`; at 25s, all eight got real answers.
+ *
+ * TWELVE GAPS, NOT THIRTEEN MINUTES. `runFit` and `runChat` each skip the first
+ * case of their suite via a flag; `runLeak` skips the first probe of each case
+ * file it loads via `index > 0`, which is the same thing only because
+ * `evals/cases/leak/` holds exactly one file today. So the paced gap count is
+ * `cases - 1` summed: 2 from 3 fit cases, 3 from 4 chat cases, 7 from 8 leak
+ * probes -- twelve. Twelve gaps cost exactly one minute at the old 5s (matching
+ * the "about a minute" this file used to gain) and five minutes at 25s, not the
+ * thirteen minutes Day 1's 25-30s estimate implied. `--suite <name>` is the
+ * iteration path when the full run's five minutes is too slow to run on every
+ * change -- that is what keeps the full run a gate people still run rather than
+ * one they route around.
  *
  * PACING IS THE REAL FIX and the retry above is the fallback, not the other way
  * round. Fewer requests is the only thing that helps a quota; see `RETRIES`.
@@ -353,7 +364,7 @@ const BACKOFF_MS = 10_000;
  * one case, and separating it would double the wall clock to buy back a request
  * the retry already covers.
  */
-const PACE_MS = 5000;
+const PACE_MS = 25000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
