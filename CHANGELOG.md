@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.16.0...ryanlindsey-me-v1.16.1) (2026-09-12)
+
+
+### Build System
+
+* **design-sync:** add the style-only design-system converter ([#94](https://github.com/ryanlindsey/ryanlindsey.me/issues/94)) ([93dc423](https://github.com/ryanlindsey/ryanlindsey.me/commit/93dc423e9f06e31cc2cb9ce8966c276bcca4a0af))
+
 ## [1.16.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.15.0...ryanlindsey-me-v1.16.0) (2026-09-12)
 
 
