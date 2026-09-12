@@ -1,4 +1,5 @@
 import type { CollectionEntry } from 'astro:content';
+import { ARCHITECTURE_DESCRIPTION, ARCHITECTURE_TITLE } from './architecture';
 
 // Shared markdown exporter (day 3 Task 6). `.md` variant routes (Task 7), the
 // `Accept:`-negotiated responses (Task 8), `/llms-full.txt` (Task 9), the
@@ -286,6 +287,29 @@ function frontmatterYaml(frontmatter: ExportedFrontmatter): string {
  */
 const PORTABLE_COMPONENTS = new Set(['Aside']);
 
+/**
+ * Components that carry no prose children but whose CONTENT still belongs in a
+ * portable document, mapped to the markdown that stands in for them.
+ *
+ * `PORTABLE_COMPONENTS` above cannot serve this case and the difference is not
+ * a detail: it unwraps a paired tag and keeps what is between the halves, so a
+ * self-closing tag has nothing for it to keep. `<ArchitectureDiagram />` is an
+ * inline SVG, which is nothing at all once the tag is stripped, and the hole it
+ * left was not theoretical. agent-native-site.mdx's own prose referred to "that
+ * drawing" in a paragraph that, in the `.md` variant, followed no drawing.
+ *
+ * THE FALLBACK IS NOT WRITTEN HERE, and that is the point of the indirection.
+ * It is the same `<desc>` string the SVG already carries for screen readers,
+ * imported from src/lib/architecture.ts, so one edit moves both. A second
+ * description typed into this file would be a copy nobody reads until it is
+ * wrong -- and ArchitectureDiagram.astro's header already records two claims of
+ * exactly that kind, taken from a stale copy of the architecture, that were
+ * false when they shipped.
+ */
+const COMPONENT_FALLBACKS = new Map<string, string>([
+  ['ArchitectureDiagram', `**${ARCHITECTURE_TITLE}.** ${ARCHITECTURE_DESCRIPTION}`],
+]);
+
 /** Fenced code blocks, capturing the fences themselves. */
 const FENCE = /(```[\s\S]*?```)/g;
 
@@ -378,11 +402,22 @@ function stripImportStatements(prose: string): string {
 }
 
 function stripComponentTags(prose: string): string {
+  // Fallbacks BEFORE any stripping, because both regexes below delete the tag
+  // outright and a substitution after that has nothing left to match. This
+  // runs on prose segments only -- splitCodeRegions has already set aside
+  // fences and inline code -- so `` `<ArchitectureDiagram />` `` written in a
+  // sentence survives verbatim, the same exemption `<Aside />` relies on and
+  // the case a build-log post about this repository actually produces.
+  const withFallbacks = [...COMPONENT_FALLBACKS].reduce(
+    (text, [tag, markdown]) => text.replace(new RegExp(`<${tag}\\b[^>{]*?/>`, 'g'), markdown),
+    prose,
+  );
+
   // Self-closing components first: with paired-tag stripping run first
   // instead, its lazy `[\s\S]*?` would treat an earlier, unrelated
   // `<Foo ... />` as the open half of a pair and swallow everything up to
   // some later, unrelated `</Foo>`.
-  const withoutSelfClosing = prose.replace(SELF_CLOSING_COMPONENT, '');
+  const withoutSelfClosing = withFallbacks.replace(SELF_CLOSING_COMPONENT, '');
   return withoutSelfClosing.replace(PAIRED_COMPONENT, (_match, tag: string, children: string) =>
     PORTABLE_COMPONENTS.has(tag) ? children : '',
   );
