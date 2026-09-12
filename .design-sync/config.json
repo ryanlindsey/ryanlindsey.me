@@ -1,0 +1,7 @@
+{
+  "projectId": "ad25475a-1b90-4cb8-9332-83248cd39fc5",
+  "shape": "style-only",
+  "readmeHeader": ".design-sync/conventions.md",
+  "buildCmd": "node .design-sync/build-styles.mjs",
+  "out": "./ds-bundle"
+}
