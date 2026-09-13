@@ -61,6 +61,20 @@ const caseStudies = defineCollection({
     // it is a layout input for one page rather than a fact a machine consumer
     // asked for. See `frontmatterFor` in src/lib/markdown-export.ts.
     figures: caseStudyFiguresSchema,
+    // 1j's facts bar. Four optional scalars rather than one nested object,
+    // because src/lib/mcp/documents.ts's parseFrontmatter reads this shape
+    // back and understands flat scalars, one bare map and one block list --
+    // a fifth nesting is a change to a reader this issue has no reason to
+    // touch. Optional on the same logic as orgScale/domain/outcomes above.
+    //
+    // `status` is a plain string and NOT an enum, deliberately. The value is
+    // content; the green ramp `statusClass` applies to it is a presentation
+    // rule, and a presentation rule is allowed to be wrong about a status
+    // without the status itself being invalid data.
+    role: z.string().optional(),
+    stack: z.string().optional(),
+    model: z.string().optional(),
+    status: z.string().optional(),
   }),
 });
 

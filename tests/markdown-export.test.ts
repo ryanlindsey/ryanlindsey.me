@@ -41,6 +41,10 @@ const caseStudy = (overrides: {
   domain?: string;
   outcomes?: string[];
   figures?: { value: string; label: string }[];
+  role?: string;
+  stack?: string;
+  model?: string;
+  status?: string;
 }): CollectionEntry<'caseStudies'> =>
   ({
     id: overrides.id ?? 'a-case-study',
@@ -55,6 +59,10 @@ const caseStudy = (overrides: {
       domain: overrides.domain,
       outcomes: overrides.outcomes,
       figures: overrides.figures,
+      role: overrides.role,
+      stack: overrides.stack,
+      model: overrides.model,
+      status: overrides.status,
       draft: false,
     },
   }) as unknown as CollectionEntry<'caseStudies'>;
@@ -139,6 +147,65 @@ describe('frontmatterFor', () => {
     expect(frontmatter).not.toHaveProperty('orgScale');
     expect(frontmatter).not.toHaveProperty('domain');
     expect(frontmatter).not.toHaveProperty('outcomes');
+  });
+
+  // 1j's facts bar (issue #107): four optional flat scalars, and they DO
+  // reach the export. They pass the same test `orgScale`/`domain`/`outcomes`
+  // passed and `figures` failed -- a machine consumer asks for them by name.
+  // `get_case_study` returns the full markdown of one case study, and "what
+  // stack, what model, is it live" is the kind of thing an agent asks.
+  test('carries role, stack, model and status for a case study that declares all four', () => {
+    const entry = caseStudy({
+      id: 'c',
+      role: 'Solo engineer',
+      stack: 'Cloudflare Workers',
+      model: 'Claude',
+      status: 'Live',
+    });
+    const frontmatter = frontmatterFor(entry);
+    expect(frontmatter.role).toBe('Solo engineer');
+    expect(frontmatter.stack).toBe('Cloudflare Workers');
+    expect(frontmatter.model).toBe('Claude');
+    expect(frontmatter.status).toBe('Live');
+    // And through the serializer, in the fixed key order, so a document a
+    // model re-reads every request does not reshuffle its own frontmatter.
+    const markdown = toMarkdown(entry);
+    expect(markdown).toContain('role: "Solo engineer"');
+    expect(markdown).toContain('status: "Live"');
+    expect(markdown.indexOf('role:')).toBeLessThan(markdown.indexOf('stack:'));
+    expect(markdown.indexOf('stack:')).toBeLessThan(markdown.indexOf('model:'));
+    expect(markdown.indexOf('model:')).toBeLessThan(markdown.indexOf('status:'));
+  });
+
+  test('omits role, stack, model and status for a case study that declares none', () => {
+    const frontmatter = frontmatterFor(caseStudy({ id: 'c' }));
+    expect(frontmatter).not.toHaveProperty('role');
+    expect(frontmatter).not.toHaveProperty('stack');
+    expect(frontmatter).not.toHaveProperty('model');
+    expect(frontmatter).not.toHaveProperty('status');
+  });
+
+  test('a declared-but-empty fact survives the export', () => {
+    // FIX ROUND 2's lesson, applied to four new scalars before it can be
+    // relearned: this module once used a truthy check here and silently
+    // dropped a declared-but-falsy value, so absence meant two different
+    // things and the disagreement was invisible. `!== undefined`, at BOTH
+    // layers -- `frontmatterFor` and `frontmatterYaml` -- not truthiness.
+    const entry = caseStudy({ id: 'c', role: '', status: 'Live' });
+    expect(frontmatterFor(entry).role).toBe('');
+    expect(toMarkdown(entry)).toContain('role: ""');
+  });
+
+  test('a post frontmatter has no role, stack, model or status keys at all', () => {
+    // The mirror of the assertion above, and the reason it is worth writing:
+    // these four live on the caseStudies schema only, so a post that grew one
+    // would mean this module had started inventing fields for a collection
+    // that declares none.
+    const frontmatter = frontmatterFor(post({ id: 'p' }));
+    expect(frontmatter).not.toHaveProperty('role');
+    expect(frontmatter).not.toHaveProperty('stack');
+    expect(frontmatter).not.toHaveProperty('model');
+    expect(frontmatter).not.toHaveProperty('status');
   });
 
   test('never exports figures, even for a case study that declares a full block', () => {
