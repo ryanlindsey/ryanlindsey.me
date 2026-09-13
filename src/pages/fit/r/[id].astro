@@ -141,7 +141,7 @@ const generated = dateLabel(row.created_at);
                 <h3 class="mt-1 text-ink">{entry.requirement}</h3>
                 {entry.evidence.length === 0 ? (
                   <p class="mt-2 text-small text-ink-muted">
-                    No supporting evidence in the corpus.
+                    No supporting evidence in the published work.
                   </p>
                 ) : (
                   <ul class="mt-2 space-y-2">
@@ -197,7 +197,7 @@ const generated = dateLabel(row.created_at);
       <p>
         Generated {generated} by {row.model}. {row.citations_checked} citation{
           row.citations_checked === 1 ? '' : 's'
-        } checked against the published corpus, {row.citations_dropped} dropped as unresolvable.
+        } checked against the published work, {row.citations_dropped} dropped as unresolvable.
       </p>
       <p class="mt-2">
         Verify any claim by opening its source &mdash; or interrogate the same engine over MCP at
