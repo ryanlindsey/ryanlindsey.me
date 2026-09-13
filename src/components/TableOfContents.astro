@@ -10,30 +10,53 @@ const { toc } = Astro.props;
 const flatten = (nodes: TocNode[]): TocNode[] =>
   nodes.flatMap((node) => [node, ...flatten(node.children)]);
 const count = flatten(toc).length;
+
+/*
+ * Restyled by the 2026-09 redesign (design 1g, issue #104); the BEHAVIOUR
+ * below the fold is untouched and deliberately so. The handoff records the
+ * scroll-spy as approved as-is, and the `<script>` at the bottom of this file
+ * carries two comments that each name a real bug -- a symmetric root margin
+ * flickering between two headings, and a page scrolled to the very bottom
+ * never lighting its last section. Only classes and the active-state rule
+ * changed here. `aria-current="true"` stays the mechanism rather than gaining
+ * a parallel class, because it is both the accessibility affordance and what
+ * tests/pages.test.ts already asserts.
+ *
+ * What the restyle replaced: the whole nav was `font-mono text-micro
+ * uppercase` with the active item in `text-accent` and the label under a
+ * `border-t border-accent`. The design puts mono uppercase on the label ONLY
+ * and sets the items in the body face at text-small, sentence case, so the
+ * rail reads as a list of headings rather than as a second set of labels.
+ *
+ * The active item is a 2px accent cut in the rail's own 1px rule (each item
+ * pulls itself back over that rule with `-ml-px`), and it carries no
+ * transition: it is one of the three motion moments this design budgets and
+ * the budget spends it as a cut, not an ease. The `transition-colors` and
+ * `hover:text-accent` this component used to carry are both gone -- hover
+ * recolours nothing anywhere in the redesign.
+ */
+const ITEM =
+  '-ml-px block border-l-2 border-transparent py-[7px] pr-0 text-small text-ink-muted aria-[current=true]:border-l-accent aria-[current=true]:text-ink';
 ---
 
 {
   count > 0 && (
-    <nav aria-label="Table of contents" data-toc class="font-mono text-micro uppercase">
-      <p class="border-t border-accent pt-3 text-accent">Contents</p>
-      <ul class="mt-4 space-y-2">
+    <nav aria-label="Table of contents" data-toc>
+      <p class="font-mono text-micro uppercase text-ink-muted">Contents</p>
+      <ul class="mt-4 flex flex-col gap-0.5 border-l border-rule">
         {toc.map((node) => (
           <li>
-            <a
-              href={`#${node.slug}`}
-              data-toc-link={node.slug}
-              class="block text-ink-muted transition-colors hover:text-accent aria-[current=true]:text-accent"
-            >
+            <a href={`#${node.slug}`} data-toc-link={node.slug} class={`${ITEM} pl-[14px]`}>
               {node.text}
             </a>
             {node.children.length > 0 && (
-              <ul class="mt-2 space-y-2 border-l border-rule pl-3">
+              <ul class="flex flex-col gap-0.5">
                 {node.children.map((child) => (
                   <li>
                     <a
                       href={`#${child.slug}`}
                       data-toc-link={child.slug}
-                      class="block text-ink-muted transition-colors hover:text-accent aria-[current=true]:text-accent"
+                      class={`${ITEM} pl-[26px]`}
                     >
                       {child.text}
                     </a>

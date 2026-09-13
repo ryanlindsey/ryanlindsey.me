@@ -1,0 +1,73 @@
+---
+/*
+ * The reading-progress readout (design 1g, issue #104). Article-only: it is
+ * rendered by ArticleLayout.astro and by nothing else, because it is the only
+ * template whose header is sticky and the bar is pinned directly beneath that
+ * header.
+ *
+ * `fixed`, not `sticky`. A sticky bar is only pinned for as long as its own
+ * containing block is on screen, so it would unpin the moment the reader
+ * passed the end of the article -- and the fill does not reach 100% until the
+ * bottom of the DOCUMENT, footer included, so a sticky bar would come off the
+ * top of the screen a few hundred pixels before it ever finished. Fixed is
+ * also what the design means by "pinned".
+ *
+ * `top` matches SiteHeader.astro's own two row heights (60px below `lg`, 68px
+ * at it) so the bar sits on the header's bottom rule rather than floating
+ * under it or hiding behind it. Those three numbers have to move together;
+ * global.css's `scroll-padding-top: 6rem` is the fourth, and its comment
+ * already does this arithmetic (68 + 2 + clearance).
+ *
+ * z-20 puts the bar over the article it measures and under the header it
+ * hangs from (SiteHeader.astro carries z-30 when it is sticky, and explains
+ * why). The two never overlap geometrically, so the order only matters if one
+ * of the heights above ever drifts -- and then the header covering the bar is
+ * the right way round, not the bar cutting across the header. MobileNav's
+ * overlay resolves above both, so a full-screen takeover covers the bar
+ * rather than drawing a pink line across it.
+ *
+ * NO TRANSITION on the fill, and this is a design ruling rather than an
+ * omission: the redesign budgets three motion moments and spends this one as
+ * a continuous readout driven by scroll position. Easing the width makes the
+ * bar lag the reader's scroll, which reads as broken rather than as smooth.
+ * That is also why it keeps tracking under `prefers-reduced-motion`: it is
+ * not an animation, it is an instrument, and the reduced-motion block in
+ * global.css only neutralises durations it never has.
+ *
+ * Comments live up here in the frontmatter rather than beside the markup on
+ * purpose -- an HTML comment would ship into the rendered page, where
+ * tests/pages.test.ts reads the markup right after `data-reading-progress`
+ * and asserts the word "transition" does not appear in it.
+ */
+---
+
+<div
+  data-reading-progress
+  aria-hidden="true"
+  class="pointer-events-none fixed inset-x-0 top-[60px] z-20 h-0.5 bg-rule lg:top-[68px]"
+>
+  <div data-reading-progress-fill class="h-full bg-accent-ground" style="width:0%"></div>
+</div>
+
+<script>
+  const fill = document.querySelector<HTMLElement>('[data-reading-progress-fill]');
+
+  if (fill) {
+    const update = () => {
+      // documentElement.scrollHeight rather than body.offsetHeight (which the
+      // table-of-contents script next door uses for its own bottom-of-page
+      // pin): body's offset height excludes a margin collapsed onto it, and
+      // the fill has to be able to reach exactly 100%, not 99.6%.
+      const scrollable = document.documentElement.scrollHeight - innerHeight;
+      const ratio = scrollable > 0 ? scrollY / scrollable : 0;
+      fill.style.width = `${Math.min(Math.max(ratio, 0), 1) * 100}%`;
+    };
+
+    addEventListener('scroll', update, { passive: true });
+    // Resize as well as scroll: a viewport change moves the denominator, and
+    // a reader who rotates a phone mid-article should not be told they have
+    // read more of it than they have.
+    addEventListener('resize', update, { passive: true });
+    update();
+  }
+</script>

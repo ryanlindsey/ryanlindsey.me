@@ -1,0 +1,181 @@
+---
+import { getResume } from '../lib/resume-collection';
+
+interface Props {
+  /*
+   * This article's `.md` variant, threaded down from ArticleLayout's own
+   * `markdownHref` prop -- the SAME string Base.astro puts in the
+   * `<link rel="alternate">` tag and that public/_headers answers with
+   * `X-Markdown-Variant`. Deliberately not derived from Astro.url.pathname
+   * here: tests/pages.test.ts asserts the tag and the header agree for every
+   * article, and a third hand-built copy of that URL is precisely the drift
+   * those assertions exist to catch.
+   *
+   * Optional because ArticleLayout's own prop is. A page with no markdown
+   * variant renders the rail without its two markdown rows rather than
+   * pointing them at nothing.
+   */
+  markdownHref?: string;
+  /** The page's canonical URL, built by the caller the same way Base.astro builds its `<link rel="canonical">`. */
+  canonicalUrl: string;
+}
+
+const { markdownHref, canonicalUrl } = Astro.props;
+
+/*
+ * Read here rather than threaded through ArticleLayout, which is how
+ * SiteFooter.astro already gets the same record: a component that needs the
+ * résumé asks for it, instead of every layout above it growing a
+ * pass-through prop for data it does not itself use.
+ *
+ * Name and label only. The prototype's third line ("Incident management,
+ * agentic tooling, and still shipping code.") is new positioning copy that
+ * says at rail width what basics.summary already says at length, and the
+ * epic's own ruling on the homepage's WHO IS WRITING block resolved exactly
+ * this shape by deriving from `basics.name` and `basics.label` -- which also
+ * keeps 00 §5 satisfied without anyone having to remember to: a field that
+ * never names the employer cannot start naming it.
+ */
+const { basics } = await getResume();
+
+// "Open a rail block" is a 2px ink rule and it opens the FIRST block only;
+// the two below it are divided from their neighbour by the ordinary 1px
+// hairline. Both spellings are here rather than in global.css because this is
+// the only rail that has them, and the design's own weights (1px to divide,
+// 2px ink to open) are already stated in the epic's Geometry constraint.
+const OPEN = 'border-t-2 border-ink pt-3 font-mono text-micro uppercase text-ink-muted';
+const DIVIDE = 'border-t border-rule pt-3 font-mono text-micro uppercase text-ink-muted';
+---
+
+<!--
+  The right rail. It comes AFTER the prose in the DOM on purpose (see
+  ArticleLayout.astro): on a narrow screen, where the grid is inactive, a
+  reader should not have to scroll past the colophon to reach the article.
+-->
+<aside data-article-meta-rail class="flex flex-col gap-[22px] lg:sticky lg:top-24">
+  <div>
+    <p class={OPEN}>Written by</p>
+    <p class="mt-3 text-small text-ink">{basics.name}</p>
+    <p class="mt-1 text-small text-ink-muted">{basics.label}</p>
+  </div>
+
+  <div>
+    <p class={DIVIDE}>Take it with you</p>
+    <ul class="mt-3 flex flex-col gap-2 text-small">
+      {
+        markdownHref && (
+          <>
+            {/*
+              Real links, not buttons, and that is the whole point of the two
+              `data-` hooks below. Rendered markup IS the no-JS state, so a
+              <button> here would ship a control that does nothing for a
+              reader without JavaScript; as links they already work, and the
+              script at the bottom of this file replaces them with real
+              buttons once it runs. Copy fetches this same `.md` URL rather
+              than reaching for the article DOM, so what lands on the
+              clipboard is the published markdown, not a scrape of the page.
+            */}
+            <li>
+              <a data-copy-markdown href={markdownHref} class="text-ink">
+                Copy as Markdown
+              </a>
+            </li>
+            <li>
+              <a href={markdownHref} class="text-ink">
+                Open .md
+              </a>
+            </li>
+          </>
+        )
+      }
+      <li>
+        <a data-share-link href={canonicalUrl} class="text-ink">Share link</a>
+      </li>
+      <li>
+        <!--
+          A bare link to /chat, with no query string. Nothing here may be
+          derived from the request: putting the article's title or URL into a
+          seeded question would push page-derived content into a URL, which is
+          the habit /fit's whole design exists to avoid. The reader arrives at
+          the agent and asks it whatever they like.
+        -->
+        <a href="/chat" class="text-accent">Ask my agent about this</a>
+      </li>
+    </ul>
+  </div>
+
+  <div>
+    <p class={DIVIDE}>Source</p>
+    <p class="mt-3">
+      <a
+        href="https://github.com/ryanlindsey/ryanlindsey.me"
+        target="_blank"
+        rel="noopener"
+        class="font-mono text-small text-ink">ryanlindsey/ryanlindsey.me</a
+      >
+    </p>
+  </div>
+</aside>
+
+<script>
+  /*
+   * Progressive enhancement for the two clipboard rows. Each anchor is
+   * REPLACED by a button rather than having its default prevented: an
+   * element that no longer navigates should not still announce itself as a
+   * link, and the href is captured in the closure below before the swap, so
+   * the button copies exactly what the link would have opened.
+   *
+   * Guarded on `navigator.clipboard`, which is undefined on an insecure
+   * origin. There, the anchors are left exactly as rendered and still work as
+   * links -- a dead button is the one outcome this whole arrangement exists
+   * to avoid.
+   */
+  const upgrade = (anchor: HTMLAnchorElement, read: (href: string) => Promise<string>) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    // `underline` on top of the anchor's own classes: an <a> is underlined by
+    // the user agent and a <button> is not, so a straight className copy
+    // silently drops the underline off exactly two of the four rows in this
+    // block and nothing else on the page looks wrong. These are plain text
+    // controls with no border or filled background, so the design's link rule
+    // says underlined, and after the swap it has to be said out loud.
+    button.className = `${anchor.className} underline`;
+    const label = anchor.textContent ?? '';
+    button.textContent = label;
+
+    const href = anchor.href;
+    let restore: ReturnType<typeof setTimeout> | undefined;
+
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(await read(href));
+        button.textContent = 'Copied';
+      } catch {
+        // A refused clipboard permission or a failed fetch is not worth a
+        // dialog. Say so in place and let the reader use the .md link beside
+        // this one, which never stopped working.
+        button.textContent = 'Copy failed';
+      }
+      clearTimeout(restore);
+      restore = setTimeout(() => {
+        button.textContent = label;
+      }, 2000);
+    });
+
+    anchor.replaceWith(button);
+  };
+
+  if (navigator.clipboard) {
+    const markdown = document.querySelector<HTMLAnchorElement>('a[data-copy-markdown]');
+    if (markdown) {
+      upgrade(markdown, async (href) => {
+        const response = await fetch(href);
+        if (!response.ok) throw new Error(`${href} responded ${response.status}`);
+        return response.text();
+      });
+    }
+
+    const share = document.querySelector<HTMLAnchorElement>('a[data-share-link]');
+    if (share) upgrade(share, async (href) => href);
+  }
+</script>

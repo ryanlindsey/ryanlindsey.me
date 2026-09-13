@@ -796,6 +796,89 @@ test('shows reading time on an article', async () => {
   expect(page).toMatch(/\d+ min read/);
 });
 
+/*
+ * The 2026-09 redesign's article (design 1g, issue #104). ARTICLE is a real
+ * published post rather than the draft specimen the TOC and reading-time
+ * tests above use, so every assertion below describes a page a reader can
+ * actually reach.
+ */
+const ARTICLE = '/writing/agent-native-site';
+
+test('the article is a three-column spine with both rails', async () => {
+  const page = await html(ARTICLE);
+  expect(page).toContain('data-article-toc');
+  expect(page).toContain('data-article-meta-rail');
+  expect(page).toContain('data-reading-progress');
+});
+
+test('the contents rail keeps the observer contract the restyle did not touch', async () => {
+  // TableOfContents.astro's script keys off these attributes, and its two
+  // comments each record a bug it was written against: a symmetric root
+  // margin flickers between headings, and a page scrolled to the bottom
+  // never lights its last section. A restyle that renamed either attribute
+  // would silently disable both fixes.
+  const page = await html(ARTICLE);
+  expect(page).toMatch(/data-toc-link="[^"]+"/);
+  expect(page).toContain('aria-label="Table of contents"');
+});
+
+test('the meta rail offers the .md variant this page already advertises', async () => {
+  // One URL, not two. tests elsewhere in this file assert the <link> tag and
+  // the X-Markdown-Variant header agree; a third hand-built copy in the rail
+  // is exactly the drift they exist to catch.
+  const page = await html(ARTICLE);
+  const advertised = /<link rel="alternate" type="text\/markdown" href="([^"]+)"/.exec(page);
+  expect(advertised, 'no markdown variant advertised').not.toBeNull();
+  const rail = /data-article-meta-rail[\s\S]*?<\/aside>/.exec(page)![0];
+  expect(rail).toContain(`href="${advertised![1]}"`);
+});
+
+test('copy and share degrade to real links without JavaScript', async () => {
+  // Rendered markup is the no-JS state by definition. Two dead buttons is
+  // the failure this catches.
+  const rail = /data-article-meta-rail[\s\S]*?<\/aside>/.exec(await html(ARTICLE))![0];
+  const copy = /<[^>]*data-copy-markdown[^>]*>/.exec(rail);
+  expect(copy, 'no copy-as-markdown control').not.toBeNull();
+  expect(copy![0].startsWith('<a ')).toBe(true);
+  expect(copy![0]).toMatch(/href="[^"]+"/);
+});
+
+test('asking the agent about this page seeds nothing from the request', async () => {
+  const rail = /data-article-meta-rail[\s\S]*?<\/aside>/.exec(await html(ARTICLE))![0];
+  expect(rail).toContain('href="/chat"');
+  // A query string here would put page-derived content into a URL, which is
+  // the kind of thing /fit's whole design exists to avoid doing by accident.
+  expect(rail).not.toMatch(/href="\/chat\?/);
+});
+
+test('related posts are published, are not this article, and are a hairline grid', async () => {
+  const page = await html(ARTICLE);
+  const related = /data-related-posts[\s\S]*?<\/section>/.exec(page);
+  expect(related, 'no related posts section').not.toBeNull();
+  expect(related![0]).toContain('hairline-grid');
+  expect(related![0]).not.toContain(ARTICLE);
+  for (const entry of CONTENT_ENTRIES.filter((e) => e.draft)) {
+    expect(related![0]).not.toContain(`/${entry.section}/${entry.slug}`);
+  }
+});
+
+test('the reading progress fill is driven by scroll, not by a transition', async () => {
+  // The design budgets three motion moments and this is one of them, as a
+  // continuous readout. A CSS transition on the fill makes it lag the scroll
+  // and reads as broken rather than as eased.
+  const page = await html(ARTICLE);
+  const bar = /data-reading-progress[\s\S]{0,400}/.exec(page)![0];
+  expect(bar).not.toMatch(/transition/);
+});
+
+test('the case study template still renders, unchanged by this issue', async () => {
+  // ArticleLayout serves both collections and its header records that typing
+  // it to one is what blocked /work. The inverted masthead is a later issue;
+  // this asserts /work did not break on the way there.
+  const page = await html('/work/silent-failure');
+  expect(page).toContain('data-article-toc');
+});
+
 test('omits series navigation for a one-post series', async () => {
   // type-specimen is the only post in its series, so the nav must not render.
   // A "Part 1 of 1" block is noise, and this is the cheap guard against it.

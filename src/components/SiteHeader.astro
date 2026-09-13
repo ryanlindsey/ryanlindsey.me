@@ -16,7 +16,26 @@ const path = Astro.url.pathname;
 const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`);
 ---
 
-<header data-site-header class={`border-b border-rule bg-bg ${sticky ? 'sticky top-0' : ''}`}>
+<!--
+  `z-30` rides with `sticky` and is not decoration. Every sticky box on an
+  article page sat at `z-index: auto`, so paint order fell back to tree order
+  and the LAST one drew on top -- which is the article's own rails, not this
+  header. ArticleLayout.astro's contents rail records the first half of that
+  bug (at `top: 32px` it drew straight over this row, and moving it to 96px
+  hid it for most of a scroll); the half 96px does not fix is the bottom of
+  the page, where a sticky element is pushed up by the end of its container
+  and a tall contents rail lands back inside this row's band. OBSERVED
+  (2026-09-13) at the foot of /writing/armature: the word CONTENTS printed
+  under the wordmark. A stacking level here fixes both halves at the source,
+  because a header cannot be drawn over by something it out-ranks.
+
+  Chosen to sit under MobileNav.astro's z-50 overlay and over
+  ReadingProgress.astro's z-20 bar. The overlay is INSIDE this element, so
+  once `sticky` makes this a stacking context the overlay's own z-50 is
+  scoped to it and resolves to this level against the page -- still above the
+  bar and the article, which is all it has to clear.
+-->
+<header data-site-header class={`border-b border-rule bg-bg ${sticky ? 'sticky top-0 z-30' : ''}`}>
   <!--
     The flex-wrap mitigation this row carried before the 2026-09 redesign
     (task-13-report.md) is gone, not just restyled. It answered five links
