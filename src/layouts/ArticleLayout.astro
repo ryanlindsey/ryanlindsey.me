@@ -88,7 +88,15 @@ const readingTime = readingTimeFor(body);
          `order` puts the prose left, the rail right. -->
     <div class="mt-16 gap-12 lg:grid lg:grid-cols-[1fr_14rem]">
       <aside class="mb-12 lg:order-2 lg:mb-0">
-        <div class="lg:sticky lg:top-8">
+        <!-- lg:top-24 (96px), not the 32px lg:top-8 this rail shipped with
+             before the 2026-09 redesign made the header sticky on this
+             template. Both this rail and the header are `position: sticky`
+             at `z-index: auto`, so paint order follows tree order -- at 32px
+             the rail, being later in the DOM, drew over the 68px header as
+             soon as the reader scrolled. 96px is the offset global.css's
+             `scroll-padding-top` comment already claims for this rail; this
+             is what makes that claim true. -->
+        <div class="lg:sticky lg:top-24">
           <TableOfContents toc={toc} />
         </div>
       </aside>

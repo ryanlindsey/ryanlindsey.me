@@ -209,6 +209,58 @@ test('the header is sticky on articles and not anywhere else', async () => {
   expect(home).not.toMatch(/<header[^>]*data-site-header[^>]*class="[^"]*sticky/);
 });
 
+test('the built CSS actually declares the header background and its sticky offset', () => {
+  // Regression guard (final whole-branch review, task-2 fix wave). The
+  // header's background utility used to sit directly against this class
+  // template literal's `${` interpolation boundary in SiteHeader.astro, so
+  // Tailwind's class scanner never extracted it as a candidate -- the class
+  // string still rendered in every page's HTML (the test above stayed
+  // green), while the background rule never made it into the built
+  // stylesheet: the header shipped fully transparent, and on
+  // /writing/<slug> and /work/<slug>, where the prose column sits under it
+  // once the header sticks, article text scrolled visibly through the nav
+  // and the search chip. No test in this repo can see whether a class
+  // compiled, only whether the string is present, so this one reads the
+  // actual built CSS out of `dist/client` and checks the declarations the
+  // header depends on are really there -- background, sticky position, and
+  // the offset that pins it -- so a future edit that reintroduces the same
+  // adjacency mistake on the offset utility (silently turning `position:
+  // sticky` into a header that never sticks, since the offset would fall
+  // back to `auto`) is caught too. This bug shipped once; this is what stops
+  // it shipping again silently.
+  //
+  // The background and offset utility names below are built from string
+  // parts rather than typed as whole words, and referenced by variable
+  // rather than retyped, on purpose. Tailwind v4's automatic content
+  // detection scans every text file in the repo, this one included, for
+  // anything that looks like a utility candidate, with no regard for
+  // whether it sits inside a real `class` attribute or a code comment.
+  // Spelling the background utility out as a bare word in an earlier draft
+  // of this comment was, on its own, enough to make it compile -- verified
+  // empirically, by reinstating the broken class string in SiteHeader.astro
+  // with that literal-text draft still in place and watching the assertion
+  // pass anyway. A guard that passes on the broken input is worse than no
+  // guard.
+  const bgUtility = ['bg', 'bg'].join('-');
+  const offsetUtility = ['top', '0'].join('-');
+
+  const cssDir = new URL('../dist/client/_astro/', import.meta.url);
+  const css = readdirSync(cssDir)
+    .filter((name) => name.endsWith('.css'))
+    .map((name) => readFileSync(new URL(name, cssDir), 'utf8'))
+    .join('\n');
+
+  expect(
+    css.includes(`.${bgUtility}{background-color:var(--rl-bg)}`),
+    `no .${bgUtility} rule in the built CSS`,
+  ).toBe(true);
+  expect(css.includes('.sticky{position:sticky}'), 'no .sticky rule in the built CSS').toBe(true);
+  expect(
+    css.includes(`.${offsetUtility}{top:0}`),
+    `no .${offsetUtility} rule in the built CSS`,
+  ).toBe(true);
+});
+
 test('keeps the holding page marker and is indexable since launch', async () => {
   const page = await html('/');
   expect(page).toContain('data-testid="holding-page"');
