@@ -280,12 +280,66 @@ test('the built CSS actually declares the header background and its sticky offse
  * where they were found. The shared lesson is that a comment is markup too,
  * and an assertion scoped to "somewhere in this string" will eventually find
  * its answer in one.
+ *
+ * The strip runs to a FIXED POINT rather than once, and the difference is
+ * not theoretical. CodeQL caught the single-pass version
+ * (js/incomplete-multi-character-sanitization) and it was right, for a
+ * sharper reason than the rule's own "HTML element injection" framing
+ * suggests: removing a comment can splice the text on either side of it into
+ * a NEW comment, so one pass can leave comment content standing. Measured,
+ * not reasoned about:
+ *
+ *   '<!' + '<!--x-->' + '-- SECRET -->'
+ *     one pass   -> '<!-- SECRET -->'   SECRET survives, inside a comment
+ *     fixed point -> ''
+ *
+ * That is this helper's own failure mode, not a generic security one. Its
+ * entire job is to stop an assertion reading text that only exists inside a
+ * comment, and a single pass cannot promise that.
+ *
+ * Nothing here sanitizes untrusted input: it reads one element out of this
+ * repo's own build output, in a test, and renders nothing. So the rule's
+ * high severity does not transfer, which is the call Ryan made on the review
+ * thread. The loop is in because it makes the helper correct, not because a
+ * scanner asked.
+ *
+ * One hole a loop cannot close, recorded so the next reader does not have to
+ * find it again: a literal `<!--` inside an ATTRIBUTE VALUE would start a
+ * match and eat real markup forward to the next `-->`, which could delete
+ * the very links an assertion looks for and turn a `not.toContain` green for
+ * the wrong reason. Astro does not emit that, and this helper only ever
+ * receives `html()` output. If it is ever pointed at a fixture or anything a
+ * person can influence, regex is the wrong tool and this paragraph is the
+ * reason to reach for a parser instead of widening the pattern.
  */
+const withoutHtmlComments = (markup: string) => {
+  let previous: string;
+  let current = markup;
+  do {
+    previous = current;
+    current = current.replace(/<!--[\s\S]*?-->/g, '');
+  } while (current !== previous);
+  return current;
+};
+
 const footerMarkup = async (path = '/') => {
   const footer = /<footer[^>]*data-site-footer[\s\S]*?<\/footer>/.exec(await html(path));
   expect(footer, 'no site footer on the page').not.toBeNull();
-  return footer![0].replace(/<!--[\s\S]*?-->/g, '');
+  return withoutHtmlComments(footer![0]);
 };
+
+test('stripping comments leaves no comment text behind, even when removal splices a new one', () => {
+  // The regression CodeQL found. Removing the inner comment closes `<!` and
+  // `-- SECRET -->` into a fresh comment, so a single pass hands back text
+  // that is still inside one -- exactly what every footer assertion below
+  // relies on this helper to have removed.
+  expect(withoutHtmlComments('<!' + '<!--x-->' + '-- SECRET -->')).not.toContain('SECRET');
+  // A fixed point, so re-running it changes nothing.
+  const stripped = withoutHtmlComments('<!--a--><!--b-->');
+  expect(withoutHtmlComments(stripped)).toBe(stripped);
+  // And ordinary markup is left alone, comment removed, links intact.
+  expect(withoutHtmlComments('<!-- note --><a href="/ops">Ops</a>')).toBe('<a href="/ops">Ops</a>');
+});
 
 test('the footer is the five-column colophon, and the demoted nav items live in it', async () => {
   const markup = await footerMarkup();
