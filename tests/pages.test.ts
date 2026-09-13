@@ -855,22 +855,28 @@ test('a case row is one wrapper link, undecorated', async () => {
 });
 
 test('a case study renders a figure block exactly when it declares one', async () => {
-  // BOTH DIRECTIONS, READ OFF DISK, because only one of them can fail today
-  // and that will not always be true. No published case study declares
-  // `figures` yet -- issue #106 ships the template before the content and is
-  // explicit that it does not invent numbers for real work -- so right now
-  // this asserts the absence, which is the live half. The presence half turns
-  // on by itself the first time a real case study declares a set, with nobody
-  // having to come back here. The derivation behind the block is exercised
-  // with real input in tests/case-study-figures.test.ts, which is where it
-  // went precisely so this half being dormant is not the whole coverage.
+  // BOTH DIRECTIONS, READ OFF DISK, because which one is live is a property
+  // of the corpus rather than of this file, and it has already flipped once.
+  // When #106 landed, no published case study declared `figures` and only the
+  // absence arm could fail; both declare one now, so the presence arm is the
+  // live half and the absence arm waits for the next case study that ships
+  // without figures. Neither arm is deleted when it goes quiet -- that is the
+  // whole reason this is written as a loop over what is on disk rather than
+  // as two assertions naming slugs.
+  //
+  // WHAT THIS DELIBERATELY NO LONGER DOES is require the corpus to contain a
+  // case study of each kind. It did at first, which turned "give both case
+  // studies their figures" into two failing tests -- a content decision
+  // blocked by a test asserting the shape of the content. The guard was the
+  // wrong instrument: keeping an arm honest is worth a failure, but dictating
+  // what the corpus may hold is not. The absence arm's real coverage is
+  // `figureCellsFor(undefined)` in tests/case-study-figures.test.ts, which no
+  // content change can make vacuous.
   const page = await html('/work');
   const published = CONTENT_ENTRIES.filter((e) => e.section === 'work' && !e.draft);
-  const without = published.filter((e) => !e.figures);
-  expect(
-    without.length,
-    'no case study without figures, so the absent arm is untested',
-  ).toBeGreaterThan(0);
+  expect(published.length, 'no published case study to check either arm against').toBeGreaterThan(
+    0,
+  );
 
   for (const entry of published) {
     const row = new RegExp(`data-case-row[^>]*data-slug="${entry.slug}"[\\s\\S]*?</a>`).exec(page);
@@ -880,10 +886,8 @@ test('a case study renders a figure block exactly when it declares one', async (
         'data-case-figures',
       );
     } else {
-      // Never an empty cell, and never an empty column either: a row with no
-      // figures renders no block at all and its left column takes the full
-      // width. This is what /work actually shows today, so it is the arm that
-      // must not read as a layout that lost half its content.
+      // Never an empty cell: a row with no figures renders no block at all,
+      // and the track it would have occupied stays plain whitespace.
       expect(row![0], `${entry.slug} declares no figures and should render no block`).not.toContain(
         'data-case-figures',
       );
@@ -891,28 +895,41 @@ test('a case study renders a figure block exactly when it declares one', async (
   }
 });
 
-test('a row with no figures has no rule and no padded rail where the block would be', async () => {
+test('the figure rail and the figure block are one decision, never one without the other', async () => {
   // THE FAILURE MODE ISSUE #106 NAMES BY NAME -- a row that "reads as a
   // layout that lost half its content" -- pinned at the thing that would
   // actually cause it. The row keeps its two-column track list whether or not
   // there are figures, because that is what holds the headline to its
   // designed measure (src/pages/work/index.astro records what looking at both
   // versions at 1440px settled). An empty TRACK is a right margin. An empty
-  // BORDERED, PADDED track is a hole, and that is the version this forbids:
-  // the rule and the 36px belong to the figure block, so they must appear
-  // only when it does.
+  // BORDERED, PADDED track is a hole, and the rule plus the 36px are what
+  // would turn one into the other.
   //
-  // Both published case studies are in this state today, so this is the live
-  // arrangement rather than an edge case.
-  const page = await html('/work');
-  const bare = CONTENT_ENTRIES.filter((e) => e.section === 'work' && !e.draft && !e.figures);
-  expect(bare.length, 'no case study without figures, so this asserts nothing').toBeGreaterThan(0);
-  for (const entry of bare) {
-    const row = new RegExp(`data-case-row[^>]*data-slug="${entry.slug}"[\\s\\S]*?</a>`).exec(
-      page,
-    )![0];
-    expect(row, `${entry.slug} has no figures and should have no rail`).not.toContain('border-l');
-  }
+  // READ OFF THE SOURCE RATHER THAN THE RENDERED PAGE, and that is the whole
+  // point of this test rather than a shortcut. Two page-level versions were
+  // written first and both were measured to be toothless: "a row without
+  // figures carries no rail" stopped asserting anything the day both
+  // published case studies declared a set, and replacing it with a
+  // co-occurrence check over the rendered rows did no better -- with every
+  // row carrying figures, rail-present and block-present are both true, so
+  // hoisting the border onto the anchor kept the test green. Verified by
+  // making exactly that edit and watching it pass.
+  //
+  // The contract is therefore about where the declaration LIVES: the rail
+  // belongs inside the figure block's own conditional, so it cannot outlive
+  // the block. Same approach and same reason as tests/type-scale.test.ts and
+  // tests/primitives.test.ts, which read global.css because no rendered
+  // consumer could tell them what they needed to know.
+  const source = readFileSync(new URL('../src/pages/work/index.astro', import.meta.url), 'utf8');
+  const guard = source.indexOf('cells.length > 0');
+  const block = source.indexOf('data-case-figures');
+  expect(guard, 'no figure-block conditional in the work index').toBeGreaterThan(-1);
+  expect(block, 'no figure block in the work index').toBeGreaterThan(guard);
+
+  const rails = [...source.matchAll(/\bborder-l\b/g)].map((match) => match.index!);
+  expect(rails.length, 'the rail is declared in exactly one place').toBe(1);
+  expect(rails[0], 'the rail must sit inside the figure block conditional').toBeGreaterThan(guard);
+  expect(rails[0], 'the rail must be declared with the block, not around it').toBeLessThan(block);
 });
 
 test('no case row renders an empty element where a figure or a line should be', async () => {
