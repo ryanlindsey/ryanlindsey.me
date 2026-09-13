@@ -382,11 +382,12 @@ const IMPORT_STATEMENT = /^[ \t]*import\s+(?:[^;]*?\bfrom\s+)?['"][^'"]*['"]\s*;
  * "The build already validated it" therefore does not make this regex safe
  * on its own -- it is a second, independently-written parser of the same
  * syntax, and the two can disagree about where a block ends even though
- * neither one throws. assertNoLeftoverFiguresDirective below is the actual
- * fix: a backstop that throws when a `:::figures` opening fence survives
- * into the stripped output, the same call FIX ROUND 1 above made for
+ * neither one throws. assertNoLeftoverContainerDirective below is the actual
+ * fix: a backstop that throws when a container-directive opening fence
+ * survives into the stripped output, the same call FIX ROUND 1 above made for
  * component tags -- refusing to guess is the fix; the guard is what makes
- * refusing safe.
+ * refusing safe. (It was named assertNoLeftoverFiguresDirective when this
+ * note was written; FIX ROUND 3 below widened it past the `figures` name.)
  *
  * FIX ROUND 2 (post-review, post Task 3): the closing fence used to require
  * `\n:::` -- column zero, no leading whitespace at all. Task 3 hit this
@@ -406,20 +407,62 @@ const IMPORT_STATEMENT = /^[ \t]*import\s+(?:[^;]*?\bfrom\s+)?['"][^'"]*['"]\s*;
  * at column zero, untouched -- there is no preceding list for it to read as a
  * continuation of, so the same reasoning does not apply there, and it still
  * requires exact `^:::figures` with no leading whitespace.
+ *
+ * FIX ROUND 3 (final whole-branch review): that last sentence is no longer
+ * true, and the reason it changed is the same one FIX ROUND 2 records, one
+ * level up. Two shapes satteri + figures.mjs build and render correctly were
+ * refused here and reached the guard below, which then named causes that were
+ * not the cause (measured 2026-09-13):
+ *
+ * 1. An opening fence indented up to three spaces. CommonMark permits it for
+ *    the closing fence, which FIX ROUND 2 already accepted, and permits it for
+ *    the opening one by exactly the same rule; satteri agrees (an indented
+ *    block renders its grid). `[ ]{0,3}` makes the two fences agree with each
+ *    other and with the parser. The indentation is inside the match, so a
+ *    degraded block's lead line starts at column zero either way.
+ * 2. A CRLF body. Nothing about a line ending is an authoring error -- an
+ *    editor or a `git` checkout setting decides it -- and satteri renders one
+ *    identically. In a `m`-flagged regex `$` sits before the `\n` and not
+ *    before the `\r`, so every line end here takes an explicit `\r?`.
+ *
+ * A directive LABEL (`:::figures[Label]{source="D1"}`) is deliberately still
+ * refused, and that is now a refusal rather than a miss: the label arrives at
+ * figures.mjs as an extra paragraph child, which it throws on (it has nowhere
+ * in the contract to render a label), so the build fails at render with a
+ * message about the label rather than reaching this exporter at all. The
+ * guard's message names `[label]` as a requirement anyway, for whichever of
+ * the two runs first.
  */
-const FIGURES_DIRECTIVE = /^:::figures(\{[^}\n]*\})?[ \t]*\n([\s\S]*?)\n[ ]{0,3}:::[ \t]*$/gm;
+const FIGURES_DIRECTIVE =
+  /^[ ]{0,3}:::figures(\{[^}\n]*\})?[ \t]*\r?\n([\s\S]*?)\r?\n[ ]{0,3}:::[ \t]*\r?$/gm;
 
 /**
- * A `:::figures` opening fence that survived stripping outside of code --
- * meaning FIGURES_DIRECTIVE above failed to match it, for one of the two
- * measured reasons in its comment. Anchored the same way FIGURES_DIRECTIVE
- * is (`^`/`m`), and deliberately matches only the directive's own name, not
- * a bare `:::` -- this module only knows about the `figures` directive, and
- * a generic `:::`-anywhere check would be guessing at a syntax (some other,
- * as yet unwritten, directive type) this repo does not use today (verified,
- * plan preflight finding 8: no content file contains `:::` at a line start).
+ * A container directive that survived stripping outside of code -- meaning
+ * FIGURES_DIRECTIVE above failed to match it, or it was never a `:::figures`
+ * block in the first place.
+ *
+ * FIX ROUND 3 (final whole-branch review): this used to be `/^:::figures\b/m`,
+ * matching only the directive's own name and only at exactly three colons in
+ * column zero. The reasoning given for the narrowness was that "a generic
+ * `:::`-anywhere check would be guessing at a syntax this repo does not use
+ * today (plan preflight finding 8)" -- and preflight finding 8 was wrong, in a
+ * way `src/lib/literal-directives.mjs`'s header records in full. Two shapes
+ * walked straight through the narrow version (measured 2026-09-13):
+ * `::::figures{source="D1"}` renders a correct grid in HTML and shipped raw
+ * `::::figures{...}` text into the `.md` variant and `llms.txt`, and so did a
+ * fence at a non-zero column, `> :::figures` inside a blockquote. Both are the
+ * page and the export disagreeing about one document, silently, which is what
+ * this guard exists to make impossible.
+ *
+ * `[ \t>]*` covers indentation and blockquote markers; `:{3,}` covers a fence
+ * of more than three colons, which satteri accepts as a container (measured:
+ * `::::figures` parses with name `figures` and renders); the trailing
+ * `[A-Za-z]` is what keeps it off a bare closing `:::` and off a row of
+ * colons used as a rule. It no longer names `figures`, which means it also
+ * catches an unclaimed `:::note` on the way out -- the export half of the same
+ * ruling figures.mjs implements on the render half by throwing.
  */
-const LEFTOVER_FIGURES_DIRECTIVE = /^:::figures\b/m;
+const LEFTOVER_CONTAINER_DIRECTIVE = /^[ \t>]*:{3,}[A-Za-z]/m;
 
 // The attribute-scanning portion of both tag regexes excludes `{` as well as
 // `>` (`[^>{]*`, not `[^>]*`). Round 1 used `[^>]*`, which happily matched
@@ -547,14 +590,29 @@ function stripFiguresDirective(prose: string): string {
  * this guard existed to fix in the first place, aimed at itself. Genuinely
  * missing (or over-indented past three spaces) is still a real cause, so it
  * stays, worded to say so.
+ *
+ * FIX ROUND 3 (final whole-branch review): the message is rewritten again, and
+ * this time it stops guessing at causes altogether. FIX ROUND 2 traded one
+ * wrong cause for a shorter list of causes, and the shorter list was still
+ * wrong for three inputs that render correctly -- an opening fence indented
+ * two spaces, a CRLF body, and `:::figures[Label]{...}` -- each of which got
+ * sent hunting for an unescaped `}` or a missing closing fence it did not
+ * have. Two of those three are now accepted outright (see FIGURES_DIRECTIVE's
+ * own FIX ROUND 3 note), and the message below states the REQUIREMENTS a
+ * degradable block meets rather than diagnosing which one was missed. A
+ * requirement list cannot misdiagnose: the author compares their block against
+ * it and finds the difference themselves, which is what Ruling 6 asked for and
+ * what naming a cause kept failing to deliver.
  */
-function assertNoLeftoverFiguresDirective(strippedBody: string): void {
+function assertNoLeftoverContainerDirective(strippedBody: string): void {
   for (const segment of splitCodeRegions(strippedBody)) {
-    if (!segment.code && LEFTOVER_FIGURES_DIRECTIVE.test(segment.text)) {
+    if (!segment.code && LEFTOVER_CONTAINER_DIRECTIVE.test(segment.text)) {
       throw new Error(
-        'markdown-export: a figures directive survived MDX stripping outside of code ' +
-          '(check for a source attribute containing an unescaped }, or a closing ::: that is ' +
-          'missing entirely or indented more than three spaces): ' +
+        'markdown-export: a container directive survived MDX stripping outside of code. ' +
+          'This exporter degrades only :::figures, and only a block that opens with exactly ' +
+          'three colons at the start of a line (indented no more than three spaces, and not ' +
+          'inside a blockquote), carries no [label], has no unescaped } inside its {attributes}, ' +
+          'and closes with a ::: line indented no more than three spaces: ' +
           JSON.stringify(
             segment.text.length > 160 ? `${segment.text.slice(0, 160)}…` : segment.text,
           ),
@@ -627,12 +685,12 @@ function assertNoLeftoverComponentTags(strippedBody: string): void {
  *
  * Throws rather than returning if the result still looks like it contains an
  * unstripped tag (assertNoLeftoverComponentTags -- see FIX ROUND 1 above) or
- * a `:::figures` opening fence that never got degraded
- * (assertNoLeftoverFiguresDirective -- see FIGURES_DIRECTIVE's own FIX ROUND
+ * a container-directive opening fence that never got degraded
+ * (assertNoLeftoverContainerDirective -- see FIGURES_DIRECTIVE's own FIX ROUND
  * 1 note). A directive that DOES degrade produces a plain markdown list and
- * lead line, neither of which can ever look like `<Foo>`, so the two guards
- * cannot fire on each other's output -- they are independent checks for
- * independent ways this function's regexes can fail to match.
+ * lead line, neither of which can ever look like `<Foo>` or a `:::` fence, so
+ * the two guards cannot fire on each other's output -- they are independent
+ * checks for independent ways this function's regexes can fail to match.
  */
 export function stripNonPortableMdx(body: string): string {
   const cleaned = splitCodeRegions(body)
@@ -646,7 +704,7 @@ export function stripNonPortableMdx(body: string): string {
     .trim();
 
   assertNoLeftoverComponentTags(cleaned);
-  assertNoLeftoverFiguresDirective(cleaned);
+  assertNoLeftoverContainerDirective(cleaned);
   return cleaned;
 }
 
