@@ -173,6 +173,61 @@
     border-radius: 0;
   }
 
+  /*
+   * Links are underlined, and that is the default rather than an opt-in.
+   * Written this way round on purpose: an `a { text-decoration: none }` base
+   * with per-call-site underlines ships prose that does not look linked the
+   * first time a page forgets, and the failure is invisible in review.
+   *
+   * Three kinds of link opt out, and none of them is prose: site chrome
+   * (scoped below), anything with a border or a filled background, and a
+   * wrapper anchor around a whole card or row. The last two carry
+   * `no-underline` at the call site -- there is no selector for "has a
+   * border", and inventing a data attribute to stand in for one would be a
+   * second vocabulary for a thing CSS can already say.
+   *
+   * `text-decoration-line` is the longhand doing the actual work: Tailwind's
+   * preflight (node_modules/tailwindcss/preflight.css) resets `a` to
+   * `text-decoration: inherit`, so without it an anchor inherits `none` from
+   * `body` and stays un-underlined no matter what offset, thickness and
+   * colour below say -- they would be styling an underline that is never
+   * switched on. Set as a longhand, not the `text-decoration` shorthand,
+   * because the shorthand would reset offset/thickness/colour declared
+   * around it and would trip the "never sets text-decoration: none on a bare
+   * anchor" guard the moment anyone edited the value.
+   */
+  a {
+    text-decoration-line: underline;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+    text-decoration-color: currentColor;
+  }
+
+  /*
+   * Hover keeps the underline and does not recolour. The pre-redesign chrome
+   * used `hover:text-accent` on every nav item, footer link and card title,
+   * so this is what that convention was replaced with rather than a
+   * restatement of what was already true.
+   */
+
+  /*
+   * Pressed is green, and this is the ONE place in the system where green is
+   * not a status. tokens.css's header states the rule it breaks: "Green is
+   * the success/live ramp and is never used as a brand color, so a green
+   * badge is never ambiguous next to a green link." Requested in review of
+   * the 2026-09 redesign and accepted as an exception, not as a repeal --
+   * :active is a transient state a reader sees only while their finger or
+   * mouse is down, so it never sits next to a status badge long enough to be
+   * read as one.
+   */
+  a:active {
+    color: var(--rl-ok);
+  }
+
+  [data-site-header] a {
+    text-decoration: none;
+  }
+
   ::selection {
     background-color: var(--rl-accent-ground);
     color: var(--rl-accent-on);
@@ -220,6 +275,26 @@
 }
 
 /*
+ * The primary card idiom of the 2026-09 redesign: a 1px gap over a
+ * rule-coloured ground, inside a rule border, so the dividers between cells
+ * and the border around them are the same hairline. Recurs on the homepage's
+ * more-writing row, the case-study figure rows, the /ops bindings panel and
+ * metrics band, the AI policy tables and the :::figures directive.
+ *
+ * Deliberately partial. Column count follows item count -- the figures
+ * contract states that as a rule -- and the cell background is --rl-surface
+ * on the homepage but --rl-bg in a figure row, so a utility that decided
+ * either would be wrong on half of its call sites. It owns the ground, the
+ * gap and the border; the caller owns the columns and the cell.
+ */
+@utility hairline-grid {
+  display: grid;
+  gap: 1px;
+  background-color: var(--rl-rule);
+  border: 1px solid var(--rl-rule);
+}
+
+/*
  * Article prose. Tailwind Typography's defaults are recognisably Tailwind, so
  * every colour and rule it draws is remapped onto the token layer (05 §1).
  */
@@ -238,7 +313,14 @@
   --tw-prose-code: var(--rl-ink);
   --tw-prose-th-borders: var(--rl-rule);
   --tw-prose-td-borders: var(--rl-rule);
-  max-width: 68ch;
+  /*
+   * 72ch, widened from 68ch by the 2026-09 redesign. This is the whole fix
+   * for "sparse and overly narrow": the column is wider than the old site
+   * and the article's two rails take up the leftover width rather than
+   * leaving it empty. Standfirsts are narrower (56-68ch) and are set per
+   * page, because they are a different job.
+   */
+  max-width: 72ch;
 }
 
 /*
