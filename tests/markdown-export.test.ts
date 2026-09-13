@@ -485,6 +485,32 @@ describe('stripNonPortableMdx (figures directive degrades to its list)', () => {
     const body = ':::figures{source="Team \\"Alpha\\""}\n- 0 — Alerts fired\n:::';
     expect(stripNonPortableMdx(body)).toContain('Figures, read from Team \\"Alpha\\":');
   });
+
+  // Task 2, fix round 2 (post-review, post Task 3): this is not a hand-built
+  // adversarial input -- it is `npx prettier --parser mdx` (2026-09-13)
+  // applied to the exact tight shape Task 1's own unit tests and this
+  // file's other fixtures use. Prettier has no directive awareness: it reads
+  // `:::figures{...}` / list / `:::` as an ordinary paragraph followed by a
+  // list, and it treats the closing `:::` as a lazy continuation line of the
+  // list's last item -- which is why it inserts a blank line after the
+  // opening fence (separating what it sees as two blocks) and indents the
+  // closing fence to the list content's own indentation (two spaces, for a
+  // `- ` marker). Rendering is unaffected by any of this: satteri +
+  // figures.mjs produce byte-identical HTML for the tight, blank-line-padded
+  // and Prettier-mangled shapes (verified). CommonMark itself permits a
+  // fence indented up to three spaces, so this shape is legal markdown, not
+  // just an accident of one formatter -- refusing it was this module's own
+  // bug, not Prettier's. The opening fence is untouched by this same
+  // Prettier run (checked directly): only the closing fence gets indented,
+  // because only the closing fence sits where a list-continuation reading
+  // applies.
+  test('a figures directive degrades correctly after Prettier reformats it (blank line after the opener, indented closing fence)', () => {
+    const body = ':::figures{source="D1"}\n\n- 0 — Alerts fired\n- 100% — Runs green\n  :::\n';
+    const exported = stripNonPortableMdx(body);
+    expect(exported).toContain('Figures, read from D1:');
+    expect(exported).toContain('- 0 — Alerts fired');
+    expect(exported).not.toContain(':::');
+  });
 });
 
 describe('ExportableEntry', () => {

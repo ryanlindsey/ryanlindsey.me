@@ -387,8 +387,27 @@ const IMPORT_STATEMENT = /^[ \t]*import\s+(?:[^;]*?\bfrom\s+)?['"][^'"]*['"]\s*;
  * into the stripped output, the same call FIX ROUND 1 above made for
  * component tags -- refusing to guess is the fix; the guard is what makes
  * refusing safe.
+ *
+ * FIX ROUND 2 (post-review, post Task 3): the closing fence used to require
+ * `\n:::` -- column zero, no leading whitespace at all. Task 3 hit this
+ * directly: `npx prettier --parser mdx` (measured 2026-09-13) on the exact
+ * tight shape this file's own fixtures and Task 1's unit tests use rewrites
+ * it to insert a blank line after the opening fence AND indent the closing
+ * `:::` by two spaces. Prettier has no directive awareness -- it reads the
+ * fence as an ordinary paragraph and the list as an ordinary list, and once
+ * it sees the closing `:::` sitting right after the list, it treats that
+ * line as a lazy continuation of the list's last item and indents it to the
+ * list content's own column. Rendering is unaffected (satteri + figures.mjs
+ * produce byte-identical HTML for the tight and Prettier-mangled shapes,
+ * verified), and CommonMark itself permits a fence indented up to three
+ * spaces -- so a formatter-indented closing fence is legal markdown that this
+ * regex was wrongly rejecting, not an edge case to merely tolerate. Checked
+ * the opening fence under the same Prettier run before deciding: it is left
+ * at column zero, untouched -- there is no preceding list for it to read as a
+ * continuation of, so the same reasoning does not apply there, and it still
+ * requires exact `^:::figures` with no leading whitespace.
  */
-const FIGURES_DIRECTIVE = /^:::figures(\{[^}\n]*\})?[ \t]*\n([\s\S]*?)\n:::[ \t]*$/gm;
+const FIGURES_DIRECTIVE = /^:::figures(\{[^}\n]*\})?[ \t]*\n([\s\S]*?)\n[ ]{0,3}:::[ \t]*$/gm;
 
 /**
  * A `:::figures` opening fence that survived stripping outside of code --
@@ -518,13 +537,24 @@ function stripFiguresDirective(prose: string): string {
  * rendered matters more than recovering the "intended" source string. Reuses
  * splitCodeRegions, the same shared code/prose split assertNoLeftoverComponentTags
  * uses, so a `:::figures` block mentioned inside a code sample is exempt here too.
+ *
+ * FIX ROUND 2 (post-review, post Task 3): the error message used to name "a
+ * missing closing :::" as a cause. FIGURES_DIRECTIVE's own FIX ROUND 2 note
+ * now tolerates a closing fence indented up to three spaces (what Prettier
+ * produces), so an indented-but-present closing fence is no longer a way to
+ * reach this guard at all -- naming it as a cause here would send the next
+ * reader looking for something that is not their bug, the exact complaint
+ * this guard existed to fix in the first place, aimed at itself. Genuinely
+ * missing (or over-indented past three spaces) is still a real cause, so it
+ * stays, worded to say so.
  */
 function assertNoLeftoverFiguresDirective(strippedBody: string): void {
   for (const segment of splitCodeRegions(strippedBody)) {
     if (!segment.code && LEFTOVER_FIGURES_DIRECTIVE.test(segment.text)) {
       throw new Error(
         'markdown-export: a figures directive survived MDX stripping outside of code ' +
-          '(check for a source attribute containing an unescaped } or a missing closing :::): ' +
+          '(check for a source attribute containing an unescaped }, or a closing ::: that is ' +
+          'missing entirely or indented more than three spaces): ' +
           JSON.stringify(
             segment.text.length > 160 ? `${segment.text.slice(0, 160)}…` : segment.text,
           ),
