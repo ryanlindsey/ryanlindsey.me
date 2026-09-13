@@ -8,7 +8,7 @@ import { readdirSync, readFileSync } from 'node:fs';
  * layer exists, so `getCollection` is not available to it. Same reason
  * heading-anchors.mjs is `.mjs` and imported the same way.
  *
- * TWO SEPARATE REASONS A ROUTE IS EXCLUDED, and conflating them would be the
+ * THREE SEPARATE REASONS A ROUTE IS EXCLUDED, and conflating them would be the
  * bug here:
  *
  * 1. DRAFTS. `src/pages/writing/[...slug].astro` deliberately gives every
@@ -23,8 +23,29 @@ import { readdirSync, readFileSync } from 'node:fs';
  *    `noindex, nofollow`. `/fit/r/<id>` additionally carries a scoped token in
  *    its URL, so a sitemap entry for it would publish the token itself.
  *
+ * 3. THIN DUPLICATES. `/writing/pillar/<pillar>` is the writing index filtered
+ *    to one of 02 §2's three pillars (2026-09 redesign, design 1h). Every row
+ *    on it is a row on `/writing`, so the four pages are one page and three
+ *    subsets of it, and a sitemap that offered all four would be asking a
+ *    crawler to pick a canonical among near-identical documents. It carries
+ *    `/writing`. The filtered routes exist because a chip has to be an address
+ *    -- that is the whole reason they are routes and not a client-side toggle
+ *    -- and being addressable is not the same as being worth indexing.
+ *
+ *    THE PAGES ALSO SAY `noindex, follow` THEMSELVES, and both halves are
+ *    deliberate for the same reason reason 1 gives: neither is sufficient
+ *    alone. A sitemap omission does not stop a crawler that followed a chip,
+ *    and a `noindex` page still listed in a sitemap is a contradiction Search
+ *    Console reports as one. `follow` rather than `nofollow`, because unlike a
+ *    draft these pages link only published posts and are a fine path to them.
+ *
+ *    Revisit when a pillar carries enough posts to be a destination rather than
+ *    a filter; it is one line here and one prop on the route.
+ *
  * The draft half is derived from disk rather than hand-listed, so a new draft
  * is covered the day it lands rather than the day someone remembers this file.
+ * The pillar half is a single prefix, which `isUnindexed` already extends to
+ * everything beneath it, so a fourth pillar needs no edit here either.
  */
 
 /** Frontmatter `draft: true`, read the same way tests/pages.test.ts reads it. */
@@ -46,7 +67,12 @@ function draftSlugs(dir) {
 
 /**
  * Every path prefix the sitemap must skip, as pathnames with no trailing
- * slash. `/fit` covers `/fit/r/<id>` too -- see `isUnindexed`.
+ * slash. `/fit` covers `/fit/r/<id>` too, and `/writing/pillar` covers every
+ * pillar beneath it -- see `isUnindexed`.
+ *
+ * `/writing/pillar` excludes the filtered indexes WITHOUT touching `/writing`
+ * itself: `isUnindexed` matches a route exactly or as a path prefix, and
+ * `/writing` is neither equal to nor beneath `/writing/pillar`.
  */
 export function unindexedRoutes() {
   const drafts = [
@@ -55,7 +81,7 @@ export function unindexedRoutes() {
       (slug) => `/work/${slug}`,
     ),
   ];
-  return ['/fit', ...drafts];
+  return ['/fit', '/writing/pillar', ...drafts];
 }
 
 /**

@@ -1,0 +1,64 @@
+---
+import { getCollection } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+import Shell from '../../../layouts/Shell.astro';
+import WritingIndex, { WRITING_DESCRIPTION } from '../../../components/WritingIndex.astro';
+import { PILLAR_LABELS } from '../../../lib/pillars';
+
+/**
+ * The filtered writing indexes, one static page per pillar.
+ *
+ * WHY A ROUTE AND NOT A QUERY STRING. The chips have to be linkable -- a
+ * filtered view this site cannot give you an address for is a view it does not
+ * really have -- and reading `?pillar=` would mean `export const prerender =
+ * false`, trading the whole section's static build for three subsets. Three
+ * prerendered pages cost nothing and keep the address.
+ *
+ * WHY `pillar/[pillar]` AND NOT THE `[...filter]` REST ROUTE THE ISSUE
+ * SUGGESTED. `src/pages/writing/[...slug].astro` already owns `/writing/*`, so
+ * a second rest route beside it is a collision, not a design. A static segment
+ * ranks above a rest param in Astro's route ordering, and `[...slug]` only ever
+ * emits paths for real post ids anyway, so these two never compete for a URL.
+ *
+ * PATHS COME FROM PILLAR_LABELS, NOT FROM THE POSTS. Every pillar gets a page
+ * even when nothing is published under it, because the index renders a chip per
+ * pillar and a chip that 404s is worse than one reading zero. 02 §2's pillars
+ * are a fixed taxonomy; the index reports an empty one rather than hiding it.
+ */
+export const getStaticPaths = (async () =>
+  Object.keys(PILLAR_LABELS).map((pillar) => ({ params: { pillar } }))) satisfies GetStaticPaths;
+
+const { pillar } = Astro.params;
+const label = PILLAR_LABELS[pillar!] ?? pillar!;
+
+const posts = (await getCollection('posts', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.publishedAt.getTime() - a.data.publishedAt.getTime(),
+);
+
+/*
+ * `noindex, follow` below, rather than the sitewide default, and the two words
+ * are doing separate jobs. NOINDEX: this is a thin duplicate of /writing, the
+ * same rows and a subset of them, and one of the four belongs in an index
+ * rather than all four. FOLLOW: the posts themselves are the point and should
+ * still be crawled from here, which is what separates this from a draft's
+ * `noindex, nofollow`. src/lib/unindexed-routes.mjs keeps the matching sitemap
+ * entries out, and its header explains why a page like this gets both halves
+ * rather than relying on either alone.
+ *
+ * Worth revisiting when a pillar carries enough posts to be a destination
+ * rather than a filter. Nothing changes but this prop and one line there.
+ *
+ * A frontmatter comment and not an HTML one: an HTML comment ships in the
+ * response, and tests/pages.test.ts reads the response for exactly this
+ * directive. See the note in src/components/WritingIndex.astro for the version
+ * of this mistake that actually broke a test on the first run.
+ */
+---
+
+<Shell
+  title={`${label} — Writing — Ryan Lindsey`}
+  description={WRITING_DESCRIPTION}
+  robots="noindex, follow"
+>
+  <WritingIndex posts={posts} activePillar={pillar} />
+</Shell>
