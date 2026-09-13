@@ -332,15 +332,19 @@
     @apply hairline-grid;
   }
 
-  [data-figures='2'] {
+  /* Qualified by `.rl-figures`, not left as a bare attribute selector: only
+     the figures grid asks a column count of its `data-figures` value, and an
+     unqualified `[data-figures='3']` would hand `grid-template-columns` to
+     anything else that ever carries the attribute for its own reasons. */
+  .rl-figures[data-figures='2'] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  [data-figures='3'] {
+  .rl-figures[data-figures='3'] {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  [data-figures='4'] {
+  .rl-figures[data-figures='4'] {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
