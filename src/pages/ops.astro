@@ -379,6 +379,7 @@ const BLEED = 'mx-auto max-w-[1440px]';
  * header is. That works there because the prototype's paragraph is two lines;
  * this page's are four and five, and a ragged left edge down five lines is hard
  * to read for no gain. The grid is the design's, the alignment is not.
+ *
  */
 const HEAD = `${COLUMN} grid items-baseline gap-x-16 gap-y-3 pb-8 pt-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,34rem)]`;
 
@@ -634,8 +635,35 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
       </div>
     </div>
 
+    {
+      /*
+        THE NOTE SETS IN COLUMNS, WHICH IS THE ONLY WAY TO FILL THIS WIDTH AND
+        STILL BE READABLE. Two earlier arrangements were wrong in the same
+        direction and are recorded because the obvious third is wrong too.
+        First it was one `max-w-[80ch]` line, which measured 707px inside a
+        1385px band and left the right half of the page blank; the clamp was
+        doing the work and nothing explained the gap. Then it moved into the
+        section-opening grid, kicker left and prose right, which only moved the
+        same blank half to the other side.
+
+        THE FIX IS NOT A WIDER LINE. `text-small` is 14px, so the full 1360px
+        content width is about 195 characters, roughly twice what anyone reads
+        comfortably. Columns spend the width and keep the measure. MEASURED in
+        the browser at three widths: 62 characters at 1024, 50 at 1280 and 58
+        at the 1440 cap, against 78 in the single column this replaces.
+
+        The dip at 1280 is the third column arriving at the narrowest width it
+        ever has, and it is the better half of the trade: two columns held to
+        the cap would set 93 characters, which is past readable, while 50 is
+        merely narrow and is what a newspaper column runs.
+
+        Below `lg` it is one column at the full gutter width, which is what the
+        rest of the page does on a phone and is deliberately unchanged.
+      */
+    }
     <div class:list={[COLUMN, 'pt-9']}>
-      <p class="max-w-[80ch] text-small text-ink-muted">
+      <p class={KICKER}>AI Gateway</p>
+      <p class="mt-4 text-small text-ink-muted lg:columns-2 lg:gap-x-16 xl:columns-3">
         The three gateway figures are its own accounting over the same window as everything above:
         its computed cost for the calls it was asked to record, which is a closer thing to an
         invoice than an estimate made here from token counts, and not the invoice itself. When they
@@ -856,7 +884,7 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
   </div>
 
   {/* ------------------------------------------------------------- 5 & 6 */}
-  <div class:list={[BLEED, 'mt-px pb-20']}>
+  <div class:list={[BLEED, 'mt-16 pb-20']}>
     <div class="hairline-grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
       <section aria-labelledby="status" class={PANEL}>
         <div class="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
