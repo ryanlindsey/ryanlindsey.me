@@ -1,0 +1,198 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import { PILLAR_LABELS } from '../lib/pillars';
+import { readingTimeFor } from '../lib/reading-time';
+
+/**
+ * The writing section's description, in one place because it is rendered twice
+ * on every one of these pages: as the masthead's right column, below, and as
+ * the <meta name="description"> the route hands to Shell. The pre-redesign
+ * index had only the meta tag, so there was nothing to fork; the split
+ * masthead (design 1h) puts the same sentence on the page.
+ *
+ * Read here rather than taken as a prop, deliberately. A `description` prop
+ * would have exactly one correct value and would let a caller pass a masthead
+ * that disagrees with its own meta tag, which is the fork this constant exists
+ * to make impossible.
+ *
+ * This is the site's existing copy, unchanged. The prototype's right column
+ * reads differently and is deliberately not used: the redesign keeps the
+ * site's words and changes its layout.
+ */
+export const WRITING_DESCRIPTION = 'Essays on agentic engineering and scaling organizations.';
+
+interface Props {
+  /**
+   * Every PUBLISHED post, newest first. Deliberately the whole set rather than
+   * the filtered subset: the chip counts and the rows have to agree about what
+   * is published, and passing two collections is how they stop agreeing. The
+   * filtering happens below, once, from this one list -- the same reasoning
+   * src/pages/index.astro records for querying once and slicing.
+   *
+   * Drafts are excluded by the caller, not here. Both routes filter on
+   * `!data.draft` in their own `getCollection` call, which is the convention
+   * src/pages/writing/[...slug].astro states: every draft keeps a route and
+   * never gets an index entry.
+   */
+  posts: CollectionEntry<'posts'>[];
+  /** The pillar this view is filtered to, or undefined for the "all" view. */
+  activePillar?: string;
+}
+
+const { posts, activePillar } = Astro.props;
+
+const rows = activePillar ? posts.filter((post) => post.data.pillar === activePillar) : posts;
+
+/**
+ * The chips, built from PILLAR_LABELS rather than from the corpus.
+ *
+ * That is the decision worth recording: a pillar with no published post still
+ * gets a chip, reading zero, linking to a route that renders the empty state.
+ * Generating chips from the posts instead would silently drop a pillar the day
+ * its last post was retired, and 02 §2's three pillars are a fixed taxonomy --
+ * the index should say a pillar is empty, not pretend it does not exist.
+ * `org-scaling` is that case today, which is why the empty branch is live code
+ * rather than a guard. tests/pages.test.ts asserts it off disk, so it stops
+ * applying the day that pillar fills.
+ *
+ * Labels are uppercased by CSS (`uppercase`), never by `.toUpperCase()`. The
+ * design sets them in caps, but the label is what identifies the chip in the
+ * markup, and a build-time uppercase would leave the rendered HTML carrying a
+ * string that appears nowhere in src/lib/pillars.ts.
+ */
+const chips = [
+  { href: '/writing', label: 'All', count: posts.length, active: !activePillar },
+  ...Object.entries(PILLAR_LABELS).map(([pillar, label]) => ({
+    href: `/writing/pillar/${pillar}`,
+    label,
+    count: posts.filter((post) => post.data.pillar === pillar).length,
+    active: activePillar === pillar,
+  })),
+];
+
+const FEEDS = [
+  { href: '/rss.xml', label: 'RSS' },
+  { href: '/feed.json', label: 'JSON feed' },
+  { href: '/llms.txt', label: 'llms.txt' },
+];
+
+const day = (date: Date) => date.toISOString().slice(0, 10);
+
+const chipClass = (active: boolean) =>
+  active
+    ? 'bg-ink px-[11px] py-[6px] font-mono text-micro uppercase text-bg no-underline'
+    : 'border border-rule px-[11px] py-[6px] font-mono text-micro uppercase text-ink-muted no-underline';
+---
+
+<section
+  data-index-masthead
+  class="mx-auto grid max-w-[1440px] items-end gap-8 px-5 pb-11 pt-10 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-14 lg:px-10 lg:pt-12"
+>
+  <div>
+    <p class="font-mono text-micro uppercase text-accent">Writing</p>
+    <h1 class="mt-5 font-display text-display text-ink">Agentic engineering, in practice.</h1>
+  </div>
+  <p class="text-body text-ink-muted">{WRITING_DESCRIPTION}</p>
+</section>
+
+{
+  /*
+  THE CHIPS MUST BE THE FIRST ELEMENT TO CLOSE INSIDE THIS ROW, and that is a
+  contract with tests/pages.test.ts rather than a styling choice. Two tests
+  scope themselves by matching from the filter row's data attribute to the next
+  closing nav or div, lazily, which is the idiom this codebase already uses for
+  `data-bio` and `data-more-writing`. Wrapping the chips in an extra div, or
+  putting the feed links before them, ends the match early and the assertions
+  then pass against a fragment holding no chips at all.
+
+  AND THIS IS A `{...}` COMMENT RATHER THAN AN HTML ONE FOR THE SAME REASON,
+  MEASURED THE HARD WAY (2026-09-13): the first version of this note was an
+  HTML comment, so it shipped in the response, and because it spelled out the
+  attribute name followed by a closing nav tag, `exec` matched THE COMMENT
+  instead of the element -- it sits earlier in the document. A note warning
+  about a scoping trap became the scoping trap. src/pages/index.astro records
+  the same lesson from the other direction: an HTML comment is part of the
+  response, and a check that reads the response cannot tell the two apart.
+  */
+}
+<div data-filter-row class="border-y border-rule">
+  <div
+    class="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-4 px-5 py-[18px] lg:px-10"
+  >
+    <nav aria-label="Filter writing by pillar" class="flex flex-wrap items-center gap-2">
+      {
+        chips.map((chip) => (
+          <a
+            href={chip.href}
+            class={chipClass(chip.active)}
+            aria-current={chip.active ? 'page' : undefined}
+          >
+            {chip.label} {chip.count}
+          </a>
+        ))
+      }
+    </nav>
+
+    <p class="flex flex-wrap items-center gap-2 font-mono text-micro uppercase text-accent">
+      {
+        FEEDS.map((feed, index) => (
+          <>
+            {index > 0 && <span aria-hidden="true">&middot;</span>}
+            <a href={feed.href} class="text-accent">
+              {feed.label}
+            </a>
+          </>
+        ))
+      }
+    </p>
+  </div>
+</div>
+
+{
+  rows.length === 0 ? (
+    <div class="mx-auto max-w-[1440px] px-5 py-16 lg:px-10">
+      {/*
+        Two empty states, because they answer two different questions. The
+        unfiltered index says the site has not published yet; a pillar view
+        says this pillar has not. Both carry `data-testid="writing-empty"`,
+        which is the marker tests/pages.test.ts has used since launch.
+      */}
+      <p class="font-mono text-micro uppercase text-ink-muted" data-testid="writing-empty">
+        {activePillar ? 'No pieces under this pillar yet.' : 'First pieces land this week.'}
+      </p>
+    </div>
+  ) : (
+    <ul>
+      {rows.map((post) => (
+        // `data-post-row` sits on the WRAPPER, not on the anchor. Also a test
+        // contract: the row assertion counts `<a ` between this attribute and
+        // the first `</a>`, and an attribute on the anchor itself would leave
+        // that opening tag outside the slice and count zero.
+        <li data-post-row class="border-b border-rule">
+          <a
+            href={`/writing/${post.id}`}
+            class="mx-auto grid max-w-[1440px] gap-4 px-5 py-[30px] no-underline lg:grid-cols-[150px_minmax(0,1fr)_300px] lg:gap-10 lg:px-10"
+          >
+            <p class="font-mono text-micro uppercase text-ink-muted">
+              <time datetime={post.data.publishedAt.toISOString()} data-numeric>
+                {day(post.data.publishedAt)}
+              </time>
+              <span class="block text-accent">{readingTimeFor(post.body).minutes} min</span>
+            </p>
+
+            <div>
+              <h2 class="font-display text-section text-ink">{post.data.title}</h2>
+              <p class="mt-4 max-w-[64ch] text-body text-ink-muted">{post.data.description}</p>
+            </div>
+
+            <p class="lg:justify-self-start">
+              <span class="inline-block border border-rule px-[11px] py-[6px] font-mono text-micro uppercase text-ink-muted">
+                {PILLAR_LABELS[post.data.pillar] ?? post.data.pillar}
+              </span>
+            </p>
+          </a>
+        </li>
+      ))}
+    </ul>
+  )
+}

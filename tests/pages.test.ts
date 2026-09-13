@@ -5,6 +5,7 @@ import type { CollectionEntry } from 'astro:content';
 import { SITE_HARNESS_WORKERS } from './workers';
 import { BANNED_PATTERNS } from './candidacy-patterns';
 import { GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
+import { PILLAR_LABELS } from '../src/lib/pillars';
 import { formatDateRange } from '../src/lib/resume';
 import { buildLlmsTxt, buildLlmsFullTxt, type LlmsLink } from '../src/lib/llms-index';
 import { buildRssFeed, buildJsonFeed, RSS_MARKDOWN_NOTICE, type JsonFeed } from '../src/lib/feeds';
@@ -41,11 +42,19 @@ const resumeYamlPath = new URL('../src/content/resume/ryan-lindsey.yaml', import
  * when the frontmatter omits the key entirely, and only reads the key out of
  * the frontmatter block itself (the text before the closing `---`) so a
  * `draft:` appearing in prose in the body could never be mistaken for it.
+ *
+ * `pillar` is read the same way and is `undefined` for a case study, which has
+ * no such key -- 02 §2's pillars are a posts-only taxonomy. Added by the 2026-09
+ * redesign's writing-index issue (#105) so the filtered-index test can assert
+ * which posts a pillar view EXCLUDES without naming a slug: a test that hard-codes
+ * "agent-native-site must not appear here" starts lying the day that post is
+ * retired or repillared, and the exclusion is the half of that test that can
+ * actually fail.
  */
 function readContentEntries(
   section: 'writing' | 'work',
   dir: URL,
-): { section: 'writing' | 'work'; slug: string; draft: boolean }[] {
+): { section: 'writing' | 'work'; slug: string; draft: boolean; pillar?: string }[] {
   return readdirSync(dir)
     .filter((name) => name.endsWith('.mdx'))
     .map((name) => {
@@ -59,6 +68,7 @@ function readContentEntries(
         section,
         slug: name.replace(/\.mdx$/, ''),
         draft: /\ndraft:\s*true\b/.test(frontmatter),
+        pillar: /\npillar:\s*(\S+)/.exec(frontmatter)?.[1],
       };
     });
 }
@@ -704,6 +714,132 @@ test('gives headings stable ids and empty anchors', async () => {
   const page = await html('/writing/type-specimen');
   expect(page).toContain('id="code-frames"');
   expect(page).toMatch(/<a class="heading-anchor" href="#code-frames"[^>]*><\/a>/);
+});
+
+/**
+ * The writing index, rebuilt by the 2026-09 redesign (design 1h, issue #105).
+ *
+ * Two regexes below scope an assertion to one element by matching from a data
+ * attribute to the next closing tag, the idiom this file already uses for
+ * `data-bio` and `data-more-writing`. Both are LAZY, so they stop at the FIRST
+ * closing tag of that kind -- which is a constraint on the markup, not just on
+ * the test, and src/components/WritingIndex.astro carries the matching note.
+ */
+test('the writing index is a split masthead over filter chips over rows', async () => {
+  const page = await html('/writing');
+  expect(page).toContain('data-index-masthead');
+  expect(page).toContain('data-filter-row');
+  expect(page).toContain('data-post-row');
+});
+
+test('every pillar chip carries a real count of published posts', async () => {
+  const page = await html('/writing');
+  const row = /data-filter-row[\s\S]*?<\/(nav|div)>/.exec(page)![0];
+  const published = CONTENT_ENTRIES.filter((e) => e.section === 'writing' && !e.draft);
+  // The "all" chip. Asserted against the count read from the content tree,
+  // so it stays true as posts are added rather than freezing today's number.
+  expect(row).toContain(`${published.length}`);
+  for (const label of Object.values(PILLAR_LABELS)) {
+    expect(row, `${label} has no chip`).toContain(label);
+  }
+});
+
+test('a filter chip is a link to a real address, not a client-side toggle', async () => {
+  // This site's posture is that a URL is an address: a filtered view has to
+  // be linkable. A <button> here means the filtered state cannot be shared.
+  const row = /data-filter-row[\s\S]*?<\/(nav|div)>/.exec(await html('/writing'))![0];
+  expect(row).not.toContain('<button');
+  expect(row).toMatch(/<a[^>]*href="\/writing\//);
+});
+
+test('a filtered index serves only its own pillar, and still 200s', async () => {
+  const page = await html('/writing/pillar/agentic-engineering');
+  const rows = [...page.matchAll(/data-post-row/g)].length;
+  expect(rows).toBeGreaterThan(0);
+  expect(page).toContain('data-filter-row');
+
+  // The half that can actually fail. "Serves only its own pillar" is a claim
+  // about what is ABSENT, and a row count alone is satisfied by a filtered
+  // route that quietly renders every post -- which is the most likely way to
+  // build this wrong, since the unfiltered index is where the markup comes
+  // from. Both sides are read off disk so neither freezes today's corpus.
+  const posts = CONTENT_ENTRIES.filter((e) => e.section === 'writing' && !e.draft);
+  const mine = posts.filter((e) => e.pillar === 'agentic-engineering');
+  const theirs = posts.filter((e) => e.pillar !== 'agentic-engineering');
+  expect(mine.length, 'no published agentic-engineering post to filter for').toBeGreaterThan(0);
+  expect(theirs.length, 'no post from another pillar, so exclusion is untested').toBeGreaterThan(0);
+  expect(rows).toBe(mine.length);
+  for (const entry of mine) {
+    expect(page, `the pillar view should list ${entry.slug}`).toContain(`/writing/${entry.slug}`);
+  }
+  for (const entry of theirs) {
+    expect(page, `${entry.slug} is not in this pillar`).not.toContain(`/writing/${entry.slug}`);
+  }
+});
+
+test('a pillar with no published posts keeps its chip, its route and an honest empty state', async () => {
+  // `org-scaling` has no published post today, and the design (1h) shows only
+  // pillars that do. The chips are generated from PILLAR_LABELS rather than
+  // from the corpus, so an empty pillar still gets a chip -- which makes its
+  // route a real address that has to answer rather than 404. It answers with
+  // the empty state, because a chip that links nowhere is worse than a chip
+  // reading zero. Read off disk so this stops applying the day the pillar
+  // fills, rather than pinning `org-scaling` empty forever.
+  const empty = Object.keys(PILLAR_LABELS).filter(
+    (pillar) =>
+      !CONTENT_ENTRIES.some((e) => e.section === 'writing' && !e.draft && e.pillar === pillar),
+  );
+  for (const pillar of empty) {
+    const page = await html(`/writing/pillar/${pillar}`);
+    expect(page, `${pillar} should render the empty state`).toContain(
+      'data-testid="writing-empty"',
+    );
+    expect([...page.matchAll(/data-post-row/g)].length, `${pillar} should have no rows`).toBe(0);
+  }
+});
+
+test('the feeds are offered from the index', async () => {
+  const page = await html('/writing');
+  for (const href of ['/rss.xml', '/feed.json', '/llms.txt']) {
+    expect(page).toContain(`href="${href}"`);
+  }
+});
+
+test('a post row is one wrapper link, undecorated', async () => {
+  const row = /data-post-row[\s\S]*?<\/a>/.exec(await html('/writing'))![0];
+  expect(row).toContain('no-underline');
+  // One link per row: a nested anchor inside a wrapper anchor is invalid
+  // markup and the design puts the whole row inside the link. This counts to
+  // exactly 1 rather than "not 2" because `data-post-row` sits on the row
+  // WRAPPER, not on the anchor -- putting it on the anchor would leave the
+  // opening `<a ` outside the slice and count 0, which is the arrangement
+  // this assertion is pinning down.
+  expect([...row.matchAll(/<a\s/g)].length).toBe(1);
+});
+
+test('a filtered index is kept out of the sitemap and says so to a crawler', async () => {
+  // The decision recorded in src/lib/unindexed-routes.mjs, asserted on both
+  // halves. A filtered view is a thin duplicate of /writing -- the same rows,
+  // a subset -- so the sitemap carries one of the four and the other three
+  // say `noindex, follow`: do not index this, do follow it to the posts.
+  // Both halves, because either alone fails open. A sitemap omission does not
+  // stop a crawler that found the chip, and a noindex page still listed in the
+  // sitemap is a contradiction Search Console reports as one.
+  const indexXml = await (await server.fetch('/sitemap-index.xml')).text();
+  const child = indexXml.match(/<loc>([^<]+)<\/loc>/)![1];
+  const xml = await (await server.fetch(new URL(child).pathname)).text();
+  const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => new URL(m[1]).pathname);
+
+  expect(locs, 'the unfiltered index is the one that belongs in the sitemap').toContain(
+    '/writing/',
+  );
+  for (const pillar of Object.keys(PILLAR_LABELS)) {
+    expect(locs, `the sitemap must not carry the ${pillar} filter`).not.toContain(
+      `/writing/pillar/${pillar}/`,
+    );
+    const page = await html(`/writing/pillar/${pillar}`);
+    expect(page).toMatch(/<meta name="robots" content="noindex, follow"\s*\/?>/);
+  }
 });
 
 // The `data-testid="writing-empty"` assertion this test used to carry is gone
