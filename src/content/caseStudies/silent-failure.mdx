@@ -25,6 +25,23 @@ figures:
     label: Incidents written up
   - value: '2 of 10'
     label: Replay eval bundles
+# The facts bar (design 1j). These four are the handoff's own values for this
+# page, which is the page 1j was drawn on, rather than a set assembled here.
+#
+# Each one is carried by the piece. The Mechanism section names every part of
+# the stack below and links the documentation for each; "built solo" and the
+# résumé's `projects` entry for Pixelsonly Racing, which lists `roles: Founder`
+# and points its `x_artifacts` at this file, are where the role comes from.
+#
+# `status: Live`, not "In production", which is the wording 1j shows. The two
+# say the same thing and only one of them is green: `statusClass` in
+# src/lib/case-study-shape.ts matches the whole value against `live`, on
+# purpose, because a substring test would paint a "Delivered" project with the
+# live ramp. The word follows the rule rather than the rule chasing the word.
+role: Founder, sole engineer
+stack: Workers, D1, R2, Durable Objects, Queues, Workflows
+model: Claude via AI Gateway
+status: Live
 ---
 
 A GitHub Actions workflow of mine discarded roughly 639 driver sessions. There was no error, no
