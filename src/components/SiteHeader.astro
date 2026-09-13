@@ -1,5 +1,6 @@
 ---
 import ThemeToggle from './ThemeToggle.astro';
+import MobileNav from './MobileNav.astro';
 import { NAV_LINKS } from '../lib/nav';
 
 interface Props {
@@ -21,9 +22,17 @@ const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`)
     (task-13-report.md) is gone, not just restyled. It answered five links
     plus the wordmark not fitting this row's non-shrinkable floor at ~400px
     by wrapping the header to two lines; at four links, with a real mobile
-    overlay arriving one issue after this one (the inert toggle button below
-    is what it will open), the row no longer needs to wrap. Everything below
-    `lg` is out of scope here and stays wrong until that issue lands.
+    overlay (design 1c, issue #101, MobileNav.astro below), the row no longer
+    needs to wrap because below `lg` it is no longer this row. The sentence
+    that used to end this paragraph -- "everything below `lg` is out of scope
+    here and stays wrong until that issue lands" -- was true of issue #99 and
+    is what issue #101 came back and finished.
+
+    The swap is one breakpoint, spelled three times: the nav and the right
+    cluster are `hidden lg:flex`, the toggle is `lg:hidden`, and the row is
+    60px tall below `lg` and 68px at it. `lg` is 64rem, and src/lib/mobile-nav.ts
+    matches that number in a media query for the same swap -- the two have to
+    agree.
   -->
   <!--
     max-w-[1440px] px-10 is the redesign's own target geometry for this row --
@@ -38,10 +47,16 @@ const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`)
     this width, the way the mobile toggle button below is commented as
     provisional rather than fixed.
   -->
-  <div class="mx-auto flex h-[68px] max-w-[1440px] items-center gap-9 px-10">
+  <!--
+    The 20px gutter below `lg` is the design's, not a guess: design 1c sets
+    the overlay's own footer strip at `padding: 18px 20px 26px`, so 20px is
+    what that view gutters at, and the collapsed header lines up with the
+    overlay that replaces it. 40px from `lg` up, as everywhere else.
+  -->
+  <div class="mx-auto flex h-[60px] max-w-[1440px] items-center gap-9 px-5 lg:h-[68px] lg:px-10">
     <a href="/" class="font-display text-subheading text-ink">Ryan Lindsey</a>
 
-    <nav aria-label="Primary" class="ml-2 flex items-center gap-[30px]">
+    <nav aria-label="Primary" class="ml-2 hidden items-center gap-[30px] lg:flex">
       {
         NAV_LINKS.map((link) => (
           <a
@@ -55,7 +70,7 @@ const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`)
       }
     </nav>
 
-    <div class="ml-auto flex items-center gap-[14px]">
+    <div class="ml-auto hidden items-center gap-[14px] lg:flex">
       <!--
         A placeholder, not a control. Site search is not built -- no overlay,
         no results page, no empty state, and none of those should be
@@ -79,21 +94,29 @@ const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`)
     </div>
 
     <!--
-      Rendered, not built. The mobile-nav issue right after this one consumes
-      this exact button (aria-controls="rl-mobile-menu") as a named
-      interface, so it exists now with no script and no matching
-      #rl-mobile-menu on the page -- clicking it does nothing. Step 4 puts
-      everything below `lg` out of this issue's scope; this button is
-      deliberately inert, not an oversight.
+      Issue #99 shipped this button deliberately inert -- rendered with the
+      right `aria-controls` and no script, because the overlay it names was
+      the next issue's to build. Issue #101 built it, so the note that used to
+      stand here saying "clicking it does nothing" is no longer true: it opens
+      MobileNav.astro below, through src/lib/mobile-nav.ts.
+
+      Two 18x2px bars in a 44x44 box. The box is the floor the design sets for
+      a hit target and it must not shrink; `h-11 w-11` is 44px and
+      tests/mobile-nav.test.ts asserts the spelling, because a rendered page
+      cannot be measured from a test but a swap to a smaller utility can be
+      seen. The bars are aria-hidden decoration -- the name is on the button.
     -->
     <button
       type="button"
       aria-label="Open menu"
       aria-expanded="false"
       aria-controls="rl-mobile-menu"
-      class="border border-rule px-2.5 py-2 font-mono text-micro text-ink lg:hidden"
+      class="ml-auto flex h-11 w-11 flex-col items-center justify-center gap-[5px] border border-rule lg:hidden"
     >
-      Menu
+      <span aria-hidden="true" class="block h-0.5 w-[18px] bg-ink"></span>
+      <span aria-hidden="true" class="block h-0.5 w-[18px] bg-ink"></span>
     </button>
   </div>
+
+  <MobileNav />
 </header>

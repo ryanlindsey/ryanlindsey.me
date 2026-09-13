@@ -1,32 +1,17 @@
 ---
-import { NAV_LINKS } from '../lib/nav';
+import { NAV_LINKS, SYSTEM_LINKS, AGENT_LINKS } from '../lib/nav';
 import { getResume } from '../lib/resume-collection';
 
-// Day 3 Task 9 (02 §3): the agent courtesies the comment above used to defer
-// -- /llms.txt (the curated index) and the MCP endpoint. /llms-full.txt is
-// deliberately NOT linked here: it is the bulk-ingestion corpus and
-// /llms.txt already points at it (task-9-brief.md Step 3), so a footer link
-// to both would be redundant, and a footer link to the raw corpus is not a
-// courtesy to a human visitor scanning the colophon. The `.md` variant
-// routes (Task 7) have no single URL to link -- they are discoverable
-// page-by-page via each HTML page's own <link rel="alternate">.
+// The SYSTEM and FOR AGENTS columns were two local consts here until issue
+// #101. They are in src/lib/nav.ts now, WITH the paragraphs that used to sit
+// in this block explaining them -- why /llms-full.txt is absent, why the MCP
+// link is `/mcp` and not the bare origin, why RSS and not /feed.json, and why
+// Changelog points at /ops#releases. Nothing was dropped; read it there.
 //
-// Fix round 1 (task-9-report.md): the MCP link is `/mcp` on that domain, not
-// the bare origin -- the custom domain is only the host,
-// `workers/mcp/src/index.ts`'s `createMcpHandler(..., { route: '/mcp' })`
-// mounts the actual JSON-RPC endpoint at that path, and the bare origin
-// 404s. Verified live: POST https://mcp.ryanlindsey.me/mcp with an
-// `initialize` body succeeds.
-//
-// 2026-09 redesign (issue #100): the one-line footer those two paragraphs
-// were written for is gone, replaced by the five-column colophon below, but
-// both reasons survive the rewrite intact and are why this column carries
-// /llms.txt and /mcp and not /llms-full.txt or the bare origin. RSS joined
-// them here: the design names three FOR AGENTS links and RSS is the one it
-// names. /feed.json is the JSON Feed twin, built by the same module
-// (src/lib/feeds.ts) and still advertised on every page by Base.astro's
-// <link rel="alternate">, so it is reachable without spending a fourth slot
-// in a column the design sized at three.
+// They moved because the mobile overlay (MobileNav.astro) repeats the same
+// demoted links in its footer strip, and two components rendering five
+// destinations from two hand-kept arrays is how a link gets added to this
+// colophon and silently never reaches a phone.
 const year = new Date().getFullYear();
 const { basics } = await getResume();
 
@@ -37,25 +22,6 @@ const { basics } = await getResume();
 // promoted it OUT of this footer into the primary nav, and repeating it here
 // would quietly undo that.
 const siteLinks = NAV_LINKS.filter((link) => link.href !== '/chat');
-
-// Demoted out of the primary nav by issue #99, and this column is where they
-// landed -- they are about the site rather than part of reading it.
-//
-// Changelog points at /ops#releases because there is no /changelog route.
-// src/pages/ops.astro renders the parsed release history under
-// `aria-labelledby="releases"`, which is the thing the design's label means;
-// a standalone route would be a separate issue, not an invention here.
-const systemLinks = [
-  { href: '/ops', label: 'Ops' },
-  { href: '/ai-policy', label: 'AI Policy' },
-  { href: '/ops#releases', label: 'Changelog' },
-];
-
-const agentLinks = [
-  { href: '/llms.txt', label: 'llms.txt' },
-  { href: 'https://mcp.ryanlindsey.me/mcp', label: 'MCP' },
-  { href: '/rss.xml', label: 'RSS' },
-];
 
 /**
  * GitHub and LinkedIn are READ from the résumé record rather than typed here.
@@ -112,8 +78,8 @@ const elsewhereLinks = [
  */
 const columns = [
   { heading: 'SITE', label: 'Site', links: siteLinks, mono: false },
-  { heading: 'SYSTEM', label: 'System', links: systemLinks, mono: false },
-  { heading: 'FOR AGENTS', label: 'For agents', links: agentLinks, mono: true },
+  { heading: 'SYSTEM', label: 'System', links: SYSTEM_LINKS, mono: false },
+  { heading: 'FOR AGENTS', label: 'For agents', links: AGENT_LINKS, mono: true },
   { heading: 'ELSEWHERE', label: 'Elsewhere', links: elsewhereLinks, mono: false },
 ];
 

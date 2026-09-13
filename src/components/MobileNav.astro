@@ -1,0 +1,146 @@
+---
+import { NAV_LINKS, SYSTEM_LINKS, AGENT_LINKS } from '../lib/nav';
+
+/**
+ * The mobile navigation takeover (issue #101, design 1c). Rendered inside
+ * SiteHeader.astro, beside the 44x44 button whose `aria-controls` names it.
+ *
+ * SERVER-RENDERED AND HIDDEN, rather than built by script on first open. A
+ * menu that does not exist until JavaScript runs is a menu a visitor without
+ * it cannot reach, and every link in here is a real page. `hidden` is the
+ * attribute rather than a class for the same reason it is the attribute
+ * everywhere else: it takes the element out of the accessibility tree, which
+ * a `display: none` utility also does but only as a side effect of a style
+ * that anything later in the cascade can win against.
+ *
+ * That is also why the root element below carries NO display utility of its
+ * own -- `flex` lives on the wrapper inside it. An author `display: flex` on
+ * this element would outrank the user-agent `[hidden] { display: none }` and
+ * the overlay would ship permanently open, on every page, over everything.
+ */
+
+/**
+ * The demoted strip: Ops, AI Policy, llms.txt, MCP, RSS, read from the same
+ * two lists the footer's SYSTEM and FOR AGENTS columns render (src/lib/nav.ts)
+ * rather than typed again here.
+ *
+ * Changelog is the one SYSTEM entry the design's five-item strip leaves out,
+ * and the filter says why in the shape of the href rather than by naming it:
+ * it is an anchor into a page this strip already links, so carrying both would
+ * spend two of five slots on /ops. Written as "not an in-page anchor" so it
+ * still picks the right links if the release section is ever renamed.
+ */
+const demotedLinks = [...SYSTEM_LINKS.filter((link) => !link.href.includes('#')), ...AGENT_LINKS];
+
+// Same rule as the footer's: anything that leaves the site opens in a new tab
+// and carries rel="noopener". Only the MCP endpoint does, here.
+const isExternal = (href: string) => href.startsWith('http');
+---
+
+<!--
+  The id is the interface, not a data attribute. SiteHeader's toggle names it
+  in `aria-controls` and src/lib/mobile-nav.ts finds it by the same name, so
+  the `data-mobile-nav` this element briefly carried was a second handle on a
+  thing that already had one. The close button keeps its data attribute
+  because it has no name of its own to be found by.
+-->
+<div id="rl-mobile-menu" hidden class="fixed inset-0 z-50 overflow-y-auto bg-bg lg:hidden">
+  <div class="flex min-h-full flex-col px-5">
+    <div class="flex h-[100px] shrink-0 items-center justify-between">
+      <p class="font-mono text-micro text-ink-muted">MENU</p>
+      <!--
+        44x44, and it must not shrink -- the design floors both this and the
+        toggle that opens it at the minimum hit target. The glyph is
+        aria-hidden and the name is on the button, because an accessible name
+        of "✕" is a name a screen reader has to guess at.
+      -->
+      <button
+        type="button"
+        data-mobile-nav-close
+        aria-label="Close menu"
+        class="flex h-11 w-11 items-center justify-center border border-rule text-ink"
+      >
+        <span aria-hidden="true">✕</span>
+      </button>
+    </div>
+
+    <!--
+      text-[2.5rem] is an arbitrary value on purpose. 2.5rem is NOT a step of
+      the type scale in global.css and should not become one: it is used once,
+      in this overlay, and a token nothing else consumes is a token nobody
+      maintains (the same rule that kept design 1d's and 1f's four sizes out
+      of the scale when those options were not chosen).
+
+      An arbitrary font-size utility carries only the size, so the weight and
+      the line height are spelled here too. 600 is what every display step in
+      the scale declares. 1.15 is what --text-section (2rem, the nearest step
+      below) declares, chosen so a label that wraps at a narrow width does not
+      open up; assumed rather than measured, like `banner` and `section`
+      themselves -- record the measurement here if a visual pass disagrees.
+
+      Ask my agent is in the accent, and that is the design saying the
+      promotion in colour rather than a highlight for its own sake: it is the
+      link issue #99 moved INTO the primary nav out of the footer.
+    -->
+    <nav aria-label="Menu">
+      {
+        NAV_LINKS.map((link) => (
+          <a
+            href={link.href}
+            class={`block border-b border-rule py-3.5 font-display text-[2.5rem] font-semibold leading-[1.15] ${
+              link.href === '/chat' ? 'text-accent' : 'text-ink'
+            }`}
+          >
+            {link.label}
+          </a>
+        ))
+      }
+    </nav>
+
+    <!--
+      The header's search placeholder, repeated full width, under the same rule
+      it follows up there: site search is not built, so this is a label and not
+      a control. A non-interactive <span>, aria-hidden, nothing focusable in
+      it, and no handler anywhere for the shortcut the chip advertises.
+    -->
+    <span
+      data-search-placeholder
+      aria-hidden="true"
+      class="mt-6 flex items-center gap-2.5 border border-rule p-3.5"
+    >
+      <span class="font-mono text-small text-ink-muted">Search</span>
+      <span class="ml-auto border border-rule px-[5px] py-px font-mono text-micro text-ink-muted"
+        >⌘K</span
+      >
+    </span>
+
+    <!--
+      `mt-auto` is what puts this strip at the bottom of a short viewport and
+      keeps it below the content on a tall one. The negative margin lets its
+      top rule reach both gutters while the links stay inside them.
+    -->
+    <nav
+      aria-label="Site and agents"
+      class="-mx-5 mt-auto flex flex-wrap gap-4 border-t border-rule px-5 pb-[26px] pt-[18px]"
+    >
+      {
+        demotedLinks.map((link) => (
+          <a
+            href={link.href}
+            class="font-mono text-small text-ink-muted"
+            target={isExternal(link.href) ? '_blank' : undefined}
+            rel={isExternal(link.href) ? 'noopener' : undefined}
+          >
+            {link.label}
+          </a>
+        ))
+      }
+    </nav>
+  </div>
+</div>
+
+<script>
+  import { initMobileNav } from '../lib/mobile-nav';
+
+  initMobileNav();
+</script>
