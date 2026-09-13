@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { SITE_HARNESS_WORKERS } from './workers';
-import { CASE_STUDY_SECTIONS } from '../src/lib/case-study-shape';
+import { CASE_STUDY_SECTIONS, factsFor, statusClass } from '../src/lib/case-study-shape';
 
 // See ./workers.ts for why the site Worker is booted from the build output and
 // why the MCP Worker is always listed with it.
@@ -155,4 +155,135 @@ test('links Work from the primary navigation and marks it current', async () => 
   const home = await html('/');
   expect(home).toMatch(/<a[^>]+href="\/work"/);
   expect(home).not.toMatch(/<a[^>]+href="\/work"[^>]*aria-current/);
+});
+
+// --- 1j: the inverted masthead and the facts bar (issue #107, epic #96) ---
+
+// Read off disk for the same reason `isDraft` above is: which case study
+// declares facts is a property of the corpus, not of this file, and the
+// figures ratchet in tests/pages.test.ts already learned that naming slugs
+// here turns a content decision into a failing test. Only the four flat
+// scalars content.config.ts declares count, and only inside the frontmatter --
+// the same frontmatter-only slice `isDraft` takes, so the word `status:` in
+// prose cannot be mistaken for the field.
+const declaresFacts = (slug: string) => {
+  const source = readFileSync(`src/content/caseStudies/${slug}.mdx`, 'utf8');
+  const end = source.indexOf('\n---', 3);
+  return /\n(?:role|stack|model|status):\s*\S/.test(end === -1 ? source : source.slice(0, end));
+};
+
+test('a case study masthead is inverted and an article masthead is not', async () => {
+  // Both halves. The variant decides the masthead and nothing else, so the
+  // assertion that /writing did NOT change is the half that catches the
+  // branch applied to the wrong collection -- ArticleLayout serves both, and
+  // its header records that typing it to one is what blocked /work.
+  const study = await html('/work/silent-failure');
+  expect(study).toContain('data-masthead="case-study"');
+  const article = await html('/writing/agent-native-site');
+  expect(article).toContain('data-masthead="article"');
+});
+
+test.each(slugs)('/work/%s renders a facts bar exactly when it declares facts', async (slug) => {
+  const page = await html(`/work/${slug}`);
+  // A <dl>, so this slice is the WHOLE bar rather than its first cell. The
+  // issue's draft of this test matched to the first `</div>`, which closes
+  // cell one: the label/value counts below would then have compared 1 to 1
+  // and gone green on a bar whose other three cells were blank -- the exact
+  // failure the counts exist to catch, wearing the costume of a passing test.
+  const bar = /data-facts-bar[\s\S]*?<\/dl>/.exec(page);
+
+  if (!declaresFacts(slug)) {
+    // Absent cells are omitted, not blanked, and an entry declaring none
+    // renders no bar at all. /ops has lived by that rule since launch and the
+    // figures contract states it outright: never render an empty cell. Four
+    // labels over four blanks is the same failure in a different costume.
+    expect(bar, `${slug} declares no facts and should render no bar`).toBeNull();
+    return;
+  }
+
+  expect(bar, `${slug} declares facts and should render a bar`).not.toBeNull();
+  expect(bar![0]).not.toMatch(/>\s*<\/dt>/);
+  expect(bar![0]).not.toMatch(/>\s*<\/dd>/);
+  const labels = [...bar![0].matchAll(/data-fact-label/g)].length;
+  const values = [...bar![0].matchAll(/data-fact-value/g)].length;
+  expect(labels, `${slug} should render no labelled blank`).toBe(values);
+  expect(labels).toBeGreaterThan(0);
+});
+
+test('the specimen declares all four facts, so the full bar has a page behind it', async () => {
+  // The presence arm above goes vacuous the day nothing on disk declares
+  // facts, and the specimen is what stops it -- the same job it already does
+  // for the `figures` block and the six sections. Asserted against the
+  // rendered page rather than the file, because a schema field that never
+  // reaches the markup is the failure worth catching.
+  expect(declaresFacts('shape-specimen')).toBe(true);
+  const bar = /data-facts-bar[\s\S]*?<\/dl>/.exec(await html('/work/shape-specimen'));
+  expect(bar).not.toBeNull();
+  expect([...bar![0].matchAll(/data-fact-label/g)].length).toBe(4);
+  for (const label of ['Role', 'Stack', 'Model', 'Status']) {
+    expect(bar![0], `the bar should carry a ${label} cell`).toContain(label);
+  }
+});
+
+test('the case study keeps the spine the article issue built', async () => {
+  // The variant changes the masthead. The three-column spine, the contents
+  // rail and the meta rail are #104's and have to survive untouched.
+  const page = await html('/work/silent-failure');
+  expect(page).toContain('data-article-toc');
+  expect(page).toContain('data-article-meta-rail');
+  expect(page).toContain('data-reading-progress');
+});
+
+test('a live status is green and anything else is not', () => {
+  // The one place this page uses the status ramp, and the one way to keep
+  // --rl-ok meaning something: colouring every status green makes the token
+  // decorative.
+  expect(statusClass('Live')).toContain('text-ok');
+  expect(statusClass('live')).toContain('text-ok');
+  expect(statusClass('  Live  ')).toContain('text-ok');
+  expect(statusClass('Archived')).not.toContain('text-ok');
+  expect(statusClass(undefined)).not.toContain('text-ok');
+  // EQUALITY, NOT CONTAINMENT, and this is the case that decides it:
+  // "Delivered" contains "live". A substring match would paint a finished,
+  // handed-off project with the live ramp, and nobody would catch it until a
+  // reader believed a dead thing was still running.
+  expect(statusClass('Delivered')).not.toContain('text-ok');
+});
+
+test('the facts bar omits what an entry does not declare, in a fixed order', () => {
+  // The omission rule tested where every permutation is reachable. The
+  // rendered-page arms above can only ever cover what the corpus happens to
+  // declare, which is the lesson `figureCellsFor(undefined)` already records
+  // in tests/case-study-figures.test.ts.
+  expect(factsFor({})).toEqual([]);
+  expect(factsFor({ stack: 'Workers, D1' }).map((fact) => fact.label)).toEqual(['Stack']);
+  expect(
+    factsFor({ role: 'Solo engineer', model: 'Claude', status: 'Live' }).map((fact) => fact.label),
+  ).toEqual(['Role', 'Model', 'Status']);
+  // Declaration order in the frontmatter cannot reorder the bar: the design
+  // fixes it at Role / Stack / Model / Status.
+  expect(
+    factsFor({ status: 'Live', model: 'Claude', stack: 'Workers', role: 'Solo engineer' }).map(
+      (fact) => fact.label,
+    ),
+  ).toEqual(['Role', 'Stack', 'Model', 'Status']);
+});
+
+test('a declared-but-empty fact is omitted rather than rendered as a labelled blank', () => {
+  // The one shape "absent cells are omitted" fails as, and the place this
+  // layer disagrees with the exporter ON PURPOSE. `role: ""` is a
+  // declaration, so `!== undefined` keeps it in the EXPORT -- dropping it
+  // there is the documented fix round in src/lib/markdown-export.ts. The bar
+  // is a different question: a label over nothing is exactly the blank the
+  // rule forbids, so it is the cell that goes, not the declaration.
+  expect(factsFor({ role: '', stack: 'Workers' }).map((fact) => fact.label)).toEqual(['Stack']);
+  expect(factsFor({ status: '   ' })).toEqual([]);
+});
+
+test('only the status cell carries a value class', () => {
+  // Which is what keeps ArticleLayout from matching on a label string to
+  // decide a colour.
+  const facts = factsFor({ role: 'Solo engineer', status: 'Live' });
+  expect(facts.find((fact) => fact.label === 'Role')?.valueClass).toBeUndefined();
+  expect(facts.find((fact) => fact.label === 'Status')?.valueClass).toContain('text-ok');
 });

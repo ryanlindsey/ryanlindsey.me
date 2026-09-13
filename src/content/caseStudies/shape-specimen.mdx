@@ -21,6 +21,18 @@ figures:
     label: Time to first result
   - value: '—'
     label: Alerts fired
+# 1j's facts bar (issue #107). Specimen values, on the same logic as the figure
+# block above: this file is a draft, so no published page carries them, and they
+# are here so the four schema fields have one real file behind them rather than
+# living only in a schema and a test.
+#
+# `status: Live` is deliberate. It is the one value `statusClass` paints with
+# the green ramp, so a fixture that said anything else would leave the site's
+# only rendered use of --rl-ok with no page behind it.
+role: Sole engineer
+stack: Astro, Cloudflare Workers, D1
+model: Claude via AI Gateway
+status: Live
 ---
 
 This page is a fixture, not a case study. It exists so the `/work` template can be built and
@@ -65,6 +77,16 @@ export const CASE_STUDY_SECTIONS = ['Context', 'Constraint', 'Intervention'] as 
 
 Numbers. Measured ones, with the measurement named, and the honest footnote where a figure covers
 less than it appears to.
+
+The row below is the `:::figures` directive rather than hand-styled markup, because this site serves `.md` variants and an `llms.txt`, and raw JSX leaks into both. The last value is an em dash, which is the authored spelling of a figure that could not be read; it renders as the word unavailable and never as a zero.
+
+:::figures{source="D1"}
+
+- 0 — Alerts fired
+- 100% — Runs green
+- — — Sessions lost
+
+:::
 
 ## What I'd do differently
 

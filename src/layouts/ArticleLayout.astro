@@ -7,6 +7,7 @@ import TableOfContents from '../components/TableOfContents.astro';
 import { buildToc, type Heading } from '../lib/toc';
 import { readingTimeFor } from '../lib/reading-time';
 import type { RelatedArticle } from '../lib/related-posts';
+import type { CaseStudyFact } from '../lib/case-study-shape';
 
 // Primitives rather than a CollectionEntry. This template serves `posts` and
 // `caseStudies`, which share a presentation but not a schema: a case study has
@@ -50,6 +51,26 @@ interface Props {
   // this template stays collection-agnostic instead of learning what a pillar
   // is. See src/lib/related-posts.ts for the selection rule itself.
   related?: RelatedArticle[];
+  /**
+   * 'article' (default) or 'case-study'. Decides the masthead, and ONLY the
+   * masthead (design 1j, issue #107).
+   *
+   * A variant rather than a second layout file, on the same reasoning the
+   * header above gives for taking primitives: a second file would fork the
+   * three-column spine, the TOC wiring, the progress bar and the meta rail
+   * into two copies that agree today. If a second thing ever needs to branch
+   * on this prop, that is the signal the variant is doing too much and the
+   * answer is to say so here rather than to add a second flag.
+   */
+  variant?: 'article' | 'case-study';
+  /**
+   * The facts bar (1j), rendered directly beneath the masthead. Case studies
+   * only, and built by the route through `factsFor` in
+   * src/lib/case-study-shape.ts -- which is also where the rule lives that an
+   * undeclared or blank fact is OMITTED rather than rendered as a labelled
+   * blank. An entry declaring none renders no bar at all.
+   */
+  facts?: CaseStudyFact[];
 }
 
 const {
@@ -64,6 +85,8 @@ const {
   structuredData,
   robots,
   related = [],
+  variant = 'article',
+  facts = [],
 } = Astro.props;
 const toc = buildToc(headings);
 const readingTime = readingTimeFor(body);
@@ -72,6 +95,69 @@ const readingTime = readingTimeFor(body);
 // the rail offers a reader to share is the one the page already declares
 // itself to be. Not a second convention.
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site).href;
+
+/*
+ * The masthead, per variant, as whole class strings (design 1j, issue #107).
+ *
+ * Tailwind resolves class names by scanning source text, so these cannot be
+ * assembled from fragments -- same constraint, same shape, as `FIGURE_COLUMNS`
+ * in src/pages/work/index.astro and `SEVERITY_CLASS` in src/pages/ai-policy.astro.
+ *
+ * THE INVERTED BRANCH USES THE TOKENS MECHANICALLY AND CARRIES NO `dark:`
+ * VARIANT, which is a decision rather than an omission. In dark, `--rl-ink` is
+ * the near-white end of the ramp and `--rl-bg` the near-black one, so this
+ * panel flips to a white block with dark text -- the very effect the homepage
+ * Now strip was redesigned to avoid, and the one place in this redesign that
+ * carries a `dark:` variant. The 1j issue's instruction for exactly this case
+ * is to render it with the tokens, look at it, and hand the observation to the
+ * dark-theme pass rather than inventing a second design here. See the pull
+ * request for what it actually looks like.
+ *
+ * `title` and `standfirst` name no colour in the case-study branch on purpose:
+ * they inherit `text-bg` from the shell, so there is one place the inversion
+ * is declared instead of three that have to agree.
+ */
+const MASTHEAD = {
+  article: {
+    shell: 'border-b border-rule',
+    inner: 'mx-auto max-w-[1440px] px-10 pb-5 pt-[52px]',
+    kicker: 'font-mono text-micro uppercase text-accent',
+    title: 'mt-5 max-w-[22ch] font-display text-headline text-ink',
+    standfirst: 'mt-6 max-w-[68ch] text-standfirst text-ink-muted',
+    meta: 'mt-7',
+  },
+  'case-study': {
+    shell: 'bg-ink text-bg',
+    // 56px / 40px / 44px, and no bottom rule: the black panel's own edge is
+    // what closes it, with the facts bar (or the spine) starting directly
+    // underneath.
+    inner: 'mx-auto max-w-[1440px] px-10 pb-11 pt-14',
+    kicker: 'font-mono text-micro uppercase text-accent-ground',
+    title: 'mt-5 max-w-[22ch] font-display text-headline',
+    standfirst: 'mt-6 max-w-[68ch] text-large opacity-[.85]',
+    // ArticleMeta hard-codes `text-ink-muted`, which is the one colour in this
+    // panel that does NOT invert with the ground: mid-grey on near-black in
+    // light, mid-grey on near-white in dark, and it fails contrast both ways.
+    // Overridden from the wrapper rather than by giving ArticleMeta a tone
+    // prop, because the masthead is what branches and nothing else should have
+    // to learn that this variant exists.
+    meta: 'mt-7 opacity-[.7] [&_p]:text-bg',
+  },
+} as const;
+
+const masthead = MASTHEAD[variant];
+
+/**
+ * How many columns the declared facts take. Interpolation is impossible here
+ * for the reason above, and `factsFor` yields at most four, so these are the
+ * four entries.
+ */
+const FACT_COLUMNS: Record<number, string> = {
+  1: 'lg:grid-cols-1',
+  2: 'lg:grid-cols-2',
+  3: 'lg:grid-cols-3',
+  4: 'lg:grid-cols-4',
+};
 ---
 
 <!-- 2026-09 redesign (issue #99): long-form is where a sticky 68px header
@@ -91,23 +177,79 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site).href;
     <!-- Full-bleed rule, capped content. The border sits on the outer element
          so it runs edge to edge the way design 1g draws it, while the masthead
          text stays inside the site's 1440px cap and 40px gutter. -->
-    <header class="border-b border-rule">
-      <div class="mx-auto max-w-[1440px] px-10 pb-5 pt-[52px]">
+    <header data-masthead={variant} class={masthead.shell}>
+      <div class={masthead.inner}>
         <!-- The kicker moved here from the meta line below (it used to sit
              between the date and the reading time). data-testid travelled with
              it: tests/case-studies.test.ts asserts a case study's kicker reads
              "Case study", and that assertion should keep failing on a page
              that has stopped showing one. -->
-        <p class="font-mono text-micro uppercase text-accent" data-testid="article-kicker">
+        <p class={masthead.kicker} data-testid="article-kicker">
           {kicker}
         </p>
-        <h1 class="mt-5 max-w-[22ch] font-display text-headline text-ink">{title}</h1>
-        <p class="mt-6 max-w-[68ch] text-standfirst text-ink-muted">{description}</p>
-        <div class="mt-7">
+        <h1 class={masthead.title}>{title}</h1>
+        <p class={masthead.standfirst}>{description}</p>
+        <div class={masthead.meta}>
           <ArticleMeta publishedAt={publishedAt} updatedAt={updatedAt} readingTime={readingTime} />
         </div>
       </div>
     </header>
+
+    {
+      /*
+        The facts bar (1j), directly beneath the masthead and rendered only
+        when the entry declares something to put in it -- `factsFor` has
+        already dropped every undeclared or blank fact, so this is never a row
+        of labels over blanks. The row divides equally among whatever survived.
+
+        Full-bleed rule, capped content, the same arrangement the masthead
+        above uses: the bottom border runs edge to edge while the cells stay
+        inside the site's 1440px cap. The cap is the only thing here the
+        screenshot cannot show, since 1j was captured at 1280px.
+
+        A <dl>, because Role/Stack/Model/Status is a list of name/value pairs
+        and a screen reader should hear it as one. Each cell is the <div>
+        wrapper the spec allows around exactly one <dt>/<dd> group; a single
+        div holding all four groups would not be conforming, which is why the
+        cap and the grid sit on the <dl> itself rather than on a layer inside
+        it.
+      */
+    }
+    {
+      facts.length > 0 && (
+        <div class="border-b border-rule">
+          <dl
+            data-facts-bar
+            class:list={['mx-auto grid max-w-[1440px]', FACT_COLUMNS[facts.length]]}
+          >
+            {facts.map((fact) => (
+              // Stacked below `lg` and divided by a horizontal rule there,
+              // vertical rules across the row above it. Responsive collapse is
+              // its own issue (see the spine's note below); four cells at
+              // phone width would be 90px each, and this is the shape that
+              // leaves that issue the least to undo.
+              <div class="border-b border-rule px-6 py-[22px] last:border-b-0 lg:border-b-0 lg:border-r lg:last:border-r-0">
+                <dt data-fact-label class="font-mono text-micro uppercase text-ink-muted">
+                  {fact.label}
+                </dt>
+                {/* `valueClass` is the status ramp and nothing else carries
+                    one -- see `factsFor` in src/lib/case-study-shape.ts for
+                    why the cell brings its own colour instead of this
+                    template matching on the label to work out which is which.
+                    It REPLACES the default rather than joining it: two colour
+                    utilities on one element are resolved by their order in the
+                    built stylesheet, not by the order they are written here,
+                    so `text-ink text-ok` would be a coin flip that happens to
+                    land right today. */}
+                <dd data-fact-value class:list={['mt-2 text-small', fact.valueClass ?? 'text-ink']}>
+                  {fact.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )
+    }
 
     <!--
       The three-column spine. 220px contents / the measure / 240px meta, which

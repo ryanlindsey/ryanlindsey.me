@@ -3,6 +3,7 @@ import { getCollection, render } from 'astro:content';
 import ArticleLayout from '../../layouts/ArticleLayout.astro';
 import { getResume } from '../../lib/resume-collection';
 import { canonicalUrlFor } from '../../lib/markdown-export';
+import { factsFor } from '../../lib/case-study-shape';
 import { buildTechArticle } from '../../lib/structured-data';
 import type { GetStaticPaths } from 'astro';
 
@@ -37,6 +38,13 @@ const structuredData = buildTechArticle({
   dateModified: study.data.updatedAt,
   author: { name: resume.basics.name, url: new URL('/', Astro.site).href },
 });
+
+// 1j's facts bar. Built here for the same reason `structuredData` is: this
+// route is the one that knows it is rendering a case study, and the four
+// fields exist on no other collection. `factsFor` owns the omission rule and
+// the status colour, so the layout receives cells that are already correct
+// rather than four maybes and a rule to apply to them.
+const facts = factsFor(study.data);
 ---
 
 <!-- No series slot: 02 §2's series belong to posts. A case study that needed
@@ -52,6 +60,8 @@ const structuredData = buildTechArticle({
   markdownHref={`/work/${study.id}.md`}
   structuredData={structuredData}
   robots={study.data.draft ? 'noindex, nofollow' : undefined}
+  variant="case-study"
+  facts={facts}
 >
   <Content />
 </ArticleLayout>

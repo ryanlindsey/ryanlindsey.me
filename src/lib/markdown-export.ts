@@ -61,6 +61,11 @@ export interface ExportedFrontmatter {
   domain?: string;
   /** Case studies only, and only when the entry declares it. */
   outcomes?: string[];
+  /** 1j's facts bar, case studies only, each only when the entry declares it. */
+  role?: string;
+  stack?: string;
+  model?: string;
+  status?: string;
   canonical: string;
 }
 
@@ -95,6 +100,21 @@ export function canonicalUrlFor(entry: ExportableEntry): string {
  * `content.config.ts`'s schema comment for why a required field would have
  * been the wrong call, and `summarize` in `src/lib/mcp/documents.ts` for the
  * matching rule on the read side (an omitted field is absent, never `null`).
+ *
+ * `role`, `stack`, `model` and `status` (case studies only, issue #107) are
+ * the second addition, and they earn their place by the same test: they are
+ * facts about the work, and `get_case_study` hands an agent the full markdown
+ * of a case study, where "what stack, what model, is it live" is the kind of
+ * thing that gets asked. Flat scalars, so `parseFrontmatter` in
+ * `src/lib/mcp/documents.ts` already reads them back with no change.
+ *
+ * What they are NOT is part of `summarize`'s `OPTIONAL_KEYS` in that same
+ * file, and that is a decision rather than a gap. That list mirrors what 03 §2
+ * asked `list_case_studies` for BY NAME, which is `orgScale`/`domain`/
+ * `outcomes` and nothing else. These four arrived as a design input for 1j
+ * that also belongs in the exported document; widening the list-tool summary
+ * is a separate question with its own consumer, and it should arrive with
+ * that consumer's name on it.
  *
  * `figures` IS DELIBERATELY NOT HERE, and this paragraph is the decision
  * rather than a gap (issue #106, 2026-09-13). The case-study schema grew it
@@ -144,6 +164,12 @@ export function frontmatterFor(entry: ExportableEntry): ExportedFrontmatter {
     if (entry.data.orgScale !== undefined) frontmatter.orgScale = entry.data.orgScale;
     if (entry.data.domain !== undefined) frontmatter.domain = entry.data.domain;
     if (entry.data.outcomes !== undefined) frontmatter.outcomes = entry.data.outcomes;
+    // 1j's four facts, on exactly the same `!== undefined` rule and for the
+    // same reason -- see the `role`/`stack`/`model`/`status` paragraph above.
+    if (entry.data.role !== undefined) frontmatter.role = entry.data.role;
+    if (entry.data.stack !== undefined) frontmatter.stack = entry.data.stack;
+    if (entry.data.model !== undefined) frontmatter.model = entry.data.model;
+    if (entry.data.status !== undefined) frontmatter.status = entry.data.status;
   }
 
   return frontmatter;
@@ -178,7 +204,10 @@ function yamlString(value: string): string {
  * Serializes `ExportedFrontmatter` to the YAML body of the frontmatter block
  * (no `---` fences -- `toMarkdown` adds those). Key order is fixed and matches
  * the brief exactly: `title, description, publishedAt, updatedAt?, pillar?,
- * series?, orgScale?, domain?, outcomes?, canonical`. Fixed order is what
+ * series?, orgScale?, domain?, outcomes?, role?, stack?, model?, status?,
+ * canonical`. The four facts sit last before `canonical`, in the order 1j's
+ * bar reads them left to right, so the document and the page agree. Fixed
+ * order is what
  * "small, stable" means here -- a document a model re-reads on every request
  * should not reshuffle its own frontmatter from one build to the next.
  *
@@ -254,6 +283,23 @@ function frontmatterYaml(frontmatter: ExportedFrontmatter): string {
     for (const outcome of frontmatter.outcomes) {
       lines.push(`  - ${yamlString(outcome)}`);
     }
+  }
+  // 1j's four facts (issue #107), in the order the design's bar reads them,
+  // and on `!== undefined` for the reason FIX ROUND 2 above records. They are
+  // plain scalars, so the empty-array exception `outcomes` needs does not
+  // apply: `role: ""` has a perfectly good representation here and reads back
+  // through `parseFrontmatter` as the declared empty string it is.
+  if (frontmatter.role !== undefined) {
+    lines.push(`role: ${yamlString(frontmatter.role)}`);
+  }
+  if (frontmatter.stack !== undefined) {
+    lines.push(`stack: ${yamlString(frontmatter.stack)}`);
+  }
+  if (frontmatter.model !== undefined) {
+    lines.push(`model: ${yamlString(frontmatter.model)}`);
+  }
+  if (frontmatter.status !== undefined) {
+    lines.push(`status: ${yamlString(frontmatter.status)}`);
   }
   lines.push(`canonical: ${yamlString(frontmatter.canonical)}`);
 
