@@ -248,9 +248,10 @@ function frontmatterYaml(frontmatter: ExportedFrontmatter): string {
 //
 // entry.body is raw MDX, not rendered HTML (see the module doc above and
 // src/lib/reading-time.ts, which reads entry.body for the same reason). MDX
-// can carry two things that mean nothing outside this site: import
-// statements, and JSX component tags. Both are stripped below; neither
-// specimen file in src/content uses a component beyond a code fence, so
+// can carry things that mean nothing outside this site: import statements,
+// JSX component tags, and (issue #102, epic #96) the `:::figures` container
+// directive. All three are stripped or degraded below; neither specimen file
+// in src/content uses a component beyond a code fence, so
 // tests/markdown-export.test.ts carries its own fixture with real imports and
 // real component usage rather than letting this path go untested by the real
 // content (the task brief calls this out explicitly, and this repo has
@@ -333,6 +334,32 @@ const INLINE_CODE = /(`[^`\n]*`)/g;
  */
 const IMPORT_STATEMENT = /^[ \t]*import\s+(?:[^;]*?\bfrom\s+)?['"][^'"]*['"]\s*;?[ \t]*\n?/gm;
 
+/**
+ * A `:::figures{source="..."}` container directive (issue #102, epic #96),
+ * matched whole -- the opening fence with its optional attributes, the list
+ * body, and the closing `:::` -- so it can be replaced with plain markdown a
+ * downstream reader has a chance of understanding. Group 1 is the raw
+ * `{...}` attribute text (or `undefined` when the directive has none); group
+ * 2 is everything between the fences, unchanged.
+ *
+ * Anchored at the start of a line (`^`/`m`) so an ordinary sentence that
+ * happens to contain the word "figures" is never mistaken for one, same
+ * reasoning as IMPORT_STATEMENT above. The closing `:::` must also start its
+ * own line (`\n:::`, then `[ \t]*$`) -- an unterminated block (a missing
+ * closing fence) simply does not match here and is left untouched rather
+ * than guessed at, the same "refuse rather than guess" call FIX ROUND 1
+ * above made for component tags.
+ *
+ * This regex does not re-validate what src/lib/figures.mjs already validates
+ * at render time -- item count 2-4, the ` — ` separator on every line. By
+ * the time an entry's body reaches this exporter the site has already built,
+ * which means figures.mjs already accepted the block; re-checking the same
+ * rule here a second time is exactly the five-re-implementation drift risk
+ * this module's own header comment warns about, applied to one directive
+ * instead of one collection.
+ */
+const FIGURES_DIRECTIVE = /^:::figures(\{[^}\n]*\})?[ \t]*\n([\s\S]*?)\n:::[ \t]*$/gm;
+
 // The attribute-scanning portion of both tag regexes excludes `{` as well as
 // `>` (`[^>{]*`, not `[^>]*`). Round 1 used `[^>]*`, which happily matched
 // past a `{` and then stopped at the FIRST bare `>` it found -- including one
@@ -401,6 +428,24 @@ function stripImportStatements(prose: string): string {
   return prose.replace(IMPORT_STATEMENT, '');
 }
 
+/**
+ * Degrades a `:::figures` block to the plain list it wraps, plus a lead line
+ * naming where the numbers came from -- `Figures, read from D1:` when the
+ * directive carries a `source`, `Figures:` when it doesn't (Ruling 4: the
+ * source is used exactly as authored, never upper-cased -- that is a
+ * stylesheet's job on the rendered page, not this exporter's). The list
+ * itself is copied through unchanged, unreadable-value spelling (`—`) and
+ * all: this is the text export, not the HTML render, and figures.mjs is the
+ * one place that turns an authored `—` into the word "unavailable".
+ */
+function stripFiguresDirective(prose: string): string {
+  return prose.replace(FIGURES_DIRECTIVE, (_match, attrs: string | undefined, body: string) => {
+    const source = attrs?.match(/source="([^"]*)"/)?.[1];
+    const lead = source ? `Figures, read from ${source}:` : 'Figures:';
+    return `${lead}\n\n${body}`;
+  });
+}
+
 function stripComponentTags(prose: string): string {
   // Fallbacks BEFORE any stripping, because both regexes below delete the tag
   // outright and a substitution after that has nothing left to match. This
@@ -451,21 +496,30 @@ function assertNoLeftoverComponentTags(strippedBody: string): void {
 
 /**
  * Drops whatever an MDX body carries that does not travel outside this site:
- * import statements and component tags, everywhere except inside fenced or
- * inline code. An unrecognized component tag is replaced with nothing --
- * tag and children both -- rather than left as raw JSX source text, which
- * would read as broken markdown to anything downstream. A recognized
- * (`PORTABLE_COMPONENTS`) tag is unwrapped instead: the wrapper is
- * site-specific, but its children are prose the author actually wrote.
+ * import statements, component tags, and (issue #102) the `:::figures`
+ * directive, everywhere except inside fenced or inline code. An unrecognized
+ * component tag is replaced with nothing -- tag and children both -- rather
+ * than left as raw JSX source text, which would read as broken markdown to
+ * anything downstream. A recognized (`PORTABLE_COMPONENTS`) tag is unwrapped
+ * instead: the wrapper is site-specific, but its children are prose the
+ * author actually wrote. A `:::figures` block is degraded rather than
+ * dropped -- see stripFiguresDirective -- because unlike a component tag it
+ * has no site-specific meaning to discard: it is already plain data (a list
+ * of values and labels), just wrapped in syntax this exporter's readers
+ * cannot parse.
  *
  * Throws (via assertNoLeftoverComponentTags) rather than returning if the
  * result still looks like it contains an unstripped tag -- see FIX ROUND 1
- * above.
+ * above. That guard is unchanged by the `:::figures` addition: a directive
+ * degrades to a plain markdown list and lead line, neither of which can ever
+ * look like `<Foo>`, so it has nothing new to catch here.
  */
 export function stripNonPortableMdx(body: string): string {
   const cleaned = splitCodeRegions(body)
     .map((segment) =>
-      segment.code ? segment.text : stripComponentTags(stripImportStatements(segment.text)),
+      segment.code
+        ? segment.text
+        : stripComponentTags(stripImportStatements(stripFiguresDirective(segment.text))),
     )
     .join('')
     .replace(/\n{3,}/g, '\n\n')

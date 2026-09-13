@@ -411,6 +411,37 @@ describe('fix round 1: the stripper fails loudly instead of shipping corruption'
   });
 });
 
+// Task 2 (issue #102, epic #96): the `:::figures` directive is neither an
+// import nor a component tag, so without this it would ship into `.md`/
+// `llms.txt` verbatim as literal directive syntax an agent has no idea what
+// to do with. See src/lib/figures.mjs for the render-time HTML path this
+// mirrors at the text level; the two are independent (different file,
+// different tests, no import between them).
+describe('stripNonPortableMdx (figures directive degrades to its list)', () => {
+  test('a figures directive degrades to its list, with the system it was read from', () => {
+    const body = `Before.\n\n:::figures{source="D1"}\n- 0 — Alerts fired\n- 100% — Runs green\n:::\n\nAfter.`;
+    const exported = stripNonPortableMdx(body);
+    expect(exported).toContain('Figures, read from D1:');
+    expect(exported).toContain('- 0 — Alerts fired');
+    expect(exported).not.toContain(':::');
+  });
+
+  test('a figures directive with no source still names itself', () => {
+    const exported = stripNonPortableMdx(`:::figures\n- 1 — One\n- 2 — Two\n:::`);
+    expect(exported).toContain('Figures:');
+    expect(exported).not.toContain(':::');
+  });
+
+  test('a figures directive written inside code survives verbatim', () => {
+    // The case a build-log post about this repository produces on its first
+    // paragraph. splitCodeRegions already exempts fences and inline spans for
+    // component tags; this asserts the directive unwrapper uses the same one
+    // rather than inventing a second idea of what counts as code.
+    const body = '```\n:::figures{source="D1"}\n- 0 — Alerts fired\n:::\n```';
+    expect(stripNonPortableMdx(body)).toContain(':::figures{source="D1"}');
+  });
+});
+
 describe('ExportableEntry', () => {
   test('accepts both posts and case studies at the type level', () => {
     const entries: ExportableEntry[] = [post({ id: 'p' }), caseStudy({ id: 'c' })];
