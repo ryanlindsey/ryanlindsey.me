@@ -9,6 +9,8 @@ import { PILLAR_LABELS } from '../src/lib/pillars';
 import { formatDateRange, groupWorkByCompany, type ResumeWorkEntry } from '../src/lib/resume';
 import { buildLlmsTxt, buildLlmsFullTxt, type LlmsLink } from '../src/lib/llms-index';
 import { buildRssFeed, buildJsonFeed, RSS_MARKDOWN_NOTICE, type JsonFeed } from '../src/lib/feeds';
+import { GLOBAL_LIMITS, LIMITS } from '../src/lib/mcp/limits';
+import { formatWindow, PUBLISHED_AS, RETENTION } from '../src/lib/retention';
 // The RSS tripwire's arming assertion runs the patterns against `toMarkdown()`
 // output, which is what `rssItemFor` used to ship and what a regression would
 // ship again -- see the tripwire's own comment.
@@ -722,6 +724,146 @@ test('no public surface added today names a gated tool, an audience, or a privat
     for (const pattern of BANNED_PATTERNS) {
       expect(text, `${path} must not match ${pattern}`).not.toMatch(pattern);
     }
+  }
+});
+
+/**
+ * /ai-policy, rebuilt at a document width by the 2026-09 redesign (design 1m,
+ * issue #110): a 240px rail beside a column capped at 1180px, with the rate
+ * limits and the retention windows rendered as bordered tables built from the
+ * constants that enforce them.
+ *
+ * THERE IS NO BANNED-PATTERN CASE BELOW, and that is deliberate rather than an
+ * omission. `/ai-policy` is already swept twice in this file -- once by the
+ * whole-surface sweep above and once by the gated-tool test immediately before
+ * this block -- and `tests/governance.test.ts` sweeps the markdown source as
+ * well. A fourth copy would assert what three assertions already cover, and the
+ * failure it would report is one they report first.
+ *
+ * THE UPDATED DATE IS READ FROM THE FILE, not through `getCollection`. The
+ * issue sketched `await import('astro:content')` here; that module resolves
+ * only inside Astro's own module graph, and this is a plain vitest process, so
+ * the import throws before any assertion runs. This file already reads the
+ * résumé YAML off disk for the same reason, and the collection schema
+ * (src/content.config.ts) is what validates the shape on every build.
+ */
+const policyUpdated = (() => {
+  const source = readFileSync(new URL('../governance/ai-policy.md', import.meta.url), 'utf8');
+  const updated = /^updated:\s*'?(\d{4}-\d{2}-\d{2})'?\s*$/m.exec(source)?.[1];
+  expect(updated, 'no updated date in the policy frontmatter').toBeTruthy();
+  return updated!;
+})();
+
+/**
+ * One row of a policy table, scoped by its label.
+ *
+ * The same shape as tests/ops-page.test.ts's `row`, and for the same reason its
+ * own comment gives: a bare `toContain('30 days')` passes on any occurrence
+ * anywhere on the page, so a table could break entirely while the assertion
+ * stayed green. Each value is checked against the row it is a value FOR.
+ */
+function policyRow(page: string, label: string): string {
+  const at = page.indexOf(label);
+  expect(at, `no policy row contains ${label}`).toBeGreaterThan(-1);
+  return page.slice(page.lastIndexOf('<div', at), page.indexOf('</div>', at));
+}
+
+test('the policy reads at a document width, narrower than every other page', async () => {
+  const page = await html('/ai-policy');
+  const grid = /<div[^>]*data-policy-grid[^>]*>/.exec(page);
+  expect(grid, 'no policy grid on the page').not.toBeNull();
+  expect(grid![0]).toContain('max-w-[1180px]');
+  // The contrast, from this same page rather than from another one: the header
+  // and footer above and below this grid are still capped at 1440px. That is
+  // what makes 1180 a decision about the document instead of a change to the
+  // site's geometry, and it is the half a single-cap assertion cannot see.
+  expect(grid![0]).not.toContain('1440');
+  expect(page, 'the chrome should still sit at the site cap').toContain('max-w-[1440px]');
+});
+
+test('the rail carries the updated date from the validated record', async () => {
+  const page = await html('/ai-policy');
+  const rail = /<aside[^>]*data-policy-rail[\s\S]*?<\/aside>/.exec(page);
+  expect(rail, 'no policy rail on the page').not.toBeNull();
+  // In the rail, not merely somewhere on the page: the date is the rail's
+  // second line in design 1m, and the page it replaced printed it under the H1.
+  expect(rail![0]).toContain(policyUpdated);
+  expect(rail![0]).toContain(`datetime="${policyUpdated}"`);
+});
+
+test('the rail is the same sticky contents pattern the article uses', async () => {
+  const page = await html('/ai-policy');
+  const rail = /<aside[^>]*data-policy-rail[\s\S]*?<\/aside>/.exec(page)![0];
+  // `data-toc-link` is TableOfContents.astro's own contract, and its script
+  // carries two fixes that a hand-built second rail would arrive without (a
+  // symmetric root margin flickers between headings; a page scrolled to the
+  // bottom never lights its last section). Asserting the attribute is what
+  // says this page reused that component rather than redrawing it.
+  expect(rail).toMatch(/data-toc-link="[^"]+"/);
+  expect(rail).toContain('lg:sticky');
+  // The two tables and the register are reachable from the rail, which is the
+  // only navigation this page has now that the kicker is gone.
+  for (const slug of ['rate-limits', 'retention', 'risk-register']) {
+    expect(rail, `${slug} is not in the rail`).toContain(`data-toc-link="${slug}"`);
+    expect(page, `${slug} has no heading to land on`).toContain(`id="${slug}"`);
+  }
+});
+
+test('the rate limits and retention are tables, not paragraphs', async () => {
+  const page = await html('/ai-policy');
+  const tables = [...page.matchAll(/data-policy-table/g)];
+  expect(tables.length, 'expected a rate-limit table and a retention table').toBe(2);
+  // The hairline idiom from the primitives issue (#98), not a fourth hand-drawn
+  // set of divider rules -- the handoff names 1m as one of the four screens
+  // carrying it.
+  expect(page).toMatch(/data-policy-table[^>]*class="[^"]*hairline-grid/);
+});
+
+test('the rate limits on the page are the ones the limiter enforces', async () => {
+  const page = await html('/ai-policy');
+  // Derived from LIMITS rather than typed here, so a changed bucket fails this
+  // test instead of quietly leaving the page publishing the old figure.
+  expect(policyRow(page, 'Reading a published document over MCP')).toContain(
+    `${LIMITS.cheap.limit} / min`,
+  );
+  expect(policyRow(page, 'Semantic search over the published work')).toContain(
+    `${LIMITS.inference.limit} / min`,
+  );
+  expect(policyRow(page, 'A chat message')).toContain(`${LIMITS.conversation.limit} / 5 min`);
+  expect(policyRow(page, 'Chat, across everyone, before the breaker')).toContain(
+    `${GLOBAL_LIMITS.chat.limit} / day`,
+  );
+});
+
+test('the rate-limit table publishes no token-scoped bucket', async () => {
+  const page = await html('/ai-policy');
+  // The same restraint src/pages/ops.astro states in its own `LIMIT_ROWS`
+  // comment, applied on the page most likely to be read by somebody probing
+  // for that surface: `expensive` belongs to a token-scoped route, and its cap
+  // would say both that the route exists and roughly what a call there costs.
+  // A choice about which rows to render, never a second copy of the constant.
+  //
+  // THE WHOLE PHRASE, not the `6 / ` prefix the first draft of this used. That
+  // prefix is a substring of `60 / min`, the bucket in the row directly above
+  // it, so the assertion would have gone red on a change to `cheap` that had
+  // nothing to do with what it is guarding.
+  const table = /data-policy-table[\s\S]*?<\/section>/.exec(page)![0];
+  const expensive = `${LIMITS.expensive.limit} / ${LIMITS.expensive.periodSeconds / 60} min`;
+  expect(table, `the token-scoped cap (${expensive}) is published`).not.toContain(expensive);
+  // And the table is exactly the four public rows, so a fifth arriving without
+  // this decision being revisited fails here rather than shipping.
+  expect([...table.matchAll(/data-numeric/g)]).toHaveLength(4);
+});
+
+test('every retention window on the page is the one the cron enforces', async () => {
+  // The assertion tests/ops-page.test.ts makes about /ops, applied here because
+  // this page is where the claim is made in public. src/lib/retention.ts is
+  // table-driven precisely so the policy and the cron cannot drift, and its own
+  // header says /ai-policy links the reader to the statement. Rendering the
+  // table from RETENTION is that sentence's other half.
+  const page = await html('/ai-policy');
+  for (const { table, days } of RETENTION) {
+    expect(policyRow(page, PUBLISHED_AS[table]), `${table}'s window`).toContain(formatWindow(days));
   }
 });
 

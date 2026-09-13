@@ -36,11 +36,7 @@ You are welcome to use everything here, including with an agent, including at
 volume within the published limits. Two things are not welcome, and both are
 enforced rather than requested:
 
-- **Driving spend.** Every inference path is rate limited per caller. Chat also
-  has a global daily cap of 500 messages, and it is the only path that has one.
-  A budget breaker can stop chat and fit analysis; it is not read by the
-  evaluation judge or by the embedding call retrieval makes, so it does not stop
-  everything. Both browser forms carry a bot check.
+- **Driving spend.** Every inference path is rate limited per caller. Chat also has a cap across everyone rather than per caller, and it is the only path that has one. A budget breaker can stop chat and fit analysis; it is not read by the evaluation judge or by the embedding call retrieval makes, so it does not stop everything. Both browser forms carry a bot check.
 - **Probing the private tier.** Routes that are not listed answer exactly what a
   path with no route answers. There is nothing to learn from the difference,
   because there is no difference.
@@ -49,24 +45,13 @@ Automated access is not abuse. See [Agents and crawlers](#agents-and-crawlers).
 
 ## What is stored, and for how long
 
-**Chat transcripts — 30 days.** Your question, the answer, the model, the
-numbered sources the answer was grounded on, how many of them it cited, how many
-citation numbers named a source that does not exist, whether the turn succeeded,
-how long it took, and whether it came from this site or from the endpoint
-directly. Also a session id, which your own browser generates per visit to group
-one conversation; it is not a credential and is not stable across visits.
+Each window is in the retention table at the top of this page, one row per table, rendered from the constant the cleanup job reads. What each one holds is here.
 
-**The tool-call audit trail — 1 year.** One row per call to the MCP server: the
-tool, a hash of the arguments, whether the call was public or made under a grant,
-the audience and token id of that grant, the client's name, version and user
-agent, the protocol version, the outcome, and the duration. Arguments are stored
-as a hash, never as text.
+**Chat transcripts.** Your question, the answer, the model, the numbered sources the answer was grounded on, how many of them it cited, how many citation numbers named a source that does not exist, whether the turn succeeded, how long it took, and whether it came from this site or from the endpoint directly. Also a session id, which your own browser generates per visit to group one conversation; it is not a credential and is not stable across visits.
 
-**Fit reports — 1 year.** The description that was submitted, the validated
-report, the audience of the grant that produced it, the model, and how many
-citations were checked and dropped. A report has an unguessable permalink, and
-that link is the only key to it — anyone holding it can read it until the window
-closes.
+**The tool-call audit trail.** One row per call to the MCP server: the tool, a hash of the arguments, whether the call was public or made under a grant, the audience and token id of that grant, the client's name, version and user agent, the protocol version, the outcome, and the duration. Arguments are stored as a hash, never as text.
+
+**Fit reports.** The description that was submitted, the validated report, the audience of the grant that produced it, the model, and how many citations were checked and dropped. A report has an unguessable permalink, and that link is the only key to it: anyone holding it can read it until the window closes.
 
 **Two things have no window, deliberately.** Rows in the token registry — a
 token's id, audience, scopes and timestamps, never its value — are never deleted,
@@ -125,14 +110,7 @@ at read time:
 
 ## How retention is enforced
 
-The windows above are a single constant in the code. A scheduled job runs once a
-day, deletes everything past its window table by table, and logs one line naming
-each table and the number of rows it removed — so a day on which nothing was old
-enough and a day on which the job did not run look different from outside. A test
-that runs on every build checks, for each table above, that this page names that
-table beside the window the constant sets — so changing a window in the code
-without changing this page turns the build red, and so does adding a table the
-page does not mention.
+The windows are a single constant in the code, and the table at the top of this page is rendered from it rather than typed beside it. A scheduled job runs once a day, deletes everything past its window table by table, and logs one line naming each table and the number of rows it removed, so a day on which nothing was old enough and a day on which the job did not run look different from outside. A test that runs on every build reads that constant and checks the rendered table against it, and a second test pins the constant itself: changing a window turns the build red, and so does adding a table with no published name.
 
 If a table's delete fails, the others still run and the failure is logged rather
 than swallowed. One table falling behind must not hold another table's data past

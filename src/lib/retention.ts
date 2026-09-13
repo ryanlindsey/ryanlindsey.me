@@ -23,6 +23,38 @@ export const RETENTION = [
   { table: 'fit_reports', column: 'created_at', days: 365 },
 ] as const;
 
+/** A table this module trims, as a type, so a published name cannot miss one. */
+export type RetainedTable = (typeof RETENTION)[number]['table'];
+
+/**
+ * What each retained table is called on /ai-policy.
+ *
+ * A table name is a schema identifier and the policy is written for a reader,
+ * so the two cannot be the same string. They have to be bound to each other
+ * somewhere, and this is that somewhere: the page renders these labels beside
+ * `formatWindow(days)` and the prose below the table uses the same words for
+ * the same row, so a reader following the rail from a table to the paragraph
+ * that explains it does not meet a second name for the thing they just read.
+ *
+ * DECLARED HERE RATHER THAN ON THE PAGE, and the history is the argument. This
+ * binding lived in tests/governance.test.ts while the page's numbers were
+ * hand-typed prose and the test's only job was to check them. Issue #110 made
+ * the page render the rows from `RETENTION`, which needs the binding at
+ * runtime -- and a page cannot import a test, so leaving it there would have
+ * meant two copies of the same register with nothing holding them together.
+ *
+ * TYPED AGAINST `RETENTION`, so adding a table without a published name is a
+ * typecheck failure rather than a row rendered as "undefined". /ops keeps its
+ * own labels (`RETENTION_LABELS` in src/pages/ops.astro) on purpose: a colophon
+ * and a policy are written for different readers, the words differ because they
+ * are meant to, and neither page carries a number the other has to agree with.
+ */
+export const PUBLISHED_AS: Record<RetainedTable, string> = {
+  chat_turns: 'Chat transcripts',
+  mcp_tool_calls: 'The tool-call audit trail',
+  fit_reports: 'Fit reports',
+};
+
 export function retentionCutoff(now: Date, days: number): string {
   return new Date(now.getTime() - days * 86_400_000).toISOString();
 }
