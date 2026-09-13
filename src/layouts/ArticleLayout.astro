@@ -304,9 +304,27 @@ const FACT_COLUMNS: Record<number, string> = {
       The grid only turns on at `lg`; below it the three children stack in that
       same order. Responsive collapse is its own issue, and this is the shape
       that leaves it the least to undo.
+
+      `pt-9` WAS MISSING UNTIL 2026-09-13, and its absence is what a reader
+      reported as the masthead and the prose being squished together. This
+      element carried `pb-[60px]` and no top padding at all, so the rail and
+      the measure began within a few pixels of the rule that closes the
+      masthead above them.
+
+      MEASURED against the handoff screenshots rather than chosen: in design
+      1g the masthead's rule sits at y=490 and the CONTENTS label's first ink
+      at y=530, and in 1j the facts bar's rule is at y=580 with the same label
+      at y=622 -- 40px and 42px. The built page was giving 4px and 5px. 36px of
+      padding puts the same measurement at 40px and 41px, which is the design
+      to within a pixel, and the residual is the half-leading above a 12px
+      line box rather than a second decision.
+
+      Applied at every width, not gated at `lg`. Below the breakpoint the three
+      children stack and the contents rail is what lands under the masthead, so
+      it is the same seam and it was equally tight.
     -->
     <div
-      class="mx-auto max-w-[1440px] px-10 pb-[60px] lg:grid lg:grid-cols-[220px_minmax(0,1fr)_240px] lg:items-start lg:gap-12"
+      class="mx-auto max-w-[1440px] px-10 pb-[60px] pt-9 lg:grid lg:grid-cols-[220px_minmax(0,1fr)_240px] lg:items-start lg:gap-12"
     >
       <aside data-article-toc class="mb-12 lg:mb-0 lg:sticky lg:top-24">
         <!-- lg:top-24 (96px), not the 32px lg:top-8 this rail shipped with
