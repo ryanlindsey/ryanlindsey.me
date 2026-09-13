@@ -3,6 +3,24 @@ title: Case study shape specimen
 description: A rendering fixture for the fixed case-study shape. Not a case study, and not about any real work; it exercises the six sections, the table of contents, and the article furniture.
 publishedAt: 2026-09-06
 draft: true
+# The 2x2 figure block on the /work index row (design 1i). Specimen values,
+# like everything else in this file: it is a draft, so no index ever renders
+# them. They are here so the frontmatter shape has one real file behind it
+# rather than existing only in a schema and a test, which is the same job the
+# six sections below do for the body.
+#
+# The last value is an em dash on purpose. That is the authored spelling of a
+# figure that could not be read (src/lib/figures.mjs, constraint 3), and it
+# renders as the word "unavailable" rather than as a dash or a zero.
+figures:
+  - value: '94%'
+    label: Forecast accuracy
+  - value: '18'
+    label: Teams onboarded
+  - value: '6 weeks'
+    label: Time to first result
+  - value: '—'
+    label: Alerts fired
 ---
 
 This page is a fixture, not a case study. It exists so the `/work` template can be built and

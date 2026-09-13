@@ -2,6 +2,7 @@ import { defineCollection } from 'astro:content';
 import { z } from 'astro/zod';
 import { glob } from 'astro/loaders';
 import { IMPACTS, LIKELIHOODS } from './lib/governance/register';
+import { caseStudyFiguresSchema } from './lib/case-study-figures';
 
 // 02 §2: three pillars, fixed at launch. A post belongs to exactly one.
 const pillar = z.enum(['agentic-engineering', 'org-scaling', 'building-in-the-open']);
@@ -50,6 +51,16 @@ const caseStudies = defineCollection({
     orgScale: z.string().optional(),
     domain: z.string().optional(),
     outcomes: z.array(z.string()).optional(),
+    // 1i: the 2x2 figure block on the /work index row. Defined in
+    // src/lib/case-study-figures.ts rather than inline, and that file's header
+    // says why -- the short version is that a schema only this module can
+    // reach is a schema no plain Vitest run can parse, because importing this
+    // file pulls in `astro:content`.
+    //
+    // Unlike the three above, this one is NOT exported to `.md` or `/llms.txt`:
+    // it is a layout input for one page rather than a fact a machine consumer
+    // asked for. See `frontmatterFor` in src/lib/markdown-export.ts.
+    figures: caseStudyFiguresSchema,
   }),
 });
 

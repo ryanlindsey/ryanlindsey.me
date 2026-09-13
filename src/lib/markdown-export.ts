@@ -95,6 +95,22 @@ export function canonicalUrlFor(entry: ExportableEntry): string {
  * `content.config.ts`'s schema comment for why a required field would have
  * been the wrong call, and `summarize` in `src/lib/mcp/documents.ts` for the
  * matching rule on the read side (an omitted field is absent, never `null`).
+ *
+ * `figures` IS DELIBERATELY NOT HERE, and this paragraph is the decision
+ * rather than a gap (issue #106, 2026-09-13). The case-study schema grew it
+ * for the /work index's 2x2 block, and it fails the test the three above
+ * passed: no machine consumer asked for it by name. It is a layout input for
+ * one page.
+ *
+ * The second half of the reason is what adding it would actually cost.
+ * `parseFrontmatter` in `src/lib/mcp/documents.ts` reads this shape back, and
+ * an array of MAPS is a nesting it does not handle: its block-list arm would
+ * unquote each `- value: "84%"` line into the literal string `value: "84%"`,
+ * so the round trip would not fail loudly, it would quietly produce garbage
+ * and `summarize` would hand a tool caller a list of malformed strings.
+ * Exporting `figures` therefore means extending that parser first -- real work
+ * that should arrive with a consumer's name on it. `tests/markdown-export.test.ts`
+ * pins the absence so this stays a decision rather than decaying into a bug.
  */
 export function frontmatterFor(entry: ExportableEntry): ExportedFrontmatter {
   const frontmatter: ExportedFrontmatter = {

@@ -40,6 +40,7 @@ const caseStudy = (overrides: {
   orgScale?: string;
   domain?: string;
   outcomes?: string[];
+  figures?: { value: string; label: string }[];
 }): CollectionEntry<'caseStudies'> =>
   ({
     id: overrides.id ?? 'a-case-study',
@@ -53,6 +54,7 @@ const caseStudy = (overrides: {
       orgScale: overrides.orgScale,
       domain: overrides.domain,
       outcomes: overrides.outcomes,
+      figures: overrides.figures,
       draft: false,
     },
   }) as unknown as CollectionEntry<'caseStudies'>;
@@ -137,6 +139,32 @@ describe('frontmatterFor', () => {
     expect(frontmatter).not.toHaveProperty('orgScale');
     expect(frontmatter).not.toHaveProperty('domain');
     expect(frontmatter).not.toHaveProperty('outcomes');
+  });
+
+  test('never exports figures, even for a case study that declares a full block', () => {
+    // A DELIBERATE ASYMMETRY, PINNED HERE SO IT READS AS A DECISION RATHER
+    // THAN AN OVERSIGHT (issue #106). `orgScale`/`domain`/`outcomes` earned
+    // their place in this export by the test the rest of the set passes: a
+    // machine consumer (`list_case_studies`) asked for them BY NAME. Nothing
+    // asks for `figures`. It is a layout input for one page.
+    //
+    // And exporting it would cost more than it looks: `parseFrontmatter` in
+    // src/lib/mcp/documents.ts reads this shape back, and an array of MAPS is
+    // a nesting it does not handle -- its block-list arm would unquote each
+    // `- value: "84%"` line into the literal string `value: "84%"`, so the
+    // round trip would not fail, it would quietly produce garbage. Adding the
+    // field means extending that parser first, and that is work with a
+    // consumer's name on it or it is not work.
+    const entry = caseStudy({
+      id: 'c',
+      figures: [
+        { value: '84%', label: 'Forecast accuracy' },
+        { value: '12', label: 'Teams' },
+      ],
+    });
+    expect(frontmatterFor(entry)).not.toHaveProperty('figures');
+    expect(toMarkdown(entry)).not.toContain('figures');
+    expect(toMarkdown(entry)).not.toContain('Forecast accuracy');
   });
 
   test('a post frontmatter has no orgScale, domain or outcomes keys at all', () => {
