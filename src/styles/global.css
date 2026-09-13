@@ -509,35 +509,70 @@
  * every colour and rule it draws is remapped onto the token layer (05 §1).
  */
 @utility prose-rl {
-  --tw-prose-body: var(--rl-ink);
-  --tw-prose-headings: var(--rl-ink);
-  --tw-prose-lead: var(--rl-ink-muted);
-  --tw-prose-links: var(--rl-accent);
-  --tw-prose-bold: var(--rl-ink);
-  --tw-prose-counters: var(--rl-ink-muted);
-  --tw-prose-bullets: var(--rl-accent);
-  --tw-prose-hr: var(--rl-rule);
-  --tw-prose-quotes: var(--rl-ink);
-  --tw-prose-quote-borders: var(--rl-accent);
-  --tw-prose-captions: var(--rl-ink-muted);
   /*
-   * Inline code is accent, not ink, since the 2026-09 redesign (design 1g).
-   * Set through Typography's own variable rather than by a `code` rule so it
-   * reaches only what Typography colours -- Expressive Code's blocks paint
-   * their own tokens from the vitesse themes in astro.config.mjs and are
-   * untouched by this.
+   * NESTED UNDER `&.prose` SO IT WINS. Everything in this block is a
+   * class-level declaration that Typography also makes on `.prose` itself, and
+   * for the whole life of the redesign not one of them applied.
+   *
+   * MEASURED 2026-09-13 in the built Shell stylesheet: `.prose-rl`'s
+   * `--tw-prose-body: var(--rl-ink)` is emitted at byte 12284 and Typography's
+   * `--tw-prose-body: oklch(37.3% ...)` at byte 22919. Both are single class
+   * selectors at (0,1,0) and both sit in `utilities`, so neither layer order
+   * nor specificity separates them and the later one simply wins. The class
+   * order in the markup (`class="prose-rl prose"`) decides nothing; CSS reads
+   * the stylesheet, not the attribute.
+   *
+   * What that cost, measured over CDP at 1280px: prose body resolved to
+   * Tailwind's gray-700 and headings, links and inline code to gray-900. On
+   * the light background those clear 8.02:1 and 7.82:1 by luck, so the bug
+   * shipped looking merely wrong -- prose links were near-black instead of
+   * accent, and inline code with them. In dark the same two values land on the
+   * near-black page at 2.36:1 and 2.42:1, which is what a reader reported as
+   * unreadable. `max-width` lost the same way: the measure computed to
+   * Typography's 65ch, not the 72ch below, which only shows above about
+   * 1300px because the spine's centre column is narrower than either until
+   * then.
+   *
+   * `&.prose` puts these at (0,2,0) against Typography's (0,1,0), so they win
+   * on specificity rather than on emission order, which is the thing that was
+   * never guaranteed. Staying inside `utilities` is deliberate and is the same
+   * reasoning the link overrides below are written to: this file's other
+   * override trick, going unlayered, would also out-rank every later utility a
+   * caller might legitimately add. Both callers pair the two classes, and
+   * `prose-rl` alone styles nothing anyway, since there is no Typography
+   * output for these variables to reach.
    */
-  --tw-prose-code: var(--rl-accent);
-  --tw-prose-th-borders: var(--rl-rule);
-  --tw-prose-td-borders: var(--rl-rule);
-  /*
-   * 72ch, widened from 68ch by the 2026-09 redesign. This is the whole fix
-   * for "sparse and overly narrow": the column is wider than the old site
-   * and the article's two rails take up the leftover width rather than
-   * leaving it empty. Standfirsts are narrower (56-68ch) and are set per
-   * page, because they are a different job.
-   */
-  max-width: 72ch;
+  &.prose {
+    --tw-prose-body: var(--rl-ink);
+    --tw-prose-headings: var(--rl-ink);
+    --tw-prose-lead: var(--rl-ink-muted);
+    --tw-prose-links: var(--rl-accent);
+    --tw-prose-bold: var(--rl-ink);
+    --tw-prose-counters: var(--rl-ink-muted);
+    --tw-prose-bullets: var(--rl-accent);
+    --tw-prose-hr: var(--rl-rule);
+    --tw-prose-quotes: var(--rl-ink);
+    --tw-prose-quote-borders: var(--rl-accent);
+    --tw-prose-captions: var(--rl-ink-muted);
+    /*
+     * Inline code is accent, not ink, since the 2026-09 redesign (design 1g).
+     * Set through Typography's own variable rather than by a `code` rule so it
+     * reaches only what Typography colours -- Expressive Code's blocks paint
+     * their own tokens from the vitesse themes in astro.config.mjs and are
+     * untouched by this.
+     */
+    --tw-prose-code: var(--rl-accent);
+    --tw-prose-th-borders: var(--rl-rule);
+    --tw-prose-td-borders: var(--rl-rule);
+    /*
+     * 72ch, widened from 68ch by the 2026-09 redesign. This is the whole fix
+     * for "sparse and overly narrow": the column is wider than the old site
+     * and the article's two rails take up the leftover width rather than
+     * leaving it empty. Standfirsts are narrower (56-68ch) and are set per
+     * page, because they are a different job.
+     */
+    max-width: 72ch;
+  }
 
   /*
    * Fix round 1 (task-1-review.md): restates two of @layer base's link rules
