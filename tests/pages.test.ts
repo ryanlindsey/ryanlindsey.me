@@ -1473,12 +1473,18 @@ test('renders every company name and date range from the real résumé data', as
   }
 });
 
-test('the resume masthead is closed by the 2px ink rule, not a hairline', async () => {
+test('the resume masthead is closed in ink, not in the rule that divides', async () => {
   const page = await html('/resume');
   expect(page).toContain('data-resume-masthead');
-  // 2px --rl-ink is the design's "close a masthead" weight and is the one
-  // thing distinguishing this rule from the dozens of 1px ones on the page.
-  expect(page).toMatch(/data-resume-masthead[^>]*class="[^"]*border-b-2[^"]*border-ink/);
+  // --rl-ink is what distinguishes this rule from the dozens of --rl-rule
+  // hairlines on the page, and it is the half of the design this page still
+  // keeps. The WEIGHT is not: design 1k draws 2px and so did this until
+  // 2026-09-13, when review found that a 2px near-black line at full width
+  // read as a bar across the page rather than as a closing rule. Asserted as
+  // "border-b and not border-b-2" rather than by colour alone, because
+  // reverting the weight is the specific regression this guards.
+  expect(page).toMatch(/data-resume-masthead[^>]*class="[^"]*\bborder-b\b[^"]*border-ink/);
+  expect(page).not.toMatch(/data-resume-masthead[^>]*class="[^"]*border-b-2/);
 });
 
 test('the section rail carries every rendered section and spies on it', async () => {
