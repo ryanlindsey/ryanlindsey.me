@@ -440,6 +440,51 @@ describe('stripNonPortableMdx (figures directive degrades to its list)', () => {
     const body = '```\n:::figures{source="D1"}\n- 0 — Alerts fired\n:::\n```';
     expect(stripNonPortableMdx(body)).toContain(':::figures{source="D1"}');
   });
+
+  // Task 2, fix round 1 (post-review): FIGURES_DIRECTIVE is, like the
+  // component-tag regexes above it, a brace-naive pattern match rather than
+  // a real parser -- and unlike those regexes, this one had no backstop.
+  // Measured directly against the installed satteri 0.10.5 + figures.mjs
+  // (2026-09-13): a `source` value containing an unescaped `}` builds and
+  // renders successfully -- figures.mjs receives `attributes.source`
+  // already truncated at that `}` by SATTERI'S OWN attribute parser, which
+  // is equally brace-naive (it stops at the first `}` wherever it falls,
+  // quoted or not) -- so "the build already validated it" does not make
+  // this exporter's regex safe: it is a second, independently-written parser
+  // of the same syntax, and the two can disagree on where a block ends even
+  // though neither one throws. Matching satteri's exact (and evidently not
+  // fully quote-aware) brace behavior here would mean re-deriving an
+  // undocumented parser -- the same trap "no third notion of what counts as
+  // code" warns against one level up -- so this is a backstop, not a smarter
+  // regex: it throws instead of shipping the leftover fence.
+  test('a source attribute containing an unescaped } throws rather than shipping the raw fence', () => {
+    const body =
+      ':::figures{source="Datadog (jobs})"}\n- 0 — Alerts fired\n- 100% — Runs green\n:::';
+    expect(() => stripNonPortableMdx(body)).toThrow(/figures directive survived/);
+  });
+
+  // Second measured failure mode: satteri auto-closes an unterminated
+  // container directive at end of input (verified: the block above still
+  // builds and renders normally with no closing `:::` at all), but
+  // FIGURES_DIRECTIVE requires a literal `\n:::` to match. Same backstop.
+  test('an unterminated block (no closing :::) throws rather than shipping the raw fence', () => {
+    const body = 'Before.\n\n:::figures{source="D1"}\n- 0 — Alerts fired\n- 100% — Runs green';
+    expect(() => stripNonPortableMdx(body)).toThrow(/figures directive survived/);
+  });
+
+  // The narrower sibling bug in the same fold: the attribute-value extractor
+  // used to stop at the FIRST embedded `"`, which is wrong specifically when
+  // that quote is backslash-escaped (`\"`) rather than a real terminator.
+  // Measured against figures.mjs directly: satteri does not strip the
+  // backslash either -- `source="Team \"Alpha\""` renders literally as
+  // `READ FROM Team \"Alpha\"` -- so the escaped form is what a correct
+  // extraction reproduces, not an unescaped `Team "Alpha"`. This block does
+  // NOT contain an unescaped `}`, so FIGURES_DIRECTIVE matches the whole
+  // block fine; only the downstream source-value extraction was wrong.
+  test('an escaped quote inside source is kept, not used as a false end-of-value', () => {
+    const body = ':::figures{source="Team \\"Alpha\\""}\n- 0 — Alerts fired\n:::';
+    expect(stripNonPortableMdx(body)).toContain('Figures, read from Team \\"Alpha\\":');
+  });
 });
 
 describe('ExportableEntry', () => {

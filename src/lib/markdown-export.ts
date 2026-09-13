@@ -345,10 +345,7 @@ const IMPORT_STATEMENT = /^[ \t]*import\s+(?:[^;]*?\bfrom\s+)?['"][^'"]*['"]\s*;
  * Anchored at the start of a line (`^`/`m`) so an ordinary sentence that
  * happens to contain the word "figures" is never mistaken for one, same
  * reasoning as IMPORT_STATEMENT above. The closing `:::` must also start its
- * own line (`\n:::`, then `[ \t]*$`) -- an unterminated block (a missing
- * closing fence) simply does not match here and is left untouched rather
- * than guessed at, the same "refuse rather than guess" call FIX ROUND 1
- * above made for component tags.
+ * own line (`\n:::`, then `[ \t]*$`).
  *
  * This regex does not re-validate what src/lib/figures.mjs already validates
  * at render time -- item count 2-4, the ` — ` separator on every line. By
@@ -357,8 +354,53 @@ const IMPORT_STATEMENT = /^[ \t]*import\s+(?:[^;]*?\bfrom\s+)?['"][^'"]*['"]\s*;
  * rule here a second time is exactly the five-re-implementation drift risk
  * this module's own header comment warns about, applied to one directive
  * instead of one collection.
+ *
+ * FIX ROUND 1 (post-review): the paragraph above used to end "an unterminated
+ * block simply does not match here and is left untouched rather than guessed
+ * at" -- true as far as it went, but "left untouched" was a silent leak, not
+ * a safe refusal, because nothing checked for it afterward. Two ways this
+ * regex fails to match a block that still builds successfully, both measured
+ * directly against the installed satteri 0.10.5 + figures.mjs (2026-09-13):
+ *
+ * 1. satteri's own attribute-block parser stops at the FIRST unescaped `}`
+ *    wherever it falls, quoted or not -- so `source="Datadog (jobs})"`
+ *    builds and renders (figures.mjs receives `attributes.source` already
+ *    truncated to `"Datadog (jobs"`, a valid string as far as ITS validation
+ *    is concerned). The attrs group here (`[^}\n]*`) is equally brace-naive
+ *    and stops at that same `}`, leaving `)"}...` where the rest of this
+ *    regex expects only trailing whitespace before the body's newline -- so
+ *    the whole match fails. Making this group quote-aware would not fix
+ *    this: satteri's own parser is not quote-aware for `}` either, so a
+ *    smarter regex here would extract the FULL source string while the live
+ *    HTML page still shows the truncated one -- a worse outcome than an
+ *    error, because the two exports of the same content would disagree.
+ * 2. satteri auto-closes an unterminated container directive at end of
+ *    input (verified: a `:::figures` block with no closing `:::` at all
+ *    still builds and renders normally), but this regex requires a literal
+ *    `\n:::` to match.
+ *
+ * "The build already validated it" therefore does not make this regex safe
+ * on its own -- it is a second, independently-written parser of the same
+ * syntax, and the two can disagree about where a block ends even though
+ * neither one throws. assertNoLeftoverFiguresDirective below is the actual
+ * fix: a backstop that throws when a `:::figures` opening fence survives
+ * into the stripped output, the same call FIX ROUND 1 above made for
+ * component tags -- refusing to guess is the fix; the guard is what makes
+ * refusing safe.
  */
 const FIGURES_DIRECTIVE = /^:::figures(\{[^}\n]*\})?[ \t]*\n([\s\S]*?)\n:::[ \t]*$/gm;
+
+/**
+ * A `:::figures` opening fence that survived stripping outside of code --
+ * meaning FIGURES_DIRECTIVE above failed to match it, for one of the two
+ * measured reasons in its comment. Anchored the same way FIGURES_DIRECTIVE
+ * is (`^`/`m`), and deliberately matches only the directive's own name, not
+ * a bare `:::` -- this module only knows about the `figures` directive, and
+ * a generic `:::`-anywhere check would be guessing at a syntax (some other,
+ * as yet unwritten, directive type) this repo does not use today (verified,
+ * plan preflight finding 8: no content file contains `:::` at a line start).
+ */
+const LEFTOVER_FIGURES_DIRECTIVE = /^:::figures\b/m;
 
 // The attribute-scanning portion of both tag regexes excludes `{` as well as
 // `>` (`[^>{]*`, not `[^>]*`). Round 1 used `[^>]*`, which happily matched
@@ -437,13 +479,58 @@ function stripImportStatements(prose: string): string {
  * itself is copied through unchanged, unreadable-value spelling (`—`) and
  * all: this is the text export, not the HTML render, and figures.mjs is the
  * one place that turns an authored `—` into the word "unavailable".
+ *
+ * FIX ROUND 1 (post-review): the source-value group used to be `([^"]*)`,
+ * which stops at the FIRST embedded `"` -- wrong specifically when that
+ * quote is backslash-escaped (`\"`) rather than the real closing quote, so
+ * `source="Team \"Alpha\""` extracted the truncated `Team \` instead of the
+ * full value. `(?:[^"\\]|\\.)*` is the standard "quoted string contents"
+ * shape: any run of characters that are neither a quote nor a backslash, OR
+ * a backslash followed by any one character (an escaped pair), repeated --
+ * so it only stops at a `"` that isn't preceded by an unconsumed `\`.
+ * Measured against figures.mjs directly: satteri does not strip the
+ * backslash from the value it exposes either -- the same input renders as
+ * `READ FROM Team \"Alpha\"` on the live page -- so keeping the backslash
+ * here, rather than trying to unescape it, is what keeps this export and
+ * the rendered HTML agreeing on the same source string. (This group is not
+ * the brace-matching problem FIGURES_DIRECTIVE's FIX ROUND 1 note
+ * describes: an unescaped `}` inside the attrs text is caught upstream, by
+ * FIGURES_DIRECTIVE failing to match at all, before this function ever
+ * runs.)
  */
 function stripFiguresDirective(prose: string): string {
   return prose.replace(FIGURES_DIRECTIVE, (_match, attrs: string | undefined, body: string) => {
-    const source = attrs?.match(/source="([^"]*)"/)?.[1];
+    const source = attrs?.match(/source="((?:[^"\\]|\\.)*)"/)?.[1];
     const lead = source ? `Figures, read from ${source}:` : 'Figures:';
     return `${lead}\n\n${body}`;
   });
+}
+
+/**
+ * Throws if a `:::figures` opening fence survives outside of fenced or
+ * inline code -- the backstop FIGURES_DIRECTIVE's FIX ROUND 1 note promises,
+ * mirroring assertNoLeftoverComponentTags below in shape and in the same
+ * "refuse rather than guess" reasoning: this module cannot fully replicate
+ * satteri's own (measurably not fully quote-aware) directive-attribute
+ * grammar, and building a smarter regex here that DOES fully parse it would
+ * risk producing a different, non-truncated result than the live HTML page
+ * shows for the same content -- agreement with what actually got built and
+ * rendered matters more than recovering the "intended" source string. Reuses
+ * splitCodeRegions, the same shared code/prose split assertNoLeftoverComponentTags
+ * uses, so a `:::figures` block mentioned inside a code sample is exempt here too.
+ */
+function assertNoLeftoverFiguresDirective(strippedBody: string): void {
+  for (const segment of splitCodeRegions(strippedBody)) {
+    if (!segment.code && LEFTOVER_FIGURES_DIRECTIVE.test(segment.text)) {
+      throw new Error(
+        'markdown-export: a figures directive survived MDX stripping outside of code ' +
+          '(check for a source attribute containing an unescaped } or a missing closing :::): ' +
+          JSON.stringify(
+            segment.text.length > 160 ? `${segment.text.slice(0, 160)}…` : segment.text,
+          ),
+      );
+    }
+  }
 }
 
 function stripComponentTags(prose: string): string {
@@ -508,11 +595,14 @@ function assertNoLeftoverComponentTags(strippedBody: string): void {
  * of values and labels), just wrapped in syntax this exporter's readers
  * cannot parse.
  *
- * Throws (via assertNoLeftoverComponentTags) rather than returning if the
- * result still looks like it contains an unstripped tag -- see FIX ROUND 1
- * above. That guard is unchanged by the `:::figures` addition: a directive
- * degrades to a plain markdown list and lead line, neither of which can ever
- * look like `<Foo>`, so it has nothing new to catch here.
+ * Throws rather than returning if the result still looks like it contains an
+ * unstripped tag (assertNoLeftoverComponentTags -- see FIX ROUND 1 above) or
+ * a `:::figures` opening fence that never got degraded
+ * (assertNoLeftoverFiguresDirective -- see FIGURES_DIRECTIVE's own FIX ROUND
+ * 1 note). A directive that DOES degrade produces a plain markdown list and
+ * lead line, neither of which can ever look like `<Foo>`, so the two guards
+ * cannot fire on each other's output -- they are independent checks for
+ * independent ways this function's regexes can fail to match.
  */
 export function stripNonPortableMdx(body: string): string {
   const cleaned = splitCodeRegions(body)
@@ -526,6 +616,7 @@ export function stripNonPortableMdx(body: string): string {
     .trim();
 
   assertNoLeftoverComponentTags(cleaned);
+  assertNoLeftoverFiguresDirective(cleaned);
   return cleaned;
 }
 
