@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { selectRelated, type RelatedCandidate } from '../src/lib/related-posts';
+import { selectRelated, type PostSummary } from '../src/lib/related-posts';
 
 /*
  * The article's RELATED row (design 1g, issue #104). Unit-tested here as well
@@ -10,7 +10,7 @@ import { selectRelated, type RelatedCandidate } from '../src/lib/related-posts';
  * agent-native-site's pillar, so the rendered page cannot show whether the
  * pillar preference works or merely appears to.
  */
-const candidate = (over: Partial<RelatedCandidate> & { href: string }): RelatedCandidate => ({
+const post = (over: Partial<PostSummary> & { href: string }): PostSummary => ({
   title: over.href,
   kicker: 'Building in the open',
   pillar: 'building-in-the-open',
@@ -21,10 +21,10 @@ const candidate = (over: Partial<RelatedCandidate> & { href: string }): RelatedC
 
 describe('selectRelated', () => {
   test('never returns the article the reader is already on', () => {
-    const related = selectRelated(
-      [candidate({ href: '/writing/a' }), candidate({ href: '/writing/b' })],
-      { href: '/writing/a', pillar: 'building-in-the-open' },
-    );
+    const related = selectRelated([post({ href: '/writing/a' }), post({ href: '/writing/b' })], {
+      href: '/writing/a',
+      pillar: 'building-in-the-open',
+    });
     expect(related.map((r) => r.href)).toEqual(['/writing/b']);
   });
 
@@ -33,7 +33,7 @@ describe('selectRelated', () => {
     // enough on its own -- a related row that linked one would put an
     // unpublished piece into the navigation of a published page.
     const related = selectRelated(
-      [candidate({ href: '/writing/draft', draft: true }), candidate({ href: '/writing/live' })],
+      [post({ href: '/writing/draft', draft: true }), post({ href: '/writing/live' })],
       { href: '/writing/current', pillar: 'building-in-the-open' },
     );
     expect(related.map((r) => r.href)).toEqual(['/writing/live']);
@@ -42,12 +42,12 @@ describe('selectRelated', () => {
   test('prefers the same pillar even when a newer post sits outside it', () => {
     const related = selectRelated(
       [
-        candidate({
+        post({
           href: '/writing/newer-other-pillar',
           pillar: 'agentic-engineering',
           publishedAt: new Date('2026-06-01'),
         }),
-        candidate({
+        post({
           href: '/writing/older-same-pillar',
           pillar: 'building-in-the-open',
           publishedAt: new Date('2026-02-01'),
@@ -64,8 +64,8 @@ describe('selectRelated', () => {
   test('orders most recent first within the same pillar', () => {
     const related = selectRelated(
       [
-        candidate({ href: '/writing/older', publishedAt: new Date('2026-02-01') }),
-        candidate({ href: '/writing/newer', publishedAt: new Date('2026-05-01') }),
+        post({ href: '/writing/older', publishedAt: new Date('2026-02-01') }),
+        post({ href: '/writing/newer', publishedAt: new Date('2026-05-01') }),
       ],
       { href: '/writing/current', pillar: 'building-in-the-open' },
     );
@@ -77,13 +77,13 @@ describe('selectRelated', () => {
     // recent other post beats showing a single lonely card.
     const related = selectRelated(
       [
-        candidate({ href: '/writing/same', publishedAt: new Date('2026-03-01') }),
-        candidate({
+        post({ href: '/writing/same', publishedAt: new Date('2026-03-01') }),
+        post({
           href: '/writing/other',
           pillar: 'agentic-engineering',
           publishedAt: new Date('2026-04-01'),
         }),
-        candidate({
+        post({
           href: '/writing/other-older',
           pillar: 'agentic-engineering',
           publishedAt: new Date('2026-01-15'),
