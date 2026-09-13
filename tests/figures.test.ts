@@ -42,6 +42,14 @@ describe('the figures directive', () => {
     expect(html).not.toMatch(/<p class="rl-figure-value"[^>]*>0</);
     // Split on the FIRST separator, so the label survives an unreadable value.
     expect(html).toContain('Alerts fired');
+    // `data-numeric` marks a cell carrying an actual figure, so the word
+    // "unavailable" does not get it while the real number alongside does.
+    // That is src/components/OpsMetric.astro's own convention (its absent
+    // state renders without the attribute) and global.css's
+    // `[data-numeric] { font-variant-numeric: tabular-nums }` is what makes it
+    // mean something. It was a decision nothing pinned until this assertion.
+    expect(html).toContain('<p class="rl-figure-value">unavailable</p>');
+    expect(html).toContain('<p class="rl-figure-value" data-numeric>3</p>');
   });
 
   test('a label containing an em dash survives', async () => {
@@ -62,5 +70,32 @@ describe('the figures directive', () => {
     // would be indistinguishable from content that was never written, which
     // is the whole reason this throws.
     await expect(render(`:::figures\n- just a label\n- 2 — Two\n:::\n`)).rejects.toThrow();
+  });
+
+  // Fix round 3 (final whole-branch review, controller Ruling 7). Both of the
+  // following rendered as the EMPTY STRING with the content silently gone, the
+  // one failure mode this plugin was written to make impossible, and both were
+  // measured that way against satteri 0.10.5 on 2026-09-13.
+
+  test('a container directive this site does not claim is a build error, not a blank space', async () => {
+    // `:::note` is unambiguous directive intent -- nobody types three colons
+    // and a word by accident -- so the answer here is a build error naming it,
+    // not an empty page where a note used to be. Text and leaf directives take
+    // the opposite treatment (src/lib/literal-directives.mjs) because `:name`
+    // IS something an author types by accident, in every clock time.
+    await expect(render(`:::note\nHello.\n:::\n`)).rejects.toThrow(/unknown container directive/);
+  });
+
+  test('anything inside the fence besides the list is a build error, not dropped', async () => {
+    // Measured: this rendered the grid with "Lead in." gone from the page
+    // while markdown-export kept it verbatim in the `.md` variant, so one
+    // input produced a quiet degradation AND a page/export disagreement.
+    await expect(render(`:::figures\nLead in.\n\n- 1 — One\n- 2 — Two\n:::\n`)).rejects.toThrow(
+      /nothing else/,
+    );
+    // A directive label arrives as an extra paragraph child by the same route.
+    await expect(
+      render(`:::figures[Label]{source="D1"}\n- 1 — One\n- 2 — Two\n:::\n`),
+    ).rejects.toThrow(/nothing else/);
   });
 });

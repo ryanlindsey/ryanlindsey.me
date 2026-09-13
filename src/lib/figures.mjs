@@ -39,6 +39,36 @@ import { fileURLToPath } from 'node:url';
  * 4. The em dash here is a data separator, not prose -- the `house-style`
  *    skill's near-zero-em-dash rule does not reach it. Nobody should "fix"
  *    it out of an authored figure line.
+ *
+ * This is also the ONLY subscriber to `containerDirective` in the pipeline,
+ * which is why it throws on a container whose name it does not claim rather
+ * than returning (controller Ruling 7, 2026-09-13): `features.directive` is a
+ * single switch for three directive kinds, and an unclaimed one of any kind
+ * renders as the empty string. Text and leaf directives take the opposite
+ * treatment, restored to their authored source by
+ * `src/lib/literal-directives.mjs` -- read its header for why the two halves
+ * of one ruling point in opposite directions. In short: `:::note` is
+ * unambiguous directive intent nobody types by accident, while `:name` is
+ * indistinguishable from a clock time or a `key:value` pair.
+ *
+ * Three smaller decisions, recorded because each looked like an oversight to
+ * a reader and is not:
+ *
+ * - `splitItem`'s per-item separator check runs BEFORE the 2 to 4 count
+ *   check, so a five-item block whose first item also lacks a separator
+ *   reports the separator, not the count. Deliberate: the separator error
+ *   quotes the offending line, which is the more actionable of the two, and
+ *   an author who fixes it sees the count error on the next build.
+ * - An explicit `source=""` is treated as no source at all, so the source
+ *   line is omitted rather than rendered as a bare `READ FROM `.
+ *   `stripFiguresDirective` in `src/lib/markdown-export.ts` makes the
+ *   identical choice (`Figures:`, not `Figures, read from :`), and the two
+ *   halves of the feature agreeing matters more here than either default.
+ * - Inline markup inside a value or a label is flattened to text, because
+ *   `ctx.textContent` is what reads the item. `- **0** — Alerts fired`
+ *   renders the value as `0`, not as `<strong>0</strong>`. A figure is a
+ *   number and a name for it; emphasis inside one has nowhere to land in the
+ *   design (4a), and the stylesheet already sets the weight of both lines.
  */
 
 const SEPARATOR = ' — ';
@@ -52,12 +82,27 @@ export function figures() {
     // to name the offending line, so this plugin turns tracking on.
     options: { position: true },
     containerDirective(node, ctx) {
-      if (node.name !== 'figures') return;
-
-      const list = node.children.find((child) => child.type === 'list');
-      if (!list) {
+      if (node.name !== 'figures') {
         throw new Error(
-          `figures directive${errorLocation(ctx, node)}: expected a list of items, found none`,
+          `unknown container directive ":::${node.name}"${errorLocation(ctx, node)}: this site ` +
+            'renders only :::figures, and an unclaimed container renders as nothing at all',
+        );
+      }
+
+      // Exactly one child, and it is the list. Taking the first `list` child
+      // and ignoring the rest quietly dropped anything else the author wrote
+      // inside the fence -- `:::figures` / `Lead in.` / the list rendered the
+      // grid with "Lead in." gone from the page while the `.md` export kept
+      // it verbatim (measured 2026-09-13), so one input produced a quiet
+      // degradation AND a page/export disagreement. A directive label
+      // (`:::figures[Label]`) arrives as an extra paragraph child too, and is
+      // refused here for the same reason: the contract has nowhere to put it.
+      const [list] = node.children;
+      if (node.children.length !== 1 || list?.type !== 'list') {
+        const found = node.children.map((child) => child.type).join(', ') || 'nothing';
+        throw new Error(
+          `figures directive${errorLocation(ctx, node)}: expected one list of items and nothing ` +
+            `else, found: ${found}`,
         );
       }
 
