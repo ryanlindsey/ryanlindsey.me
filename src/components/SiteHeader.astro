@@ -1,48 +1,97 @@
 ---
 import ThemeToggle from './ThemeToggle.astro';
+import { NAV_LINKS } from '../lib/nav';
 
+interface Props {
+  // Sticky only for the two article routes (writing/[...slug], work/[...slug]
+  // by way of ArticleLayout.astro's stickyHeader prop, threaded through
+  // Shell.astro) -- every other page's header scrolls away. A prop rather
+  // than a media query, because the split is by route, not by viewport.
+  sticky?: boolean;
+}
+
+const { sticky = false } = Astro.props;
 const path = Astro.url.pathname;
-
-// /about is the one still to come. /ops and /ai-policy have arrived (Day 6
-// Task 13) and are appended last, after /resume: they are about the site
-// rather than part of reading it.
-const links = [
-  { href: '/writing', label: 'Writing' },
-  { href: '/work', label: 'Work' },
-  { href: '/resume', label: 'Resume' },
-  { href: '/ops', label: 'Ops' },
-  { href: '/ai-policy', label: 'AI Policy' },
-];
-
 const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`);
 ---
 
-<header data-site-header class="border-b border-rule">
-  <!-- Day 6 Task 13 fix round: five links plus the wordmark no longer fit
-       this row's non-shrinkable floor at ~400px (COMPUTED from the class
-       list below, not rendered and measured -- a real visual pass across
-       both themes at that width is still owed and unscheduled). `flex-wrap`
-       on both this row and the nav is the mitigation: inert at wide widths,
-       and it turns what would be sitewide horizontal scroll into a header
-       that wraps to two lines instead. -->
-  <div class="mx-auto flex max-w-5xl flex-wrap items-baseline justify-between gap-6 px-6 py-5">
-    <a href="/" class="font-display text-subheading tracking-tight text-ink hover:text-accent"
-      >Ryan Lindsey</a
-    >
+<header data-site-header class={`border-b border-rule bg-bg ${sticky ? 'sticky top-0' : ''}`}>
+  <!--
+    The flex-wrap mitigation this row carried before the 2026-09 redesign
+    (task-13-report.md) is gone, not just restyled. It answered five links
+    plus the wordmark not fitting this row's non-shrinkable floor at ~400px
+    by wrapping the header to two lines; at four links, with a real mobile
+    overlay arriving one issue after this one (the inert toggle button below
+    is what it will open), the row no longer needs to wrap. Everything below
+    `lg` is out of scope here and stays wrong until that issue lands.
+  -->
+  <!--
+    max-w-[1440px] px-10 is the redesign's own target geometry for this row --
+    a 1440px cap and a 40px gutter -- and it does not match the rest of the
+    page yet. SiteFooter.astro and every page body still carry the
+    pre-redesign max-w-5xl px-6, so from roughly 1090px up the wordmark sits
+    well left of the content column and the footer's copyright line, on every
+    page, including ones this issue never touched. That gap is transitional,
+    not a bug: the later page issues in this epic widen the rest of the site
+    to meet this width, the way the mobile toggle button below is commented
+    as provisional rather than fixed.
+  -->
+  <div class="mx-auto flex h-[68px] max-w-[1440px] items-center gap-9 px-10">
+    <a href="/" class="font-display text-subheading text-ink">Ryan Lindsey</a>
 
-    <nav aria-label="Primary" class="flex flex-wrap items-baseline gap-6">
+    <nav aria-label="Primary" class="ml-2 flex items-center gap-[30px]">
       {
-        links.map((link) => (
+        NAV_LINKS.map((link) => (
           <a
             href={link.href}
             aria-current={isCurrent(link.href) ? 'page' : undefined}
-            class="font-mono text-micro uppercase text-ink-muted hover:text-accent aria-[current=page]:text-accent"
+            class="border-b-2 border-transparent py-6 font-mono text-small text-ink-muted aria-[current=page]:border-accent aria-[current=page]:text-ink"
           >
             {link.label}
           </a>
         ))
       }
-      <ThemeToggle />
     </nav>
+
+    <div class="ml-auto flex items-center gap-[14px]">
+      <!--
+        A placeholder, not a control. Site search is not built -- no overlay,
+        no results page, no empty state, and none of those should be
+        invented here. A focusable element that does nothing is worse than a
+        label, and a screen reader should not be told there is a search on
+        this page, so this is a non-interactive <span> (aria-hidden), not a
+        <button> or an <input>, and no keyboard handler is bound anywhere in
+        this file for the shortcut the chip below advertises.
+      -->
+      <span
+        data-search-placeholder
+        aria-hidden="true"
+        class="flex w-[260px] items-center gap-2.5 border border-rule px-3 py-2"
+      >
+        <span class="text-small font-mono text-ink-muted">Search</span>
+        <span class="ml-auto border border-rule px-[5px] py-px text-micro font-mono text-ink-muted"
+          >⌘K</span
+        >
+      </span>
+      <ThemeToggle />
+    </div>
+
+    <!--
+      Rendered, not built. The mobile-nav issue right after this one consumes
+      this exact button (aria-controls="rl-mobile-menu") as a named
+      interface, so it exists now with no script and no matching
+      #rl-mobile-menu on the page -- clicking it does nothing. Step 4 puts
+      everything below `lg` out of this issue's scope; this button is
+      deliberately inert, not an oversight.
+    -->
+    <button
+      type="button"
+      aria-label="Open menu"
+      aria-expanded="false"
+      aria-controls="rl-mobile-menu"
+      class="border border-rule px-2.5 py-2 font-mono text-micro text-ink lg:hidden"
+    >
+      Menu
+    </button>
   </div>
 </header>

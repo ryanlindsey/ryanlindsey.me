@@ -146,8 +146,18 @@
     font-family: var(--font-sans);
     font-optical-sizing: auto;
     scroll-behavior: smooth;
-    /* Keeps anchor targets off the viewport edge (there is no sticky header to clear). */
-    scroll-padding-top: 5rem;
+    /*
+     * Keeps anchor targets off the viewport edge. Used to read "there is no
+     * sticky header to clear" -- false since the 2026-09 redesign gave two
+     * page types one (SiteHeader.astro's `sticky` prop, threaded through
+     * ArticleLayout.astro). 6rem = 68px header + 2px reading-progress bar +
+     * 26px clearance. The bar itself is not built yet -- it belongs to the
+     * article issue (design 1g) -- but the arithmetic already reserves its
+     * space, and 6rem is the same 96px design 1g gives the article rails
+     * (`position: sticky; top: 96px`, ArticleLayout.astro's TOC aside), so an
+     * anchor scroll and a rail land in agreement.
+     */
+    scroll-padding-top: 6rem;
   }
 
   body {

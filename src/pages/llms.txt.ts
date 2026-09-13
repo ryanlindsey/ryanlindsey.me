@@ -116,6 +116,12 @@ const MCP_LINKS: LlmsLink[] = [
  * matters here: the branch that built `/ops` IS that PR under a different
  * shape, and it owned neither edit. Naming a task that exists was what let
  * the next reader check whether it had landed -- and it has.
+ *
+ * Fix round (issue #99, 2026-09 redesign): `/ops` and `/ai-policy` moved out
+ * of `SiteHeader.astro` into `SiteFooter.astro`'s footer nav, so "the same
+ * edit that put them in SiteHeader.astro" above is history, not a live
+ * pointer. They still belong in this index for the reason already given --
+ * an agent reading `/llms.txt` does not care which page put a link here.
  */
 const SITE_LINKS: LlmsLink[] = [
   {

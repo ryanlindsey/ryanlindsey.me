@@ -8,13 +8,13 @@
   type="button"
   data-theme-toggle
   aria-label="Theme: follow system"
-  class="border border-rule px-2 py-1 font-mono text-micro uppercase text-ink-muted transition-colors hover:border-accent hover:text-accent"
+  class="border border-rule px-2.5 py-2 font-mono text-micro text-ink"
 >
-  <span data-theme-label>sys</span>
+  <span data-theme-label>SYSTEM</span>
 </button>
 
 <script>
-  const LABELS = { system: 'sys', light: 'lgt', dark: 'drk' } as const;
+  const LABELS = { system: 'SYSTEM', light: 'LIGHT', dark: 'DARK' } as const;
   const ORDER = ['system', 'light', 'dark'] as const;
   type Mode = (typeof ORDER)[number];
 
