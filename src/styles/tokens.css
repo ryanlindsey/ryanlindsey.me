@@ -4,7 +4,11 @@
  * Flat bright color as signal; never glow, never gradient. Pink is the single
  * signature accent (links, focus, rules, marks). Green is the success/live ramp
  * and is never used as a brand color, so a green badge is never ambiguous next
- * to a green link.
+ * to a green link. One exception, added by the 2026-09 redesign: a link's
+ * `:active` state (global.css) is this same green. Requested in review, and
+ * accepted because `:active` is transient -- a reader sees it only while their
+ * finger or mouse is down, never for long enough to sit next to a status badge
+ * and be misread as one. The ramp itself is unchanged everywhere else.
  *
  * Nothing else in this repo declares a color -- including the forced-light
  * print palette below, which needs values that hold independent of the
