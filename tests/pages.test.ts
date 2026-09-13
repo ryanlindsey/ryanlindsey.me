@@ -6,7 +6,7 @@ import { SITE_HARNESS_WORKERS } from './workers';
 import { BANNED_PATTERNS } from './candidacy-patterns';
 import { GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
 import { PILLAR_LABELS } from '../src/lib/pillars';
-import { formatDateRange } from '../src/lib/resume';
+import { formatDateRange, groupWorkByCompany, type ResumeWorkEntry } from '../src/lib/resume';
 import { buildLlmsTxt, buildLlmsFullTxt, type LlmsLink } from '../src/lib/llms-index';
 import { buildRssFeed, buildJsonFeed, RSS_MARKDOWN_NOTICE, type JsonFeed } from '../src/lib/feeds';
 // The RSS tripwire's arming assertion runs the patterns against `toMarkdown()`
@@ -109,6 +109,45 @@ const yamlArrayIsEmpty = (source: string, key: string): boolean => {
   const afterKey = source.slice(match.index! + match[0].length);
   const nextContentLine = afterKey.split('\n').find((line) => line.trim() !== '');
   return !(nextContentLine && /^ {2}- /.test(nextContentLine));
+};
+
+/**
+ * Every `work` entry in the real résumé YAML, as the fields the page-level
+ * assertions below read back off `/resume`. Deliberately the real file rather
+ * than a second hand-typed fixture -- tests/resume.test.ts's `resumeFixture`
+ * is that copy and can silently drift from the source (see progress.md's Task
+ * 1 entry); reading the YAML here is what closes the gap at the HTTP level.
+ *
+ * Bounded by the NEXT top-level key rather than by `education:` by name. This
+ * slice used to run work -> education and broke the day a `projects:` section
+ * landed between the two: every project was parsed as a work entry and threw
+ * on the missing startDate. Any future top-level section now ends the block
+ * correctly without touching this helper.
+ *
+ * `highlights` is not parsed and is always `[]`. Nothing these tests call
+ * reads it -- groupWorkByCompany groups on `name` and spans on the dates --
+ * and parsing ~25 paragraphs of block-scalar prose out of YAML by regex to
+ * populate a field no assertion touches would be a drift trap for nothing.
+ */
+const workEntriesFromYaml = (): ResumeWorkEntry[] => {
+  const yaml = readFileSync(resumeYamlPath, 'utf8');
+  const workStart = yaml.indexOf('\nwork:');
+  const nextTopLevelKey = /\n[a-z][a-zA-Z]*:/g;
+  nextTopLevelKey.lastIndex = workStart + 1;
+  const workEnd = nextTopLevelKey.exec(yaml)?.index ?? yaml.length;
+  return yaml
+    .slice(workStart, workEnd)
+    .split(/\n {2}- name: /)
+    .slice(1)
+    .map((chunk) => {
+      const name = chunk.slice(0, chunk.indexOf('\n'));
+      const position = chunk.match(/\n {4}position: (.+)/)?.[1];
+      const startDate = chunk.match(/startDate: (\d{4}-\d{2})/)?.[1];
+      const endDate = chunk.match(/endDate: (\d{4}-\d{2})/)?.[1];
+      if (!startDate) throw new Error(`no startDate found in the work entry for ${name}`);
+      if (!position) throw new Error(`no position found in the work entry for ${name}`);
+      return { name, position, startDate, endDate, highlights: [] };
+    });
 };
 
 const html = async (path: string) => {
@@ -1193,27 +1232,7 @@ test('renders every company name and date range from the real résumé data', as
   // since Task 1): /resume is a static, prerendered page, so if that guard
   // ever threw, `npm test`'s `astro build` step -- which runs before this
   // file even starts -- would fail outright, before any test could run.
-  const yaml = readFileSync(resumeYamlPath, 'utf8');
-  // Bounded by the NEXT top-level key rather than by `education:` by name.
-  // This slice used to run work -> education and broke the day a `projects:`
-  // section landed between the two: every project was parsed as a work entry
-  // and threw on the missing startDate. Any future top-level section now ends
-  // the block correctly without touching this test.
-  const workStart = yaml.indexOf('\nwork:');
-  const nextTopLevelKey = /\n[a-z][a-zA-Z]*:/g;
-  nextTopLevelKey.lastIndex = workStart + 1;
-  const workEnd = nextTopLevelKey.exec(yaml)?.index ?? yaml.length;
-  const workBlock = yaml.slice(workStart, workEnd);
-  const entries = workBlock
-    .split(/\n {2}- name: /)
-    .slice(1)
-    .map((chunk) => {
-      const name = chunk.slice(0, chunk.indexOf('\n'));
-      const startDate = chunk.match(/startDate: (\d{4}-\d{2})/)?.[1];
-      const endDate = chunk.match(/endDate: (\d{4}-\d{2})/)?.[1];
-      if (!startDate) throw new Error(`no startDate found in the work entry for ${name}`);
-      return { name, startDate, endDate };
-    });
+  const entries = workEntriesFromYaml();
   expect(entries.length).toBeGreaterThan(0);
 
   // The page HTML-escapes text nodes (Y&R Brands / Wunderman renders as
@@ -1229,6 +1248,113 @@ test('renders every company name and date range from the real résumé data', as
   for (const entry of entries) {
     const range = formatDateRange(entry.startDate, entry.endDate);
     expect(page, `${range} (${entry.name}) should appear on /resume`).toContain(htmlEscape(range));
+  }
+});
+
+test('the resume masthead is closed by the 2px ink rule, not a hairline', async () => {
+  const page = await html('/resume');
+  expect(page).toContain('data-resume-masthead');
+  // 2px --rl-ink is the design's "close a masthead" weight and is the one
+  // thing distinguishing this rule from the dozens of 1px ones on the page.
+  expect(page).toMatch(/data-resume-masthead[^>]*class="[^"]*border-b-2[^"]*border-ink/);
+});
+
+test('the section rail carries every rendered section and spies on it', async () => {
+  const page = await html('/resume');
+  const rail = /data-resume-rail[\s\S]*?<\/nav>/.exec(page);
+  expect(rail, 'no sticky rail').not.toBeNull();
+  // Read from the YAML rather than hardcoded, for the same reason the section
+  // headings are: Projects, Education and Skills each vanish while their array
+  // is empty, and a rail item pointing at a section that is not on the page is
+  // a broken link rather than a missing one.
+  const yaml = readFileSync(resumeYamlPath, 'utf8');
+  const sections = ['experience', 'projects', 'education', 'skills'].filter(
+    (id) => id === 'experience' || !yamlArrayIsEmpty(yaml, id),
+  );
+  expect(sections.length, 'no résumé sections render at all').toBeGreaterThan(1);
+  for (const id of sections) {
+    expect(rail![0], `the rail does not link #${id}`).toContain(`#${id}`);
+    expect(page, `no section with id ${id}`).toContain(`id="${id}"`);
+  }
+  // The same contract the article rail uses. A second observer built by hand
+  // would not carry the two fixes TableOfContents.astro's comments record.
+  expect(rail![0]).toMatch(/data-toc-link="/);
+});
+
+test('the section rail is one a reader can still see at the foot of the page', async () => {
+  // `sticky` on the aside is not enough on its own, and the way it fails is
+  // silent: a grid item stretches to its row, so the aside was as tall as the
+  // whole résumé and had nowhere to move inside its own box. MEASURED at
+  // 1280x900 before the fix -- scrolled to the bottom of /resume, the rail's
+  // top sat 4621px above the viewport. After it, 96px at every scroll
+  // position, which is also where `scroll-padding-top: 6rem` lands a heading
+  // when a rail item is clicked. ArticleLayout.astro carries `lg:items-start`
+  // for exactly this reason and had no guard either.
+  const page = await html('/resume');
+  const grid = /<div[^>]*data-resume-body[^>]*>/.exec(page);
+  expect(grid, 'no résumé body grid').not.toBeNull();
+  expect(grid![0], 'the body grid would stretch the rail to full height').toContain('items-start');
+  const rail = /<aside[^>]*data-resume-rail[^>]*>/.exec(page);
+  expect(rail, 'no résumé rail').not.toBeNull();
+  expect(rail![0]).toContain('sticky');
+});
+
+test('every employer block shows the full tenure, not just one role', async () => {
+  // The span across the group, which for a company where several titles were
+  // held is a number no single role carries: four consecutive Weedmaps rows
+  // are one tenure starting in 2016, and the newest role alone starts in 2021.
+  const page = await html('/resume');
+  const groups = groupWorkByCompany(workEntriesFromYaml());
+  expect(groups.length).toBeGreaterThan(0);
+  for (const group of groups) {
+    const tenure = formatDateRange(group.startDate, group.endDate);
+    // Scoped to the employer's own block, not to the page: for a company with
+    // a single role that range also appears in the roles column, so a
+    // page-wide `toContain` would pass with no tenure rendered at all.
+    const block = new RegExp(
+      `data-employer data-company="${group.name.replaceAll('&', '&amp;')}"[\\s\\S]*?</li>`,
+    ).exec(page);
+    expect(block, `no employer block for ${group.name}`).not.toBeNull();
+    expect(block![0], `${group.name} does not show its full tenure`).toContain(tenure);
+  }
+});
+
+test('the four format buttons all resolve', async () => {
+  const page = await html('/resume');
+  const grid = /data-format-bar[\s\S]*?<\/div>/.exec(page);
+  expect(grid, 'no format grid on the résumé').not.toBeNull();
+  for (const href of ['/resume.md', '/resume.json', '/resume.pdf', '/chat']) {
+    expect(grid![0], `${href} is missing from the format grid`).toContain(`href="${href}"`);
+    const response = await server.fetch(href);
+    expect(response.status, `${href} should resolve`).toBe(200);
+  }
+});
+
+test('the gap notice stays out of a production render', async () => {
+  // Its own comment: a production page announcing what content it is missing
+  // is a worse artifact than one that is simply shorter.
+  expect(await html('/resume')).not.toContain('data-gap-notice');
+});
+
+test('every date the résumé renders is inside a tabular element', async () => {
+  // global.css gives `time` and `[data-numeric]` tabular figures, so a date
+  // that renders outside both sets its digits on proportional widths and
+  // columns of ranges stop lining up. Asserted as "every range the data
+  // produces is inside one of those elements" rather than by counting them: a
+  // count is just as happy with the wrong five elements marked.
+  const page = await html('/resume');
+  const tabular = [...page.matchAll(/<[a-z]+[^>]*data-numeric[^>]*>([^<]*)</g)]
+    .map((match) => match[1].replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  expect(tabular.length, 'nothing on the résumé is marked tabular').toBeGreaterThan(0);
+
+  const entries = workEntriesFromYaml();
+  const ranges = new Set([
+    ...entries.map((entry) => formatDateRange(entry.startDate, entry.endDate)),
+    ...groupWorkByCompany(entries).map((group) => formatDateRange(group.startDate, group.endDate)),
+  ]);
+  for (const range of ranges) {
+    expect(tabular, `${range} renders without tabular figures`).toContain(range);
   }
 });
 

@@ -3,9 +3,21 @@ import type { TocNode } from '../lib/toc';
 
 interface Props {
   toc: TocNode[];
+  /**
+   * The rail's visible heading. `null` renders none, which is what design 1k
+   * asks for on /resume: there the rail's first item sits on the same baseline
+   * as the first section heading beside it, and a label would push it down.
+   */
+  label?: string | null;
+  /**
+   * The nav's accessible name. Defaults to the article wording, which
+   * tests/pages.test.ts asserts on /writing/<slug>; /resume passes its own,
+   * because "table of contents" describes an article rather than a résumé.
+   */
+  ariaLabel?: string;
 }
 
-const { toc } = Astro.props;
+const { toc, label = 'Contents', ariaLabel = 'Table of contents' } = Astro.props;
 
 const flatten = (nodes: TocNode[]): TocNode[] =>
   nodes.flatMap((node) => [node, ...flatten(node.children)]);
@@ -34,6 +46,13 @@ const count = flatten(toc).length;
  * the budget spends it as a cut, not an ease. The `transition-colors` and
  * `hover:text-accent` this component used to carry are both gone -- hover
  * recolours nothing anywhere in the redesign.
+ *
+ * TWO PAGES RENDER THIS NOW (issue #108): the article, from its headings, and
+ * /resume, from its four section ids. The résumé's rail is the same pattern
+ * and was deliberately not rebuilt beside it -- the script below is worth more
+ * than it looks, and a hand-built second copy would arrive without either of
+ * the fixes its comments record. What that reuse cost was two optional props,
+ * `label` and `ariaLabel`, both defaulting to what the article already said.
  */
 const ITEM =
   '-ml-px block border-l-2 border-transparent py-[7px] pr-0 text-small text-ink-muted aria-[current=true]:border-l-accent aria-[current=true]:text-ink';
@@ -41,9 +60,17 @@ const ITEM =
 
 {
   count > 0 && (
-    <nav aria-label="Table of contents" data-toc>
-      <p class="font-mono text-micro uppercase text-ink-muted">Contents</p>
-      <ul class="mt-4 flex flex-col gap-0.5 border-l border-rule">
+    <nav aria-label={ariaLabel} data-toc>
+      {label && <p class="font-mono text-micro uppercase text-ink-muted">{label}</p>}
+      <ul
+        class:list={[
+          'flex flex-col gap-0.5 border-l border-rule',
+          // The 16px belongs to the label, not to the rail, so a rail without
+          // one starts flush with the content beside it rather than an inch
+          // below it.
+          label && 'mt-4',
+        ]}
+      >
         {toc.map((node) => (
           <li>
             <a href={`#${node.slug}`} data-toc-link={node.slug} class={`${ITEM} pl-[14px]`}>

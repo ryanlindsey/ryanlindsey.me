@@ -22,7 +22,13 @@ import resumeSource from '../content/resume/ryan-lindsey.yaml?raw';
  * every deploy forever and browser-hours would scale with deploys instead of
  * with content.
  */
-export const RESUME_PDF_CONTRACT_VERSION = 1;
+// 2 since 2026-09-13: the redesign (design 1k, issue #108) rebuilt the page
+// around a masthead grid and a section rail and added print rules for both, so
+// identical résumé data renders a different sheet. Without this bump the
+// deployed manifest keeps pointing at bytes rendered from the old page, and
+// /resume.pdf would go on serving the pre-redesign PDF until the YAML next
+// changed -- the exact stale-cache failure this constant exists to prevent.
+export const RESUME_PDF_CONTRACT_VERSION = 2;
 
 /** KV key holding the manifest. The manifest write is the commit point. */
 export const RESUME_PDF_MANIFEST_KEY = 'resume-pdf:manifest';

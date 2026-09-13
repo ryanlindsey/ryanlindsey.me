@@ -677,12 +677,75 @@
      as a 2px rule across the top of every sheet. Added by attribute, like the
      rest of this list -- the guard test next door exists because an earlier
      version hid an article's own <header> by bare element selector. */
-  [data-reading-progress] {
+  [data-reading-progress],
+  /* The résumé's section rail. `nav` above already catches it, but only by the
+     bare element selector this list's guard test exists to discourage leaning
+     on -- if that selector ever narrows, the rail should still not print. */
+  [data-resume-rail] {
     display: none !important;
   }
 
   main {
     padding: 0;
+  }
+
+  /*
+   * /resume is a two-column page twice over since the 2026-09 redesign (design
+   * 1k, the résumé issue -- cited by name, per the note on the footer link
+   * rule above): a masthead beside its format buttons, a body beside the
+   * section rail, and an employer block inside that. 02 §1 requires the PDF to
+   * be ATS-safe -- single column, real text, no layout tables -- and to a
+   * parser reading positioned text a grid is a layout table.
+   *
+   * Written down rather than left to the breakpoint. Every one of those grids
+   * is gated at `lg` (64rem) and the sheet lays out at about 700px, so the
+   * columns are already off on paper; that is arithmetic nobody wrote down,
+   * and it would stop being true the day one of them loses its `lg:` prefix.
+   */
+  [data-resume-masthead] > *,
+  [data-resume-body],
+  [data-employer] {
+    display: block;
+  }
+
+  /*
+   * The name prints at the size it printed at before the redesign. On screen
+   * it is text-display (4.5rem); on letter with 0.6in margins that is 72px of
+   * headline across 7.3in of usable width, which pushes the summary off the
+   * top of an ATS preview to no benefit -- nobody scans a résumé PDF from
+   * across a room. text-title is what /resume.pdf carried from launch until
+   * 2026-09-13 and what this keeps. Taken from the scale rather than typed as
+   * 2.75rem so it follows the step if the step is ever retuned again.
+   */
+  [data-resume-masthead] h1 {
+    font-size: var(--text-title);
+    line-height: var(--text-title--line-height);
+    letter-spacing: var(--text-title--letter-spacing);
+  }
+
+  /*
+   * MEASURED (2026-09-13), printing the dev server through headless Chrome at
+   * letter with 0.6in margins: sheet one carried the masthead and then two
+   * thirds of a blank page, with Experience starting on sheet two.
+   *
+   * The cause is `section { break-inside: avoid }` at the foot of this block,
+   * and it is NOT new -- reproduced in a standalone file containing nothing
+   * but that one rule, an intro block and a section taller than a sheet. The
+   * pre-redesign résumé had the same shape (a short intro, then a `<section>`
+   * holding the whole of Experience) and so had the same hole; the redesign's
+   * taller masthead only made it easier to see. Fixed here rather than filed,
+   * because a résumé whose first sheet is two thirds empty is the artifact
+   * this page exists to produce.
+   *
+   * Scoped to the résumé's own body, not to the rule itself: avoiding a break
+   * inside a section is right for the short ones on /ops and /ai-policy, and
+   * the evidence above is only about this page. The masthead is deliberately
+   * outside this selector and keeps the avoidance -- it is one sheet's worth
+   * of block that should never be split. Headings still carry
+   * `break-after: avoid`, so nothing strands a company name at a page foot.
+   */
+  [data-resume-body] section {
+    break-inside: auto;
   }
 
   a[href^='http']::after {
