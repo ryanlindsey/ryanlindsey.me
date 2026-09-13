@@ -1,46 +1,159 @@
 ---
 import { getCollection } from 'astro:content';
 import Shell from '../../layouts/Shell.astro';
+import { figureCellsFor, figureColumns } from '../../lib/case-study-figures';
 
+// Drafts never reach an index. `src/pages/work/[...slug].astro` keeps their
+// routes; this is the other half of the same convention, and the reason the
+// specimen's figure block is not rendered anywhere despite being declared.
 const caseStudies = (await getCollection('caseStudies', ({ data }) => !data.draft)).sort(
   (a, b) => b.data.publishedAt.getTime() - a.data.publishedAt.getTime(),
 );
+
+/**
+ * Rendered twice on this page -- as the masthead's right column and as the
+ * `<meta name="description">` Shell writes -- so it is a constant rather than
+ * two strings. Same reasoning `WRITING_DESCRIPTION` records in
+ * src/components/WritingIndex.astro: a page that says one thing to a reader
+ * and another to a crawler has forked, and the fork is invisible in review.
+ *
+ * The site's existing copy, unchanged. The redesign keeps the words.
+ */
+const WORK_DESCRIPTION =
+  'Case studies: what the work was, how it actually worked, and what I would do differently.';
+
+const day = (date: Date) => date.toISOString().slice(0, 10);
+
+/**
+ * Tailwind resolves class names by scanning source text, so the column count
+ * cannot be interpolated into a string -- `grid-cols-${n}` produces a class
+ * that exists nowhere in the built CSS and fails silently, which is the
+ * failure this lookup exists to avoid. `figureColumns` only ever returns 2 or
+ * 3 (see its own note on why four figures are 2x2 here and one row in prose),
+ * so those are the two entries.
+ */
+const FIGURE_COLUMNS: Record<number, string> = { 2: 'grid-cols-2', 3: 'grid-cols-3' };
 ---
 
-<Shell
-  title="Work — Ryan Lindsey"
-  description="Case studies: what the work was, how it actually worked, and what I would do differently."
->
-  <div class="mx-auto max-w-5xl px-6 py-16">
-    <p class="mb-6 border-t border-accent pt-3 font-mono text-micro uppercase text-accent">Work</p>
-    <h1 class="max-w-3xl font-display text-title text-ink">The work, with the mechanism shown.</h1>
+<Shell title="Work — Ryan Lindsey" description={WORK_DESCRIPTION}>
+  <section
+    data-index-masthead
+    class="mx-auto grid max-w-[1440px] items-end gap-8 px-5 pb-11 pt-10 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-14 lg:px-10 lg:pt-12"
+  >
+    <div>
+      <p class="font-mono text-micro uppercase text-accent">Work</p>
+      <h1 class="mt-5 max-w-[16ch] font-display text-display text-ink">
+        The work, with the mechanism shown.
+      </h1>
+    </div>
+    <p class="text-large text-ink-muted">{WORK_DESCRIPTION}</p>
+  </section>
 
-    {
-      caseStudies.length === 0 ? (
-        <p class="mt-16 font-mono text-micro uppercase text-ink-muted" data-testid="work-empty">
+  {
+    caseStudies.length === 0 ? (
+      <div class="mx-auto max-w-[1440px] px-5 py-16 lg:px-10">
+        <p class="font-mono text-micro uppercase text-ink-muted" data-testid="work-empty">
           First case studies land this week.
         </p>
-      ) : (
-        <ul class="mt-16 border-t border-rule">
-          {caseStudies.map((study) => (
-            <li class="border-b border-rule">
-              <a href={`/work/${study.id}`} class="group block py-6">
-                <span class="font-mono text-micro uppercase text-ink-muted">
-                  <time datetime={study.data.publishedAt.toISOString()}>
-                    {study.data.publishedAt.toISOString().slice(0, 10)}
-                  </time>
-                  {' · '}
-                  Case study
-                </span>
-                <h2 class="mt-2 font-display text-heading text-ink group-hover:text-accent">
-                  {study.data.title}
-                </h2>
-                <p class="mt-2 max-w-2xl text-ink-muted">{study.data.description}</p>
+      </div>
+    ) : (
+      <ul class="border-t border-rule">
+        {caseStudies.map((study) => {
+          const cells = figureCellsFor(study.data.figures);
+          return (
+            // `data-case-row` sits on the WRAPPER, not on the anchor, and
+            // `data-slug` beside it on the same element. Both are test
+            // contracts, the same pair src/components/WritingIndex.astro
+            // carries: tests/pages.test.ts slices a row by matching from this
+            // attribute to the first `</a>` and counts the anchors inside, so
+            // an attribute on the anchor would leave its opening tag outside
+            // the slice and count zero.
+            <li data-case-row data-slug={study.id} class="border-b border-rule">
+              {/*
+                THE TWO-COLUMN TRACK LIST IS UNCONDITIONAL, AND THE OPPOSITE
+                WAS TRIED FIRST. Issue #106 warns that a row without figures
+                must not read as a layout that lost half its content, and the
+                obvious reading of that is to drop the split when there is
+                nothing to put in the second track. That shipped, and looking
+                at it at 1440px is what overturned it (2026-09-13): with the
+                split gone the headline sets across the full 1345px and reads
+                as a banner, out of step with the masthead directly above it,
+                which is itself a wide left column beside a narrow right one.
+                Keeping the split holds the headline at 752px -- the measure
+                the design actually specifies -- and the empty track reads as
+                a right margin rather than as a hole.
+
+                What makes that safe is where the rule lives: the border and
+                the 36px belong to the figure block below, not to this track,
+                so a row with no figures has no empty bordered box to give it
+                away. Move that border onto this element and the warning above
+                comes true immediately.
+              */}
+              <a
+                href={`/work/${study.id}`}
+                class="mx-auto grid max-w-[1440px] gap-8 px-5 py-10 no-underline lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:gap-14 lg:px-10"
+              >
+                <div>
+                  <p class="font-mono text-micro uppercase text-ink-muted">
+                    <time datetime={study.data.publishedAt.toISOString()} data-numeric>
+                      {day(study.data.publishedAt)}
+                    </time>
+                    {' · '}
+                    Case study
+                  </p>
+                  <h2 class="mt-4 font-display text-title text-ink">{study.data.title}</h2>
+                  <p class="mt-5 max-w-[56ch] text-body text-ink-muted">{study.data.description}</p>
+                  <p class="mt-7 font-mono text-small text-accent">Read the case study</p>
+                </div>
+
+                {/*
+                  The second track is always there; what is conditional is
+                  whether anything is drawn in it. Both published case studies
+                  declare no figures today, so this branch is off on the live
+                  index and the track is plain whitespace -- see the note on
+                  the row above for why that is the arrangement rather than an
+                  accident of it.
+                */}
+                {cells.length > 0 && (
+                  <div class="self-start lg:border-l lg:border-rule lg:pl-9">
+                    <div
+                      data-case-figures={cells.length}
+                      class:list={['hairline-grid', FIGURE_COLUMNS[figureColumns(cells.length)]]}
+                    >
+                      {cells.map((cell) => (
+                        // `.rl-figure` is the :::figures directive's own cell
+                        // (global.css, @layer base): --rl-bg ground, 18px/16px
+                        // padding. Reused rather than restated, because it is
+                        // the same cell. `.rl-figures` is NOT reused -- it
+                        // lays four out in one row, which is right in a prose
+                        // column and wrong in this one.
+                        //
+                        // The two type rules are written here rather than
+                        // borrowed, because global.css scopes
+                        // `.rl-figure-value`/`-label` inside `.prose-rl` to
+                        // win against Typography's paragraph margins. There is
+                        // no Typography to beat on an index page, so there is
+                        // nothing for that specificity to do here.
+                        <div class="rl-figure">
+                          <p
+                            class="font-display text-figure text-ink"
+                            data-numeric={cell.numeric ? true : undefined}
+                          >
+                            {cell.value}
+                          </p>
+                          <p class="mt-3 font-mono text-micro uppercase text-ink-muted">
+                            {cell.label}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </a>
             </li>
-          ))}
-        </ul>
-      )
-    }
-  </div>
+          );
+        })}
+      </ul>
+    )
+  }
 </Shell>

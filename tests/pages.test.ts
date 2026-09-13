@@ -50,11 +50,25 @@ const resumeYamlPath = new URL('../src/content/resume/ryan-lindsey.yaml', import
  * "agent-native-site must not appear here" starts lying the day that post is
  * retired or repillared, and the exclusion is the half of that test that can
  * actually fail.
+ *
+ * `figures` is whether the entry declares a `figures:` block (case studies
+ * only, the work-index issue #106). Presence, not contents: the parsing of the
+ * block belongs to the schema and tests/case-study-figures.test.ts, and all
+ * this file needs to know is which rows are supposed to render one. Read the
+ * same frontmatter-only way and for the same reason as the two above -- today
+ * no PUBLISHED case study declares a set, so the test that consumes this turns
+ * live on its own the day one does.
  */
 function readContentEntries(
   section: 'writing' | 'work',
   dir: URL,
-): { section: 'writing' | 'work'; slug: string; draft: boolean; pillar?: string }[] {
+): {
+  section: 'writing' | 'work';
+  slug: string;
+  draft: boolean;
+  pillar?: string;
+  figures: boolean;
+}[] {
   return readdirSync(dir)
     .filter((name) => name.endsWith('.mdx'))
     .map((name) => {
@@ -69,6 +83,7 @@ function readContentEntries(
         slug: name.replace(/\.mdx$/, ''),
         draft: /\ndraft:\s*true\b/.test(frontmatter),
         pillar: /\npillar:\s*(\S+)/.exec(frontmatter)?.[1],
+        figures: /\nfigures:\s*$/m.test(frontmatter),
       };
     });
 }
@@ -815,6 +830,116 @@ test('a post row is one wrapper link, undecorated', async () => {
   // opening `<a ` outside the slice and count 0, which is the arrangement
   // this assertion is pinning down.
   expect([...row.matchAll(/<a\s/g)].length).toBe(1);
+});
+
+/**
+ * The work index, rebuilt by the 2026-09 redesign (design 1i, issue #106).
+ *
+ * Same lazy-regex scoping contract as the writing index above, and the same
+ * constraint it puts on the markup: `data-case-row` sits on the row WRAPPER so
+ * the slice from it to the first `</a>` contains the opening `<a ` tag.
+ */
+test('the work index is a masthead over one full-width row per case study', async () => {
+  const page = await html('/work');
+  expect(page).toContain('data-index-masthead');
+  const published = CONTENT_ENTRIES.filter((e) => e.section === 'work' && !e.draft);
+  expect(published.length, 'no published case study to render a row for').toBeGreaterThan(0);
+  expect([...page.matchAll(/data-case-row/g)].length).toBe(published.length);
+});
+
+test('a case row is one wrapper link, undecorated', async () => {
+  const row = /data-case-row[\s\S]*?<\/a>/.exec(await html('/work'))![0];
+  expect(row).toContain('no-underline');
+  // Exactly 1, for the reason the matching writing-index assertion records.
+  expect([...row.matchAll(/<a\s/g)].length).toBe(1);
+});
+
+test('a case study renders a figure block exactly when it declares one', async () => {
+  // BOTH DIRECTIONS, READ OFF DISK, because which one is live is a property
+  // of the corpus rather than of this file, and it has already flipped once.
+  // When #106 landed, no published case study declared `figures` and only the
+  // absence arm could fail; both declare one now, so the presence arm is the
+  // live half and the absence arm waits for the next case study that ships
+  // without figures. Neither arm is deleted when it goes quiet -- that is the
+  // whole reason this is written as a loop over what is on disk rather than
+  // as two assertions naming slugs.
+  //
+  // WHAT THIS DELIBERATELY NO LONGER DOES is require the corpus to contain a
+  // case study of each kind. It did at first, which turned "give both case
+  // studies their figures" into two failing tests -- a content decision
+  // blocked by a test asserting the shape of the content. The guard was the
+  // wrong instrument: keeping an arm honest is worth a failure, but dictating
+  // what the corpus may hold is not. The absence arm's real coverage is
+  // `figureCellsFor(undefined)` in tests/case-study-figures.test.ts, which no
+  // content change can make vacuous.
+  const page = await html('/work');
+  const published = CONTENT_ENTRIES.filter((e) => e.section === 'work' && !e.draft);
+  expect(published.length, 'no published case study to check either arm against').toBeGreaterThan(
+    0,
+  );
+
+  for (const entry of published) {
+    const row = new RegExp(`data-case-row[^>]*data-slug="${entry.slug}"[\\s\\S]*?</a>`).exec(page);
+    expect(row, `no row for ${entry.slug}`).not.toBeNull();
+    if (entry.figures) {
+      expect(row![0], `${entry.slug} declares figures and should render them`).toContain(
+        'data-case-figures',
+      );
+    } else {
+      // Never an empty cell: a row with no figures renders no block at all,
+      // and the track it would have occupied stays plain whitespace.
+      expect(row![0], `${entry.slug} declares no figures and should render no block`).not.toContain(
+        'data-case-figures',
+      );
+    }
+  }
+});
+
+test('the figure rail and the figure block are one decision, never one without the other', async () => {
+  // THE FAILURE MODE ISSUE #106 NAMES BY NAME -- a row that "reads as a
+  // layout that lost half its content" -- pinned at the thing that would
+  // actually cause it. The row keeps its two-column track list whether or not
+  // there are figures, because that is what holds the headline to its
+  // designed measure (src/pages/work/index.astro records what looking at both
+  // versions at 1440px settled). An empty TRACK is a right margin. An empty
+  // BORDERED, PADDED track is a hole, and the rule plus the 36px are what
+  // would turn one into the other.
+  //
+  // READ OFF THE SOURCE RATHER THAN THE RENDERED PAGE, and that is the whole
+  // point of this test rather than a shortcut. Two page-level versions were
+  // written first and both were measured to be toothless: "a row without
+  // figures carries no rail" stopped asserting anything the day both
+  // published case studies declared a set, and replacing it with a
+  // co-occurrence check over the rendered rows did no better -- with every
+  // row carrying figures, rail-present and block-present are both true, so
+  // hoisting the border onto the anchor kept the test green. Verified by
+  // making exactly that edit and watching it pass.
+  //
+  // The contract is therefore about where the declaration LIVES: the rail
+  // belongs inside the figure block's own conditional, so it cannot outlive
+  // the block. Same approach and same reason as tests/type-scale.test.ts and
+  // tests/primitives.test.ts, which read global.css because no rendered
+  // consumer could tell them what they needed to know.
+  const source = readFileSync(new URL('../src/pages/work/index.astro', import.meta.url), 'utf8');
+  const guard = source.indexOf('cells.length > 0');
+  const block = source.indexOf('data-case-figures');
+  expect(guard, 'no figure-block conditional in the work index').toBeGreaterThan(-1);
+  expect(block, 'no figure block in the work index').toBeGreaterThan(guard);
+
+  const rails = [...source.matchAll(/\bborder-l\b/g)].map((match) => match.index!);
+  expect(rails.length, 'the rail is declared in exactly one place').toBe(1);
+  expect(rails[0], 'the rail must sit inside the figure block conditional').toBeGreaterThan(guard);
+  expect(rails[0], 'the rail must be declared with the block, not around it').toBeLessThan(block);
+});
+
+test('no case row renders an empty element where a figure or a line should be', async () => {
+  // The rule /ops already lives by (OpsMetric.astro: "absent is a state, not
+  // a zero") and the one the :::figures directive states: a value that could
+  // not be read says so. An empty <p> is the shape that rule fails as.
+  const page = await html('/work');
+  for (const row of page.matchAll(/data-case-row[\s\S]*?<\/a>/g)) {
+    expect(row[0]).not.toMatch(/>\s*<\/p>/);
+  }
 });
 
 test('a filtered index is kept out of the sitemap and says so to a crawler', async () => {

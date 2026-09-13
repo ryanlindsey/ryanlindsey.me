@@ -118,6 +118,28 @@ test('lists every published case study in the index and keeps drafts out of it',
   expect(index).not.toContain('data-testid="work-empty"');
 });
 
+test('the specimen declares a figure block, and being a draft still keeps it off the index', async () => {
+  // Issue #106 puts the figure set on the specimen rather than on either real
+  // case study, because inventing numbers for real work is not a template
+  // change. That makes the specimen the only entry in the tree exercising the
+  // frontmatter shape, so this asserts it is actually there -- a fixture that
+  // silently lost the block it exists to carry would otherwise take the
+  // schema's only real-file coverage with it.
+  //
+  // The second half is the draft rule holding at the same time: declaring
+  // figures does not buy an entry a row. Both halves together are what says
+  // the rendered block is dormant BY THE DRAFT RULE rather than by a bug in
+  // the index, which is the distinction tests/pages.test.ts's figure test
+  // depends on being true.
+  const source = readFileSync('src/content/caseStudies/shape-specimen.mdx', 'utf8');
+  const frontmatter = source.slice(0, source.indexOf('\n---', 3));
+  expect(frontmatter, 'the specimen should declare a figures block').toMatch(/\nfigures:\s*$/m);
+  expect(draftSlugs).toContain('shape-specimen');
+
+  const index = await html('/work');
+  expect(index).not.toContain('/work/shape-specimen');
+});
+
 test('serves a draft case study by URL even though the index omits it', async () => {
   // The detail tier of the draft rule (tests/pages.test.ts's own framing):
   // aggregation surfaces filter on `!data.draft`, detail routes do not.

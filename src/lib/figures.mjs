@@ -72,7 +72,36 @@ import { fileURLToPath } from 'node:url';
  */
 
 const SEPARATOR = ' — ';
-const UNREADABLE_VALUE = '—';
+
+/**
+ * THE FOUR CONSTANTS BELOW ARE EXPORTED BECAUSE A SECOND SURFACE NOW RENDERS
+ * FIGURES: the /work index row's 2x2 block (design 1i, issue #106), which
+ * takes its pairs from case-study frontmatter rather than from an authored
+ * `:::figures` fence. Same idea, two authoring routes, and the parts that must
+ * not drift are the vocabulary (what an unreadable value looks like and what
+ * it is called) and the range (what counts as a figure row at all).
+ *
+ * They stay here rather than moving to a neutral module because this file is
+ * where the contract is DEFINED and reasoned about -- constraints 3 and 4
+ * above are about exactly these values. `src/lib/case-study-figures.ts` reads
+ * them from here and adds only what frontmatter needs on top.
+ */
+
+/** The authored spelling of a value that could not be read. See constraint 3. */
+export const UNREADABLE_VALUE = '—';
+
+/**
+ * What an unreadable value renders as. A word, not a dash and never a zero --
+ * the rule src/components/OpsMetric.astro states at length ("absent is a
+ * state, not a zero") and the one /ops has lived by since it shipped.
+ */
+export const UNREADABLE_LABEL = 'unavailable';
+
+/** One item is a sentence, not a row. */
+export const FIGURE_MIN = 2;
+
+/** A fifth item means the author wanted a table. */
+export const FIGURE_MAX = 4;
 
 export function figures() {
   return {
@@ -112,10 +141,13 @@ export function figures() {
 
       // A fifth item means the author wanted a table, not a figure row; one
       // item is a sentence, not a row. Both are build errors rather than a
-      // silent best-effort render (see constraint 2 above).
-      if (items.length < 2 || items.length > 4) {
+      // silent best-effort render (see constraint 2 above). The bounds are the
+      // exported constants so the frontmatter schema enforces the same range
+      // on the same reasoning rather than a copy of the numbers.
+      if (items.length < FIGURE_MIN || items.length > FIGURE_MAX) {
         throw new Error(
-          `figures directive${errorLocation(ctx, node)}: expected 2 to 4 items, got ${items.length}`,
+          `figures directive${errorLocation(ctx, node)}: expected ${FIGURE_MIN} to ${FIGURE_MAX} ` +
+            `items, got ${items.length}`,
         );
       }
 
@@ -181,7 +213,7 @@ function buildCell({ value, label }) {
       {
         type: 'paragraph',
         data: { hName: 'p', hProperties: valueProperties },
-        children: [{ type: 'text', value: readable ? value : 'unavailable' }],
+        children: [{ type: 'text', value: readable ? value : UNREADABLE_LABEL }],
       },
       {
         type: 'paragraph',

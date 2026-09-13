@@ -3,6 +3,32 @@ title: Replacing guessed delivery dates with calibrated forecasts
 description: An agent-native forecasting tool for engineering managers that grew from a set of Claude Skills into an internal MCP server, and ended up inside the org's roadmapping process.
 publishedAt: 2026-09-05
 draft: false
+# The /work index row's figure block (design 1i). All four come from the
+# Outcome section, which is the only place in this piece that claims a number:
+# adoption above 80% of engineering managers, forecasts inside the p85 target
+# better than 75% of the time, and roughly one project in ten delivering ahead
+# of the forecast. The fourth is the intervention itself rather than a result
+# -- p50, p70 and p85, because "the output is deliberately not a single
+# number" is the whole change this case study describes.
+#
+# 75%+ is the conservative reading on purpose. The section also says "around
+# 80% since the port", which is the better number and the one a tile would be
+# tempted by; it would also sit next to the adoption tile reading 80% and
+# invite a reader to think the two are the same measurement.
+#
+# "Forecast production went from a few hours to minutes" is deliberately NOT
+# here. It is a real result and the section itself calls it "the smaller
+# number", so putting it on the index would promote the figure the piece
+# spends its next sentence demoting.
+figures:
+  - value: '80%+'
+    label: Manager adoption
+  - value: '75%+'
+    label: Inside the p85 target
+  - value: '1 in 10'
+    label: Delivered ahead of forecast
+  - value: '3'
+    label: Targets, not one date
 ---
 
 Every engineering manager I know has had the same bad afternoon. A leader asks when a project
