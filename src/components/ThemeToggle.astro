@@ -2,6 +2,14 @@
 // Three states, cycling system -> light -> dark -> system. "System" is a real
 // state rather than an implicit default, so a visitor can always get back to
 // following their OS without clearing site data.
+//
+// Rendered TWICE per page since issue #101: once in SiteHeader's desktop right
+// cluster and once in MobileNav's overlay, because putting that cluster behind
+// `lg` took the control away from every phone. The behaviour moved to
+// src/lib/theme-toggle.ts when the second one arrived -- a click has to repaint
+// every instance, not the one it landed on, and that is only assertable
+// against a DOM. Astro hoists this script once however many times the
+// component is used, so two buttons still mean one script.
 ---
 
 <button
@@ -14,53 +22,7 @@
 </button>
 
 <script>
-  const LABELS = { system: 'SYSTEM', light: 'LIGHT', dark: 'DARK' } as const;
-  const ORDER = ['system', 'light', 'dark'] as const;
-  type Mode = (typeof ORDER)[number];
+  import { initThemeToggle } from '../lib/theme-toggle';
 
-  const prefersDark = () => matchMedia('(prefers-color-scheme: dark)').matches;
-
-  const read = (): Mode => {
-    try {
-      const stored = localStorage.getItem('rl-theme');
-      return stored === 'light' || stored === 'dark' ? stored : 'system';
-    } catch {
-      return 'system';
-    }
-  };
-
-  const apply = (mode: Mode) => {
-    const resolved = mode === 'system' ? (prefersDark() ? 'dark' : 'light') : mode;
-    document.documentElement.setAttribute('data-theme', resolved);
-    try {
-      if (mode === 'system') localStorage.removeItem('rl-theme');
-      else localStorage.setItem('rl-theme', mode);
-    } catch {
-      // Storage unavailable: the choice still applies for this page view.
-    }
-  };
-
-  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-theme-toggle]')) {
-    const label = button.querySelector('[data-theme-label]');
-    const paint = (mode: Mode) => {
-      if (label) label.textContent = LABELS[mode];
-      button.setAttribute(
-        'aria-label',
-        mode === 'system' ? 'Theme: follow system' : `Theme: ${mode}`,
-      );
-    };
-
-    paint(read());
-
-    button.addEventListener('click', () => {
-      const next = ORDER[(ORDER.indexOf(read()) + 1) % ORDER.length];
-      apply(next);
-      paint(next);
-    });
-  }
-
-  // While following the system, track it live rather than until next reload.
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-    if (read() === 'system') apply('system');
-  });
+  initThemeToggle();
 </script>
