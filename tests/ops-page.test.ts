@@ -218,10 +218,84 @@ describe('/ops', () => {
     expect(row('Stored analysis reports')).toContain('1 year');
   });
 
-  test('the architecture diagram is inline SVG using currentColor, not an image', () => {
-    expect(html).toContain('<svg');
-    expect(html).toContain('currentColor');
-    expect(html).not.toMatch(/<img[^>]+architecture/i);
+  test('the architecture diagram is selectable text built from rules, not a drawing', () => {
+    // WAS: "is inline SVG using currentColor, not an image". That assertion was
+    // right against the failure it was written for -- a diagram becoming a PNG
+    // -- and the 2026-09 redesign moves further in the same direction: no SVG
+    // either. What it protects is unchanged: the diagram stays selectable,
+    // themeable and accessible. Rewritten rather than deleted, so the record of
+    // what it was guarding survives the change of mechanism.
+    const diagram = /data-architecture-diagram[\s\S]*?<\/figure>/.exec(html);
+    expect(diagram, 'no architecture diagram').not.toBeNull();
+    expect(diagram![0]).not.toContain('<svg');
+    expect(diagram![0]).not.toContain('<img');
+    // Real hostnames as real text, so a reader can select and paste one.
+    expect(diagram![0]).toContain('ryanlindsey.me');
+    expect(diagram![0]).toContain('mcp.ryanlindsey.me');
+  });
+
+  test('the diagram carries the one description the markdown fallback also uses', async () => {
+    // src/lib/architecture.ts exists to refuse a second hand-written
+    // description: the SVG's <desc> and markdown-export's COMPONENT_FALLBACKS
+    // were one string. With no <desc> to hang it on it becomes a
+    // visually-hidden description, and it is still one string.
+    const { ARCHITECTURE_DESCRIPTION } = await import('../src/lib/architecture');
+    expect(html).toContain(ARCHITECTURE_DESCRIPTION.slice(0, 80));
+    expect(html).toMatch(/aria-describedby="[^"]+"/);
+  });
+
+  test('the connectors and glyphs are decoration, not content', () => {
+    const diagram = /data-architecture-diagram[\s\S]*?<\/figure>/.exec(html)![0];
+    // PRESENCE IS ASSERTED FIRST, and the draft of this test skipped a glyph it
+    // could not find rather than failing on it. That version cannot fail once
+    // the figure exists: a diagram that renders no glyph at all passes it, so
+    // it would have gone green the moment the SVG was replaced and stayed
+    // green if the binding arrows were never drawn. Same class of dead
+    // assertion the analytics test above records having had.
+    for (const glyph of ['\u25b6', '\u25c0']) {
+      const at = diagram.indexOf(glyph);
+      expect(at, `the diagram draws no ${glyph}`).toBeGreaterThan(-1);
+      expect(diagram.slice(Math.max(0, at - 200), at)).toContain('aria-hidden');
+    }
+  });
+
+  test('the status pill degrades with the page rather than always reading nominal', () => {
+    // /ops already renders a labelled absence when D1 is unreachable. A pill
+    // hardcoded to "nominal" above a page saying three figures could not be
+    // read is worse than no pill at all.
+    expect(html).toContain('data-status-pill');
+    expect(html).toMatch(/data-status-pill[^>]*data-status="(nominal|degraded)"/);
+  });
+
+  test('no metric cell renders a bare zero where a figure could not be read', () => {
+    const band = /data-metrics-band[\s\S]*?<\/section>/.exec(html);
+    expect(band, 'no metrics band').not.toBeNull();
+    // The rule this page has lived by since launch, restated against the new
+    // markup: a hairline cell with a 2.25rem zero in it is the most convincing
+    // way to publish a false number this page has ever had available.
+    const values = [...band![0].matchAll(/data-metric-value[^>]*>([^<]*)</g)].map((m) =>
+      m[1].trim(),
+    );
+    expect(values.length).toBeGreaterThan(0);
+    for (const value of values) expect(value).not.toBe('');
+  });
+
+  test('all six sections survive the restyle', () => {
+    // Unchanged assertion, restated against the ids because the handoff's
+    // design shows four sections. It is a restyle, not a re-scope -- the
+    // screenshot shows what fitted in a screenshot. The sibling test above
+    // pins the headings; this one pins the anchors the headings carry, which
+    // is what a link into this page depends on.
+    for (const id of [
+      'architecture',
+      'live-metrics',
+      'model-cost',
+      'evals',
+      'status',
+      'releases',
+    ]) {
+      expect(html, `${id} is missing`).toContain(`id="${id}"`);
+    }
   });
 
   test('the page is not cached by an intermediary for longer than the data is fresh', async () => {

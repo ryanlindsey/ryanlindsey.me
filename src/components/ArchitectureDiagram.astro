@@ -69,155 +69,287 @@
  * requirement and three mechanisms for one word on a drawing. "the form
  * surfaces" is the honest aggregate.
  *
- * INLINE SVG, NEVER AN `<img>`: the diagram has to follow the visitor's theme,
- * and an image cannot. Strokes are `currentColor` so the box work inherits the
- * ink token, the quieter lines take `--color-rule` through Tailwind's
- * `stroke-rule`, and there is no hex anywhere in this file.
+ * IT WAS AN INLINE SVG UNTIL THE 2026-09 REDESIGN AND IS NOW DOM, and the
+ * handoff's reason is one this file had already half-argued for itself. The
+ * SVG's own header said "INLINE SVG, NEVER AN `<img>`: the diagram has to
+ * follow the visitor's theme, and an image cannot." The redesign keeps that
+ * requirement and adds one an SVG could not meet: the diagram has to stay
+ * SELECTABLE TEXT, so that a reader can drag across `mcp.ryanlindsey.me` and
+ * paste it. SVG `<text>` selects inconsistently across browsers and never
+ * reflows. Boxes and rules in DOM do both, at every width.
  *
- * THE TYPE HAS A FLOOR, AND IT IS THE SCALE'S OWN MINIMUM. The drawing scales
- * rather than scrolls (`w-full` over a `viewBox`), so every label shrinks with
- * it -- and a first draft at 11.5 and 10 user units landed near 10.1 and 8.8
- * CSS px at a 400px viewport, under `--text-micro` (12px), the smallest size
- * global.css defines. The arithmetic that fixes it: a 400px viewport inside
- * `px-6` gives the svg 352px, so a user unit renders at 352/400 = 0.88px, and
- * nothing may be set below 12/0.88 = 13.6. Hence 14 for every label and 17 for
- * the box titles -- 12.3px and 15.0px at the small end, 15.7px and 19.0px at
- * `max-w-md`. Changing the viewBox width without redoing that division puts the
- * labels back under the floor.
+ * TWO CONSTRAINTS DIED WITH THE SVG, RECORDED SO NOBODY REDERIVES THEM. The
+ * drawing scaled rather than scrolled (`w-full` over a `viewBox`), so every
+ * label shrank with it, and the old header carried the arithmetic that kept
+ * labels above `--text-micro`: a 400px viewport gave the svg 352px, so a user
+ * unit rendered at 0.88px and nothing could be set below 12/0.88 = 13.6, hence
+ * 14 for every label and 17 for the box titles. It also bounded every line to
+ * 40 characters, because IBM Plex Mono advances 0.6em and a 14-unit line inside
+ * a 360-wide box fits no more. NEITHER SURVIVES THE PORT: type comes from the
+ * named scale and text wraps, so the lines below are as long as reads well
+ * rather than as long as fits.
  *
- * Line lengths are bounded by the same arithmetic: IBM Plex Mono advances
- * 0.6em, so a 14-unit line inside a 360-wide box with 12 units of padding fits
- * 40 characters. Every line below is at or under that.
+ * IT IS A CONTAINER QUERY AND NOT A MEDIA QUERY, which is not a style
+ * preference. This component has two call sites whose columns differ by half
+ * at the SAME viewport: /ops gives it the full content width, and
+ * src/content/posts/agent-native-site.mdx renders it inside `prose-rl`, capped
+ * at 72ch. A `lg:` variant would put the two Workers side by side in that prose
+ * column, about 220px each, and every route line would wrap to three. The
+ * container is the only thing that can tell the two call sites apart.
  *
- * `<title>` and `<desc>` with `aria-labelledby` are what a screen reader gets;
- * `role="img"` stops it from walking the 40-odd shapes underneath.
+ * `not-prose` IS FOR THE SAME TWO CALL SITES. Inside agent-native-site.mdx this
+ * figure lands in a `.prose-rl` column, and Tailwind Typography then styles the
+ * markup it finds: MEASURED before the class went on, the route rows rendered
+ * with accent bullets and a hanging indent inside the Worker boxes, which /ops
+ * never showed because nothing there is prose. Every element below is styled by
+ * utility and token already, so opting the subtree out is the whole fix, and it
+ * has the second effect of making the caption's `<code>` read the same on both
+ * pages instead of picking up `--tw-prose-code` on one of them.
  *
- * THE PROSE MOVED OUT, and the two audiences for it are the reason. An SVG is
+ * THE ACCESSIBLE NAME AND DESCRIPTION ARE ELEMENTS NOW, not `<title>`/`<desc>`.
+ * The SVG carried `role="img"` so a screen reader read those two strings and
+ * skipped the 40-odd shapes underneath. There are no shapes to skip any more,
+ * and the box text is real text worth reading, so the figure keeps the same two
+ * strings as visually-hidden elements: `aria-labelledby` for the title, which is
+ * what makes the figure announce as "How this site is deployed" rather than as
+ * its provenance caption, and `aria-describedby` for the prose. The connectors
+ * and the arrow glyphs are `aria-hidden`: they are how the layout says "calls",
+ * and the description already says it in words.
+ *
+ * THE PROSE MOVED OUT, and the two audiences for it are the reason. An SVG was
  * nothing at all in the markdown src/lib/markdown-export.ts produces, so when
  * agent-native-site.mdx started using this component, every consumer of the
  * portable document got a hole where the architecture was. The `<desc>` string
  * was already the best prose statement of this architecture in the repo and was
  * reaching screen readers only, so it became src/lib/architecture.ts and the
- * exporter substitutes it for the tag. Do NOT re-inline either string here: a
- * copy is how the drawing and the markdown start disagreeing, which is the
- * failure the two corrections above are already about.
- * tests/markdown-export.test.ts asserts this file imports rather than inlines.
+ * exporter substitutes it for the tag. That substitution is untouched by this
+ * rewrite: the exporter strips the component tag, so what the tag rendered into
+ * never mattered to it. Do NOT re-inline either string here: a copy is how the
+ * drawing and the markdown start disagreeing, which is the failure the two
+ * corrections above are already about. tests/markdown-export.test.ts asserts
+ * this file imports rather than inlines.
  */
 import { ARCHITECTURE_DESCRIPTION, ARCHITECTURE_TITLE } from '../lib/architecture';
+
+/**
+ * One Worker box. `routes` is what the box lists under its header, in the order
+ * a request meets them rather than the order the config declares them.
+ *
+ * THE MCP BOX KEEPS ITS DISCOVERY ROUTES, which the handoff's screenshot does
+ * not show. Same argument the /ops issue makes about that page's six sections:
+ * the design shows what fitted in a screenshot. `/robots.txt` and
+ * `/.well-known/mcp.json` are served by that Worker today, are named in
+ * ARCHITECTURE_DESCRIPTION, and were on the drawing this replaces, so dropping
+ * the line to match a picture would be a content edit wearing a restyle.
+ */
+const WORKERS: { number: string; role: string; host: string; what: string; routes: string[] }[] = [
+  {
+    number: '02',
+    role: 'Site Worker',
+    host: 'ryanlindsey.me',
+    what: 'Astro, prerendered with some routes rendered on demand',
+    routes: [
+      'pages, posts, case studies, the résumé',
+      'llms.txt, .md variants, RSS and JSON',
+      'chat page and the form surfaces',
+      'queue consumer and the email send',
+    ],
+  },
+  {
+    number: '03',
+    role: 'MCP Worker',
+    host: 'mcp.ryanlindsey.me',
+    what: 'Everything that spends inference, plus the one Durable Object',
+    routes: [
+      '/mcp endpoint, stateless per request',
+      'POST /chat, the streamed inference',
+      '/robots.txt, /.well-known/mcp.json',
+      'rate limits in a Durable Object',
+      'AI Gateway → Anthropic',
+      'Workers AI → Vectorize, for retrieval',
+    ],
+  },
+];
+
+/** The five bindings both Workers hold, and what each one is for. */
+const BINDINGS: { name: string; what: string }[] = [
+  { name: 'D1', what: 'audit · tokens · transcripts · evals' },
+  { name: 'KV', what: 'caches and flags' },
+  { name: 'R2', what: 'generated PDFs and documents' },
+  { name: 'Analytics Engine', what: 'request telemetry' },
+  { name: 'Queue', what: 'high-intent events → email' },
+];
+
+/**
+ * The three-column track the whole flow aligns to: box, gutter, box.
+ *
+ * One constant rather than four copies, because the connectors only read as
+ * connectors while they land on the centre of the box beneath them, and that
+ * only holds while every row declares the same tracks.
+ */
+const FLOW = '@3xl:grid-cols-[minmax(0,1fr)_168px_minmax(0,1fr)]';
 ---
 
-<figure class="mt-10">
-  <svg
-    viewBox="0 0 400 635"
-    class="h-auto w-full max-w-md"
-    role="img"
-    aria-labelledby="architecture-title architecture-desc"
-    fill="none"
+<figure
+  data-architecture-diagram
+  aria-labelledby="architecture-title"
+  aria-describedby="architecture-desc"
+  class="not-prose @container mt-10"
+>
+  <p id="architecture-title" class="sr-only">{ARCHITECTURE_TITLE}</p>
+  <p id="architecture-desc" class="sr-only">{ARCHITECTURE_DESCRIPTION}</p>
+
+  {
+    /*
+      01, the ingress. The one row spanning the whole width, because everything
+      below it is downstream of the same door.
+    */
+  }
+  <div
+    class="flex items-baseline justify-between gap-4 border border-rule bg-surface px-[18px] py-3.5"
   >
-    <title id="architecture-title">{ARCHITECTURE_TITLE}</title>
-    <desc id="architecture-desc">{ARCHITECTURE_DESCRIPTION}</desc>
+    <p class="flex gap-3 font-mono text-micro uppercase text-ink">
+      <span class="text-ink-muted">01</span>
+      <span>Visitors and agents</span>
+    </p>
+    <p class="font-mono text-micro uppercase text-accent">HTTPS</p>
+  </div>
 
-    {/* Visitors and agents */}
-    <rect x="90" y="4" width="220" height="40" class="fill-surface" stroke="currentColor"></rect>
-    <text x="200" y="29" text-anchor="middle" font-size="16" class="font-mono fill-current"
-      >Visitors and agents</text
-    >
+  {
+    /*
+      The accent connectors, centred on the Worker box each one lands on. Pure
+      decoration: the description says "reach the site Worker" in words, and a
+      screen reader gets nothing from a 1px rule.
+    */
+  }
+  <div class:list={['grid grid-cols-1', FLOW]} aria-hidden="true">
+    <span class="mx-auto block h-8 w-px bg-accent"></span>
+    <span class="hidden @3xl:block"></span>
+    <span class="mx-auto hidden h-8 w-px bg-accent @3xl:block"></span>
+  </div>
 
-    {/* ... down to the site Worker */}
-    <path d="M200,44 L200,76" stroke="currentColor"></path>
-    <path d="M195,68 L200,76 L205,68" stroke="currentColor"></path>
-    <text x="208" y="64" font-size="14" class="font-mono fill-ink-muted">HTTPS</text>
+  <div class:list={['grid grid-cols-1', FLOW]}>
+    <div class="border border-ink bg-surface">
+      <div class="px-[18px] pb-4 pt-[15px]">
+        <p class="font-mono text-micro uppercase text-accent">
+          {WORKERS[0].number} · {WORKERS[0].role}
+        </p>
+        <p class="mt-2.5 font-display text-subheading text-ink">{WORKERS[0].host}</p>
+        <p class="mt-1.5 text-small text-ink-muted">{WORKERS[0].what}</p>
+      </div>
+      <ul class="border-t border-rule">
+        {
+          WORKERS[0].routes.map((route) => (
+            <li class="border-b border-rule px-[18px] py-[11px] font-mono text-small text-ink last:border-b-0">
+              {route}
+            </li>
+          ))
+        }
+      </ul>
+    </div>
 
-    {/* The site Worker */}
-    <rect x="20" y="76" width="360" height="146" class="fill-surface" stroke="currentColor"></rect>
-    <text x="32" y="102" font-size="17" class="font-mono fill-current"
-      >Site Worker &#183; ryanlindsey.me</text
-    >
-    <text x="32" y="128" font-size="14" class="font-mono fill-ink-muted"
-      >Astro, prerendered and on demand</text
-    >
-    <text x="32" y="147" font-size="14" class="font-mono fill-ink-muted"
-      >posts, case studies, the r&#233;sum&#233;</text
-    >
-    <text x="32" y="166" font-size="14" class="font-mono fill-ink-muted"
-      >/llms.txt, .md variants, RSS and JSON</text
-    >
-    <text x="32" y="185" font-size="14" class="font-mono fill-ink-muted"
-      >/chat page and the form surfaces</text
-    >
-    <text x="32" y="204" font-size="14" class="font-mono fill-ink-muted"
-      >the queue consumer and the email send</text
-    >
+    {
+      /*
+        The gutter, and it is the middle grid item in both layouts rather than
+        two copies behind a breakpoint. Stacked it falls between the two boxes
+        on its own, which is where it belongs and what it says; side by side it
+        is the 168px track. The two labels are content -- they name what crosses
+        the binding -- while the rules and the glyphs are not.
+      */
+    }
+    <div class="flex flex-col justify-center gap-1.5 py-6 @3xl:px-5 @3xl:py-0">
+      <p class="text-center font-mono text-micro text-ink-muted">/mcp · chat · forms</p>
+      <p class="flex items-center">
+        <span aria-hidden="true" class="h-px flex-1 bg-accent"></span>
+        <span aria-hidden="true" class="-ml-px leading-none text-accent">▶</span>
+      </p>
+      <p class="flex items-center">
+        <span aria-hidden="true" class="-mr-px leading-none text-accent">◀</span>
+        <span aria-hidden="true" class="h-px flex-1 bg-accent"></span>
+      </p>
+      <p class="text-center font-mono text-micro text-ink-muted">document reads</p>
+    </div>
 
-    {/* The binding cycle: site to MCP, and MCP back to the site */}
-    <path d="M110,222 L110,278" stroke="currentColor"></path>
-    <path d="M105,270 L110,278 L115,270" stroke="currentColor"></path>
-    <text x="118" y="242" font-size="14" class="font-mono fill-ink-muted">/mcp, chat and forms</text
-    >
-    <path d="M290,278 L290,222" stroke="currentColor"></path>
-    <path d="M285,230 L290,222 L295,230" stroke="currentColor"></path>
-    <text x="282" y="268" text-anchor="end" font-size="14" class="font-mono fill-ink-muted"
-      >document reads</text
-    >
+    <div class="border border-ink bg-surface">
+      <div class="px-[18px] pb-4 pt-[15px]">
+        <p class="font-mono text-micro uppercase text-accent">
+          {WORKERS[1].number} · {WORKERS[1].role}
+        </p>
+        <p class="mt-2.5 font-display text-subheading text-ink">{WORKERS[1].host}</p>
+        <p class="mt-1.5 text-small text-ink-muted">{WORKERS[1].what}</p>
+      </div>
+      <ul class="border-t border-rule">
+        {
+          WORKERS[1].routes.map((route) => (
+            <li class="border-b border-rule px-[18px] py-[11px] font-mono text-small text-ink last:border-b-0">
+              {route}
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </div>
 
-    {/* The MCP Worker */}
-    <rect x="20" y="278" width="360" height="165" class="fill-surface" stroke="currentColor"></rect>
-    <text x="32" y="304" font-size="17" class="font-mono fill-current"
-      >MCP Worker &#183; mcp.ryanlindsey.me</text
-    >
-    <text x="32" y="330" font-size="14" class="font-mono fill-ink-muted"
-      >/mcp endpoint, stateless per request</text
-    >
-    <text x="32" y="349" font-size="14" class="font-mono fill-ink-muted"
-      >POST /chat, the streamed inference</text
-    >
-    <text x="32" y="368" font-size="14" class="font-mono fill-ink-muted"
-      >/robots.txt, /.well-known/mcp.json</text
-    >
-    <text x="32" y="387" font-size="14" class="font-mono fill-ink-muted"
-      >rate limits in a Durable Object</text
-    >
-    <text x="32" y="406" font-size="14" class="font-mono fill-ink-muted"
-      >AI Gateway &#8594; Anthropic</text
-    >
-    <text x="32" y="425" font-size="14" class="font-mono fill-ink-muted"
-      >Workers AI &#8594; Vectorize, for retrieval</text
-    >
+  {
+    /*
+      The muted connectors down into the bindings, quieter than the accent pair
+      above because a binding is not a request.
+    */
+  }
+  <div class:list={['grid grid-cols-1', FLOW]} aria-hidden="true">
+    <span class="mx-auto block h-8 w-px bg-rule"></span>
+    <span class="hidden @3xl:block"></span>
+    <span class="mx-auto hidden h-8 w-px bg-rule @3xl:block"></span>
+  </div>
 
-    {/* ... down to what both of them share */}
-    <path d="M200,443 L200,483" stroke="currentColor"></path>
-    <path d="M195,475 L200,483 L205,475" stroke="currentColor"></path>
-    <text x="208" y="468" font-size="14" class="font-mono fill-ink-muted">bindings</text>
+  <div class="border border-rule bg-surface px-[18px] py-3.5">
+    <p class="font-mono text-micro uppercase text-ink-muted">
+      04 · Shared by both Workers · bindings
+    </p>
+  </div>
+  {
+    /*
+      hairline-grid owns the ground, the gap and the border; the cell picks its
+      own background, and --rl-surface is the one that matches the boxes above.
 
-    {/* The shared stores, bussed to both Workers down the left margin */}
-    <path
-      d="M6,149 L6,556 M6,149 L20,149 M6,360 L20,360 M6,556 L20,556"
-      class="stroke-rule"
-      stroke-dasharray="3 4"></path>
-    <rect x="20" y="483" width="360" height="146" class="fill-surface" stroke="currentColor"></rect>
-    <text x="32" y="509" font-size="17" class="font-mono fill-current">Shared by both Workers</text>
-    <text x="32" y="535" font-size="14" class="font-mono fill-ink-muted"
-      >D1 &#183; audit, tokens, transcripts, evals</text
-    >
-    <text x="32" y="554" font-size="14" class="font-mono fill-ink-muted"
-      >KV &#183; caches and flags</text
-    >
-    <text x="32" y="573" font-size="14" class="font-mono fill-ink-muted"
-      >R2 &#183; generated PDFs and documents</text
-    >
-    <text x="32" y="592" font-size="14" class="font-mono fill-ink-muted"
-      >Analytics Engine &#183; request telemetry</text
-    >
-    <text x="32" y="611" font-size="14" class="font-mono fill-ink-muted"
-      >Queue &#183; high-intent events &#8594; email</text
-    >
-  </svg>
+      FIVE COLUMNS OR ONE, NEVER A COUNT IN BETWEEN. Five is prime, so any other
+      track count leaves the last row short, and a short row in a hairline grid
+      is not empty space: the container's own --rl-rule ground paints straight
+      through it as a block of grey. The same arithmetic governs the metrics
+      band on /ops, which is why that one is ten cells over five columns.
 
-  <figcaption class="mt-4 max-w-prose font-mono text-micro text-ink-muted">
-    Drawn from the deployed configuration &mdash; the two <code>wrangler.jsonc</code> files and the two
-    Worker entries in{' '}
-    <a class="text-accent underline" href="https://github.com/ryanlindsey/ryanlindsey.me"
+      `-mt-px` laps this grid's top border over the bar's bottom one, so the two
+      meet as the single hairline the idiom is named for rather than as 2px.
+    */
+  }
+  <div class="hairline-grid -mt-px grid-cols-1 @3xl:grid-cols-5">
+    {
+      BINDINGS.map((binding) => (
+        <div class="bg-surface px-[18px] py-3.5">
+          <p class="font-mono text-small text-ink">{binding.name}</p>
+          <p class="mt-1.5 font-mono text-micro uppercase text-ink-muted">{binding.what}</p>
+        </div>
+      ))
+    }
+  </div>
+
+  {
+    /*
+      The independent-sinks note is on the page rather than only in the header
+      comment, because it is the correction a reader is most likely to need: the
+      two sinks sit side by side in the panel above and nothing in that layout
+      says they are unrelated.
+
+      The em dash pair the SVG's caption used is a comma pair now. House style
+      targets zero em dashes in published prose and this is an appositive, which
+      is the case the style's own table sends to commas.
+    */
+  }
+  <figcaption class="mt-4 max-w-prose text-small text-ink-muted">
+    Analytics Engine and the queue are independent sinks; neither feeds the other. Drawn from the
+    deployed configuration, the two <code class="font-mono">wrangler.jsonc</code> files and the two Worker
+    entries in <a class="text-accent" href="https://github.com/ryanlindsey/ryanlindsey.me"
       >the repository</a
-    > &mdash; rather than from a sketch, so it can be checked against what is running.
+    >, rather than from a sketch, so it can be checked against what is running.
   </figcaption>
 </figure>
