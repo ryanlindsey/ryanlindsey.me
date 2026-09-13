@@ -24,9 +24,32 @@
  * Astro emits template `<!-- ... -->` comments into the built page, and this
  * codebase writes long ones. A comment mentioning `<div>` would be counted as
  * structure, so every scan below runs on the commentless copy.
+ *
+ * REPEATED UNTIL IT STOPS CHANGING, rather than a single `.replace`, and the
+ * loop is the whole point of this function rather than belt and braces.
+ * Removing a comment joins what sat in front of it to what sat behind it, and
+ * those two halves can form a comment that was not there before: strip the
+ * inner comment out of `<!-<!--x-->-hello-->` and the `<!-` meets the
+ * `-hello-->` to make `<!--hello-->`, which one pass then leaves in the
+ * "stripped" output. Flagged by CodeQL as
+ * js/incomplete-multi-character-sanitization (alert #5) against the first
+ * version of this file, and kept honest by tests/markup.test.ts.
+ *
+ * The rule is filed under security and this use is not: the input is this
+ * site's own build output and nothing is rendered from the result. It is a
+ * correctness fix. A comment that survives is a comment whose text
+ * `elementWith` below then counts as structure, and one stray `<div` inside
+ * one throws the depth count off and hands a test the wrong slice of a page --
+ * silently, and in the direction that makes assertions pass.
  */
 export function stripComments(html: string): string {
-  return html.replace(/<!--[\s\S]*?-->/g, '');
+  let stripped = html;
+  let previous;
+  do {
+    previous = stripped;
+    stripped = stripped.replace(/<!--[\s\S]*?-->/g, '');
+  } while (stripped !== previous);
+  return stripped;
 }
 
 /**
