@@ -65,33 +65,56 @@
    * invisibly; 1.1 and 1.15 are what the neighbouring steps imply and what
    * keeps a two-line wrap from opening up at a narrower viewport. Assumed,
    * not measured -- record the measurement here if a visual pass disagrees.
+   *
+   * THE SIX DISPLAY STEPS CLAMP (the responsive issue -- cited by name, per the
+   * note on the footer link rule below, 2026-09-13). Every value above is
+   * a desktop value drawn at 1280px, and two of them did not survive a phone.
+   * MEASURED at a 375px content width before this change: /writing overflowed
+   * by 44px and /work by 13px, because a grid item's `min-width: auto` resolves
+   * to its min-content width and an h1 at 4.5rem has a longest word 400px wide
+   * ("engineering,") and 368px wide ("mechanism"). That is the type being a
+   * desktop scale rather than a layout that forgot a breakpoint, which is why
+   * the fix is here and not a `md:` class on two mastheads today and on every
+   * heading anyone adds later.
+   *
+   * EACH CLAMP HOLDS ITS OLD VALUE AS ITS MAX, so at 1280px and above every
+   * approved design renders exactly as it did before. The ramp is the straight
+   * line between 390px (design 1c, the handoff's only final mobile view) and
+   * 1280px (every other design), so the only viewports that change are the ones
+   * nobody drew. tests/type-scale.test.ts evaluates both ends rather than
+   * looking for the word `clamp`: a ramp that missed its own max would still
+   * parse, and would quietly resize every design that was signed off.
+   *
+   * `figure` (2.25rem) and `section` (2rem) are deliberately NOT clamped. 36px
+   * and 32px already read at 390px, and a step that does not need to move
+   * should not be made harder to read for nothing.
    */
-  --text-numeral: 11rem;
+  --text-numeral: clamp(5rem, 2.371rem + 10.787vw, 11rem);
   --text-numeral--line-height: 0.8;
   --text-numeral--letter-spacing: -0.055em;
   --text-numeral--font-weight: 600;
 
-  --text-display: 4.5rem;
+  --text-display: clamp(2.5rem, 1.624rem + 3.596vw, 4.5rem);
   --text-display--line-height: 0.95;
   --text-display--letter-spacing: -0.04em;
   --text-display--font-weight: 600;
 
-  --text-headline: 4rem;
+  --text-headline: clamp(2.375rem, 1.663rem + 2.921vw, 4rem);
   --text-headline--line-height: 0.98;
   --text-headline--letter-spacing: -0.035em;
   --text-headline--font-weight: 600;
 
-  --text-lead: 3.5rem;
+  --text-lead: clamp(2.25rem, 1.702rem + 2.247vw, 3.5rem);
   --text-lead--line-height: 1;
   --text-lead--letter-spacing: -0.035em;
   --text-lead--font-weight: 600;
 
-  --text-banner: 3rem;
+  --text-banner: clamp(2.125rem, 1.742rem + 1.573vw, 3rem);
   --text-banner--line-height: 1.1;
   --text-banner--letter-spacing: -0.03em;
   --text-banner--font-weight: 600;
 
-  --text-title: 2.75rem;
+  --text-title: clamp(2rem, 1.671rem + 1.348vw, 2.75rem);
   --text-title--line-height: 1.02;
   --text-title--letter-spacing: -0.03em;
   --text-title--font-weight: 600;

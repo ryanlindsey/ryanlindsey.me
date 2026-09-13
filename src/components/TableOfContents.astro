@@ -15,9 +15,72 @@ interface Props {
    * because "table of contents" describes an article rather than a résumé.
    */
   ariaLabel?: string;
+  /**
+   * Collapse the rail into a disclosure below `lg` (issue #113).
+   *
+   * A PROP RATHER THAN A BREAKPOINT, because the answer differs per call site
+   * and the rule behind it is worth stating: the disclosure is for a rail built
+   * from a document's own headings, which is unbounded, and not for one built
+   * from a fixed list. /writing/<slug> and /ai-policy pass it; /resume does not,
+   * because its rail is always exactly four items and a disclosure that hides
+   * four lines is more chrome than it saves.
+   *
+   * MEASURED on /writing/agent-native-site at 390px before this landed: the
+   * expanded rail is 330px of links sitting between the masthead and the first
+   * paragraph, on an article with eight top-level headings and no children.
+   */
+  collapsible?: boolean;
 }
 
-const { toc, label = 'Contents', ariaLabel = 'Table of contents' } = Astro.props;
+const {
+  toc,
+  label = 'Contents',
+  ariaLabel = 'Table of contents',
+  collapsible = false,
+} = Astro.props;
+
+/*
+ * `details` when it collapses, `div` when it does not, so the list below is
+ * written once. The alternative was a ternary around the whole `<ul>`, which is
+ * twenty-five lines of nested map duplicated into two branches that have to
+ * keep agreeing.
+ */
+const Wrapper = collapsible ? 'details' : 'div';
+
+/** The disclosure's own label. /ai-policy renders no `label`, so it falls back. */
+const summaryText = label ?? ariaLabel;
+
+/*
+ * The rail-sync script, as a string handed to `set:html` below.
+ *
+ * IT IS A STRING AND `set:html` BECAUSE THE OBVIOUS SPELLING SHIPS BROKEN.
+ * Written as `<script is:inline>{`...`}</script>`, Astro treats a <script>
+ * element's children as RAW TEXT rather than as an expression, so the backticks
+ * and the braces are emitted literally and the page serves
+ * `{`(() => { ... })();`}`.
+ *
+ * That form PARSES -- it is a block statement wrapping one template-literal
+ * expression -- so it throws nothing, logs nothing, and does nothing. Caught
+ * only by opening the article at 390px and seeing the rail still expanded;
+ * every markup assertion for the disclosure passed the whole time, because the
+ * disclosure and its summary were both correct. tests/responsive.test.ts now
+ * parses what actually ships and asserts it carries no backtick.
+ *
+ * 64rem is Tailwind's `lg`, the breakpoint every collapse in this redesign is
+ * written against. `change` fires only when the viewport crosses it, so a
+ * reader who opens the disclosure keeps it open while scrolling and while
+ * resizing within one arrangement.
+ */
+const RAIL_SYNC = `(() => {
+  const desktop = matchMedia('(min-width: 64rem)');
+  const sync = () => {
+    for (const rail of document.querySelectorAll('[data-toc-disclosure]')) {
+      rail.open = desktop.matches;
+    }
+  };
+  sync();
+  desktop.addEventListener('change', sync);
+})();`;
 
 const flatten = (nodes: TocNode[]): TocNode[] =>
   nodes.flatMap((node) => [node, ...flatten(node.children)]);
@@ -61,42 +124,89 @@ const ITEM =
 {
   count > 0 && (
     <nav aria-label={ariaLabel} data-toc>
-      {label && <p class="font-mono text-micro uppercase text-ink-muted">{label}</p>}
-      <ul
-        class:list={[
-          'flex flex-col gap-0.5 border-l border-rule',
-          // The 16px belongs to the label, not to the rail, so a rail without
-          // one starts flush with the content beside it rather than an inch
-          // below it.
-          label && 'mt-4',
-        ]}
-      >
-        {toc.map((node) => (
-          <li>
-            <a href={`#${node.slug}`} data-toc-link={node.slug} class={`${ITEM} pl-[14px]`}>
-              {node.text}
-            </a>
-            {node.children.length > 0 && (
-              <ul class="flex flex-col gap-0.5">
-                {node.children.map((child) => (
-                  <li>
-                    <a
-                      href={`#${child.slug}`}
-                      data-toc-link={child.slug}
-                      class={`${ITEM} pl-[26px]`}
-                    >
-                      {child.text}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </li>
-        ))}
-      </ul>
+      <Wrapper {...(collapsible ? { open: true, 'data-toc-disclosure': true } : {})}>
+        {/*
+            `open` SHIPS IN THE MARKUP and the script below removes it under
+            `lg`. Written that way round so a reader with no JavaScript gets
+            exactly the pre-#113 behaviour at every width -- the rail expanded --
+            rather than a desktop rail that is silently a collapsed disclosure.
+            The enhancement only ever takes the rail away on the viewport where
+            it was costing a screen.
+          */}
+        {collapsible && (
+          <summary class="cursor-pointer font-mono text-micro uppercase text-ink-muted lg:hidden">
+            {summaryText}
+          </summary>
+        )}
+        {/* At `lg` the summary is gone, so the label does its usual job; below
+             it the summary is already saying the same word and a second copy
+             would read as a heading over a heading. */}
+        {label && (
+          <p
+            class:list={[
+              'font-mono text-micro uppercase text-ink-muted',
+              collapsible && 'hidden lg:block',
+            ]}
+          >
+            {label}
+          </p>
+        )}
+        <ul
+          class:list={[
+            'flex flex-col gap-0.5 border-l border-rule',
+            // The 16px belongs to the label, not to the rail, so a rail without
+            // one starts flush with the content beside it rather than an inch
+            // below it. A summary needs the same 16px for the same reason, and
+            // only below `lg` -- at `lg` the summary is hidden and /ai-policy's
+            // labelless rail must still start flush, as design 1m draws it.
+            label ? 'mt-4' : collapsible && 'mt-4 lg:mt-0',
+          ]}
+        >
+          {toc.map((node) => (
+            <li>
+              <a href={`#${node.slug}`} data-toc-link={node.slug} class={`${ITEM} pl-[14px]`}>
+                {node.text}
+              </a>
+              {node.children.length > 0 && (
+                <ul class="flex flex-col gap-0.5">
+                  {node.children.map((child) => (
+                    <li>
+                      <a
+                        href={`#${child.slug}`}
+                        data-toc-link={child.slug}
+                        class={`${ITEM} pl-[26px]`}
+                      >
+                        {child.text}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      </Wrapper>
     </nav>
   )
 }
+
+{
+  /*
+    `is:inline`, and it is the one thing in this component that has to be.
+    ThemeToggle.astro uses a module script and Base.astro uses `is:inline` for
+    the theme; each says why, and this is the theme script's reason rather than
+    the toggle's. A bundled module script is deferred, so it would run after
+    first paint and the reader would watch a 330px rail collapse out from under
+    the article they were already looking at. Inline and in place, it runs
+    during parse, before that region is painted.
+
+    This is not a second observer. The IntersectionObserver below is untouched
+    and keeps writing `aria-current` while the disclosure is shut, which is what
+    makes the spy degraded rather than dead: open it part-way down an article
+    and the section you are in is already marked.
+  */
+}
+{count > 0 && collapsible && <script is:inline set:html={RAIL_SYNC} />}
 
 <script>
   const links = new Map<string, HTMLAnchorElement>();

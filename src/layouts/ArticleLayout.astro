@@ -284,7 +284,12 @@ const FACT_COLUMNS: Record<number, string> = {
              soon as the reader scrolled. 96px is the offset global.css's
              `scroll-padding-top` comment already claims for this rail; this
              is what makes that claim true. -->
-        <TableOfContents toc={toc} />
+        <!-- collapsible: below `lg` this rail is built from the article's own
+             headings and is therefore unbounded. Issue #113 measured it at
+             330px on an eight-heading article, sitting between the masthead and
+             the first paragraph. /resume's rail is four fixed items and stays a
+             plain list; the asymmetry is the decision, not an oversight. -->
+        <TableOfContents toc={toc} collapsible />
       </aside>
 
       <div>

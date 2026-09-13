@@ -387,8 +387,19 @@ const HEAD = `${COLUMN} grid items-baseline gap-x-16 gap-y-3 pb-8 pt-14 lg:grid-
 const KICKER = 'font-mono text-micro uppercase text-ink-muted';
 /** A full-width section's heading. */
 const HEADING = 'font-display text-heading text-ink';
-/** One panel in a hairline band, and the heading that opens it. */
-const PANEL = 'bg-surface px-6 pb-8 pt-[26px]';
+/**
+ * One panel in a hairline band, and the heading that opens it.
+ *
+ * `min-w-0` IS THE GUARD, NOT PADDING (issue #113). A panel is a grid item, and
+ * a grid item's default `min-width: auto` is its min-content width -- so the
+ * evals table's `min-w-[22rem]` inside `overflow-x-auto` would grow this track
+ * rather than scroll inside it. It does not today, and only because 22rem is
+ * 352px and that is narrower than a 390px viewport. /ai-policy's risk register
+ * is the same construction one size up (56rem) and it overflowed that page by
+ * 543px. Widening this table by a column is all it would take here, so the
+ * guard goes on while the reason is written down rather than after.
+ */
+const PANEL = 'min-w-0 bg-surface px-6 pb-8 pt-[26px]';
 const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
 ---
 

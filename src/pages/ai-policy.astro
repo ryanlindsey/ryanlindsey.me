@@ -173,11 +173,32 @@ const TABLE_HEADING = 'font-display text-section text-ink';
         Updated <time datetime={policy.data.updated} data-numeric>{policy.data.updated}</time>
       </p>
       <div class="mt-7">
-        <TableOfContents toc={sections} label={null} ariaLabel="Policy sections" />
+        <!-- collapsible for the same reason the article's rail is: `buildToc`
+             reads the document's own headings, so this list grows with the
+             policy and is twelve items today (issue #113). -->
+        <TableOfContents toc={sections} label={null} ariaLabel="Policy sections" collapsible />
       </div>
     </aside>
 
-    <div>
+    {
+      /*
+        `min-w-0` IS LOAD-BEARING AND IS NOT COSMETIC (issue #113). MEASURED at
+        a 375px content width before it went on: this page overflowed by 543px,
+        and at 768px by 165px. The risk register below already had its own
+        `overflow-x-auto` container and a `min-w-[56rem]` table -- the escape
+        hatch the epic's global constraints allow a table -- and it never got to
+        use either. This div is a grid item, a grid item's default
+        `min-width: auto` resolves to its min-content width, and 56rem of table
+        is 896px of min-content, so the TRACK grew to 898px instead of the
+        container scrolling.
+
+        The symptom pointed at the wrong element, which is worth recording: the
+        rail in the same single-column track stretched to 898px too, so the
+        widest overflowing box measured as the <aside>. Reading that literally
+        sends the next person to the rail, which is not where the problem is.
+      */
+    }
+    <div data-policy-content class="min-w-0">
       <h1 class="max-w-[18ch] font-display text-lead text-ink">{policy.data.title}</h1>
       <p class="mt-6 max-w-[68ch] text-large text-ink-muted">{policy.data.summary}</p>
 
