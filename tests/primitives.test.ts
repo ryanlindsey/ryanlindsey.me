@@ -95,3 +95,40 @@ describe('focus', () => {
     expect(focus).toMatch(/border-radius:\s*0/);
   });
 });
+
+// Fix round 1 (task-1-review.md, task-1-fix-round-1.md): Tailwind Typography
+// ships its own prose link rule in the `utilities` layer, which outranks
+// `@layer base` regardless of specificity, so @layer base's `a:active`
+// colour and `text-decoration-thickness` never reach an article or the AI
+// policy page. prose-rl restates both, nested with `&` so `@utility` emits
+// them into `utilities` too.
+//
+// These are source-level checks: they confirm the override text exists
+// inside prose-rl, not that a browser actually resolves the cascade this
+// way -- that needs Browser Rendering, which no test in this repo may reach
+// (tests/workers.ts). What they catch: someone deleting an override on the
+// mistaken belief that @layer base already reaches prose links, which is the
+// realistic regression. What they do not catch: a future Tailwind Typography
+// release reordering layers or shipping its prose link rule at a specificity
+// prose-rl's overrides no longer beat.
+describe('prose links reach past Tailwind Typography', () => {
+  test('restates the green :active colour inside prose-rl', () => {
+    const prose = ruleBody(/@utility\s+prose-rl\s*\{/);
+    expect(prose).toMatch(/a:active[^{]*\{[^}]*color:\s*var\(--rl-ok\)/);
+  });
+
+  test("restates the 1px underline thickness inside prose-rl, which Typography's text-decoration shorthand resets to auto", () => {
+    const prose = ruleBody(/@utility\s+prose-rl\s*\{/);
+    expect(prose).toMatch(/\ba\s*\{[^}]*text-decoration-thickness:\s*1px/);
+  });
+});
+
+// Fix round 1: [data-site-header] a only reaches the header's brand link,
+// which sits outside its own <nav>. Three more <nav> landmarks -- the
+// footer's agent links, the table of contents, and series prev/next -- got
+// the new default underline until this rule was added.
+describe('nav', () => {
+  test('a nav landmark is not underlined', () => {
+    expect(source).toMatch(/nav a\s*\{[^}]*text-decoration:\s*none/);
+  });
+});

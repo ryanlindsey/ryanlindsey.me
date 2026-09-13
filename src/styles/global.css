@@ -224,7 +224,21 @@
     color: var(--rl-ok);
   }
 
+  /*
+   * Two opt-outs, not one, because they cover different elements. The header
+   * carries a brand wordmark link that sits OUTSIDE its own <nav> (see
+   * SiteHeader.astro), so `nav a` alone would miss it; and `nav a` reaches
+   * the other three `<nav>` landmarks in this repo -- SiteFooter's agent
+   * links, TableOfContents, SeriesNav's prev/next -- none of which
+   * `[data-site-header]` scopes. Fix round 1 (task-1-review.md): the first
+   * pass only wrote the header rule and left three of four `<nav>` elements
+   * underlined, because the brief that shipped it named only the header.
+   */
   [data-site-header] a {
+    text-decoration: none;
+  }
+
+  nav a {
     text-decoration: none;
   }
 
@@ -321,6 +335,37 @@
    * page, because they are a different job.
    */
   max-width: 72ch;
+
+  /*
+   * Fix round 1 (task-1-review.md): restates two of @layer base's link rules
+   * because Tailwind Typography's own link rule never loses to them. The
+   * compiled Shell stylesheet (dist/client/_astro/Shell.*.css) declares
+   * `@layer properties, theme, base, components, utilities`, and Typography's
+   * `.prose :where(a):not(:where(...)){color:var(--tw-prose-links);
+   * font-weight:500;text-decoration:underline}` ships in `utilities` -- a
+   * later layer beats an earlier one regardless of specificity, so base's
+   * `a:active` colour and `text-decoration-thickness` both lose inside every
+   * `.prose-rl.prose` article and the AI policy page. `@utility` emits into
+   * `utilities` too, so nesting the overrides here puts them in the same
+   * layer, where `.prose-rl a:active` at (0,2,1) beats Typography's rule at
+   * (0,1,0) (`:where()` contributes no specificity) on ordinary cascade
+   * rules.
+   *
+   * `text-decoration-thickness` needs restating because Typography's rule
+   * writes the `text-decoration` shorthand, which resets thickness to `auto`
+   * (thickness joined the shorthand in CSS Text Decoration Level 4, and
+   * https://developer.mozilla.org/en-US/docs/Web/CSS/text-decoration
+   * confirms current browsers ship it that way). `text-underline-offset` is
+   * NOT part of that shorthand, so base's 3px offset already survives inside
+   * prose and is deliberately not repeated here.
+   */
+  & a {
+    text-decoration-thickness: 1px;
+  }
+
+  & a:active {
+    color: var(--rl-ok);
+  }
 }
 
 /*
