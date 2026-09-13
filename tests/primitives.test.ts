@@ -127,8 +127,46 @@ describe('prose links reach past Tailwind Typography', () => {
 // which sits outside its own <nav>. Three more <nav> landmarks -- the
 // footer's agent links, the table of contents, and series prev/next -- got
 // the new default underline until this rule was added.
+//
+// The footer left that list in issue #100 and the second test below is the
+// correction; the sentence above is kept as written because it is the record
+// of what the rule was for when it was added, and the reason the footer was
+// in scope then (a one-line row of agent links) is not the reason it is out
+// of scope now (a five-column colophon of reading links).
 describe('nav', () => {
   test('a nav landmark is not underlined', () => {
     expect(source).toMatch(/nav a\s*\{[^}]*text-decoration:\s*none/);
+  });
+
+  test('the footer colophon opts back in, because its own design underlines every column', () => {
+    // The comment above this describe block used to name "the footer's agent
+    // links" as one of the three landmarks the rule exists to cover. That
+    // stopped being true in issue #100: design 1b's footer underlines all
+    // four link columns, and the issue says so in as many words -- "Footer
+    // links ARE underlined. The primitives issue makes that the default; do
+    // not add no-underline here."
+    //
+    // Measured before it was written, not assumed. In headless Chrome
+    // against the built page (2026-09-13), every link in the four footer
+    // columns computed `text-decoration-line: none`, while the two
+    // build-credit links in the bottom strip, which sit outside any <nav>,
+    // computed `underline` -- the same markup, the same base rule, split by
+    // whether a <nav> happened to wrap it.
+    //
+    // Scoped, not repealed. The other landmarks the rule covers are the
+    // header, the table of contents and series prev/next; all three are
+    // chrome, and all three are still right undecorated. The colophon is the
+    // one that is a list of links a reader is meant to read as links.
+    const footer = ruleBody(/\[data-site-footer\] nav a\s*\{/);
+    expect(footer).toMatch(/text-decoration-line:\s*underline/);
+    // The thickness has to be restated, and this is the second time this
+    // stylesheet has been bitten by it: prose-rl restates the same 1px for
+    // the same reason, because Typography writes the `text-decoration`
+    // SHORTHAND and the shorthand resets thickness to `auto`. `nav a` above
+    // writes the shorthand too, so switching only the line back on gets an
+    // underline at the browser's default thickness rather than the design's.
+    // Measured: 'auto', not '1px', on all thirteen column links until this
+    // declaration was added.
+    expect(footer).toMatch(/text-decoration-thickness:\s*1px/);
   });
 });

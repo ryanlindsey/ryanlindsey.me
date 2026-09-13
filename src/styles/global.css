@@ -238,11 +238,11 @@
    * Two opt-outs, not one, because they cover different elements. The header
    * carries a brand wordmark link that sits OUTSIDE its own <nav> (see
    * SiteHeader.astro), so `nav a` alone would miss it; and `nav a` reaches
-   * the other three `<nav>` landmarks in this repo -- SiteFooter's agent
-   * links, TableOfContents, SeriesNav's prev/next -- none of which
-   * `[data-site-header]` scopes. Fix round 1 (task-1-review.md): the first
-   * pass only wrote the header rule and left three of four `<nav>` elements
-   * underlined, because the brief that shipped it named only the header.
+   * the other `<nav>` landmarks in this repo -- TableOfContents, SeriesNav's
+   * prev/next, and (until the correction below) SiteFooter's. Fix round 1
+   * (task-1-review.md): the first pass only wrote the header rule and left
+   * three of four `<nav>` elements underlined, because the brief that
+   * shipped it named only the header.
    */
   [data-site-header] a {
     text-decoration: none;
@@ -250,6 +250,50 @@
 
   nav a {
     text-decoration: none;
+  }
+
+  /*
+   * And the correction, one issue later. The paragraph above listed
+   * "SiteFooter's agent links" among the landmarks `nav a` is meant to strip,
+   * which was right for the one-line footer it was written against and wrong
+   * for the five-column colophon that replaced it: design 1b underlines all
+   * four link columns, and the footer issue states it directly -- "Footer
+   * links ARE underlined. The primitives issue makes that the default; do not
+   * add no-underline here."
+   *
+   * Issues are cited by name rather than by number anywhere in this file, and
+   * that is not a style preference: tests/tokens.test.ts asserts global.css
+   * carries no hex colour literal, and its pattern is /#[0-9a-f]{3,8}\b/i,
+   * which a hash followed by an issue number satisfies exactly. Writing the
+   * footer issue's number the usual way failed that test on the first run.
+   *
+   * MEASURED (2026-09-13), in headless Chrome against the built page, before
+   * this rule was written: all thirteen links in the four footer columns
+   * computed `text-decoration-line: none`, while the two build-credit links
+   * in the bottom strip computed `underline`. Same markup, same base rule;
+   * the only difference was whether a <nav> wrapped them. That is why the fix
+   * is here rather than a `underline` utility in SiteFooter.astro -- the
+   * component was doing nothing wrong, and a call-site patch would leave the
+   * next person to add a footer column to rediscover this.
+   *
+   * Scoped rather than repealed. The header, the table of contents and series
+   * prev/next are all still chrome and still correct undecorated. The
+   * colophon is the one <nav> in this repo that is a list of links a reader
+   * is meant to read as links.
+   *
+   * The thickness is restated for the same reason prose-rl restates it
+   * further down this file, and it is the second time this stylesheet has
+   * been caught by it: `nav a` above writes the `text-decoration` SHORTHAND,
+   * and the shorthand resets thickness to `auto`. Switching only the line
+   * back on therefore buys an underline at the browser's default weight
+   * instead of the design's 1px -- measured as `auto` on all thirteen column
+   * links before this line was added. The offset is NOT repeated, because
+   * `text-underline-offset` is not part of the shorthand and base's 3px
+   * survives; that asymmetry is the whole trap.
+   */
+  [data-site-footer] nav a {
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
   }
 
   ::selection {
