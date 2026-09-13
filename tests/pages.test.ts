@@ -261,6 +261,169 @@ test('the built CSS actually declares the header background and its sticky offse
   ).toBe(true);
 });
 
+/**
+ * The rendered site footer, with HTML comments stripped out.
+ *
+ * The stripping is the point, not tidiness. Written the way issue #100
+ * specified it -- against `footer![0]` directly -- the five-column test below
+ * PASSED on the pre-redesign one-line footer, and was watched doing it: that
+ * component's own comment described itself as "not the five-column SITE /
+ * SYSTEM / FOR AGENTS / ELSEWHERE footer the redesign eventually wants", so
+ * all four headings the test searched for were already in the markup, as
+ * prose about their own absence. A test that cannot fail on the code it is
+ * meant to reject is not a test.
+ *
+ * That is the third time this repo has been bitten by the same class of bug:
+ * `toContain('noindex')` matching the word inside a Base.astro comment, and
+ * the ⌘K search-placeholder test measuring a 400-character window that ran
+ * past the placeholder into the theme toggle beside it. Both are written up
+ * where they were found. The shared lesson is that a comment is markup too,
+ * and an assertion scoped to "somewhere in this string" will eventually find
+ * its answer in one.
+ *
+ * The strip runs to a FIXED POINT rather than once, and the difference is
+ * not theoretical. CodeQL caught the single-pass version
+ * (js/incomplete-multi-character-sanitization) and it was right, for a
+ * sharper reason than the rule's own "HTML element injection" framing
+ * suggests: removing a comment can splice the text on either side of it into
+ * a NEW comment, so one pass can leave comment content standing. Measured,
+ * not reasoned about:
+ *
+ *   '<!' + '<!--x-->' + '-- SECRET -->'
+ *     one pass   -> '<!-- SECRET -->'   SECRET survives, inside a comment
+ *     fixed point -> ''
+ *
+ * That is this helper's own failure mode, not a generic security one. Its
+ * entire job is to stop an assertion reading text that only exists inside a
+ * comment, and a single pass cannot promise that.
+ *
+ * Nothing here sanitizes untrusted input: it reads one element out of this
+ * repo's own build output, in a test, and renders nothing. So the rule's
+ * high severity does not transfer, which is the call Ryan made on the review
+ * thread. The loop is in because it makes the helper correct, not because a
+ * scanner asked.
+ *
+ * One hole a loop cannot close, recorded so the next reader does not have to
+ * find it again: a literal `<!--` inside an ATTRIBUTE VALUE would start a
+ * match and eat real markup forward to the next `-->`, which could delete
+ * the very links an assertion looks for and turn a `not.toContain` green for
+ * the wrong reason. Astro does not emit that, and this helper only ever
+ * receives `html()` output. If it is ever pointed at a fixture or anything a
+ * person can influence, regex is the wrong tool and this paragraph is the
+ * reason to reach for a parser instead of widening the pattern.
+ */
+const withoutHtmlComments = (markup: string) => {
+  let previous: string;
+  let current = markup;
+  do {
+    previous = current;
+    current = current.replace(/<!--[\s\S]*?-->/g, '');
+  } while (current !== previous);
+  return current;
+};
+
+const footerMarkup = async (path = '/') => {
+  const footer = /<footer[^>]*data-site-footer[\s\S]*?<\/footer>/.exec(await html(path));
+  expect(footer, 'no site footer on the page').not.toBeNull();
+  return withoutHtmlComments(footer![0]);
+};
+
+test('stripping comments leaves no comment text behind, even when removal splices a new one', () => {
+  // The regression CodeQL found. Removing the inner comment closes `<!` and
+  // `-- SECRET -->` into a fresh comment, so a single pass hands back text
+  // that is still inside one -- exactly what every footer assertion below
+  // relies on this helper to have removed.
+  expect(withoutHtmlComments('<!' + '<!--x-->' + '-- SECRET -->')).not.toContain('SECRET');
+  // A fixed point, so re-running it changes nothing.
+  const stripped = withoutHtmlComments('<!--a--><!--b-->');
+  expect(withoutHtmlComments(stripped)).toBe(stripped);
+  // And ordinary markup is left alone, comment removed, links intact.
+  expect(withoutHtmlComments('<!-- note --><a href="/ops">Ops</a>')).toBe('<a href="/ops">Ops</a>');
+});
+
+test('the footer is the five-column colophon, and the demoted nav items live in it', async () => {
+  const markup = await footerMarkup();
+
+  for (const heading of ['SITE', 'SYSTEM', 'FOR AGENTS', 'ELSEWHERE']) {
+    expect(markup).toContain(heading);
+  }
+
+  // The demotion, asserted where it landed. The header issue asserts they
+  // left the nav; without this, deleting them entirely would pass both.
+  expect(markup).toContain('href="/ops"');
+  expect(markup).toContain('href="/ai-policy"');
+
+  // The promotion's other half: /chat is nav-only now. Repeating it here
+  // would undo the change that moved it.
+  expect(markup).not.toContain('href="/chat"');
+});
+
+test('the footer column headings are not page headings', async () => {
+  // Not in the issue's test list. Added after tests/case-studies.test.ts was
+  // read, rather than after it went red: `sectionHeadings()` there scans the
+  // WHOLE page for <h2> and asserts EQUALITY against the fixed 02 §4
+  // case-study shape, so a single <h2> in shared chrome would fail every
+  // /work/<slug> at once, with the failure naming the case study rather than
+  // the footer that caused it. The columns are labelled <p> elements over
+  // <nav aria-label>, which names each landmark for a screen reader without
+  // putting site chrome into any page's document outline.
+  const markup = await footerMarkup();
+  expect(markup).not.toMatch(/<h[1-6]\b/);
+  for (const label of ['Site', 'System', 'For agents', 'Elsewhere']) {
+    expect(markup, `no footer landmark named ${label}`).toContain(`aria-label="${label}"`);
+  }
+});
+
+test('every external footer link opens safely', async () => {
+  const markup = await footerMarkup();
+  const external = [...markup.matchAll(/<a[^>]*href="(https?:[^"]+)"[^>]*>/g)];
+  expect(external.length, 'no external links found in the footer').toBeGreaterThan(3);
+  for (const [tag, href] of external) {
+    expect(tag, `${href} is missing rel="noopener"`).toContain('rel="noopener"');
+    expect(tag, `${href} is missing target="_blank"`).toContain('target="_blank"');
+  }
+});
+
+test('the footer never shortens the Pixelsonly Racing brand name', async () => {
+  const markup = await footerMarkup();
+  expect(markup).toContain('Pixelsonly Racing');
+  // The label, not the hostname -- `pixelsonly.racing` is a literal
+  // identifier and is exempt from the brand-name rule the label is not.
+  expect(markup).not.toMatch(/>\s*Pixelsonly\s*</);
+});
+
+test('the footer links the profile URLs the résumé record carries, not the prototype copies', async () => {
+  // Not in the issue's test list, and the reason it exists is a conflict the
+  // issue could not have seen. Issue #100 gives the ELSEWHERE URLs "from the
+  // prototype" and spells LinkedIn `/in/ryanlindsey`; the résumé record --
+  // the only other place this site states it, and the source every rendered
+  // résumé format reads -- spells it `/in/ryanclindsey`, with a matching
+  // `username: ryanclindsey` beside it. A design mock mistyping a vanity slug
+  // is likelier than the record being wrong in a field that ships in four
+  // formats, so the record wins.
+  //
+  // Reading them rather than retyping them is also the rule the issue itself
+  // states one paragraph earlier, about the email: read it from the résumé
+  // record rather than typing it, the same way every other format on this
+  // site does. Applying that to the two profiles beside it is what makes the
+  // conflict impossible to reintroduce, which a corrected literal would not.
+  const markup = await footerMarkup();
+  const yaml = readFileSync(resumeYamlPath, 'utf8');
+  for (const network of ['GitHub', 'LinkedIn']) {
+    const url = new RegExp(`network:\\s*${network}\\b[\\s\\S]*?url:\\s*(\\S+)`).exec(yaml)?.[1];
+    expect(url, `no ${network} profile in the résumé record`).toBeTruthy();
+    expect(markup, `the footer should link the record's ${network} URL`).toContain(`href="${url}"`);
+  }
+});
+
+test('the footer mails the address the résumé record carries, not a typed copy', async () => {
+  const markup = await footerMarkup();
+  const yaml = readFileSync(resumeYamlPath, 'utf8');
+  const email = /^\s*email:\s*(\S+)\s*$/m.exec(yaml)?.[1];
+  expect(email, 'no email in the résumé record').toBeTruthy();
+  expect(markup).toContain(`mailto:${email}`);
+});
+
 test('keeps the holding page marker and is indexable since launch', async () => {
   const page = await html('/');
   expect(page).toContain('data-testid="holding-page"');
@@ -1089,6 +1252,11 @@ test('footer links /llms.txt and the MCP endpoint, and never links /llms-full.tx
   expect(footer, 'footer should link the MCP endpoint').toContain(
     'href="https://mcp.ryanlindsey.me/mcp"',
   );
+  // RSS joined this column in the 2026-09 redesign (issue #100), which names
+  // three FOR AGENTS links and picks RSS as the feed. /feed.json is the JSON
+  // Feed twin and is deliberately not the one named -- src/lib/feeds.ts
+  // builds both, and every page still advertises both in <link rel>.
+  expect(footer, 'footer should link the RSS feed').toContain('href="/rss.xml"');
   // /llms-full.txt is the bulk-ingestion corpus; /llms.txt points at it, so
   // the footer must not link it a second time (task-9-brief.md Step 3).
   expect(page, 'no page should link /llms-full.txt from its footer').not.toContain(

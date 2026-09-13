@@ -1,4 +1,7 @@
 ---
+import { NAV_LINKS } from '../lib/nav';
+import { getResume } from '../lib/resume-collection';
+
 // Day 3 Task 9 (02 §3): the agent courtesies the comment above used to defer
 // -- /llms.txt (the curated index) and the MCP endpoint. /llms-full.txt is
 // deliberately NOT linked here: it is the bulk-ingestion corpus and
@@ -14,36 +17,181 @@
 // mounts the actual JSON-RPC endpoint at that path, and the bare origin
 // 404s. Verified live: POST https://mcp.ryanlindsey.me/mcp with an
 // `initialize` body succeeds.
+//
+// 2026-09 redesign (issue #100): the one-line footer those two paragraphs
+// were written for is gone, replaced by the five-column colophon below, but
+// both reasons survive the rewrite intact and are why this column carries
+// /llms.txt and /mcp and not /llms-full.txt or the bare origin. RSS joined
+// them here: the design names three FOR AGENTS links and RSS is the one it
+// names. /feed.json is the JSON Feed twin, built by the same module
+// (src/lib/feeds.ts) and still advertised on every page by Base.astro's
+// <link rel="alternate">, so it is reachable without spending a fourth slot
+// in a column the design sized at three.
 const year = new Date().getFullYear();
+const { basics } = await getResume();
+
+// The first three nav entries, expressed as "not the promoted one" rather
+// than as NAV_LINKS.slice(0, 3). Both pick the same three links today; only
+// this one still picks the right ones if a fifth destination is ever added
+// to the nav ahead of /chat. Ask my agent is deliberately absent: issue #99
+// promoted it OUT of this footer into the primary nav, and repeating it here
+// would quietly undo that.
+const siteLinks = NAV_LINKS.filter((link) => link.href !== '/chat');
+
+// Demoted out of the primary nav by issue #99, and this column is where they
+// landed -- they are about the site rather than part of reading it.
+//
+// Changelog points at /ops#releases because there is no /changelog route.
+// src/pages/ops.astro renders the parsed release history under
+// `aria-labelledby="releases"`, which is the thing the design's label means;
+// a standalone route would be a separate issue, not an invention here.
+const systemLinks = [
+  { href: '/ops', label: 'Ops' },
+  { href: '/ai-policy', label: 'AI Policy' },
+  { href: '/ops#releases', label: 'Changelog' },
+];
+
+const agentLinks = [
+  { href: '/llms.txt', label: 'llms.txt' },
+  { href: 'https://mcp.ryanlindsey.me/mcp', label: 'MCP' },
+  { href: '/rss.xml', label: 'RSS' },
+];
+
+/**
+ * GitHub and LinkedIn are READ from the résumé record rather than typed here.
+ *
+ * Issue #100 lists both URLs "from the prototype" and spells the LinkedIn one
+ * `/in/ryanlindsey`. `src/content/resume/ryan-lindsey.yaml` spells it
+ * `/in/ryanclindsey`, with a matching `username: ryanclindsey` beside it, and
+ * that record is the source of truth every rendered résumé format reads --
+ * HTML, Markdown, JSON and PDF. A design mock mistyping a vanity slug is
+ * likelier than the record being wrong in a field that ships four ways, so
+ * the record wins, and reading it is what stops the two copies disagreeing
+ * again. That is the same rule the issue states for the email address one
+ * paragraph earlier; this applies it to the two profiles beside it.
+ *
+ * Pixelsonly Racing stays a literal. It is a side business rather than one of
+ * this person's profiles elsewhere, so `basics.profiles` is not where it
+ * lives, and looking it up in `projects` by name would hardcode the name in
+ * order to avoid hardcoding the URL. NEVER shorten the label to "Pixelsonly":
+ * the brand name is both words. The hostname is a literal identifier and is
+ * the one place the short form is correct.
+ */
+const profileLink = (network: string) => {
+  const profile = basics.profiles.find((entry) => entry.network === network);
+  return profile ? [{ href: profile.url, label: network }] : [];
+};
+
+const elsewhereLinks = [
+  ...profileLink('GitHub'),
+  ...profileLink('LinkedIn'),
+  { href: 'https://pixelsonly.racing', label: 'Pixelsonly Racing' },
+  // `basics.email` is optional in the schema, so a record without one renders
+  // no Email link rather than a `mailto:undefined`. resumeGaps() already
+  // reports the missing field; this surface should not invent an address to
+  // cover for it.
+  ...(basics.email ? [{ href: `mailto:${basics.email}`, label: 'Email' }] : []),
+];
+
+/**
+ * The four link columns.
+ *
+ * `label` is not a lower-cased copy of `heading` by accident. The visible
+ * heading is set in capitals because the design sets it that way, and an
+ * all-capital string is exactly what a screen reader is liable to spell out
+ * letter by letter, so the landmark is named by `aria-label` in ordinary
+ * sentence case and the visible <p> is hidden from the accessibility tree.
+ * The information reaches both audiences once, in the form each can use.
+ *
+ * The headings are <p> rather than <h2>, and that is load-bearing in a way
+ * worth stating: tests/case-studies.test.ts collects every <h2> on a page and
+ * asserts EQUALITY against the fixed 02 §4 case-study shape, so one <h2> in
+ * shared chrome would fail every /work/<slug> at once and blame the case
+ * study rather than the footer. Site chrome does not belong in a page's
+ * document outline regardless; the test is what makes forgetting expensive.
+ */
+const columns = [
+  { heading: 'SITE', label: 'Site', links: siteLinks, mono: false },
+  { heading: 'SYSTEM', label: 'System', links: systemLinks, mono: false },
+  { heading: 'FOR AGENTS', label: 'For agents', links: agentLinks, mono: true },
+  { heading: 'ELSEWHERE', label: 'Elsewhere', links: elsewhereLinks, mono: false },
+];
+
+// Every link that leaves the site opens in a new tab and carries
+// rel="noopener". The design says this about the ELSEWHERE column; it is
+// applied to every external href in the footer instead, because the MCP
+// endpoint and the two build-credit links in the bottom strip leave the site
+// by exactly the same door, and a rule that covers three of six external
+// links is one the next person has to re-derive. `mailto:` is not an external
+// href in this sense -- it opens a mail client, not a tab.
+const isExternal = (href: string) => href.startsWith('http');
 ---
 
 <footer data-site-footer class="mt-24 border-t border-rule">
-  <div
-    class="mx-auto flex max-w-5xl flex-wrap items-baseline justify-between gap-4 px-6 py-8 font-mono text-micro uppercase text-ink-muted"
-  >
-    <span>&copy; {year} Ryan Lindsey</span>
+  <div class="mx-auto max-w-[1440px] px-10 pb-11 pt-9">
     <!--
-      2026-09 redesign (issue #99, note 5): /ops and /ai-policy left the
-      primary nav for the footer -- demoted, not deleted, because they are
-      about the site rather than part of reading it. This bare nav is a
-      minimal landing spot, not the five-column SITE / SYSTEM / FOR AGENTS /
-      ELSEWHERE footer the redesign eventually wants; that shape is a
-      separate issue, and this placement is provisional until it lands.
+      The design's grid is `1.7fr repeat(4, minmax(0,1fr))`, and that is what
+      runs from `lg` up. Below it the columns stack, which the design does not
+      specify and no other issue in this epic owns: the mobile work scoped out
+      of the header issue is the nav overlay (design 1c), not this. Five
+      columns at 390px is not a styling gap that a later issue tidies, it is
+      an unreadable footer on a phone, so the minimum that keeps it legible
+      ships with it.
     -->
-    <nav aria-label="System" class="flex items-baseline gap-4">
-      <a href="/ops">Ops</a>
-      <a href="/ai-policy">AI Policy</a>
-    </nav>
-    <nav aria-label="Agent resources" class="flex items-baseline gap-4">
-      <!-- Day 6 (04 §1) put /chat first here, in the footer rather than the
-        primary nav, because it was the one agent-facing link a person could
-        use without knowing what an MCP endpoint is. The 2026-09 redesign
-        (issue #99) promoted it into the primary nav instead -- reachable
-        from every page either way, only where from changed -- so it no
-        longer duplicates here. -->
-      <a href="/llms.txt">llms.txt</a>
-      <a href="https://mcp.ryanlindsey.me/mcp">MCP</a>
-    </nav>
-    <span>Built on Cloudflare Workers &middot; Astro</span>
+    <div class="grid gap-9 sm:grid-cols-2 lg:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]">
+      <div>
+        <p class="font-display text-subheading text-ink">Ryan Lindsey</p>
+        <!--
+          Deliberately role-agnostic: no employer, no title, so it does not
+          need editing when the role changes. It is the same constraint
+          src/content/resume/ryan-lindsey.yaml's header records for
+          `basics.summary` (00 §5 -- the résumé names the employer in `work`,
+          positioning surfaces do not), and this is a positioning surface on
+          every page of the site.
+        -->
+        <p class="mt-3 max-w-[46ch] text-small text-ink-muted">
+          Engineering leadership and agentic engineering. I build the instruments that keep an
+          organization in step, and I still ship the code.
+        </p>
+      </div>
+
+      {
+        columns.map((column) => (
+          <div>
+            <p aria-hidden="true" class="font-mono text-micro text-ink-muted">
+              {column.heading}
+            </p>
+            <nav aria-label={column.label} class="mt-3 flex flex-col items-start gap-2">
+              {column.links.map((link) => (
+                <a
+                  href={link.href}
+                  class={column.mono ? 'font-mono text-small text-ink' : 'text-small text-ink'}
+                  target={isExternal(link.href) ? '_blank' : undefined}
+                  rel={isExternal(link.href) ? 'noopener' : undefined}
+                >
+                  {link.label}
+                </a>
+              ))}
+            </nav>
+          </div>
+        ))
+      }
+    </div>
+
+    <div
+      class="mt-7 flex flex-wrap items-baseline justify-between gap-4 border-t border-rule pt-[18px] font-mono text-micro text-ink-muted"
+    >
+      <span>&copy; {year} RYAN LINDSEY</span>
+      <span>
+        Built <a
+          href="https://github.com/ryanlindsey/ryanlindsey.me"
+          target="_blank"
+          rel="noopener"
+          class="text-accent">in the open</a
+        > on <a href="https://www.cloudflare.com" target="_blank" rel="noopener" class="text-accent"
+          >Cloudflare</a
+        >
+      </span>
+    </div>
   </div>
 </footer>

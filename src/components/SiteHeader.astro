@@ -28,13 +28,15 @@ const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`)
   <!--
     max-w-[1440px] px-10 is the redesign's own target geometry for this row --
     a 1440px cap and a 40px gutter -- and it does not match the rest of the
-    page yet. SiteFooter.astro and every page body still carry the
-    pre-redesign max-w-5xl px-6, so from roughly 1090px up the wordmark sits
-    well left of the content column and the footer's copyright line, on every
-    page, including ones this issue never touched. That gap is transitional,
-    not a bug: the later page issues in this epic widen the rest of the site
-    to meet this width, the way the mobile toggle button below is commented
-    as provisional rather than fixed.
+    page yet. Written when nothing else did: the sentence here used to name
+    SiteFooter.astro alongside every page body as still carrying the
+    pre-redesign max-w-5xl px-6. The footer stopped being one of them in
+    issue #100 and is now capped and guttered exactly like this row, so the
+    wordmark and the copyright line beneath it do align. Page bodies still do
+    not, from roughly 1090px up. That remaining gap is transitional, not a
+    bug: the later page issues in this epic widen the rest of the site to meet
+    this width, the way the mobile toggle button below is commented as
+    provisional rather than fixed.
   -->
   <div class="mx-auto flex h-[68px] max-w-[1440px] items-center gap-9 px-10">
     <a href="/" class="font-display text-subheading text-ink">Ryan Lindsey</a>
