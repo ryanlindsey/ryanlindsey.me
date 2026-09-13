@@ -1,0 +1,28 @@
+# The Now strip on the home page: one line naming what is in hand right now.
+#
+# THIS FILE IS MEANT TO BE EDITED OFTEN, AND IT GOES STALE BY DESIGN. It is
+# here, rather than in src/pages/index.astro, so that changing what the site
+# says Ryan is doing this month is a content commit and not a code change.
+# Edit this file and nothing else.
+#
+# Deliberately NOT in src/content/resume/ryan-lindsey.yaml, which was the other
+# option the redesign offered (issue #103). That file's own header rules it out:
+# it is the source of truth for four rendered résumé formats and "nothing in it
+# should exist only for one format's benefit". A line about this month is for
+# one surface. It is also loaded by a collection whose reader throws unless the
+# directory holds exactly one entry, so a second file there breaks /resume.
+#
+# Two rules this copy is held to, both from 00 §5 and the epic's global
+# constraints. No employer is named: the home page is a positioning surface,
+# and the résumé names the employer in `work` so that surfaces like this one do
+# not have to. And it is prose like any other on this site, so it is subject to
+# the `house-style` skill -- no em dashes, no contractions, American spelling:
+#
+#   node .claude/skills/house-style/scripts/check-prose.mjs <a file holding these lines>
+#
+# One clause per item. The template joins them with a middot, so no item
+# carries the separator itself.
+items:
+  - Rebuilding this site from a design handoff
+  - shipping armature, the plugin that hands an agent a board
+  - building Pixelsonly Racing solo

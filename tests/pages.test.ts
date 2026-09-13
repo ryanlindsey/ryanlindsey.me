@@ -424,18 +424,116 @@ test('the footer mails the address the résumé record carries, not a typed copy
   expect(markup).toContain(`mailto:${email}`);
 });
 
-test('keeps the holding page marker and is indexable since launch', async () => {
+test('the home page is the editorial lead story, and is still indexable', async () => {
   const page = await html('/');
-  expect(page).toContain('data-testid="holding-page"');
-  expect(page).toContain('<title>Ryan Lindsey</title>');
+  // The holding page is gone (2026-09 redesign, issue #103). What replaced it
+  // is asserted below; the robots half of this test is unchanged and its trap
+  // still applies.
+  //
   // Was `toContain('noindex')` before launch flipped Base.astro's default.
   // Asserted as the WHOLE attribute value rather than `toContain('index')`,
   // which "noindex" also satisfies -- and that is not hypothetical here: this
   // test went on passing after the default flipped, because an HTML comment in
   // Base.astro happened to contain the word "noindex" and `toContain` found
   // it. A substring check on this particular string is a trap.
+  expect(page).not.toContain('data-testid="holding-page"');
+  expect(page).toContain('<title>Ryan Lindsey</title>');
   expect(page).toMatch(/<meta name="robots" content="index, follow"\s*\/?>/);
   expect(page).not.toContain('noindex');
+});
+
+test('the Now strip leads the page and is a band, not a card', async () => {
+  const page = await html('/');
+  expect(page).toContain('data-now-strip');
+  expect(page).toMatch(/data-now-strip[\s\S]{0,600}NOW/);
+});
+
+test('the lead story is the most recent published post, linked whole', async () => {
+  const page = await html('/');
+  const posts = CONTENT_ENTRIES.filter((entry) => entry.section === 'writing' && !entry.draft);
+  expect(posts.length, 'no published posts to lead with').toBeGreaterThan(0);
+  const lead = /data-lead-story[\s\S]*?<\/(a|article|section)>/.exec(page);
+  expect(lead, 'no lead story on the home page').not.toBeNull();
+  // Not underlined: the design's rule for a whole-card wrapper link.
+  //
+  // `data-lead-story` is the FIRST attribute on that anchor in
+  // src/pages/index.astro, and has to be: this match starts at the attribute
+  // and ends at the first closing tag after it, so a `class` emitted ahead of
+  // it would put `no-underline` outside the window and pass a page that had
+  // dropped it.
+  expect(lead![0]).toContain('no-underline');
+});
+
+test('the home page never names an employer', async () => {
+  // 00 §5, the rule src/content/resume/ryan-lindsey.yaml's header records:
+  // the résumé names the employer in `work`, positioning surfaces do not.
+  // The prototype's bio copy broke this and the fix was to read the résumé
+  // record instead of typing a line -- so this asserts the outcome rather
+  // than the mechanism, and would catch someone pasting the copy back.
+  //
+  // SCOPED TO THE `work:` BLOCK, and it has to be. Issue #103 prescribed
+  // `/^\s{2}- name:/gm` over the whole file, which also matches `projects`
+  // and `skills` -- both sit at the same indentation. MEASURED (2026-09-13,
+  // before this page existed, against the /writing page then shipping): the
+  // unscoped form pulled thirteen names, five of them not employers, and
+  // failed on three of those. "Pixelsonly Racing" is a project, and #100
+  // requires the footer to name it in full. "Engineering leadership" is a
+  // skill, and the footer tagline's first two words. "Agentic engineering"
+  // is a skill AND `PILLAR_LABELS['agentic-engineering']`, which this page's
+  // own lead kicker renders -- so the unscoped test forbade the design it was
+  // written for. The issue body carries the correction and why.
+  //
+  // The needle is checked escaped as well as raw. `Y&R Brands / Wunderman`
+  // would reach the page as `Y&amp;R Brands / Wunderman`, so a raw-only
+  // `toContain` could never fail for that employer, and a negative assertion
+  // that cannot fail is not a check.
+  const page = await html('/');
+  const yaml = readFileSync(resumeYamlPath, 'utf8');
+  const workBlock = /^work:\n([\s\S]*?)(?=^\S)/m.exec(yaml);
+  expect(workBlock, 'no work: block found in the résumé YAML').not.toBeNull();
+  const employers = [...workBlock![1].matchAll(/^\s{2}- name:\s*(.+)$/gm)].map((m) => m[1].trim());
+  expect(employers.length, 'no work entries found to check against').toBeGreaterThan(0);
+  for (const employer of employers) {
+    if (employer === 'Freelance') continue;
+    for (const needle of [employer, employer.replaceAll('&', '&amp;')]) {
+      expect(page, `${employer} is named on a positioning surface`).not.toContain(needle);
+    }
+  }
+});
+
+test('the bio block is built from the résumé record, not typed into the page', async () => {
+  const page = await html('/');
+  const yaml = readFileSync(resumeYamlPath, 'utf8');
+  const label = /^\s{2}label:\s*(.+)$/m.exec(yaml)![1].trim();
+  // Scoped to the bio block's own element, not the whole page. MEASURED
+  // (2026-09-13) against the holding page this issue replaced: a bare
+  // `expect(page).toContain(label)` ALREADY PASSED there, because Base.astro
+  // emits the same string as the JSON-LD Person's `jobTitle` on every page.
+  // An assertion satisfied by markup that has nothing to do with the block it
+  // names could never fail for the thing its title claims -- the same trap
+  // the search-placeholder test above records having fallen into once.
+  const bio = /data-bio[\s\S]*?<\/div>/.exec(page);
+  expect(bio, 'no bio block on the home page').not.toBeNull();
+  expect(bio![0]).toContain(label);
+});
+
+test('more writing is a hairline grid of the next three posts', async () => {
+  const page = await html('/');
+  const section = /data-more-writing[\s\S]*?<\/section>/.exec(page);
+  expect(section, 'no more-writing section').not.toBeNull();
+  expect(section![0]).toContain('hairline-grid');
+  const published = CONTENT_ENTRIES.filter((entry) => entry.section === 'writing' && !entry.draft);
+  const cells = [...section![0].matchAll(/href="\/writing\//g)].length;
+  // Follows the count rather than rendering an empty cell, and never repeats
+  // the lead story.
+  expect(cells).toBe(Math.min(3, Math.max(0, published.length - 1)));
+});
+
+test('no draft reaches the home page', async () => {
+  const page = await html('/');
+  for (const entry of CONTENT_ENTRIES.filter((e) => e.section === 'writing' && e.draft)) {
+    expect(page, `draft ${entry.slug} is on the home page`).not.toContain(`/writing/${entry.slug}`);
+  }
 });
 
 test('carries no candidacy language on any public surface', async () => {
