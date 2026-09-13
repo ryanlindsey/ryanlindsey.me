@@ -295,6 +295,35 @@ test('an un-granted /fit is indistinguishable from a path that does not exist', 
   }
 });
 
+test('the 404 body is byte-identical across paths, whatever the design shows', async () => {
+  // 3a puts the requested path in a box on this page. It is filled
+  // client-side from location.pathname for exactly this reason: the response
+  // is /fit's refusal, and a server-rendered path echo makes an un-granted
+  // /fit distinguishable from a path that was never routed. The box's chrome
+  // ships; its contents do not.
+  //
+  // The test above already compares two unrouted controls against each other
+  // and would fail on the same regression. This one exists to be FOUND: it
+  // names the rule in its own title, so whoever rebuilds this page next meets
+  // the constraint before they meet the bug. That one is about `/fit`; this
+  // one is about the 404, and a reader would describe their failures
+  // differently even on the day one mistake trips both.
+  const a = await (await server.fetch('/no-such-page-alpha')).text();
+  const b = await (await server.fetch('/definitely/not/here/beta')).text();
+  expect(a).toBe(b);
+  expect(a).not.toContain('alpha');
+  expect(a).not.toContain('beta');
+});
+
+test('the requested box is hidden until script fills it', async () => {
+  // Never an empty labelled box for a visitor without JavaScript -- the same
+  // "never render an empty cell" rule the rest of the redesign follows.
+  const page = await (await server.fetch('/no-such-page')).text();
+  const box = /data-requested-box[^>]*>/.exec(page);
+  expect(box, 'no requested box').not.toBeNull();
+  expect(box![0]).toContain('hidden');
+});
+
 test('the page copy carries no search language', async () => {
   const html = await (await server.fetch(`/fit?t=${await grant()}`)).text();
   for (const pattern of BANNED_PATTERNS) expect(html).not.toMatch(pattern);

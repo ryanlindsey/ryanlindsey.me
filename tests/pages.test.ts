@@ -1328,6 +1328,79 @@ test('omits series navigation for a one-post series', async () => {
   expect(page).not.toContain('data-series-nav');
 });
 
+// The 404 (design 3a, issue #112). `html()` is not used below: it asserts a
+// 200, and this page's whole job is to answer 404. The invisibility half of
+// this page -- that its body is the same bytes whatever path produced it --
+// lives in tests/fit-pages.test.ts, beside the `/fit` refusal that depends on
+// it. What is asserted here is the half that is allowed to have content.
+test('the 404 offers recent writing, which is the same on every path', async () => {
+  const page = await (await server.fetch('/no-such-page')).text();
+  expect(page).toContain('MOST RECENT WRITING');
+  const published = CONTENT_ENTRIES.filter((e) => e.section === 'writing' && !e.draft);
+  const rows = [...page.matchAll(/data-recent-row/g)].length;
+  // Derived from the content collection rather than from the request, which
+  // is what makes it safe to render here at all. Follows the count rather
+  // than rendering an empty row, the same rule the home page's more-writing
+  // grid follows.
+  expect(rows).toBe(Math.min(3, published.length));
+  for (const entry of CONTENT_ENTRIES.filter((e) => e.draft)) {
+    expect(page).not.toContain(`/${entry.section}/${entry.slug}`);
+  }
+});
+
+test('the 404 fills the requested box as text, never as HTML', async () => {
+  // location.pathname is attacker-controlled in the sense that anyone can
+  // craft a URL, and this is the one page every unrouted request lands on.
+  // `textContent` is the whole defense; `innerHTML` here would be a reflected
+  // XSS on the site's widest surface. Asserted against the shipped script
+  // rather than the source file, because it is the shipped one that runs.
+  const page = await (await server.fetch('/no-such-page')).text();
+  const scripts = [...page.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  const fill = scripts.find((body) => body.includes('data-requested-box'));
+  expect(fill, 'no inline script fills the requested box').toBeDefined();
+  expect(fill).toContain('textContent');
+  expect(fill).not.toContain('innerHTML');
+});
+
+test('the 404 mails the address the résumé record carries, not a typed copy', async () => {
+  // Same rule the footer follows, applied to the one mail link on this page:
+  // the résumé record is the source of truth for the address, and reading it
+  // is what stops a second copy drifting from it.
+  //
+  // Scoped to <main>, because the footer carries its own mailto: on every
+  // page of the site -- including this one. Unscoped, this passed against the
+  // page that had no mail link of its own at all, which is the shape of
+  // assertion that proves nothing.
+  const page = await (await server.fetch('/no-such-page')).text();
+  const main = /<main\b[^>]*>[\s\S]*?<\/main>/.exec(page);
+  expect(main, 'no main landmark on the 404').not.toBeNull();
+  const email = /^\s*email:\s*(\S+)\s*$/m.exec(readFileSync(resumeYamlPath, 'utf8'))?.[1];
+  expect(email, 'no email in the résumé record').toBeTruthy();
+  expect(main![0]).toContain(`mailto:${email}`);
+});
+
+test('the 404 stays prerendered', async () => {
+  // An on-demand 404 would answer from a different code path than the asset
+  // server's, which is what serves it today -- and src/worker.ts's flattening
+  // of every /fit refusal to this page depends on that. What it would actually
+  // leak is the canonical tag, which Base.astro renders from Astro.url.pathname;
+  // src/pages/404.astro's header carries the measurement.
+  //
+  // Matched against the frontmatter script with its comments stripped, not
+  // against the file. Both cruder forms of this test failed on the same file
+  // for the same reason: the page's header explains what the opt-out would
+  // cost and quotes the declaration to do it, so a scan of the raw source
+  // cannot tell the explanation from the thing explained, and punishes the
+  // file for documenting the rule this test exists to enforce. That is the
+  // trap tests/print.test.ts and tests/type-scale.test.ts both record having
+  // hit; this is their fix applied a third time.
+  const source = readFileSync(new URL('../src/pages/404.astro', import.meta.url), 'utf8');
+  const frontmatter = /^---\n([\s\S]*?)\n---/.exec(source);
+  expect(frontmatter, 'no frontmatter fence in 404.astro').not.toBeNull();
+  const code = frontmatter![1].replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  expect(code).not.toMatch(/export\s+const\s+prerender\s*=\s*false/);
+});
+
 test('serves a resume page with a section structure', async () => {
   const page = await html('/resume');
   expect(page).toContain('<h1');

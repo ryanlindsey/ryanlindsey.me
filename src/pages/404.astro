@@ -1,8 +1,10 @@
 ---
+import { getCollection } from 'astro:content';
 import Shell from '../layouts/Shell.astro';
+import { getResume } from '../lib/resume-collection';
 
 /**
- * The site's 404 (day 5 Task 13, fix round 1).
+ * The site's 404 (day 5 Task 13, fix round 1; rebuilt for design 3a, issue #112).
  *
  * It exists for `/fit`, and the reasoning is worth keeping because the page
  * looks like ordinary polish and is not. Without this route, Astro answers an
@@ -21,15 +23,205 @@ import Shell from '../layouts/Shell.astro';
  * not a "did you mean" -- or `/fit`'s refusal becomes distinguishable again.
  * And it must stay prerendered: an on-demand 404 would answer from a different
  * code path than the asset server's, which is what serves it today.
+ *
+ * WHAT "STAY PRERENDERED" ACTUALLY PROTECTS, measured 2026-09-13 while
+ * rebuilding this page: Base.astro renders `<link rel="canonical">` from
+ * `Astro.url.pathname`, so a per-request render of this page names the
+ * requested path in the head. `npm run dev` does render it per request, and
+ * two unrouted paths diff there on exactly that one line -- which is a
+ * property of the dev server rather than of the artifact, and predates this
+ * redesign. Prerendered, the tag is the constant `/404/` and every path gets
+ * the same bytes. So the rule is not a stylistic preference about code paths:
+ * `export const prerender = false` on this file would leak the path through
+ * shared chrome nobody editing this page would think to look at. Diff the
+ * BUILT artifact (`npx wrangler dev`), never the dev server.
+ *
+ * DESIGN 3a ASKED FOR EXACTLY THE FORBIDDEN THING, and the resolution is the
+ * shape of this file. The design puts a `REQUESTED <path>` box on the left
+ * column. Server-rendering that path is the one edit this page cannot survive:
+ * it would make an un-granted `/fit` distinguishable from a path that was
+ * never routed, which is the whole defect the page was built to close.
+ *
+ * So the box's CHROME ships and its CONTENTS do not. The markup below is the
+ * same for every path; the inline script at the foot of the page fills the
+ * path in from `location.pathname` and unhides the box. The response bytes
+ * stay identical, the visitor still sees the address they asked for, and
+ * nothing is disclosed -- the path is something the visitor already typed,
+ * and the box says nothing about whether a route exists there.
+ *
+ * The same reasoning rules out every near miss: a `<noscript>` fallback, a
+ * `data-` attribute, a meta tag, the `<title>`. Each is server-rendered
+ * content derived from the request, and each defeats the arrangement exactly
+ * as a rendered path would. If the box ever needs to work without JavaScript,
+ * the answer is to drop the box, not to render the path.
+ *
+ * MOST RECENT WRITING is the other half of the design and is safe for the
+ * reason the path is not: it comes from the content collection, so it is the
+ * same on every path and at every hour of the same build.
+ *
+ * tests/fit-pages.test.ts is what holds all of this: it compares the WHOLE
+ * observable response for `/fit` against two unrouted controls, and carries a
+ * case named for this rule beside it.
  */
+
+// Same query shape as the home page's lead-and-cells split: one sorted query,
+// sliced. The design shows three rows and the count follows the collection,
+// so a site with two published posts renders two rows rather than a rule with
+// nothing under it.
+const recent = (await getCollection('posts', ({ data }) => !data.draft))
+  .sort((a, b) => b.data.publishedAt.getTime() - a.data.publishedAt.getTime())
+  .slice(0, 3);
+
+const { basics } = await getResume();
+
+const day = (date: Date) => date.toISOString().slice(0, 10);
+
+// Whole class strings rather than an assembled one: Tailwind v4 scans this
+// file as text and never sees a class name built at runtime. Both chip shapes
+// carry `no-underline` at the call site, which is the mechanism the primitives
+// issue (#98) chose for "anything with a border or a filled background" --
+// there is no selector that means "has a border".
+const CHIP_OUTLINED =
+  'border border-rule px-[13px] py-[9px] font-mono text-small text-ink no-underline';
+const CHIP_FILLED =
+  'bg-accent-ground px-[13px] py-[9px] font-mono text-small text-accent-on no-underline';
+
+const CHIPS = [
+  { href: '/writing', label: 'All writing', filled: false },
+  { href: '/work', label: 'Case studies', filled: false },
+  { href: '/resume', label: 'Resume', filled: false },
+  // Filled, because it is the one destination on this page that answers a
+  // question rather than listing more pages to read.
+  { href: '/chat', label: 'Ask my agent', filled: true },
+];
 ---
 
-<Shell title="404: Not found" description="That page does not exist.">
-  <section class="mx-auto max-w-5xl px-6 py-24">
-    <p class="mb-6 border-t border-accent pt-3 font-mono text-micro uppercase text-accent">404</p>
-    <h1 class="max-w-3xl font-display text-display text-ink">That page does not exist.</h1>
-    <p class="mt-8 max-w-xl text-ink-muted">
-      Nothing is served at this address. <a class="underline" href="/">Start from the home page</a>.
-    </p>
+<Shell title="404: Not found" description="Nothing is published at that address.">
+  <section
+    class="mx-auto grid max-w-[1440px] items-start gap-12 px-5 pb-14 pt-14 lg:grid-cols-2 lg:gap-[72px] lg:px-10 lg:pb-[72px] lg:pt-[88px]"
+  >
+    <div>
+      <p class="font-display text-numeral text-ink">404</p>
+      <h1 class="mt-[26px] max-w-[20ch] font-display text-title text-ink">
+        Nothing is published at that address.
+      </h1>
+      <p class="mt-[18px] max-w-[56ch] text-body text-ink-muted">
+        The link may be old, or it may never have existed. Either way this page is the honest answer
+        rather than a redirect to the homepage that pretends you asked for something else.
+      </p>
+
+      <!--
+        NO DISPLAY UTILITY ON THIS ELEMENT, and that is the whole reason the
+        box is two divs rather than one. `hidden` is an attribute, and the
+        user-agent `[hidden] { display: none }` it relies on sits in a lower
+        layer than Tailwind's utilities: an author `display: flex` here would
+        outrank it and the box would ship permanently open and permanently
+        empty, which is the one state this arrangement exists to prevent.
+        MobileNav.astro carries the same note over the same trap.
+
+        `hidden` rather than a class for the other reason too: it takes the
+        element out of the accessibility tree, which a `display: none` utility
+        also does, but only as a side effect of a style anything later in the
+        cascade can win against.
+      -->
+      <div data-requested-box hidden class="mt-[22px] border border-rule px-[18px] py-[14px]">
+        <div class="flex items-center gap-[14px]">
+          <span class="font-mono text-micro text-ink-muted">REQUESTED</span>
+          <span data-requested-path class="min-w-0 truncate font-mono text-small text-ink"></span>
+          <span class="ml-auto shrink-0 font-mono text-micro text-danger">404</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-[34px] lg:pt-[10px]">
+      <div>
+        <!--
+          The visible label is set in capitals because the design sets it that
+          way, and an all-capital string is what a screen reader is liable to
+          spell out letter by letter. So the landmark is named by `aria-label`
+          in ordinary sentence case and the visible <p> is hidden from the
+          accessibility tree. Same arrangement as the footer's four columns,
+          and for the same reason.
+        -->
+        <p aria-hidden="true" class="font-mono text-micro text-ink-muted">MOST RECENT WRITING</p>
+        <nav aria-label="Most recent writing" class="mt-4 border-t border-rule">
+          {
+            recent.map((post) => (
+              <a
+                data-recent-row
+                href={`/writing/${post.id}`}
+                class="grid items-baseline gap-5 border-b border-rule py-[14px] no-underline sm:grid-cols-[100px_minmax(0,1fr)]"
+              >
+                <time
+                  data-numeric
+                  datetime={post.data.publishedAt.toISOString()}
+                  class="font-mono text-micro text-ink-muted"
+                >
+                  {day(post.data.publishedAt)}
+                </time>
+                <span class="font-display text-subheading text-ink">{post.data.title}</span>
+              </a>
+            ))
+          }
+        </nav>
+      </div>
+
+      <div>
+        <p aria-hidden="true" class="font-mono text-micro text-ink-muted">
+          OR START SOMEWHERE ELSE
+        </p>
+        <nav aria-label="Start somewhere else" class="mt-[14px] flex flex-wrap gap-2">
+          {
+            CHIPS.map((chip) => (
+              <a href={chip.href} class={chip.filled ? CHIP_FILLED : CHIP_OUTLINED}>
+                {chip.label}
+              </a>
+            ))
+          }
+        </nav>
+      </div>
+
+      {
+        /*
+         * The offer is only real if there is an address to send it to, and
+         * `basics.email` is optional in the résumé schema. A record without
+         * one renders no closing line rather than a sentence inviting a
+         * reader to write to nobody -- resumeGaps() already reports the
+         * missing field, and this surface should not invent an address to
+         * cover for it. Same call the footer makes about its Email link.
+         */
+        basics.email && (
+          <p class="max-w-[52ch] text-small text-ink-muted">
+            If you arrived from a link on another site,{' '}
+            <a href={`mailto:${basics.email}`}>tell me where it was</a> and I will point the old
+            address at the right one.
+          </p>
+        )
+      }
+    </div>
   </section>
+
+  <!--
+    INLINE AND AT THE FOOT OF THE PAGE, not a module script. Astro bundles a
+    module script and defers it, which would paint the page with the box shut
+    and then shift the left column when it opened. Base.astro's theme script
+    is inline for the same reason and says so. This one is small enough that
+    the parser cost is noise, and it runs at parse time with the box already
+    above it in the document, so it needs no DOMContentLoaded.
+
+    `textContent`, never `innerHTML`. Anyone can craft a URL, and this is the
+    one page every unrouted request on the site lands on, so an `innerHTML`
+    here would be a reflected XSS on the widest surface there is. Inserting as
+    text is the entire defense; nothing below escapes anything, because
+    nothing below needs to.
+  -->
+  <script is:inline>
+    (() => {
+      const box = document.querySelector('[data-requested-box]');
+      const slot = box && box.querySelector('[data-requested-path]');
+      if (!slot) return;
+      slot.textContent = location.pathname;
+      box.removeAttribute('hidden');
+    })();
+  </script>
 </Shell>
