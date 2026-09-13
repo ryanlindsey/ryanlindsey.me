@@ -255,15 +255,38 @@ const FLOW = '@3xl:grid-cols-[minmax(0,1fr)_168px_minmax(0,1fr)]';
         on its own, which is where it belongs and what it says; side by side it
         is the 168px track. The two labels are content -- they name what crosses
         the binding -- while the rules and the glyphs are not.
+
+        THE ARROWS ARE THE EXCEPTION, and issue #113 calls it correctly: this is
+        a content problem wearing a layout problem's clothes. The labels survive
+        the stack unchanged because "/mcp · chat · forms" names the traffic
+        whichever way the boxes sit. `▶` does not. Stacked, the site Worker is
+        ABOVE and the MCP Worker BELOW, so that traffic runs down and the
+        document reads run back up, and an arrow pointing right says neither.
+
+        So the connectors turn with the layout: a vertical rule into a `▼` and a
+        `▲` into a vertical rule while stacked, the original horizontal pair at
+        `@3xl`. Both pairs ship and the container query picks one, which is the
+        same mechanism the rest of this component already uses -- and a
+        container query rather than a media query for the reason the file header
+        gives, that /ops and agent-native-site.mdx render this at widths that
+        differ by half at the same viewport.
       */
     }
-    <div class="flex flex-col justify-center gap-1.5 py-6 @3xl:px-5 @3xl:py-0">
+    <div data-binding-gutter class="flex flex-col justify-center gap-1.5 py-6 @3xl:px-5 @3xl:py-0">
       <p class="text-center font-mono text-micro text-ink-muted">/mcp · chat · forms</p>
-      <p class="flex items-center">
+      <p class="flex flex-col items-center @3xl:hidden">
+        <span aria-hidden="true" class="h-6 w-px bg-accent"></span>
+        <span aria-hidden="true" class="-mt-px leading-none text-accent">▼</span>
+      </p>
+      <p class="hidden items-center @3xl:flex">
         <span aria-hidden="true" class="h-px flex-1 bg-accent"></span>
         <span aria-hidden="true" class="-ml-px leading-none text-accent">▶</span>
       </p>
-      <p class="flex items-center">
+      <p class="flex flex-col items-center @3xl:hidden">
+        <span aria-hidden="true" class="-mb-px leading-none text-accent">▲</span>
+        <span aria-hidden="true" class="h-6 w-px bg-accent"></span>
+      </p>
+      <p class="hidden items-center @3xl:flex">
         <span aria-hidden="true" class="-mr-px leading-none text-accent">◀</span>
         <span aria-hidden="true" class="h-px flex-1 bg-accent"></span>
       </p>
