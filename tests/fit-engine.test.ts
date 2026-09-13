@@ -412,7 +412,9 @@ test('a corpus that will not load is a FitUnavailable naming no internals', asyn
   // ``/llms.txt returned ${status} from ${env.SITE_ORIGIN}`` on a non-ok
   // index, which is an internals-naming error on exactly the failure issue #28
   // produced in production (a 522 on this fetch). Unwrapped, that string was
-  // the caller's answer.
+  // the caller's answer. The pattern below tracks the REPLACEMENT sentence,
+  // which is reader-facing copy (issue #133 took "the corpus" out of it), so a
+  // reword of that sentence lands here rather than reading as a broken wrap.
   const result = analyzeFit(
     env({
       SITE: {
@@ -422,7 +424,7 @@ test('a corpus that will not load is a FitUnavailable naming no internals', asyn
     'A target description.',
   );
   await expect(result).rejects.toBeInstanceOf(FitUnavailable);
-  await expect(result).rejects.toThrow(/corpus could not be read/i);
+  await expect(result).rejects.toThrow(/published work could not be read/i);
   await expect(result).rejects.not.toThrow(/522|llms\.txt|site\.test/);
 });
 

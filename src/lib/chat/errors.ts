@@ -23,10 +23,10 @@ export const CHAT_ERROR_COPY: Record<ChatErrorCode, string> = {
   // rather than "something went wrong": the budget is a published number on
   // /ops and the breaker resetting is a fact the reader can check.
   paused:
-    'The daily inference budget breaker is tripped, so chat is paused until it resets. The corpus is still readable at /llms.txt, and the MCP endpoint still answers.',
+    'The daily inference budget breaker is tripped, so chat is paused until it resets. Everything published is still readable at /llms.txt, and the MCP endpoint still answers.',
   unreachable: 'The chat service could not be reached. Try again shortly.',
   'no-answer':
-    'That produced nothing usable. The corpus is at /llms.txt if you would rather read it directly.',
+    'That produced nothing usable. Everything published is at /llms.txt if you would rather read it directly.',
 };
 
 export function chatErrorCopy(raw: string | null): string | null {
