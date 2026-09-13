@@ -469,12 +469,38 @@
  * Declares no colour of its own. tokens.css remains the only file in this
  * repo that names one, and tests/tokens.test.ts asserts this file holds no hex
  * literal.
+ *
+ * THE CASE-STUDY MASTHEAD JOINED IT in the dark-theme pass (cited by name, per
+ * the note on the footer link rule above). It is the same shape of block and
+ * the same judgement -- 1280x456 of near-white under a dark header, where the
+ * strip is 1280x56 -- so it drops the inversion the same way.
+ * src/layouts/ArticleLayout.astro carries the `dark:` half and
+ * the reasoning, including why the kicker needs no variant of its own. The
+ * meta line needs its own selector because `[&_p]:text-bg` is a utility on the
+ * wrapper, and reaching it by `[data-masthead='case-study'] p` would recolour
+ * the kicker and the standfirst too.
+ *
+ * SCOPED TO `screen`, which the strip's rule was not until that pass. These
+ * selectors are (0,3,0); the `@media print` rule that has to take both blocks
+ * back to the drawn design is (0,1,0), and an unlayered rule cannot out-rank
+ * another unlayered rule on source order alone. MEASURED 2026-09-13, printing
+ * / over CDP with prefers-color-scheme: dark: the strip printed as a bar still
+ * carrying the dark value of --rl-surface-raised, with black ink on it at
+ * 1.24:1, because that is the one token the forced-light print palette does
+ * not redeclare. `screen` keeps this treatment on the medium it was designed
+ * for and lets the print block win without an !important or a specificity
+ * race.
  */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) [data-now-strip] {
+@media screen and (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) [data-now-strip],
+  :root:not([data-theme='light']) [data-masthead='case-study'] {
     background-color: var(--rl-surface-raised);
     color: var(--rl-ink);
     border-bottom: 1px solid var(--rl-rule);
+  }
+
+  :root:not([data-theme='light']) [data-masthead='case-study'] [data-masthead-meta] p {
+    color: var(--rl-ink);
   }
 }
 
@@ -710,6 +736,37 @@
 
   main {
     padding: 0;
+  }
+
+  /*
+   * The two blocks that are filled with --rl-ink in light and drop the
+   * inversion in dark, pinned back to the design that was drawn. Paper is
+   * neither theme, and the forced-light palette in tokens.css exists so a
+   * sheet does not depend on what the reader picked; without this they would
+   * still take whichever branch the reader's theme selects, because `dark:`
+   * keys off an attribute rather than off the medium.
+   *
+   * MEASURED 2026-09-13, printing / over CDP with prefers-color-scheme: dark:
+   * the Now strip came out a bar still carrying the dark value of
+   * --rl-surface-raised, with black ink on it at 1.24:1. That is the one token
+   * the print palette does not redeclare, so the ground stayed dark while the
+   * ink on it went black. Fixed here rather than by adding that token to the
+   * print palette: the problem belongs to the two blocks that invert, not to
+   * every raised surface on the site, and the palette is not a page's to
+   * retune.
+   *
+   * The meta line needs the second rule because `[&_p]:text-bg` and its dark
+   * twin are utilities, and both resolve wrongly on a white sheet -- white ink
+   * in light, black ink on the black panel in dark.
+   */
+  [data-now-strip],
+  [data-masthead='case-study'] {
+    background-color: var(--rl-ink);
+    color: var(--rl-bg);
+  }
+
+  [data-masthead='case-study'] [data-masthead-meta] p {
+    color: var(--rl-bg);
   }
 
   /*

@@ -41,17 +41,15 @@ function extractMediaPrintBlock(source: string): string {
 }
 
 /**
- * Pull the selector list of the rule that carries `display: none !important`
- * inside the given block -- i.e. the chrome-hiding rule -- as an array of
- * trimmed, comma-split selector tokens. Selector-level, not substring: this
- * is what lets the guard test tell `[data-site-header]` apart from a bare
- * `header` even though the former contains the latter as a substring.
+ * Pull the selector list of the rule carrying `declaration` inside the given
+ * block, as an array of trimmed, comma-split selector tokens. Selector-level,
+ * not substring: this is what lets the guard test tell `[data-site-header]`
+ * apart from a bare `header` even though the former contains the latter as a
+ * substring.
  */
-function chromeHidingSelectors(block: string): string[] {
-  const ruleStart = block.indexOf('display: none !important');
-  expect(ruleStart, 'no "display: none !important" rule found in the print block').toBeGreaterThan(
-    -1,
-  );
+function selectorsCarrying(block: string, declaration: string): string[] {
+  const ruleStart = block.indexOf(declaration);
+  expect(ruleStart, `no "${declaration}" rule found in the print block`).toBeGreaterThan(-1);
   const openBrace = block.lastIndexOf('{', ruleStart);
   const selectorStart = block.lastIndexOf('}', openBrace) + 1;
   return block
@@ -62,25 +60,16 @@ function chromeHidingSelectors(block: string): string[] {
 }
 
 /**
- * Pull the selector list of the rule that overrides the --rl-* palette --
- * identified by `--rl-bg: #ffffff`, the print-only forced-light value -- as
- * an array of trimmed, comma-split selector tokens. Same technique as
- * chromeHidingSelectors above, anchored on a different declaration.
+ * The chrome-hiding rule.
  */
-function paletteOverrideSelectors(block: string): string[] {
-  const ruleStart = block.indexOf('--rl-bg: #ffffff');
-  expect(
-    ruleStart,
-    'no "--rl-bg: #ffffff" palette override found in the print block',
-  ).toBeGreaterThan(-1);
-  const openBrace = block.lastIndexOf('{', ruleStart);
-  const selectorStart = block.lastIndexOf('}', openBrace) + 1;
-  return block
-    .slice(selectorStart, openBrace)
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
+const chromeHidingSelectors = (block: string) =>
+  selectorsCarrying(block, 'display: none !important');
+
+/**
+ * The rule that overrides the --rl-* palette, identified by `--rl-bg:
+ * #ffffff`, the print-only forced-light value.
+ */
+const paletteOverrideSelectors = (block: string) => selectorsCarrying(block, '--rl-bg: #ffffff');
 
 const printBlock = extractMediaPrintBlock(css);
 const tokensPrintBlock = extractMediaPrintBlock(tokensCss);
@@ -121,6 +110,27 @@ describe('print rules', () => {
     // Overriding the palette is not enough on its own; the property that
     // decides the canvas has to be overridden with it.
     expect(tokensPrintBlock).toMatch(/color-scheme:\s*light/);
+  });
+
+  test('pins the blocks that invert to the light design, whatever the reader picked', () => {
+    // The Now strip and the case-study masthead are filled with --rl-ink in
+    // light and drop the inversion in dark (see tests/inverted-blocks.test.ts).
+    // Paper is neither theme, and the print palette exists so the sheet does
+    // not depend on what the reader chose -- so both blocks are pinned here to
+    // the one design that was drawn, rather than being left to whichever
+    // branch the reader's theme happens to select.
+    //
+    // MEASURED 2026-09-13, printing / over CDP with prefers-color-scheme:
+    // dark: the Now strip came out a #1c1c1f bar carrying black text, 1.24:1.
+    // The dark treatment sets `background-color: var(--rl-surface-raised)`,
+    // and that is the one token the forced-light palette below does not
+    // redeclare, so it stayed dark while the ink on it went black. Pinning
+    // here rather than adding a token to the print palette, because the fix
+    // belongs to the two blocks that invert and not to every raised surface
+    // on the site.
+    const pinned = selectorsCarrying(printBlock, 'background-color: var(--rl-ink)');
+    expect(pinned).toContain('[data-now-strip]');
+    expect(pinned).toContain("[data-masthead='case-study']");
   });
 
   test('out-specifies the no-JS dark block so the light palette always wins', () => {

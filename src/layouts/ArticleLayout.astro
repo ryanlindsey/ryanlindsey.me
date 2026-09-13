@@ -103,15 +103,39 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site).href;
  * assembled from fragments -- same constraint, same shape, as `FIGURE_COLUMNS`
  * in src/pages/work/index.astro and `SEVERITY_CLASS` in src/pages/ai-policy.astro.
  *
- * THE INVERTED BRANCH USES THE TOKENS MECHANICALLY AND CARRIES NO `dark:`
- * VARIANT, which is a decision rather than an omission. In dark, `--rl-ink` is
- * the near-white end of the ramp and `--rl-bg` the near-black one, so this
- * panel flips to a white block with dark text -- the very effect the homepage
- * Now strip was redesigned to avoid, and the one place in this redesign that
- * carries a `dark:` variant. The 1j issue's instruction for exactly this case
- * is to render it with the tokens, look at it, and hand the observation to the
- * dark-theme pass rather than inventing a second design here. See the pull
- * request for what it actually looks like.
+ * THE INVERTED BRANCH CARRIED NO `dark:` VARIANT until the dark-theme pass
+ * (issue #114), and that was a decision rather than an omission: it rendered
+ * the tokens mechanically so that somebody would look at the result. In dark
+ * `--rl-ink` is the near-white end of the ramp and `--rl-bg` the near-black
+ * one, so the panel flipped to a white block with dark text, and 1j's
+ * instruction for exactly this case was to render it, look at it, and hand the
+ * observation to the dark pass rather than invent a second design here.
+ *
+ * LOOKED AT 2026-09-13, at 1280px in all three theme states. It is the effect
+ * the homepage Now strip was redesigned to avoid, at eight times the height:
+ * 1280x456 of near-white directly beneath a dark header, opening a page whose
+ * body is dark. It reads as glare rather than as emphasis, which is the same
+ * judgement the Now strip got and the reason that strip is not the only place
+ * in this redesign carrying a `dark:` variant any more.
+ *
+ * The kicker is what made it measurable. `--rl-accent-ground` is the accent
+ * token that does NOT flip -- it carries the same value in both themes -- so
+ * the pink that clears 5.71:1 on the near-black panel fell to 3.32:1 on the
+ * near-white one, failing AA on the only text in the panel small enough to
+ * need 4.5.
+ *
+ * So this branch now drops the inversion the way the Now strip does:
+ * `--rl-surface-raised`, plus the bottom rule the light design does not need.
+ * The black panel's own edge is what closes it, and a raised surface is 1.16:1
+ * against the page behind it, so without that rule nothing separates the
+ * masthead from the facts bar. The kicker needs no variant of its own --
+ * `--rl-accent` and `--rl-accent-ground` are the same value in dark, and the
+ * same pink clears 4.91:1 on the raised panel.
+ *
+ * THREE FILES, ONE DECISION. global.css carries the matching
+ * `prefers-color-scheme` rule for the visitor who never receives the attribute,
+ * and pins this block to the light design in `@media print`, because paper is
+ * neither theme. tests/inverted-blocks.test.ts asserts they stay together.
  *
  * `title` and `standfirst` name no colour in the case-study branch on purpose:
  * they inherit `text-bg` from the shell, so there is one place the inversion
@@ -127,7 +151,7 @@ const MASTHEAD = {
     meta: 'mt-7',
   },
   'case-study': {
-    shell: 'bg-ink text-bg',
+    shell: 'bg-ink text-bg dark:border-b dark:border-rule dark:bg-surface-raised dark:text-ink',
     // 56px / 40px / 44px, and no bottom rule: the black panel's own edge is
     // what closes it, with the facts bar (or the spine) starting directly
     // underneath.
@@ -141,7 +165,11 @@ const MASTHEAD = {
     // Overridden from the wrapper rather than by giving ArticleMeta a tone
     // prop, because the masthead is what branches and nothing else should have
     // to learn that this variant exists.
-    meta: 'mt-7 opacity-[.7] [&_p]:text-bg',
+    //
+    // The dark half follows the shell above: once the panel stops inverting,
+    // text-bg is near-black on a near-black surface, so the override has to
+    // drop with the inversion rather than outlive it.
+    meta: 'mt-7 opacity-[.7] [&_p]:text-bg dark:[&_p]:text-ink',
   },
 } as const;
 
@@ -189,7 +217,12 @@ const FACT_COLUMNS: Record<number, string> = {
         </p>
         <h1 class={masthead.title}>{title}</h1>
         <p class={masthead.standfirst}>{description}</p>
-        <div class={masthead.meta}>
+        <!-- data-masthead-meta is a styling hook, not a test hook: the two
+             rules in global.css that have to reach past `[&_p]:text-bg` (the
+             no-JS dark path and the print pin) need a selector for this
+             wrapper, and `[data-masthead='case-study'] p` would take the
+             kicker and the standfirst with it. -->
+        <div data-masthead-meta class={masthead.meta}>
           <ArticleMeta publishedAt={publishedAt} updatedAt={updatedAt} readingTime={readingTime} />
         </div>
       </div>
