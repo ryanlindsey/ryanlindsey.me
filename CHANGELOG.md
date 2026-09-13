@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.16.1...ryanlindsey-me-v1.17.0) (2026-09-13)
+
+
+### Features
+
+* **design:** widen the type scale for the redesign ([#117](https://github.com/ryanlindsey/ryanlindsey.me/issues/117)) ([a983aea](https://github.com/ryanlindsey/ryanlindsey.me/commit/a983aea45b66ee411660d1b4c9e86296a4d62261))
+
 ## [1.16.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.16.0...ryanlindsey-me-v1.16.1) (2026-09-12)
 
 
