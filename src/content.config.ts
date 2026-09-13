@@ -180,6 +180,26 @@ const resume = defineCollection({
   schema: resumeSchema,
 });
 
+// The home page's Now strip (2026-09 redesign, issue #103): one line naming
+// what is in hand right now, joined from `items` with a middot.
+//
+// A collection rather than a JSON import or a `.ts` module, for the reason the
+// issue gives: changing what the site says Ryan is doing this month must be a
+// content commit, not a code change. A collection also means a malformed file
+// fails the build instead of rendering an empty band, which is the whole
+// argument for validating the résumé the same way.
+//
+// `.min(1)` on the same reasoning as riskRegister's: an empty `items` is a
+// file somebody emptied, not a month with nothing in it. Failing the build is
+// the right answer to that -- the Now strip is part of the design, and a band
+// with a chip and no line reads as a bug to every visitor.
+const now = defineCollection({
+  loader: glob({ base: './src/content/now', pattern: '**/*.yaml' }),
+  schema: z.object({
+    items: z.array(z.string()).min(1),
+  }),
+});
+
 // The governance artifacts (06 §2), both loaded from `governance/` at the repo
 // root rather than from src/content/. They are published documents ABOUT this
 // repository and are meant to be read next to it -- a reader who clones the
@@ -228,4 +248,4 @@ const riskRegister = defineCollection({
   }),
 });
 
-export const collections = { posts, caseStudies, resume, governance, riskRegister };
+export const collections = { posts, caseStudies, resume, now, governance, riskRegister };

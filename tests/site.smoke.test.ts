@@ -21,13 +21,21 @@ afterAll(async () => {
   await server.close();
 });
 
-test('serves the holding page from static assets', async () => {
+test('serves the prerendered home page from static assets', async () => {
   const response = await server.fetch('/');
   expect(response.status).toBe(200);
   expect(response.headers.get('content-type')).toContain('text/html');
 
   const html = await response.text();
-  expect(html).toContain('data-testid="holding-page"');
+  // What this suite actually checks is the ROUTE: that `/` is served, as HTML,
+  // out of the adapter's static assets rather than through an on-demand
+  // handler. It needs some stamp proving the bytes are the real home page and
+  // not an error shell, and until the 2026-09 redesign (issue #103) that stamp
+  // was `data-testid="holding-page"`. That page is gone, so the stamp moved to
+  // the Now strip, which is the first block the rebuilt page renders. What the
+  // page CONTAINS is asserted in tests/pages.test.ts; this is the smoke test
+  // and it stays a smoke test.
+  expect(html).toContain('data-now-strip');
   expect(html).toContain('<title>Ryan Lindsey</title>');
 });
 

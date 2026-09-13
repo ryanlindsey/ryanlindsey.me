@@ -318,10 +318,16 @@
    *
    * `.rl-figures` restates hairline-grid's four declarations with `@apply`
    * rather than depending on Tailwind emitting that utility class from the
-   * string alone. `hairline-grid` has exactly one call site in this repo --
-   * inside figures.mjs's own `.mjs` source, which is not a file Tailwind v4's
-   * content scanner reads -- so nothing else in `src/` gives that utility a
-   * reason to exist in the built CSS. MEASURED (2026-09-13, see the build
+   * string alone. When this was written `hairline-grid` had exactly one call
+   * site in this repo -- inside figures.mjs's own `.mjs` source, which is not
+   * a file Tailwind v4's content scanner reads -- so nothing else in `src/`
+   * gave that utility a reason to exist in the built CSS. THAT IS NO LONGER
+   * TRUE: the home page issue calls `hairline-grid` from
+   * src/pages/index.astro, which the scanner does read, so the bare utility is
+   * emitted now. The `@apply` stays anyway, because it is what makes this rule
+   * independent of whether any OTHER file happens to keep that utility alive
+   * -- which is the condition that changed once and can change back the moment
+   * the home page stops using it. MEASURED (2026-09-13, see the build
    * proof this rule's PR records): `@apply hairline-grid;` resolves in this
    * Tailwind version (4.3.3) and the built CSS carries `.rl-figures`'s own
    * `display/gap/background-color/border` regardless of whether the bare
@@ -409,6 +415,44 @@
   gap: 1px;
   background-color: var(--rl-rule);
   border: 1px solid var(--rl-rule);
+}
+
+/*
+ * The home page's Now strip, no-JS path only (2026-09 redesign, the home
+ * page issue -- cited by name, per the note on the footer link rule above).
+ *
+ * The strip is the one design-level difference between the themes in this
+ * whole redesign, and the one place a `dark:` variant is correct rather than a
+ * smell: light inverts the band to --rl-ink, dark drops the inversion for
+ * --rl-surface-raised and a bottom rule, because a near-white bar under the
+ * header reads as a glare. src/pages/index.astro carries that variant and the
+ * reasoning.
+ *
+ * This block exists because the variant alone does not cover everyone.
+ * `dark:` is bound to [data-theme='dark'] above, which the head script always
+ * writes -- so a visitor with JavaScript disabled on a dark OS gets dark
+ * TOKENS from tokens.css's prefers-color-scheme block and never gets the
+ * ATTRIBUTE. `bg-ink` then resolves against the DARK palette, where --rl-ink
+ * is the near-white end of the ramp, and that visitor lands on precisely the
+ * glaring white bar the design rejects. Not hypothetical: tokens.css keeps a
+ * whole duplicate block for this same path, for this same reason.
+ *
+ * Guarded with :not([data-theme='light']) so an explicit light choice still
+ * wins, exactly as tokens.css guards its own no-JS block. Unlayered on
+ * purpose: Tailwind's utilities sit in @layer utilities, and an unlayered rule
+ * beats a layered one regardless of specificity, which is what lets this
+ * override `bg-ink` without an !important or a specificity race.
+ *
+ * Declares no colour of its own. tokens.css remains the only file in this
+ * repo that names one, and tests/tokens.test.ts asserts this file holds no hex
+ * literal.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) [data-now-strip] {
+    background-color: var(--rl-surface-raised);
+    color: var(--rl-ink);
+    border-bottom: 1px solid var(--rl-rule);
+  }
 }
 
 /*
