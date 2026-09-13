@@ -183,9 +183,20 @@ test('the search affordance is a label, not a control', async () => {
   // Site search is not built. A focusable control that does nothing is worse
   // than a label, and a screen reader should not be told there is a search
   // here -- the handoff is explicit that no behaviour should be invented.
-  const cluster = /⌘K[\s\S]{0,400}/.exec(page)![0];
-  expect(cluster).not.toContain('<input');
-  expect(cluster).not.toContain('<button');
+  //
+  // Scoped to the placeholder's own element. The first version of this test
+  // scanned the 400 characters after the ⌘K glyph instead, which the design
+  // itself fails: the theme toggle is a real <button> and the prototype opens
+  // it about ninety characters after the chip, so the window measured the
+  // control BESIDE the placeholder rather than the placeholder. Verified
+  // against the handoff's own markup before this was rewritten.
+  const search = /<span[^>]*data-search-placeholder[\s\S]*?⌘K/.exec(page);
+  expect(search, 'no search placeholder on the page').not.toBeNull();
+  expect(search![0]).toContain('aria-hidden="true"');
+  expect(search![0]).not.toContain('<input');
+  expect(search![0]).not.toContain('<button');
+  // And nothing binds the shortcut the chip advertises.
+  expect(page).not.toContain('metaKey');
 });
 
 test('the header is sticky on articles and not anywhere else', async () => {

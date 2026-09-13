@@ -56,12 +56,16 @@ const toc = buildToc(headings);
 const readingTime = readingTimeFor(body);
 ---
 
+<!-- 2026-09 redesign (issue #99): long-form is where a sticky 68px header
+     earns its keep; this is the only Shell caller that passes stickyHeader,
+     because it is the one template both article routes share. -->
 <Shell
   title={`${title} — Ryan Lindsey`}
   description={description}
   markdownHref={markdownHref}
   structuredData={structuredData}
   robots={robots}
+  stickyHeader
 >
   <article class="mx-auto max-w-5xl px-6 py-16">
     <header class="max-w-3xl">

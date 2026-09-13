@@ -13,9 +13,14 @@ interface Props {
   // Pure pass-through as well. Undefined here means "take Base's default"
   // (`index, follow` since launch); a draft route passes `noindex, nofollow`.
   robots?: string;
+  // 2026-09 redesign (issue #99): sticky is a route decision, not a viewport
+  // one -- only ArticleLayout.astro (the template both article routes share)
+  // passes true. Every other caller takes the default and its header scrolls
+  // away like the rest of the page.
+  stickyHeader?: boolean;
 }
 
-const { title, description, markdownHref, structuredData, robots } = Astro.props;
+const { title, description, markdownHref, structuredData, robots, stickyHeader } = Astro.props;
 ---
 
 <Base
@@ -32,7 +37,7 @@ const { title, description, markdownHref, structuredData, robots } = Astro.props
   >
 
   <div class="flex min-h-dvh flex-col">
-    <SiteHeader />
+    <SiteHeader sticky={stickyHeader} />
     <main id="main" class="flex-1">
       <slot />
     </main>
