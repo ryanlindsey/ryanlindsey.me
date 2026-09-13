@@ -7,6 +7,7 @@ import expressiveCode from 'astro-expressive-code';
 import sitemap from '@astrojs/sitemap';
 import { satteri } from '@astrojs/markdown-satteri';
 import { headingAnchors } from './src/lib/heading-anchors.mjs';
+import { figures } from './src/lib/figures.mjs';
 import { isUnindexed } from './src/lib/unindexed-routes.mjs';
 
 export default defineConfig({
@@ -65,7 +66,26 @@ export default defineConfig({
     // Astro 7's default processor. `markdown.remarkPlugins` / `rehypePlugins`
     // belong to the legacy unified processor and hard-error without
     // @astrojs/markdown-remark installed -- see the plan's verified findings.
-    processor: satteri({ hastPlugins: [headingAnchors] }),
+    //
+    // `features.directive` defaults to false (satteri 0.10.5,
+    // node_modules/satteri/dist/compile.d.ts) -- this is the line that makes
+    // any `:::name` block parse at all, for `.mdx` content too: @astrojs/mdx
+    // inherits this `markdown` config rather than running its own, unverified
+    // until issue #102's Task 3 built this repo's `.mdx` content and grepped
+    // the output for the rendered grid. Turning it on is a global switch, not
+    // a per-directive one: every `:::name` block in every content file is now
+    // parsed as a directive, and one with no plugin claiming it renders as
+    // the empty string with no warning and no trace in the output (measured
+    // 2026-09-13, the plan's preflight finding 4 -- the exact failure mode
+    // `figures()` below exists to avoid). Measured the same day that this is
+    // forward-looking risk only: `grep -rn '^:::' src/content/` returned
+    // nothing, so no existing page was parsed differently the moment this
+    // line landed.
+    processor: satteri({
+      features: { directive: true },
+      mdastPlugins: [figures()],
+      hastPlugins: [headingAnchors],
+    }),
   },
   vite: {
     plugins: [tailwindcss()],
