@@ -308,6 +308,55 @@
   }
 
   /*
+   * The `:::figures` directive's grid (src/lib/figures.mjs): two to four
+   * cells, one per authored item. Column count follows item count -- the
+   * directive's own contract states that as a rule, `hairline-grid` above
+   * deliberately does not set columns -- so it is set per `data-figures`
+   * value rather than as a fixed three-up layout. A fifth value never
+   * appears: figures.mjs throws before emitting one (2-4 items or the build
+   * fails), so there is no `[data-figures="5"]` rule to add.
+   *
+   * `.rl-figures` restates hairline-grid's four declarations with `@apply`
+   * rather than depending on Tailwind emitting that utility class from the
+   * string alone. `hairline-grid` has exactly one call site in this repo --
+   * inside figures.mjs's own `.mjs` source, which is not a file Tailwind v4's
+   * content scanner reads -- so nothing else in `src/` gives that utility a
+   * reason to exist in the built CSS. MEASURED (2026-09-13, see the build
+   * proof this rule's PR records): `@apply hairline-grid;` resolves in this
+   * Tailwind version (4.3.3) and the built CSS carries `.rl-figures`'s own
+   * `display/gap/background-color/border` regardless of whether the bare
+   * `.hairline-grid` utility is also emitted, so the fallback of restating
+   * the four declarations by hand was not needed.
+   */
+  .rl-figures {
+    @apply hairline-grid;
+  }
+
+  /* Qualified by `.rl-figures`, not left as a bare attribute selector: only
+     the figures grid asks a column count of its `data-figures` value, and an
+     unqualified `[data-figures='3']` would hand `grid-template-columns` to
+     anything else that ever carries the attribute for its own reasons. */
+  .rl-figures[data-figures='2'] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rl-figures[data-figures='3'] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .rl-figures[data-figures='4'] {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  /* One cell: --rl-bg rather than hairline-grid's usual --rl-surface (see the
+     comment above @utility hairline-grid on why that choice is per call site,
+     not the utility's own), padded per design 4a. */
+  .rl-figure {
+    background-color: var(--rl-bg);
+    padding: 18px 16px;
+  }
+
+  /*
    * The anchor element is empty by construction (see src/lib/heading-anchors.mjs)
    * so that heading text stays clean for the TOC. The glyph is drawn here.
    */
@@ -419,6 +468,62 @@
 
   & a:active {
     color: var(--rl-ok);
+  }
+
+  /*
+   * The `:::figures` directive's three text lines (src/lib/figures.mjs),
+   * nested here for the same reason `a`/`a:active` above are. Every line
+   * figures.mjs emits is a bare `<p>`, and Typography's `p { margin-top;
+   * margin-bottom }` (node_modules/@tailwindcss/typography/src/styles.js)
+   * matches any `<p>` inside `.prose` -- ships in `utilities`, same as the
+   * link rule above, so a margin reset written in `@layer base` would lose
+   * to it regardless of specificity and every figure would carry Typography's
+   * ~1.25rem paragraph gap instead of the grid's own rhythm. Nesting here
+   * gives `.prose-rl .rl-figure-value` (etc.) the same `utilities` layer
+   * Typography's rule ships in, where the extra class wins on specificity.
+   */
+  & .rl-figure-value {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: var(--text-figure);
+    line-height: var(--text-figure--line-height);
+    font-weight: var(--text-figure--font-weight);
+    /* Ruling 5: every value in the ordinary ink colour. The reference shows
+       one figure in the accent pink, but the contract gives an author no way
+       to mark which one -- inventing that attribute is the follow-up issue's
+       job, not this one's. */
+    color: var(--rl-ink);
+  }
+
+  & .rl-figure-label {
+    /* 0.75rem: OpsMetric.astro's own value-to-label gap (its label paragraph
+       carries `mt-3`), borrowed rather than inventing a second rhythm for the
+       same relationship. */
+    margin: 0.75rem 0 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-micro);
+    line-height: var(--text-micro--line-height);
+    letter-spacing: var(--text-micro--letter-spacing);
+    color: var(--rl-ink-muted);
+    text-transform: uppercase;
+  }
+
+  & .rl-figure-source {
+    /* 1rem: ArchitectureDiagram's figcaption gap under its own visual block
+       (`mt-4`), the same relationship -- a caption line under a grid. */
+    margin: 1rem 0 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-micro);
+    line-height: var(--text-micro--line-height);
+    letter-spacing: var(--text-micro--letter-spacing);
+    color: var(--rl-ink-muted);
+    /*
+     * Ruling 4: figures.mjs writes `READ FROM ${source}` exactly as authored,
+     * not upper-cased -- the plugin decides structure, this rule decides
+     * appearance. Same treatment as `.rl-figure-label` above, so a
+     * lower-case source still reads as the same voice as the labels next to it.
+     */
+    text-transform: uppercase;
   }
 }
 

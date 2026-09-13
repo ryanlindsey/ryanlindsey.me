@@ -411,6 +411,181 @@ describe('fix round 1: the stripper fails loudly instead of shipping corruption'
   });
 });
 
+// Task 2 (issue #102, epic #96): the `:::figures` directive is neither an
+// import nor a component tag, so without this it would ship into `.md`/
+// `llms.txt` verbatim as literal directive syntax an agent has no idea what
+// to do with. See src/lib/figures.mjs for the render-time HTML path this
+// mirrors at the text level; the two are independent (different file,
+// different tests, no import between them).
+describe('stripNonPortableMdx (figures directive degrades to its list)', () => {
+  test('a figures directive degrades to its list, with the system it was read from', () => {
+    const body = `Before.\n\n:::figures{source="D1"}\n- 0 — Alerts fired\n- 100% — Runs green\n:::\n\nAfter.`;
+    const exported = stripNonPortableMdx(body);
+    expect(exported).toContain('Figures, read from D1:');
+    expect(exported).toContain('- 0 — Alerts fired');
+    expect(exported).not.toContain(':::');
+  });
+
+  test('a figures directive with no source still names itself', () => {
+    const exported = stripNonPortableMdx(`:::figures\n- 1 — One\n- 2 — Two\n:::`);
+    expect(exported).toContain('Figures:');
+    expect(exported).not.toContain(':::');
+  });
+
+  test('a figures directive written inside code survives verbatim', () => {
+    // The case a build-log post about this repository produces on its first
+    // paragraph. splitCodeRegions already exempts fences and inline spans for
+    // component tags; this asserts the directive unwrapper uses the same one
+    // rather than inventing a second idea of what counts as code.
+    const body = '```\n:::figures{source="D1"}\n- 0 — Alerts fired\n:::\n```';
+    expect(stripNonPortableMdx(body)).toContain(':::figures{source="D1"}');
+  });
+
+  // Task 2, fix round 1 (post-review): FIGURES_DIRECTIVE is, like the
+  // component-tag regexes above it, a brace-naive pattern match rather than
+  // a real parser -- and unlike those regexes, this one had no backstop.
+  // Measured directly against the installed satteri 0.10.5 + figures.mjs
+  // (2026-09-13): a `source` value containing an unescaped `}` builds and
+  // renders successfully -- figures.mjs receives `attributes.source`
+  // already truncated at that `}` by SATTERI'S OWN attribute parser, which
+  // is equally brace-naive (it stops at the first `}` wherever it falls,
+  // quoted or not) -- so "the build already validated it" does not make
+  // this exporter's regex safe: it is a second, independently-written parser
+  // of the same syntax, and the two can disagree on where a block ends even
+  // though neither one throws. Matching satteri's exact (and evidently not
+  // fully quote-aware) brace behavior here would mean re-deriving an
+  // undocumented parser -- the same trap "no third notion of what counts as
+  // code" warns against one level up -- so this is a backstop, not a smarter
+  // regex: it throws instead of shipping the leftover fence.
+  test('a source attribute containing an unescaped } throws rather than shipping the raw fence', () => {
+    const body =
+      ':::figures{source="Datadog (jobs})"}\n- 0 — Alerts fired\n- 100% — Runs green\n:::';
+    expect(() => stripNonPortableMdx(body)).toThrow(/container directive survived/);
+  });
+
+  // Second measured failure mode: satteri auto-closes an unterminated
+  // container directive at end of input (verified: the block above still
+  // builds and renders normally with no closing `:::` at all), but
+  // FIGURES_DIRECTIVE requires a literal `\n:::` to match. Same backstop.
+  test('an unterminated block (no closing :::) throws rather than shipping the raw fence', () => {
+    const body = 'Before.\n\n:::figures{source="D1"}\n- 0 — Alerts fired\n- 100% — Runs green';
+    expect(() => stripNonPortableMdx(body)).toThrow(/container directive survived/);
+  });
+
+  // The narrower sibling bug in the same fold: the attribute-value extractor
+  // used to stop at the FIRST embedded `"`, which is wrong specifically when
+  // that quote is backslash-escaped (`\"`) rather than a real terminator.
+  // Measured against figures.mjs directly: satteri does not strip the
+  // backslash either -- `source="Team \"Alpha\""` renders literally as
+  // `READ FROM Team \"Alpha\"` -- so the escaped form is what a correct
+  // extraction reproduces, not an unescaped `Team "Alpha"`. This block does
+  // NOT contain an unescaped `}`, so FIGURES_DIRECTIVE matches the whole
+  // block fine; only the downstream source-value extraction was wrong.
+  test('an escaped quote inside source is kept, not used as a false end-of-value', () => {
+    const body = ':::figures{source="Team \\"Alpha\\""}\n- 0 — Alerts fired\n:::';
+    expect(stripNonPortableMdx(body)).toContain('Figures, read from Team \\"Alpha\\":');
+  });
+
+  // Task 2, fix round 2 (post-review, post Task 3): this is not a hand-built
+  // adversarial input -- it is `npx prettier --parser mdx` (2026-09-13)
+  // applied to the exact tight shape Task 1's own unit tests and this
+  // file's other fixtures use. Prettier has no directive awareness: it reads
+  // `:::figures{...}` / list / `:::` as an ordinary paragraph followed by a
+  // list, and it treats the closing `:::` as a lazy continuation line of the
+  // list's last item -- which is why it inserts a blank line after the
+  // opening fence (separating what it sees as two blocks) and indents the
+  // closing fence to the list content's own indentation (two spaces, for a
+  // `- ` marker). Rendering is unaffected by any of this: satteri +
+  // figures.mjs produce byte-identical HTML for the tight, blank-line-padded
+  // and Prettier-mangled shapes (verified). CommonMark itself permits a
+  // fence indented up to three spaces, so this shape is legal markdown, not
+  // just an accident of one formatter -- refusing it was this module's own
+  // bug, not Prettier's. The opening fence is untouched by this same
+  // Prettier run (checked directly): only the closing fence gets indented,
+  // because only the closing fence sits where a list-continuation reading
+  // applies.
+  test('a figures directive degrades correctly after Prettier reformats it (blank line after the opener, indented closing fence)', () => {
+    const body = ':::figures{source="D1"}\n\n- 0 — Alerts fired\n- 100% — Runs green\n  :::\n';
+    const exported = stripNonPortableMdx(body);
+    expect(exported).toContain('Figures, read from D1:');
+    expect(exported).toContain('- 0 — Alerts fired');
+    expect(exported).not.toContain(':::');
+  });
+
+  // Fix round 3 (final whole-branch review). Ruling 6 examined the CLOSING
+  // fence and stopped there; every assumption the OPENING fence made -- column
+  // zero, exactly three colons, no blockquote -- was still unexamined. Each
+  // block below was measured against the installed satteri 0.10.5 +
+  // figures.mjs (2026-09-13) and RENDERS a correct grid, so each was a
+  // page/export disagreement or a misdiagnosing error rather than a bad input.
+  // The first two are now accepted and degrade; the rest throw, which is the
+  // point: a loud refusal beats a page and an export that disagree.
+
+  test('an opening fence indented up to three spaces degrades, the same as a closing one', () => {
+    // Up to three spaces of leading indent is the ordinary block-start rule
+    // FIX ROUND 2 already applied to the closing fence, and satteri parses
+    // this shape as a `figures` container; refusing it here threw an error
+    // naming causes (an unescaped `}`, a missing closing fence) it never had.
+    const body = '  :::figures{source="D1"}\n  - 0 — Alerts fired\n  - 100% — Runs green\n  :::\n';
+    const exported = stripNonPortableMdx(body);
+    expect(exported).toContain('Figures, read from D1:');
+    expect(exported).toContain('- 0 — Alerts fired');
+    expect(exported).not.toContain(':::');
+  });
+
+  test('a CRLF body degrades, because a line ending is not an authoring error', () => {
+    // An editor or a git checkout setting decides this, not the author, and
+    // satteri renders it identically. `$` in an `m`-flagged regex sits before
+    // the `\n` and not before the `\r`, which is the whole of the bug.
+    const body = ':::figures{source="D1"}\r\n- 0 — Alerts fired\r\n- 100% — Runs green\r\n:::\r\n';
+    const exported = stripNonPortableMdx(body);
+    expect(exported).toContain('Figures, read from D1:');
+    expect(exported).toContain('- 0 — Alerts fired');
+    expect(exported).not.toContain(':::');
+  });
+
+  test('a fence of four colons throws rather than shipping raw directive syntax', () => {
+    // The measured leak the old `^:::figures\b` guard could not see: this
+    // renders a correct grid in HTML while the `.md` variant and llms.txt got
+    // the literal `::::figures{...}` text. One document, two answers.
+    const body = '::::figures{source="D1"}\n- 0 — Alerts fired\n- 100% — Runs green\n::::\n';
+    expect(() => stripNonPortableMdx(body)).toThrow(/container directive survived/);
+  });
+
+  test('a fence inside a blockquote throws rather than shipping raw directive syntax', () => {
+    const body = '> :::figures\n> - 1 — One\n> - 2 — Two\n> :::\n';
+    expect(() => stripNonPortableMdx(body)).toThrow(/container directive survived/);
+  });
+
+  test('a directive label is refused, and the message says so instead of guessing', () => {
+    // `:::figures[Label]{...}` is legal directive syntax that the figures
+    // contract has nowhere to put, so figures.mjs throws on it at render time
+    // (the label arrives as an extra paragraph child). Whichever of the two
+    // runs first, the author should read about the label rather than be sent
+    // hunting for an unescaped `}` -- which is what the old message did.
+    const body = ':::figures[Label]{source="D1"}\n- 1 — One\n- 2 — Two\n:::\n';
+    expect(() => stripNonPortableMdx(body)).toThrow(/\[label\]/);
+  });
+
+  test('an unclaimed container directive throws instead of shipping its syntax', () => {
+    // The export half of Ruling 7: figures.mjs throws on `:::note` at render
+    // time because an unclaimed container renders as nothing; this guard makes
+    // sure the text export cannot quietly ship the raw fence instead.
+    expect(() => stripNonPortableMdx(':::note\nHello.\n:::\n')).toThrow(
+      /container directive survived/,
+    );
+  });
+
+  test('ordinary prose that merely contains colons is left alone by the widened guard', () => {
+    // The widened guard needs three or more colons at a line start followed by
+    // a letter. Everything here is prose this repo actually writes.
+    const body =
+      'The cron runs at 05:17 UTC.\n\nA ratio of 3:2 applies.\n\n- key: value\n- astro:content\n\nDone:\n';
+    expect(() => stripNonPortableMdx(body)).not.toThrow();
+    expect(stripNonPortableMdx(body)).toContain('05:17 UTC');
+  });
+});
+
 describe('ExportableEntry', () => {
   test('accepts both posts and case studies at the type level', () => {
     const entries: ExportableEntry[] = [post({ id: 'p' }), caseStudy({ id: 'c' })];
