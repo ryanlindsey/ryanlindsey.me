@@ -63,14 +63,18 @@ describe('GET /chat', () => {
     for (const pattern of BANNED_PATTERNS) expect(html).not.toMatch(pattern);
   });
 
-  test('the footer offers it from every page, including the home page', async () => {
-    // Discoverability lives in the footer's agent-resources nav rather than in
-    // the primary nav: /chat is a way to READ this site, like llms.txt and the
-    // MCP endpoint beside it, not a section of it. `Shell` puts that footer on
-    // every page, which is why asserting it on `/` is enough.
-    const home = await (await server.fetch('/')).text();
-    expect(home).toContain('href="/chat"');
-    expect(home).toContain('Ask my agent');
+  test('the header offers it from every page, including the home page', async () => {
+    // Promoted out of the footer into the primary nav by the 2026-09 redesign:
+    // /chat is the one agent-facing surface a person can use without knowing
+    // what an MCP endpoint is, which is why it stopped being filed beside
+    // llms.txt. The footer no longer links it and this test moved rather than
+    // being deleted -- the invariant is "reachable from every page", and only
+    // where it is reachable from changed.
+    for (const path of ['/', '/writing', '/resume']) {
+      const page = await (await server.fetch(path)).text();
+      const nav = /<nav[^>]*aria-label="Primary"[^>]*>([\s\S]*?)<\/nav>/.exec(page)![1];
+      expect(nav).toContain('href="/chat"');
+    }
   });
 });
 

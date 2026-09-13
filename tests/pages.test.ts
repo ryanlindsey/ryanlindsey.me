@@ -141,10 +141,61 @@ test('renders header and footer landmarks', async () => {
   // checks the CSS side); assert they actually land on the rendered markup.
   expect(page).toContain('data-site-header');
   expect(page).toContain('data-site-footer');
-  // Day 6 Task 13: /ops and /ai-policy in SiteHeader's own links array --
-  // without this, deleting either nav entry leaves this test green.
+  // 2026-09 redesign (issue #99): /ops and /ai-policy left the primary nav
+  // for the footer's SYSTEM column. The guard against silently deleting
+  // either link moved with them -- it used to read "in SiteHeader's own
+  // links array" -- but the assertions stay here unchanged, because both
+  // links still have to appear SOMEWHERE on the page.
   expect(page).toContain('href="/ops"');
   expect(page).toContain('href="/ai-policy"');
+});
+
+test('the primary nav is the four reading destinations, in design order', async () => {
+  const page = await html('/');
+  const nav = /<nav[^>]*aria-label="Primary"[^>]*>([\s\S]*?)<\/nav>/.exec(page);
+  expect(nav, 'no primary nav on the page').not.toBeNull();
+  const hrefs = [...nav![1].matchAll(/href="([^"]+)"/g)].map((match) => match[1]);
+  // Order is asserted, not membership. The design puts Ask my agent last and
+  // the redesign's whole IA change is which four of six links are here.
+  expect(hrefs).toEqual(['/writing', '/work', '/resume', '/chat']);
+});
+
+test('Ops and AI Policy left the primary nav for the footer', async () => {
+  const page = await html('/');
+  const nav = /<nav[^>]*aria-label="Primary"[^>]*>([\s\S]*?)<\/nav>/.exec(page)![1];
+  expect(nav).not.toContain('/ops');
+  expect(nav).not.toContain('/ai-policy');
+  // Still on the page, because demoted is not deleted. The footer issue
+  // asserts which column they land in; this only asserts they survived.
+  expect(page).toContain('href="/ops"');
+  expect(page).toContain('href="/ai-policy"');
+});
+
+test('the active nav item is marked on the page it names, and only there', async () => {
+  const writing = await html('/writing');
+  expect(writing).toMatch(/<a[^>]*href="\/writing"[^>]*aria-current="page"/);
+  expect(writing).not.toMatch(/<a[^>]*href="\/work"[^>]*aria-current="page"/);
+});
+
+test('the search affordance is a label, not a control', async () => {
+  const page = await html('/');
+  expect(page).toContain('⌘K');
+  // Site search is not built. A focusable control that does nothing is worse
+  // than a label, and a screen reader should not be told there is a search
+  // here -- the handoff is explicit that no behaviour should be invented.
+  const cluster = /⌘K[\s\S]{0,400}/.exec(page)![0];
+  expect(cluster).not.toContain('<input');
+  expect(cluster).not.toContain('<button');
+});
+
+test('the header is sticky on articles and not anywhere else', async () => {
+  // Long-form is where a sticky header earns its 68px; an index page scrolls
+  // it away. Asserted on the element rather than in CSS, because the prop is
+  // what decides and a CSS test would pass with the prop never threaded.
+  const article = await html('/writing/agent-native-site');
+  expect(article).toMatch(/<header[^>]*data-site-header[^>]*class="[^"]*sticky/);
+  const home = await html('/');
+  expect(home).not.toMatch(/<header[^>]*data-site-header[^>]*class="[^"]*sticky/);
 });
 
 test('keeps the holding page marker and is indexable since launch', async () => {
