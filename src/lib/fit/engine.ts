@@ -276,10 +276,10 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
     corpus = await buildCorpusContext(env);
   } catch (error) {
     console.error('fit: the corpus could not be read', error);
-    throw new FitUnavailable('The corpus could not be read right now. Try again shortly.');
+    throw new FitUnavailable('The published work could not be read right now. Try again shortly.');
   }
   if (corpus.documents === 0) {
-    throw new FitUnavailable('The corpus is empty right now, so there is nothing to compare.');
+    throw new FitUnavailable('There is no published work to compare against right now.');
   }
   if (corpus.truncated) {
     // WARN, not throw: a truncated corpus still produces an honest report of
