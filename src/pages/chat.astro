@@ -2,6 +2,9 @@
 import { env } from 'cloudflare:workers';
 import Shell from '../layouts/Shell.astro';
 import Turnstile from '../components/Turnstile.astro';
+import { MCP_ENDPOINT } from '../lib/nav';
+import { LIMITS } from '../lib/mcp/limits';
+import { formatWindow, RETENTION } from '../lib/retention';
 
 /**
  * Grounded chat (04 §1). On-demand for one reason: the Turnstile sitekey is a
@@ -11,92 +14,317 @@ import Turnstile from '../components/Turnstile.astro';
  * THE OPENERS ARE PRACTITIONER-REGISTER BY REQUIREMENT (09 §2), not by taste.
  * They are the first thing a visitor reads and the first thing an agent
  * summarising this page repeats, so they carry no signal about anything but
- * the work.
+ * the work. Design 1n's own three suggestions were not taken for exactly that
+ * reason: one of them asks whether he is open to a particular kind of role,
+ * which is the vocabulary 10 §2.3 bans from every surface a client can read.
+ *
+ * REBUILT AROUND THE TRANSCRIPT by the 2026-09 redesign (design 1n, issue
+ * #111): a two-column page where the answer column and a 320px rail replace
+ * the single `max-w-3xl` measure. The asymmetry between the two turn shapes is
+ * the design's argument rather than decoration -- a user turn is a box, an
+ * agent turn is an accent rule with its citations under it, and the point is
+ * that a citation is part of the answer instead of a footnote to it.
+ *
+ * THIS ROUTE DOES NOT VERIFY TURNSTILE AND MUST NOT START. src/pages/chat/send.ts
+ * forwards the response token to the MCP Worker, which verifies it there. A
+ * Turnstile response is single use, so a second verification anywhere on this
+ * side consumes it and breaks chat completely while looking like defense in
+ * depth. `/fit` is the opposite arrangement and stays that way.
  */
 export const prerender = false;
 
 const openers = [
   'How has Ryan scaled engineering orgs with agents?',
   "What's this site's architecture?",
-  'Summarise his take on agent governance.',
+  'Summarize his take on agent governance.',
 ];
+
+/**
+ * The two numbers the rail publishes, both read from the code that enforces
+ * them rather than typed.
+ *
+ * `chat_turns` is the row this page is talking about: src/lib/retention.ts is
+ * the table the daily cron walks, so the window a reader sees above the box
+ * and the job that deletes their transcript are one number. `conversation` is
+ * the per-caller chat bucket workers/mcp/src/chat.ts spends through
+ * `checkLimit` before it answers anything.
+ *
+ * Thrown rather than rendered around, the way /ai-policy throws on a missing
+ * collection: a rail that quietly dropped its retention row would publish a
+ * privacy claim by omission.
+ */
+const transcripts = RETENTION.find((row) => row.table === 'chat_turns');
+if (transcripts === undefined) throw new Error('no retention window for chat_turns');
+
+const messageCap = LIMITS.conversation.limit;
+const messagesLeft = `${messageCap} / ${messageCap}`;
+
+/**
+ * PREFER A PROTOCOL?, which is the same offer the footer's FOR AGENTS column
+ * makes and deliberately not the same list. This is the page a person lands on
+ * when they want an answer rather than a feed, so the three destinations are
+ * the ones that answer questions: the endpoint, the index an agent reads
+ * first, and the résumé as data. RSS belongs in a colophon and is already
+ * there.
+ *
+ * `MCP_ENDPOINT` is imported rather than spelled, and src/lib/nav.ts carries
+ * the live verification of why it is `/mcp` on that host and never the bare
+ * origin.
+ */
+const PROTOCOL_LINKS = [
+  { href: MCP_ENDPOINT, label: 'MCP endpoint' },
+  { href: '/llms.txt', label: 'llms.txt' },
+  { href: '/resume.json', label: 'resume.json' },
+];
+
+const isExternal = (href: string): boolean => href.startsWith('http');
+
+/** A rail block after the first: opened by a rule, the way every rail on this site is. */
+const RAIL_BLOCK = 'border-t border-rule pt-[18px]';
+const RAIL_HEADING = 'font-mono text-micro uppercase text-ink-muted';
+const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
 ---
 
 <Shell
   title="Ask my agent"
-  description="A grounded chat over Ryan Lindsey's published writing, résumé and case studies — every claim cited."
+  description="A grounded chat over Ryan Lindsey's published writing, résumé and case studies, where every claim cites the page it came from."
 >
-  <div class="mx-auto max-w-3xl px-6 py-16">
-    <p class="mb-6 border-t border-accent pt-3 font-mono text-micro uppercase text-accent">
-      Ask my agent
-    </p>
-    <h1 class="font-display text-display text-ink">Ask about the work</h1>
-    <p class="mt-6 max-w-xl text-ink-muted">
-      This answers from what is published here — the résumé, the case studies and the posts — and
-      cites the page each claim comes from. If the corpus does not cover something, it says so
-      rather than guessing. It is the same corpus the
-      <a class="text-accent underline" href="/mcp">MCP server</a> serves, so you can query it with your
-      own agent instead.
-    </p>
+  {
+    /*
+    THREE GRID ITEMS RATHER THAN TWO, and the order they are written in is the
+    reason. The rail is rendered between the masthead and the composer so a
+    reader meets what this does with what they type on the way to the box
+    rather than after using it, which is what tests/chat-pages.test.ts asserts
+    by DOM offset. Explicit row and column placement puts it back on the right
+    at `lg`, so the reading order and the layout disagree on purpose.
 
-    <ul class="mt-8 flex flex-wrap gap-2" data-openers>
-      {
-        openers.map((opener) => (
-          <li>
-            <button
-              type="button"
-              class="border border-rule px-3 py-2 text-left font-mono text-micro text-ink-muted hover:border-accent hover:text-accent"
-              data-opener={opener}
-            >
-              {opener}
-            </button>
-          </li>
-        ))
-      }
-    </ul>
-
-    <div class="mt-10 space-y-8" data-transcript aria-live="polite" aria-atomic="false"></div>
-
-    <form class="mt-10" data-chat-form>
-      <label class="block font-mono text-micro uppercase text-ink-muted" for="question">
-        Your question
-      </label>
-      <textarea
-        id="question"
-        name="question"
-        rows="3"
-        required
-        maxlength="1000"
-        class="mt-3 w-full border border-rule bg-transparent p-4 font-mono text-small text-ink"
-        placeholder="Ask about the writing, the résumé, or how this site works."></textarea>
-
-      <Turnstile sitekey={env.RLME_TURNSTILE_SITEKEY} />
-
-      <button
-        type="submit"
-        class="border border-accent px-5 py-3 font-mono text-small uppercase text-accent hover:bg-accent-ground hover:text-accent-on"
-        data-send
-      >
-        Ask
-      </button>
-    </form>
-
-    <p class="mt-8 font-mono text-micro text-ink-muted">
-      Questions and answers are stored for 30 days so the answers can be evaluated and improved,
-      then deleted. Nothing else about you is recorded — no account, no cookie, no address. See
-      <a class="text-accent underline" href="/ai-policy">the policy</a>.
-    </p>
-
-    <noscript>
-      <p class="mt-8 border-l-2 border-accent px-4 py-3 font-mono text-small text-ink">
-        This one needs JavaScript — the bot check and the streamed answer both do. The corpus it
-        reads is plain text and needs nothing at all:
-        <a class="text-accent underline" href="/llms.txt">/llms.txt</a> is the index,
-        <a class="text-accent underline" href="/llms-full.txt">/llms-full.txt</a> is everything, and
-        <a class="text-accent underline" href="/mcp">the MCP server</a> answers the same questions over
-        a protocol.
+    It also gives the page a sane phone layout for free: headline, then what it
+    reads and what it keeps, then the transcript and the box.
+  */
+  }
+  <div
+    class="mx-auto grid w-full max-w-[1440px] lg:min-h-[680px] lg:grid-cols-[minmax(0,1fr)_320px]"
+  >
+    <div class="px-5 pt-10 lg:col-start-1 lg:row-start-1 lg:px-10 lg:pt-11">
+      <h1 class="font-display text-banner text-ink">Ask my agent</h1>
+      <p class="mt-3 max-w-[64ch] text-ink-muted">
+        It answers from the published work only: the writing, the case studies and the résumé. Every
+        claim cites the page it came from, and when those pages do not cover something it says so
+        rather than filling the gap.
       </p>
-    </noscript>
+    </div>
+
+    <aside
+      data-chat-rail
+      class="mt-9 flex flex-col gap-[26px] border-t border-rule px-5 py-9 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0 lg:border-l lg:border-t-0 lg:px-7 lg:py-11"
+    >
+      <div>
+        <p class={RAIL_HEADING}>What it reads</p>
+        <p class="mt-3 text-small text-ink-muted">
+          Published writing, case studies and the résumé. Nothing private, nothing inferred.
+        </p>
+      </div>
+
+      <div class={RAIL_BLOCK}>
+        <p class={RAIL_HEADING}>This session</p>
+        <div class="mt-3 flex flex-col gap-2">
+          {
+            /*
+            AN UPPER BOUND, NOT A READING OF THE BUCKET, and saying so here
+            because the row does not have room to. The limiter is a token
+            bucket keyed by address that refills continuously
+            (src/lib/mcp/limits.ts), so a second tab or a visit ten minutes ago
+            moves the real figure and this page cannot see either. What it can
+            count exactly is what this page has sent, and the cap is the
+            enforced one. When the two disagree the server refuses with
+            `rate-limited` and says so in the transcript, which is the only
+            authority there is.
+          */
+          }
+          <div class="flex items-baseline gap-3">
+            <span class="text-small text-ink-muted">Messages left</span>
+            <span class={RAIL_VALUE} data-numeric data-messages-left data-cap={messageCap}>
+              {messagesLeft}
+            </span>
+          </div>
+          <div class="flex items-baseline gap-3">
+            <span class="text-small text-ink-muted">Kept for</span>
+            <span class={RAIL_VALUE} data-numeric>{formatWindow(transcripts.days)}</span>
+          </div>
+        </div>
+        {
+          /*
+          The disclosure 04 §1 requires, rendered where the typing happens
+          rather than only in the policy. It no longer spells the window out
+          loud: the row above it is that number, read from the constant the
+          cron enforces, and /ai-policy made the same call for the same reason
+          when its tables started rendering from `RETENTION` (issue #110). Two
+          copies of a figure is one copy that will be wrong.
+        */
+        }
+        <p class="mt-4 text-small text-ink-muted">
+          Questions and answers are stored so the answers can be evaluated, then deleted. Nothing
+          else about you is recorded: no account, no cookie, no address. <a href="/ai-policy"
+            >Read the policy</a
+          >.
+        </p>
+      </div>
+
+      <div class={RAIL_BLOCK}>
+        <p class={RAIL_HEADING}>Prefer a protocol?</p>
+        <div class="mt-3 flex flex-col gap-[9px]">
+          {
+            PROTOCOL_LINKS.map((link) => (
+              <a
+                class="font-mono text-small text-ink"
+                href={link.href}
+                target={isExternal(link.href) ? '_blank' : undefined}
+                rel={isExternal(link.href) ? 'noopener' : undefined}
+              >
+                {link.label}
+              </a>
+            ))
+          }
+        </div>
+      </div>
+
+      {
+        /*
+        The breaker is real and this names it rather than reassuring about it:
+        `GLOBAL_LIMITS.chat` in src/lib/mcp/limits.ts is spent by
+        `checkGlobalLimit` in workers/mcp/src/chat.ts, which refuses with
+        `paused`, and CHAT_ERROR_COPY.paused is the sentence a reader gets when
+        it trips. Every published document is a static asset and is served by a
+        path that spends no inference at all, which is the second half of the
+        claim.
+      */
+      }
+      <p class="mt-auto pt-6 font-mono text-micro uppercase text-ink-muted">
+        If the budget breaker trips, chat pauses and says so. Everything published stays readable.
+      </p>
+    </aside>
+
+    <div class="flex flex-col px-5 pb-12 lg:col-start-1 lg:row-start-2 lg:px-10">
+      <div
+        class="mt-8 flex flex-1 flex-col gap-6"
+        data-chat-transcript
+        aria-live="polite"
+        aria-atomic="false"
+      >
+      </div>
+
+      {
+        /*
+        THE TWO TURN SHAPES, AS TEMPLATES THE CLIENT CLONES.
+
+        They are markup rather than class strings built in the <script> below,
+        and the reason is not tidiness. Tailwind scans source text for complete
+        class names, so every class the transcript uses has to appear somewhere
+        a scanner can read it; written here, the design also sits where a
+        person reviewing this page against 1n can see it, and where a test can
+        assert that an agent turn is a rule and not a bubble without rendering
+        a conversation first.
+
+        The asymmetry is the argument. A user turn is a box, right-aligned and
+        narrower. An agent turn has no box at all: an accent rule down its left
+        edge and its citations as chips underneath, because a citation is part
+        of the answer rather than a footnote to it.
+      */
+      }
+      <template data-turn-template="user">
+        <div data-turn="user" class="flex justify-end">
+          <p
+            class="max-w-[56ch] border border-rule bg-surface-raised px-[18px] py-[14px] text-body text-ink"
+            data-turn-text
+          >
+          </p>
+        </div>
+      </template>
+
+      <template data-turn-template="agent">
+        <div data-turn="agent" class="max-w-[64ch] border-l-2 border-accent pl-5">
+          <p class="whitespace-pre-wrap text-body text-ink" data-turn-text></p>
+          <ul class="mt-4 flex flex-wrap gap-2" data-turn-citations></ul>
+          <p class="mt-3 text-small text-accent" data-turn-error hidden></p>
+        </div>
+      </template>
+
+      <template data-citation-template>
+        <li>
+          <a
+            class="block border border-rule px-[9px] py-[5px] font-mono text-micro uppercase text-ink-muted no-underline"
+            data-citation
+          >
+          </a>
+        </li>
+      </template>
+
+      <form class="pt-6" data-chat-form>
+        {
+          /*
+          A LABEL THAT IS THERE AND NOT SHOWN. The design gives the composer a
+          placeholder and no visible label, and a placeholder is not a label:
+          it is gone the moment anybody types and it is not reliably announced.
+          The <textarea> keeps its focus ring for the same reason -- the box
+          around it is a border, not a focus state.
+
+          `rows="2"` rather than the single line 1n draws, which is a
+          deliberate deviation: the field takes a thousand characters, and a
+          one-line window hides most of a question long enough to be worth
+          asking.
+        */
+        }
+        <label class="sr-only" for="question">Your question</label>
+        <div class="flex items-center gap-[14px] border border-rule px-[18px] py-4">
+          <textarea
+            id="question"
+            name="question"
+            rows="2"
+            required
+            maxlength="1000"
+            class="w-full resize-none border-0 bg-transparent text-body text-ink placeholder:text-ink-muted"
+            placeholder="Ask about the work, the writing, or the résumé"></textarea>
+          <button
+            type="submit"
+            class="shrink-0 bg-accent-ground px-4 py-[10px] font-mono text-small uppercase text-accent-on"
+            data-send
+          >
+            Send
+          </button>
+        </div>
+
+        <Turnstile sitekey={env.RLME_TURNSTILE_SITEKEY} />
+
+        <ul class="flex flex-wrap gap-2" data-openers>
+          {
+            openers.map((opener) => (
+              <li>
+                <button
+                  type="button"
+                  class="border border-rule px-[11px] py-[7px] text-left font-mono text-small text-ink-muted"
+                  data-opener={opener}
+                >
+                  {opener}
+                </button>
+              </li>
+            ))
+          }
+        </ul>
+      </form>
+
+      <noscript>
+        <p
+          class="mt-8 max-w-[64ch] border-l-2 border-accent py-3 pl-5 font-mono text-small text-ink"
+        >
+          This one needs JavaScript, because the bot check and the streamed answer both do. The
+          writing it reads is plain text and needs nothing at all:
+          <a href="/llms.txt">/llms.txt</a> is the index,
+          <a href="/llms-full.txt">/llms-full.txt</a> is everything, and
+          <a href={MCP_ENDPOINT} target="_blank" rel="noopener">the MCP server</a> answers the same questions
+          over a protocol.
+        </p>
+      </noscript>
+    </div>
   </div>
 
   <script>
@@ -110,11 +338,18 @@ const openers = [
     // Citation numbers in the answer are linked by LOOKING UP the number in
     // that list -- a number with no entry stays plain text. No href is ever
     // built from anything the model wrote, which is the client half of the
-    // guarantee src/lib/chat/context.ts describes.
+    // guarantee src/lib/chat/context.ts describes. The chips under an answer
+    // are built from the same list by the same rule.
     //
     // The error copy is IMPORTED rather than reproduced, so the sentences a
     // reader sees exist once. The frame carries a code and never a sentence
     // (workers/mcp/src/chat.ts), which is what makes that possible.
+    //
+    // WHAT ISSUE #111 CHANGED HERE AND WHAT IT DID NOT. The turn markup moved
+    // out of this file into <template> elements above, so this builds a turn
+    // by cloning one instead of concatenating class strings. The fetch, the
+    // frame parsing, `withCitations` and the Turnstile reset are untouched --
+    // the design changed, the wire contract did not.
     interface ChatSource {
       n: number;
       title: string;
@@ -142,10 +377,24 @@ const openers = [
     const text_ = (value: string) => document.createTextNode(value);
 
     const form = document.querySelector<HTMLFormElement>('[data-chat-form]');
-    const transcript = document.querySelector<HTMLDivElement>('[data-transcript]');
+    const transcript = document.querySelector<HTMLDivElement>('[data-chat-transcript]');
     const field = document.querySelector<HTMLTextAreaElement>('#question');
     const sendButton = document.querySelector<HTMLButtonElement>('[data-send]');
+    const messagesLeft = document.querySelector<HTMLElement>('[data-messages-left]');
     const sessionId = crypto.randomUUID();
+
+    // The cap is read off the element rather than imported, so this script
+    // carries no copy of a published number -- the page rendered it from
+    // LIMITS.conversation and this only counts down from it.
+    const messageCap = Number(messagesLeft?.dataset.cap ?? '0');
+    let sentThisSession = 0;
+
+    /** A fresh copy of one of the templates above, or null if it is gone. */
+    const cloneTemplate = (selector: string): HTMLElement | null => {
+      const template = document.querySelector<HTMLTemplateElement>(selector);
+      const node = template?.content.firstElementChild;
+      return node ? (node.cloneNode(true) as HTMLElement) : null;
+    };
 
     for (const button of document.querySelectorAll<HTMLButtonElement>('[data-opener]')) {
       button.addEventListener('click', () => {
@@ -154,13 +403,6 @@ const openers = [
         field.focus();
       });
     }
-
-    const el = (tag: string, className?: string, text?: string) => {
-      const node = document.createElement(tag);
-      if (className) node.className = className;
-      if (text) node.textContent = text;
-      return node;
-    };
 
     /** Renders `[n]` as a link when n names a source, and as plain text when it does not. */
     const withCitations = (text: string, sources: ChatSource[]) => {
@@ -171,7 +413,9 @@ const openers = [
         fragment.appendChild(text_(text.slice(last, index)));
         const source = sources.find((entry) => entry.n === Number(match[1]));
         if (source) {
-          const link = el('a', 'text-accent underline', match[0]) as HTMLAnchorElement;
+          const link = document.createElement('a');
+          link.className = 'text-accent';
+          link.textContent = match[0];
           link.href = source.url;
           fragment.appendChild(link);
         } else {
@@ -189,17 +433,35 @@ const openers = [
       const question = field.value.trim();
       if (question === '') return;
 
+      const userTurn = cloneTemplate('[data-turn-template="user"]');
+      const agentTurn = cloneTemplate('[data-turn-template="agent"]');
+      if (!userTurn || !agentTurn) return;
+      const asked = userTurn.querySelector<HTMLElement>('[data-turn-text]');
+      const answer = agentTurn.querySelector<HTMLElement>('[data-turn-text]');
+      const citations = agentTurn.querySelector<HTMLUListElement>('[data-turn-citations]');
+      const failure = agentTurn.querySelector<HTMLElement>('[data-turn-error]');
+      if (!asked || !answer || !citations || !failure) return;
+
       const tokenField = form.querySelector<HTMLInputElement>('[name="turnstile_response"]');
       const token = tokenField?.value ?? '';
-      const turn = el('div', 'border-t border-rule pt-6');
-      turn.appendChild(el('p', 'font-mono text-small text-ink-muted', question));
-      const answer = el('p', 'mt-4 whitespace-pre-wrap text-ink');
-      const sourceList = el('ul', 'mt-4 space-y-1 font-mono text-micro text-ink-muted');
-      turn.appendChild(answer);
-      turn.appendChild(sourceList);
-      transcript.appendChild(turn);
+      asked.textContent = question;
+      transcript.appendChild(userTurn);
+      transcript.appendChild(agentTurn);
       field.value = '';
       if (sendButton) sendButton.disabled = true;
+
+      // Counted here rather than on a successful answer, because the bucket is
+      // spent by the attempt: workers/mcp/src/chat.ts takes its token before it
+      // knows whether an answer is coming.
+      sentThisSession += 1;
+      if (messagesLeft) {
+        messagesLeft.textContent = `${Math.max(messageCap - sentThisSession, 0)} / ${messageCap}`;
+      }
+
+      const fail = (copy: string) => {
+        failure.textContent = copy;
+        failure.hidden = false;
+      };
 
       let sources: ChatSource[] = [];
       let text = '';
@@ -225,31 +487,50 @@ const openers = [
             if (name === 'sources') {
               sources = data.sources ?? [];
               for (const source of sources) {
-                const item = el('li');
-                const link = el(
-                  'a',
-                  'text-accent underline',
-                  `[${source.n}] ${source.title}`,
-                ) as HTMLAnchorElement;
-                link.href = source.url;
-                item.appendChild(link);
-                if (!source.exact) item.appendChild(text_(' — opening of the document'));
-                sourceList.appendChild(item);
+                const item = cloneTemplate('[data-citation-template]');
+                const chip = item?.querySelector<HTMLAnchorElement>('[data-citation]');
+                if (!item || !chip) continue;
+                // `exact: false` means the passage is the opening of the
+                // document rather than the part that answered, and the chip
+                // says so rather than implying a precision the retrieval did
+                // not have.
+                chip.textContent = source.exact
+                  ? `[${source.n}] ${source.title}`
+                  : `[${source.n}] ${source.title} · opening`;
+                chip.href = source.url;
+                citations.appendChild(item);
               }
             } else if (name === 'delta') {
               text += data.text;
               answer.replaceChildren(withCitations(text, sources));
             } else if (name === 'error') {
-              const copy =
+              fail(
                 CHAT_ERROR_COPY[data.code as keyof typeof CHAT_ERROR_COPY] ??
-                CHAT_ERROR_COPY.unreachable;
-              answer.appendChild(el('p', 'mt-3 text-accent', copy));
+                  CHAT_ERROR_COPY.unreachable,
+              );
             }
           }
         }
       } catch {
-        answer.appendChild(el('p', 'mt-3 text-accent', CHAT_ERROR_COPY.unreachable));
+        fail(CHAT_ERROR_COPY.unreachable);
       } finally {
+        // A STREAM THAT ENDED HAVING SAID NOTHING leaves an accent rule with no
+        // words beside it, which is the one dead end this page is least allowed
+        // to produce. `no-answer` is the copy that already exists for exactly
+        // that, so this renders a sentence rather than inventing one.
+        //
+        // Guarded on `failure.hidden` so it cannot overwrite a specific code
+        // that did arrive, and deliberately NOT written as an `response.ok`
+        // check after the fetch: src/pages/chat/send.ts mirrors the MCP
+        // Worker's status onto its own response, so a non-2xx can still be
+        // carrying a real `error` frame, and refusing to read it would turn
+        // `rate-limited` into `unreachable` and tell the reader the wrong thing.
+        //
+        // Found by sending a message under `astro dev`, where there is no `MCP`
+        // service binding at all: the fetch resolved, no frame parsed, and the
+        // turn rendered empty. Pre-existing rather than new -- the transcript
+        // this replaced had the same hole and the same silence.
+        if (text === '' && failure.hidden) fail(CHAT_ERROR_COPY['no-answer']);
         if (sendButton) sendButton.disabled = false;
         // A Turnstile response is single-use, so the widget is re-run for the
         // next message. This is what makes "a bot check on every message"
