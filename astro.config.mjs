@@ -35,13 +35,35 @@ export default defineConfig({
       themeCssSelector: (theme) => `[data-theme="${theme.type}"]`,
       // The site's own chrome, not Expressive Code's defaults: square corners,
       // token-coloured borders, our mono.
+      //
+      // The 2026-09 redesign (design 1g, issue #104) set the code figure's own
+      // values here rather than by overriding Expressive Code's output in
+      // global.css, which is what this block exists for: 13px/1.7 on a
+      // --rl-surface ground inside a 1px rule, with the frame caption at the
+      // same mono micro every other label in the design uses. `borderWidth`
+      // is spelled out because EC's default is 1.5px and the design's rules
+      // are 1px to divide and 2px to open -- there is no 1.5px anywhere else
+      // on the site. The box shadow is off for the same reason: the epic
+      // allows no shadows, and EC draws one by default.
       styleOverrides: {
         borderRadius: '0',
+        borderWidth: '1px',
         borderColor: 'var(--rl-rule)',
+        codeBackground: 'var(--rl-surface)',
         codeFontFamily: 'var(--font-mono)',
-        codeFontSize: '0.875rem',
+        codeFontSize: '0.8125rem',
+        codeLineHeight: '1.7',
         uiFontFamily: 'var(--font-mono)',
+        uiFontSize: 'var(--text-micro)',
         frames: {
+          frameBoxShadowCssValue: 'none',
+          editorTabBarBackground: 'var(--rl-surface)',
+          editorActiveTabBackground: 'var(--rl-surface)',
+          editorActiveTabForeground: 'var(--rl-ink-muted)',
+          terminalTitlebarBackground: 'var(--rl-surface)',
+          terminalTitlebarForeground: 'var(--rl-ink-muted)',
+          terminalTitlebarBorderBottomColor: 'var(--rl-rule)',
+          terminalBackground: 'var(--rl-surface)',
           editorActiveTabIndicatorTopColor: 'var(--rl-accent)',
           editorActiveTabBorderColor: 'var(--rl-rule)',
           editorTabBarBorderBottomColor: 'var(--rl-rule)',

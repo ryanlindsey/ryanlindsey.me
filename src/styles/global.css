@@ -471,7 +471,14 @@
   --tw-prose-quotes: var(--rl-ink);
   --tw-prose-quote-borders: var(--rl-accent);
   --tw-prose-captions: var(--rl-ink-muted);
-  --tw-prose-code: var(--rl-ink);
+  /*
+   * Inline code is accent, not ink, since the 2026-09 redesign (design 1g).
+   * Set through Typography's own variable rather than by a `code` rule so it
+   * reaches only what Typography colours -- Expressive Code's blocks paint
+   * their own tokens from the vitesse themes in astro.config.mjs and are
+   * untouched by this.
+   */
+  --tw-prose-code: var(--rl-accent);
   --tw-prose-th-borders: var(--rl-rule);
   --tw-prose-td-borders: var(--rl-rule);
   /*
@@ -569,6 +576,84 @@
      */
     text-transform: uppercase;
   }
+
+  /*
+   * ---- In-article furniture (2026-09 redesign, design 1g, the article
+   * issue -- cited by name, per the note on the footer link rule above) ----
+   *
+   * All of it nested inside `prose-rl` for the reason the link and figure
+   * rules above already are: Tailwind Typography ships in `@layer utilities`
+   * and a later layer beats an earlier one regardless of specificity, so a
+   * rule for `h2` or `blockquote` written in `@layer base` would lose to
+   * Typography's every time. `@utility` emits here too, where the extra class
+   * in `.prose-rl h2` (0,1,1) beats Typography's `:where()`-wrapped (0,1,0).
+   */
+
+  /*
+   * The TL;DR box. Selected structurally rather than by a class, because the
+   * three articles that have one author it as ordinary markdown -- a lead
+   * paragraph opening with a bold `TL;DR.` -- and nothing in the content
+   * pipeline marks it as anything else.
+   *
+   * `:has(> strong:first-child)` is doing the real work and `p:first-of-type`
+   * is what keeps it honest: a case study's lead paragraph is plain prose, so
+   * it gets no box, and a bold run further down an article is out of reach of
+   * this rule entirely. The known cost is that a future article whose FIRST
+   * paragraph happens to open in bold for some other reason would be boxed.
+   * If that ever happens the fix is a `:::tldr` container directive
+   * (src/lib/figures.mjs is the worked example, and satteri's directive
+   * support is already switched on in astro.config.mjs), not a wider selector.
+   */
+  & > p:first-of-type:has(> strong:first-child) {
+    border: 1px solid var(--rl-accent);
+    padding: 20px 22px;
+  }
+
+  /* The bold run becomes the box's label: its own line, in the accent mono
+     micro that labels everything else in this design. */
+  & > p:first-of-type:has(> strong:first-child) > strong:first-child {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-micro);
+    line-height: var(--text-micro--line-height);
+    letter-spacing: var(--text-micro--letter-spacing);
+    font-weight: 400;
+    text-transform: uppercase;
+    color: var(--rl-accent);
+  }
+
+  & h2 {
+    font-family: var(--font-display);
+    font-size: var(--text-section);
+    line-height: var(--text-section--line-height);
+    letter-spacing: var(--text-section--letter-spacing);
+    /* 40px above the next section, which is design 1g's own figure and is
+       tighter than Typography's default 2em at this size. The section rhythm
+       is carried by the display face and the rule work, not by air. */
+    margin-top: 40px;
+  }
+
+  /*
+   * Pull quote. Typography's blockquote is italic and carries typographic
+   * quote marks through ::before/::after; this design's is neither -- it is a
+   * 3px accent cut with the text set at standfirst size, which is what makes
+   * it read as a lift out of the article rather than as a citation.
+   * `--tw-prose-quote-borders` already supplies the accent colour.
+   */
+  & blockquote {
+    border-left-width: 3px;
+    padding-left: 22px;
+    font-size: var(--text-standfirst);
+    line-height: var(--text-standfirst--line-height);
+    font-style: normal;
+    font-weight: 400;
+  }
+
+  & blockquote p:first-of-type::before,
+  & blockquote p:last-of-type::after {
+    content: none;
+  }
 }
 
 /*
@@ -587,7 +672,12 @@
   [data-theme-toggle],
   .heading-anchor,
   [data-format-bar],
-  [data-gap-notice] {
+  [data-gap-notice],
+  /* The reading-progress bar is `position: fixed`, so without this it prints
+     as a 2px rule across the top of every sheet. Added by attribute, like the
+     rest of this list -- the guard test next door exists because an earlier
+     version hid an article's own <header> by bare element selector. */
+  [data-reading-progress] {
     display: none !important;
   }
 

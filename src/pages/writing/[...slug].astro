@@ -6,6 +6,7 @@ import { PILLAR_LABELS } from '../../lib/pillars';
 import { getResume } from '../../lib/resume-collection';
 import { canonicalUrlFor } from '../../lib/markdown-export';
 import { buildBlogPosting, buildBreadcrumbList } from '../../lib/structured-data';
+import { selectRelated } from '../../lib/related-posts';
 import type { GetStaticPaths } from 'astro';
 
 // Drafts get a route but never an index entry, so work in progress is
@@ -48,6 +49,25 @@ const structuredData = [
     { name: post.data.title, url: canonicalUrlFor(post) },
   ]),
 ];
+
+// The RELATED row (2026-09 redesign, design 1g). Selected here rather than in
+// ArticleLayout for the same reason the structured data above is: "same pillar
+// where possible" is a rule about 02 §2's post taxonomy, and the layout is
+// shared with /work, whose entries have no pillar. `siblings` is already every
+// post in the collection -- it rides along as a prop so SeriesNav does not
+// re-query -- so this costs no second read. The rule itself, and the reasoning
+// for it, live in src/lib/related-posts.ts.
+const related = selectRelated(
+  siblings.map((sibling) => ({
+    href: `/writing/${sibling.id}`,
+    title: sibling.data.title,
+    kicker: PILLAR_LABELS[sibling.data.pillar] ?? sibling.data.pillar,
+    publishedAt: sibling.data.publishedAt,
+    pillar: sibling.data.pillar,
+    draft: sibling.data.draft,
+  })),
+  { href: `/writing/${post.id}`, pillar: post.data.pillar },
+);
 ---
 
 <ArticleLayout
@@ -61,6 +81,7 @@ const structuredData = [
   markdownHref={`/writing/${post.id}.md`}
   structuredData={structuredData}
   robots={post.data.draft ? 'noindex, nofollow' : undefined}
+  related={related}
 >
   <Content />
   <SeriesNav slot="footer" current={post} siblings={siblings} />

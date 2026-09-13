@@ -1,9 +1,12 @@
 ---
 import Shell from './Shell.astro';
 import ArticleMeta from '../components/ArticleMeta.astro';
+import ArticleMetaRail from '../components/ArticleMetaRail.astro';
+import ReadingProgress from '../components/ReadingProgress.astro';
 import TableOfContents from '../components/TableOfContents.astro';
 import { buildToc, type Heading } from '../lib/toc';
 import { readingTimeFor } from '../lib/reading-time';
+import type { RelatedArticle } from '../lib/related-posts';
 
 // Primitives rather than a CollectionEntry. This template serves `posts` and
 // `caseStudies`, which share a presentation but not a schema: a case study has
@@ -23,7 +26,9 @@ interface Props {
   headings: Heading[];
   // Root-relative URL of this article's `.md` variant (Task 7). Threaded
   // straight through to Base.astro's `markdownHref` prop -- see that file
-  // for why this stays an explicit prop rather than something inferred here.
+  // for why this stays an explicit prop rather than something inferred here --
+  // and, since the 2026-09 redesign, to ArticleMetaRail as well, which offers
+  // the same URL to a reader rather than building a second copy of it.
   markdownHref?: string;
   // This article's BlogPosting+BreadcrumbList (posts) or TechArticle (case
   // studies) node(s) (Task 10, 02 §3). Threaded straight through to
@@ -38,6 +43,13 @@ interface Props {
   // every draft needed a way to say otherwise. The route decides, not this
   // template -- it is the one that knows whether `entry.data.draft` is set.
   robots?: string;
+  // The RELATED row (2026-09 redesign, design 1g). Optional, and selected by
+  // the route for the same reason `structuredData` is built there: "same
+  // pillar where possible" is a rule about 02 §2's POST taxonomy, and a case
+  // study has no pillar. /work passes nothing and renders no row, which is how
+  // this template stays collection-agnostic instead of learning what a pillar
+  // is. See src/lib/related-posts.ts for the selection rule itself.
+  related?: RelatedArticle[];
 }
 
 const {
@@ -51,9 +63,15 @@ const {
   markdownHref,
   structuredData,
   robots,
+  related = [],
 } = Astro.props;
 const toc = buildToc(headings);
 const readingTime = readingTimeFor(body);
+
+// Built the same way Base.astro builds its <link rel="canonical">, so the URL
+// the rail offers a reader to share is the one the page already declares
+// itself to be. Not a second convention.
+const canonicalUrl = new URL(Astro.url.pathname, Astro.site).href;
 ---
 
 <!-- 2026-09 redesign (issue #99): long-form is where a sticky 68px header
@@ -67,27 +85,55 @@ const readingTime = readingTimeFor(body);
   robots={robots}
   stickyHeader
 >
-  <article class="mx-auto max-w-5xl px-6 py-16">
-    <header class="max-w-3xl">
-      <h1 class="font-display text-title text-ink">{title}</h1>
-      <p class="mt-6 text-ink-muted">{description}</p>
-      <div class="mt-6 border-t border-rule pt-4">
-        <ArticleMeta
-          publishedAt={publishedAt}
-          updatedAt={updatedAt}
-          kicker={kicker}
-          readingTime={readingTime}
-        />
+  <ReadingProgress />
+
+  <article>
+    <!-- Full-bleed rule, capped content. The border sits on the outer element
+         so it runs edge to edge the way design 1g draws it, while the masthead
+         text stays inside the site's 1440px cap and 40px gutter. -->
+    <header class="border-b border-rule">
+      <div class="mx-auto max-w-[1440px] px-10 pb-5 pt-[52px]">
+        <!-- The kicker moved here from the meta line below (it used to sit
+             between the date and the reading time). data-testid travelled with
+             it: tests/case-studies.test.ts asserts a case study's kicker reads
+             "Case study", and that assertion should keep failing on a page
+             that has stopped showing one. -->
+        <p class="font-mono text-micro uppercase text-accent" data-testid="article-kicker">
+          {kicker}
+        </p>
+        <h1 class="mt-5 max-w-[22ch] font-display text-headline text-ink">{title}</h1>
+        <p class="mt-6 max-w-[68ch] text-standfirst text-ink-muted">{description}</p>
+        <div class="mt-7">
+          <ArticleMeta publishedAt={publishedAt} updatedAt={updatedAt} readingTime={readingTime} />
+        </div>
       </div>
     </header>
 
-    <!-- The TOC is a sibling rail on wide screens and stacks above the prose on
-         narrow ones. The aside comes first in the DOM so narrow viewports -- where
-         the grid and `order` are both inactive -- get the TOC before the body, and
-         so it precedes the article in tab order. At `lg` the grid turns on and
-         `order` puts the prose left, the rail right. -->
-    <div class="mt-16 gap-12 lg:grid lg:grid-cols-[1fr_14rem]">
-      <aside class="mb-12 lg:order-2 lg:mb-0">
+    <!--
+      The three-column spine. 220px contents / the measure / 240px meta, which
+      is the answer to the brief this whole redesign was written against: the
+      centre column is WIDER than the old site (prose-rl carries 72ch) and the
+      leftover width on a large viewport is spent on two rails instead of being
+      left empty.
+
+      DOM order is contents, prose, meta rail, and it needs no `order` utility
+      to reach the design. That is new. The aside used to come first in the DOM
+      carrying `lg:order-2`, so that a narrow viewport -- where the grid and
+      `order` are both inactive -- met the table of contents before the body
+      while a wide one still read prose-left, rail-right. Design 1g puts the
+      contents rail on the LEFT, so first-in-DOM and first-in-grid finally
+      agree and the override is gone rather than merely restyled. The meta rail
+      is deliberately last: on a narrow screen it must not sit between a reader
+      and the article.
+
+      The grid only turns on at `lg`; below it the three children stack in that
+      same order. Responsive collapse is its own issue, and this is the shape
+      that leaves it the least to undo.
+    -->
+    <div
+      class="mx-auto max-w-[1440px] px-10 pb-[60px] lg:grid lg:grid-cols-[220px_minmax(0,1fr)_240px] lg:items-start lg:gap-12"
+    >
+      <aside data-article-toc class="mb-12 lg:mb-0 lg:sticky lg:top-24">
         <!-- lg:top-24 (96px), not the 32px lg:top-8 this rail shipped with
              before the 2026-09 redesign made the header sticky on this
              template. Both this rail and the header are `position: sticky`
@@ -96,15 +142,43 @@ const readingTime = readingTimeFor(body);
              soon as the reader scrolled. 96px is the offset global.css's
              `scroll-padding-top` comment already claims for this rail; this
              is what makes that claim true. -->
-        <div class="lg:sticky lg:top-24">
-          <TableOfContents toc={toc} />
-        </div>
+        <TableOfContents toc={toc} />
       </aside>
-      <div class="prose-rl prose lg:order-1">
-        <slot />
-      </div>
-    </div>
 
-    <slot name="footer" />
+      <div>
+        <div class="prose-rl prose">
+          <slot />
+        </div>
+
+        <slot name="footer" />
+
+        {
+          related.length > 0 && (
+            <section data-related-posts class="mt-16 border-t border-rule pt-6">
+              {/* A <p>, not an <h2>. tests/case-studies.test.ts compares a case
+                  study's <h2> list against the fixed 02 §4 shape by equality,
+                  and while this row renders on posts only today, a section
+                  label is not one of the article's own sections and should
+                  never join that list if it ever does render there. */}
+              <p class="font-mono text-micro uppercase text-ink-muted">Related</p>
+              {/* hairline-grid owns the ground, the gap and the border; the
+                  column count and the cell background are the caller's, which
+                  is what the utility's comment in global.css says and why it
+                  stops short of both. */}
+              <div class="hairline-grid mt-5 grid-cols-1 sm:grid-cols-2">
+                {related.map((entry) => (
+                  <a href={entry.href} class="block bg-surface p-5 no-underline">
+                    <p class="font-mono text-micro uppercase text-ink-muted">{entry.kicker}</p>
+                    <p class="mt-2 font-display text-subheading text-ink">{entry.title}</p>
+                  </a>
+                ))}
+              </div>
+            </section>
+          )
+        }
+      </div>
+
+      <ArticleMetaRail markdownHref={markdownHref} canonicalUrl={canonicalUrl} />
+    </div>
   </article>
 </Shell>

@@ -1,27 +1,33 @@
 ---
 import type { ReadingTime } from '../lib/reading-time';
 
+/*
+ * The masthead's meta line: dates and reading time, and since the 2026-09
+ * redesign (design 1g, issue #104) NOT the kicker.
+ *
+ * The kicker used to sit in the middle of this line. Design 1g promotes it
+ * above the H1 in the accent colour, so ArticleLayout.astro renders it now and
+ * this component stopped taking it -- including its `data-testid`, which moved
+ * with it rather than being dropped (tests/case-studies.test.ts asserts a case
+ * study's kicker reads "Case study" and would have gone quietly green on a
+ * page that no longer showed one anywhere).
+ */
 interface Props {
   publishedAt: Date;
   updatedAt?: Date;
-  // An already-resolved label, not a pillar key. This component serves posts
-  // (whose kicker is a pillar label) and case studies (whose kicker is
-  // "Case study" -- 02 §2's pillars are declared for posts only). Resolving in
-  // the caller keeps the pillar taxonomy out of a component that no longer
-  // belongs to one collection.
-  kicker: string;
   readingTime: ReadingTime;
 }
 
-const { publishedAt, updatedAt, kicker, readingTime } = Astro.props;
+const { publishedAt, updatedAt, readingTime } = Astro.props;
 
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 ---
 
 <p class="flex flex-wrap items-baseline gap-x-3 font-mono text-micro uppercase text-ink-muted">
-  <time datetime={publishedAt.toISOString()}>{iso(publishedAt)}</time>
-  <span aria-hidden="true">&middot;</span>
-  <span data-testid="article-kicker">{kicker}</span>
+  <!-- data-numeric is global.css's tabular-nums hook. Dates in a proportional
+       numeral set make two stacked meta lines wobble against each other, and
+       this line is mostly digits. -->
+  <time datetime={publishedAt.toISOString()} data-numeric>{iso(publishedAt)}</time>
   <span aria-hidden="true">&middot;</span>
   <span data-testid="reading-time">{readingTime.text}</span>
   {
@@ -29,7 +35,10 @@ const iso = (date: Date) => date.toISOString().slice(0, 10);
       <>
         <span aria-hidden="true">&middot;</span>
         <span>
-          Updated <time datetime={updatedAt.toISOString()}>{iso(updatedAt)}</time>
+          Updated{' '}
+          <time datetime={updatedAt.toISOString()} data-numeric>
+            {iso(updatedAt)}
+          </time>
         </span>
       </>
     )
