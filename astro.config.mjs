@@ -95,8 +95,22 @@ export default defineConfig({
     //
     // `literalDirectives()` is the fix and is listed FIRST: it restores an
     // unclaimed text or leaf directive to the text it was authored as, so
-    // this switch changes nothing but the `:::figures` container.
-    // `tests/literal-directives.test.ts` pins that as a byte-identity
+    // this switch changes nothing but the `:::figures` container -- with one
+    // exception no visitor can close. THIS LINE USED TO CLAIM "changes
+    // nothing but the `:::figures` container," full stop, and controller
+    // Ruling 9 (2026-09-13) found that false in the same overclaiming shape
+    // as the zero-blast-radius grep corrected above: an image's alt text is
+    // also changed, because Sätteri flattens `![alt](url)` to a plain string
+    // before any visitor runs, so an unclaimed colon inside alt text is
+    // rewritten exactly like unclaimed prose is, and nothing can intervene
+    // before that flattening happens. Recorded with the other exceptions in
+    // `src/lib/literal-directives.mjs`; zero images exist in `src/content` or
+    // `governance` today, so this is recorded risk rather than an active
+    // corruption. The same 2026-09-13 review measured a second gap, a
+    // directive nested inside another directive's label
+    // (`:ref[astro:content]`) losing the inner name silently -- controller
+    // Ruling 8 closed that one, so it is not an exception here.
+    // `tests/literal-directives.test.ts` pins the rest as a byte-identity
     // invariant against the same content rendered with directives off.
     processor: satteri({
       features: { directive: true },

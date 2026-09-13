@@ -56,6 +56,13 @@ const PROSE_SHAPES: ReadonlyArray<readonly [string, string]> = [
   ['a text directive carrying attributes', ':name[plain]{a="b"} inline.'],
   ['a leaf directive in its own paragraph', 'Before.\n\n::leafy[Label]{a="b"}\n\nAfter.'],
   ['a leaf directive with no label', 'Before.\n\n::leafy\n\nAfter.'],
+  // Controller Ruling 8 (2026-09-13): a directive nested inside another
+  // directive's label. `astro:content` inside `:ref[...]` parses as text plus
+  // a nested `:content` text directive, which used to survive unclaimed and
+  // render as the empty string -- "content" silently gone -- because passing
+  // the outer node's children through left the inner one for satteri to drop.
+  // See literal-directives.mjs's constraint 4 for the fix.
+  ['a text directive nested inside another directive label', 'See :ref[astro:content] here.'],
 ];
 
 describe('directives on changes nothing but :::figures', () => {
@@ -93,6 +100,23 @@ describe('directives on changes nothing but :::figures', () => {
     expect(await beforeTheSwitch(source)).toBe('<ul>\n<li>item\n::leafy</li>\n</ul>\n');
     expect(await withDirectives(source)).toBe('<ul>\n<li>item::leafy</li>\n</ul>\n');
   });
+
+  // A third exception no visitor can close (controller Ruling 9, 2026-09-13):
+  // Sätteri flattens `![alt](url)` to a plain string before any visitor runs,
+  // so there is no node left for `literalDirectives()` to restore, and an
+  // unclaimed colon inside alt text is corrupted exactly like unclaimed prose
+  // is. Pinned here, per literal-directives.mjs's constraint 3, so the next
+  // reader finds this measured rather than discovering it in a shipped alt
+  // attribute. There are zero images in `src/content` or `governance` today.
+  test('an image alt text with an unclaimed colon is corrupted, and no visitor can prevent it', async () => {
+    const source = '![the cron at 05:17 UTC](x.png)';
+    expect(await beforeTheSwitch(source)).toBe(
+      '<p><img src="x.png" alt="the cron at 05:17 UTC"></p>\n',
+    );
+    expect(await withDirectives(source)).toBe(
+      '<p><img src="x.png" alt="the cron at 05 UTC"></p>\n',
+    );
+  });
 });
 
 // The same invariant against the documents that actually ship, which is the
@@ -100,15 +124,31 @@ describe('directives on changes nothing but :::figures', () => {
 // names three cron times, and its built page said "resume PDF at 05 UTC" while
 // its own `.md` export said "05:17 UTC" -- one live post, two answers.
 const CONTENT = new URL('../src/content/', import.meta.url);
+// `governance/ai-policy.md` is a rendered markdown collection too --
+// src/pages/ai-policy.astro's `render(policy)`, from the `governance`
+// collection's `.md` glob in src/content.config.ts -- so a sweep titled
+// "every real content file" that swept only `posts` and `caseStudies` `.mdx`
+// did not actually cover it (controller Ruling 9, 2026-09-13). Widened here
+// rather than narrowing the title: it costs one more `readdirSync`, and this
+// file exists precisely to catch a real content file nobody swept.
+const GOVERNANCE = new URL('../governance/', import.meta.url);
 
-const contentFiles = ['posts', 'caseStudies'].flatMap((collection) =>
-  readdirSync(new URL(`${collection}/`, CONTENT))
-    .filter((name) => name.endsWith('.mdx'))
+const contentFiles = [
+  ...['posts', 'caseStudies'].flatMap((collection) =>
+    readdirSync(new URL(`${collection}/`, CONTENT))
+      .filter((name) => name.endsWith('.mdx'))
+      .map((name) => ({
+        id: `${collection}/${name}`,
+        body: readFileSync(new URL(`${collection}/${name}`, CONTENT), 'utf8'),
+      })),
+  ),
+  ...readdirSync(GOVERNANCE)
+    .filter((name) => name.endsWith('.md'))
     .map((name) => ({
-      id: `${collection}/${name}`,
-      body: readFileSync(new URL(`${collection}/${name}`, CONTENT), 'utf8'),
+      id: `governance/${name}`,
+      body: readFileSync(new URL(name, GOVERNANCE), 'utf8'),
     })),
-);
+];
 
 // `:::figures` is the one directive this site claims, so a file containing one
 // renders differently by design and is the only fair exclusion.

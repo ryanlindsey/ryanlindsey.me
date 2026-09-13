@@ -58,12 +58,48 @@ import { fileURLToPath } from 'node:url';
  *    and renders it with no `<p>` at all (measured), which is a different
  *    document, not a restored one.
  *
- * 3. Two shapes this deliberately does not restore, because no visitor can:
- *    a leaf directive on a line that CONTINUES a paragraph (`Some text\n::x`)
+ * 3. Three shapes this deliberately does not restore, because no visitor can.
+ *    A leaf directive on a line that CONTINUES a paragraph (`Some text\n::x`)
  *    or a list item ends that block during parsing, before any plugin runs, so
  *    directives-on yields two paragraphs where directives-off yields one. The
  *    authored text survives in both; only the block boundary differs. Closing
  *    that would mean re-parsing, not restoring.
+ *
+ *    The third is an image's alt text, and no restore is possible at all: an
+ *    image's `![alt](url)` flattens to a plain string before any visitor
+ *    runs, so there is no node left in the tree for a visitor to claim, let
+ *    alone restore. An unclaimed colon inside alt text is corrupted exactly
+ *    like unclaimed prose is. Measured 2026-09-13:
+ *    `![the cron at 05:17 UTC](x.png)` renders `alt="the cron at 05 UTC"`
+ *    with directives on, while the page's own `.md` export keeps `05:17` --
+ *    the same page/export divergence this whole plugin exists to close, and
+ *    this one instance of it cannot be, because the flattening happens
+ *    upstream of every visitor, including this one. There are zero images in
+ *    `src/content` or `governance` today, so this is recorded risk rather
+ *    than an active corruption; `tests/literal-directives.test.ts` pins the
+ *    current behaviour so the next reader finds it measured rather than
+ *    discovering it in an alt attribute.
+ *
+ * 4. A directive nested inside another directive's label, e.g.
+ *    `:ref[astro:content]`, where the label `astro:content` itself parses as
+ *    text plus a nested `:content` text directive (satteri parses labels
+ *    inline). Passing the outer node's children through -- constraint 1's
+ *    ordinary path -- leaves that inner directive unclaimed, and by the time
+ *    its own `textDirective` visitor would run, satteri has already queued
+ *    the OUTER node's replacement; it drops the inner node's queued
+ *    transform and warns to the console instead of calling it. Measured
+ *    2026-09-13, controller Ruling 8:
+ *
+ *      src : See :ref[astro:content] here.
+ *      off : <p>See :ref[astro:content] here.</p>
+ *      on  : <p>See :ref[astro] here.</p>          <- "content" silently gone
+ *
+ *    `restore` below falls back to slicing the WHOLE node's source span as
+ *    one literal text node -- what constraint 1 avoids for the ordinary case
+ *    -- whenever any descendant is itself a directive. That fallback is
+ *    byte-identical to directives-off here too: constraint 1's markup-fidelity
+ *    argument for keeping children only has force when there is no unclaimed
+ *    directive underneath to lose.
  */
 export function literalDirectives() {
   return {
@@ -105,9 +141,11 @@ function restore(node, ctx) {
   const children = node.children ?? [];
   const firstChild = children[0]?.position?.start?.offset;
   const lastChild = children[children.length - 1]?.position?.end?.offset;
-  // No children (`:17`, `::name`) or no positions on them: the whole span is
-  // its own literal text, which is also the common case by a long way.
-  if (firstChild == null || lastChild == null) {
+  // No children (`:17`, `::name`) or no positions on them, OR (constraint 4
+  // above) a directive nested somewhere beneath this one: in every case the
+  // whole span goes back as its own literal text rather than trying to
+  // splice the parsed children back in.
+  if (firstChild == null || lastChild == null || hasNestedDirective(node)) {
     return [{ type: 'text', value: ctx.source.slice(start, end) }];
   }
 
@@ -116,6 +154,15 @@ function restore(node, ctx) {
     ...children,
     { type: 'text', value: ctx.source.slice(lastChild, end) },
   ];
+}
+
+const DIRECTIVE_TYPES = new Set(['textDirective', 'leafDirective', 'containerDirective']);
+
+/** True when a directive of any kind sits anywhere beneath `node` (constraint 4 above). */
+function hasNestedDirective(node) {
+  return (node.children ?? []).some(
+    (child) => DIRECTIVE_TYPES.has(child.type) || hasNestedDirective(child),
+  );
 }
 
 /** ` (path)`, or nothing: `ctx.fileURL` is `undefined` in the unit tests. */
