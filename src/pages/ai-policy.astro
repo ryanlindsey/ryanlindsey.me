@@ -1,6 +1,10 @@
 ---
 import { getEntry, render } from 'astro:content';
 import Shell from '../layouts/Shell.astro';
+import TableOfContents from '../components/TableOfContents.astro';
+import { buildToc, type TocNode } from '../lib/toc';
+import { GLOBAL_LIMITS, LIMITS, type ToolCost } from '../lib/mcp/limits';
+import { formatWindow, PUBLISHED_AS, RETENTION } from '../lib/retention';
 import {
   isStale,
   reviewAgeDays,
@@ -24,6 +28,12 @@ import {
  * invocation per read to make a number that changes once a day exact to the
  * hour. It also means the staleness marker appears on the next deploy after a
  * row goes overdue, which is the same day anybody would have acted on it.
+ *
+ * REBUILT AT A DOCUMENT WIDTH by the 2026-09 redesign (design 1m, issue #110):
+ * a 240px rail beside a column capped at 1180px, where every other page on this
+ * site sits at 1440px. That is the one deliberate exception to the site cap in
+ * the whole redesign, and it is the point of the design rather than a rounding
+ * of it: this page is a document to be read, not a spread to be scanned.
  */
 export const prerender = true;
 
@@ -35,7 +45,7 @@ const register = await getEntry('riskRegister', 'risk-register');
 if (policy === undefined) throw new Error('governance/ai-policy.md did not load');
 if (register === undefined) throw new Error('governance/risk-register.yaml did not load');
 
-const { Content } = await render(policy);
+const { Content, headings } = await render(policy);
 
 const now = new Date();
 const rows: RiskRow[] = register.data.rows;
@@ -61,127 +71,281 @@ function ageLabel(row: RiskRow): string {
   if (days === 0) return 'reviewed today';
   return `reviewed ${days} day${days === 1 ? '' : 's'} ago`;
 }
+
+/**
+ * A limiter period as the compact form design 1m sets in the table: `min`,
+ * `day`, `5 min`.
+ *
+ * /ops RENDERS THE SAME CONSTANTS IN A DIFFERENT REGISTER, and the difference
+ * is deliberate rather than a missed extraction. That page is a colophon and
+ * writes the same bucket as "60 per minute" in a sentence; this one is a
+ * document and sets it as a value in a column a reader compares downward. What
+ * the two surfaces share is `LIMITS`, which is the only thing that can be
+ * wrong: neither page carries a number of its own, so the worst a divergence
+ * here can produce is two correct phrasings of one figure.
+ *
+ * This is not the arrangement `formatWindow` has, and the reason they differ is
+ * worth stating. A retention window is a PUBLISHED PROMISE whose exact wording
+ * 06 §2 fixed ("a year", not "365 days"), so both surfaces have to say the same
+ * words and one function owns them. A rate limit is a figure, not a sentence,
+ * and no document commits this site to spelling it one way.
+ */
+function per(seconds: number): string {
+  if (seconds === 60) return 'min';
+  if (seconds === 3_600) return 'hr';
+  if (seconds === 86_400) return 'day';
+  return `${seconds / 60} min`;
+}
+
+const limitValue = (cost: ToolCost): string =>
+  `${LIMITS[cost].limit} / ${per(LIMITS[cost].periodSeconds)}`;
+
+/**
+ * The limits this page publishes, and what each one is in English.
+ *
+ * PUBLIC-TIER CLASSES ONLY, which src/pages/ops.astro decided first and states
+ * in its own `LIMIT_ROWS` comment. `LIMITS` also carries the `expensive`
+ * bucket, which belongs to a token-scoped surface; publishing its cap would say
+ * that the surface exists and roughly what a call there costs. That argument is
+ * stronger here than it is on /ops, because this is the page somebody probing
+ * for the private tier reads first. A choice about which rows to render, never
+ * a second copy of the constant.
+ */
+const LIMIT_ROWS: { value: string; what: string }[] = [
+  { value: limitValue('cheap'), what: 'Reading a published document over MCP' },
+  { value: limitValue('inference'), what: 'Semantic search over the published work' },
+  { value: limitValue('conversation'), what: 'A chat message' },
+  {
+    value: `${GLOBAL_LIMITS.chat.limit} / ${per(GLOBAL_LIMITS.chat.periodSeconds)}`,
+    what: 'Chat, across everyone, before the breaker',
+  },
+];
+
+/**
+ * The rail, which is the article's own TableOfContents rather than a second one
+ * written here. That component owns the IntersectionObserver, the
+ * `aria-current` contract and two fixes its comments record: a symmetric root
+ * margin flickers between two headings, and a page scrolled to the very bottom
+ * never lights its last section. /resume reached the same conclusion for the
+ * same reasons (issue #108); this is the third caller and still one observer.
+ *
+ * THE TWO TABLES ARE RAIL ITEMS IN THEIR OWN RIGHT, listed ahead of the
+ * document's headings because that is where they are rendered. `buildToc` reads
+ * the markdown's own `##` headings, so a section added to the document reaches
+ * the rail with no edit here.
+ */
+const sections: TocNode[] = [
+  { slug: 'rate-limits', text: 'Rate limits', children: [] },
+  { slug: 'retention', text: 'Retention', children: [] },
+  ...buildToc(headings, 2),
+  { slug: 'risk-register', text: register.data.title, children: [] },
+];
+
+/** One row of a policy table: label left, the enforced figure right. */
+const TABLE_ROW =
+  'flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 bg-surface px-[18px] py-[13px]';
+const TABLE_HEADING = 'font-display text-section text-ink';
 ---
 
 <Shell title="AI policy and risk register" description={policy.data.summary}>
-  <div class="mx-auto max-w-5xl px-6 py-16">
-    <p class="mb-6 border-t border-accent pt-3 font-mono text-micro uppercase text-accent">
-      Governance
-    </p>
-    <h1 class="max-w-3xl font-display text-title text-ink">{policy.data.title}</h1>
-    <p class="mt-3 font-mono text-micro uppercase text-ink-muted">
-      Updated <time datetime={policy.data.updated}>{policy.data.updated}</time>
-    </p>
-    <p class="mt-6 max-w-2xl text-ink-muted">{policy.data.summary}</p>
+  <div
+    data-policy-grid
+    class="mx-auto grid max-w-[1180px] gap-10 px-5 py-14 lg:grid-cols-[240px_minmax(0,1fr)] lg:items-start lg:gap-14 lg:px-10"
+  >
+    {
+      /*
+      `lg:items-start` on the grid above is what makes `lg:sticky` below do
+      anything at all: a grid item stretches to its row by default, so the rail
+      would be as tall as the whole document and have no room to move inside its
+      own box. Measured on /resume before the same fix, where the rail's top sat
+      4621px above the viewport with the page scrolled to the bottom -- it reads
+      as sticky at the top of the page and silently is not.
 
-    <div class="prose-rl prose mt-12">
-      <Content />
-    </div>
-
-    <section class="mt-20" aria-labelledby="risk-register">
-      <h2 id="risk-register" class="border-b border-rule pb-3 font-display text-heading text-ink">
-        {register.data.title}
-      </h2>
-      <p class="mt-4 max-w-2xl text-ink-muted">
-        Every row is a risk this system actually carries, with the control that is actually in place
-        rather than the one that would sound best. A row is marked when it has gone more than {
-          REVIEW_MAX_AGE_DAYS
-        } days without a review.
+      lg:top-24 (96px) is global.css's `scroll-padding-top: 6rem`, so a clicked
+      rail item lands its heading exactly where the rail is sitting. The header
+      does not stick on this page; that is an article-only prop (issue #99), so
+      the offset buys agreement with the anchor scroll rather than clearance.
+    */
+    }
+    <aside data-policy-rail class="mb-4 lg:sticky lg:top-24 lg:mb-0">
+      <p class="font-mono text-micro uppercase text-ink-muted">AI policy</p>
+      <p class="mt-2 font-mono text-micro uppercase text-ink-muted">
+        Updated <time datetime={policy.data.updated} data-numeric>{policy.data.updated}</time>
       </p>
-      <p class="mt-3 font-mono text-micro uppercase text-ink-muted">
-        <span data-numeric
-          >{rows.length} rows · updated <time datetime={register.data.updated}
-            >{register.data.updated}</time
-          ></span
-        >
-        {stale.length > 0 && <span class="text-warn"> · {stale.length} overdue for review</span>}
-      </p>
-
-      <!-- The table scrolls inside this container rather than widening the page;
-           `tabindex` is what makes a scrollable region reachable without a
-           pointer, and the `role`/`aria-label` pair is what stops that tab stop
-           from being an unlabelled one. -->
-      <div
-        class="mt-8 overflow-x-auto border border-rule"
-        role="region"
-        aria-label="AI risk register table"
-        tabindex="0"
-      >
-        <table class="w-full min-w-[56rem] border-collapse text-left">
-          <caption class="sr-only">
-            One row per identified risk, with its likelihood, impact, the control in place, the
-            owner, and how long ago it was last reviewed.
-          </caption>
-          <thead>
-            <tr class="border-b border-rule bg-surface-raised">
-              <th
-                scope="col"
-                class="w-[19%] px-4 py-3 font-mono text-micro uppercase text-ink-muted">Risk</th
-              >
-              <th scope="col" class="w-[9%] px-4 py-3 font-mono text-micro uppercase text-ink-muted"
-                >Likelihood</th
-              >
-              <th scope="col" class="w-[9%] px-4 py-3 font-mono text-micro uppercase text-ink-muted"
-                >Impact</th
-              >
-              <th
-                scope="col"
-                class="w-[41%] px-4 py-3 font-mono text-micro uppercase text-ink-muted"
-                >Mitigation</th
-              >
-              <th
-                scope="col"
-                class="w-[10%] px-4 py-3 font-mono text-micro uppercase text-ink-muted">Owner</th
-              >
-              <th
-                scope="col"
-                class="w-[12%] px-4 py-3 font-mono text-micro uppercase text-ink-muted">Reviewed</th
-              >
-            </tr>
-          </thead>
-          <tbody>
-            {
-              rows.map((row) => (
-                <tr class="border-b border-rule align-top last:border-b-0">
-                  <th scope="row" class="px-4 py-5 text-left font-normal">
-                    <span class="block font-mono text-micro uppercase text-accent">{row.id}</span>
-                    <span class="mt-2 block text-small text-ink">{row.risk}</span>
-                  </th>
-                  <td class="px-4 py-5">
-                    <span
-                      class={`inline-block border px-2 py-1 font-mono text-micro uppercase ${SEVERITY_CLASS[severityOf(row.likelihood)]}`}
-                    >
-                      {row.likelihood}
-                    </span>
-                  </td>
-                  <td class="px-4 py-5">
-                    <span
-                      class={`inline-block border px-2 py-1 font-mono text-micro uppercase ${SEVERITY_CLASS[severityOf(row.impact)]}`}
-                    >
-                      {row.impact}
-                    </span>
-                  </td>
-                  <td class="px-4 py-5 text-small text-ink-muted">{row.mitigation}</td>
-                  <td class="px-4 py-5 text-small text-ink-muted">{row.owner}</td>
-                  <td class="px-4 py-5">
-                    <time
-                      datetime={row.lastReviewed}
-                      class={`block font-mono text-micro ${isStale(row, now) ? 'text-warn' : 'text-ink-muted'}`}
-                    >
-                      {ageLabel(row)}
-                    </time>
-                    {isStale(row, now) && (
-                      <span class="mt-2 inline-block border border-warn px-2 py-1 font-mono text-micro uppercase text-warn">
-                        Review overdue
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))
-            }
-          </tbody>
-        </table>
+      <div class="mt-7">
+        <TableOfContents toc={sections} label={null} ariaLabel="Policy sections" />
       </div>
-    </section>
+    </aside>
+
+    <div>
+      <h1 class="max-w-[18ch] font-display text-lead text-ink">{policy.data.title}</h1>
+      <p class="mt-6 max-w-[68ch] text-large text-ink-muted">{policy.data.summary}</p>
+
+      {
+        /*
+        THE TABLES COME BEFORE THE DOCUMENT, which is an adaptation of design 1m
+        rather than a departure from it. The prototype's policy is four short
+        sections and puts the tables in the middle of them; the document this
+        page actually renders is nine sections long, and dropping two tables
+        into the middle of it would need the markdown split in half. Placing
+        them first says something true about the page instead: these are the
+        figures a reader came to check, and every paragraph below is the
+        explanation of them.
+
+        Neither table restates a number. Both are built from the constants that
+        enforce them, which is also why the prose below no longer spells a
+        window or a cap out loud -- two copies of a figure is one copy that will
+        be wrong, and the cron is the only thing that can settle which.
+      */
+      }
+      <section class="mt-14" aria-labelledby="rate-limits">
+        <h2 id="rate-limits" class={TABLE_HEADING}>Rate limits</h2>
+        <div data-policy-table class="hairline-grid mt-6 grid-cols-1">
+          {
+            LIMIT_ROWS.map((row) => (
+              <div class={TABLE_ROW}>
+                <span class="text-small text-ink">{row.what}</span>
+                <span class="font-mono text-small text-ink-muted" data-numeric>
+                  {row.value}
+                </span>
+              </div>
+            ))
+          }
+        </div>
+      </section>
+
+      <section class="mt-12" aria-labelledby="retention">
+        <h2 id="retention" class={TABLE_HEADING}>Retention</h2>
+        <div data-policy-table class="hairline-grid mt-6 grid-cols-1">
+          {
+            RETENTION.map((entry) => (
+              <div class={TABLE_ROW}>
+                <span class="text-small text-ink">{PUBLISHED_AS[entry.table]}</span>
+                <span class="font-mono text-small text-ink-muted" data-numeric>
+                  {formatWindow(entry.days)}
+                </span>
+              </div>
+            ))
+          }
+        </div>
+        <p class="mt-5 font-mono text-small uppercase text-ink-muted">
+          A daily job enforces these windows. <a href="/ops">Ops</a> reads the same constants at request
+          time.
+        </p>
+      </section>
+
+      <div class="prose-rl prose mt-16">
+        <Content />
+      </div>
+
+      <section class="mt-20" aria-labelledby="risk-register">
+        <h2 id="risk-register" class={TABLE_HEADING}>
+          {register.data.title}
+        </h2>
+        <p class="mt-4 max-w-[68ch] text-ink-muted">
+          Every row is a risk this system actually carries, with the control that is actually in
+          place rather than the one that would sound best. A row is marked when it has gone more
+          than {REVIEW_MAX_AGE_DAYS} days without a review.
+        </p>
+        <p class="mt-3 font-mono text-micro uppercase text-ink-muted">
+          <span data-numeric
+            >{rows.length} rows · updated <time datetime={register.data.updated}
+              >{register.data.updated}</time
+            ></span
+          >
+          {stale.length > 0 && <span class="text-warn"> · {stale.length} overdue for review</span>}
+        </p>
+
+        <!-- The table scrolls inside this container rather than widening the page;
+             `tabindex` is what makes a scrollable region reachable without a
+             pointer, and the `role`/`aria-label` pair is what stops that tab stop
+             from being an unlabelled one. -->
+        <div
+          class="mt-8 overflow-x-auto border border-rule"
+          role="region"
+          aria-label="AI risk register table"
+          tabindex="0"
+        >
+          <table class="w-full min-w-[56rem] border-collapse text-left">
+            <caption class="sr-only">
+              One row per identified risk, with its likelihood, impact, the control in place, the
+              owner, and how long ago it was last reviewed.
+            </caption>
+            <thead>
+              <tr class="border-b border-rule bg-surface-raised">
+                <th
+                  scope="col"
+                  class="w-[19%] px-4 py-3 font-mono text-micro uppercase text-ink-muted">Risk</th
+                >
+                <th
+                  scope="col"
+                  class="w-[9%] px-4 py-3 font-mono text-micro uppercase text-ink-muted"
+                  >Likelihood</th
+                >
+                <th
+                  scope="col"
+                  class="w-[9%] px-4 py-3 font-mono text-micro uppercase text-ink-muted">Impact</th
+                >
+                <th
+                  scope="col"
+                  class="w-[41%] px-4 py-3 font-mono text-micro uppercase text-ink-muted"
+                  >Mitigation</th
+                >
+                <th
+                  scope="col"
+                  class="w-[10%] px-4 py-3 font-mono text-micro uppercase text-ink-muted">Owner</th
+                >
+                <th
+                  scope="col"
+                  class="w-[12%] px-4 py-3 font-mono text-micro uppercase text-ink-muted"
+                  >Reviewed</th
+                >
+              </tr>
+            </thead>
+            <tbody>
+              {
+                rows.map((row) => (
+                  <tr class="border-b border-rule align-top last:border-b-0">
+                    <th scope="row" class="px-4 py-5 text-left font-normal">
+                      <span class="block font-mono text-micro uppercase text-accent">{row.id}</span>
+                      <span class="mt-2 block text-small text-ink">{row.risk}</span>
+                    </th>
+                    <td class="px-4 py-5">
+                      <span
+                        class={`inline-block border px-2 py-1 font-mono text-micro uppercase ${SEVERITY_CLASS[severityOf(row.likelihood)]}`}
+                      >
+                        {row.likelihood}
+                      </span>
+                    </td>
+                    <td class="px-4 py-5">
+                      <span
+                        class={`inline-block border px-2 py-1 font-mono text-micro uppercase ${SEVERITY_CLASS[severityOf(row.impact)]}`}
+                      >
+                        {row.impact}
+                      </span>
+                    </td>
+                    <td class="px-4 py-5 text-small text-ink-muted">{row.mitigation}</td>
+                    <td class="px-4 py-5 text-small text-ink-muted">{row.owner}</td>
+                    <td class="px-4 py-5">
+                      <time
+                        datetime={row.lastReviewed}
+                        class={`block font-mono text-micro ${isStale(row, now) ? 'text-warn' : 'text-ink-muted'}`}
+                      >
+                        {ageLabel(row)}
+                      </time>
+                      {isStale(row, now) && (
+                        <span class="mt-2 inline-block border border-warn px-2 py-1 font-mono text-micro uppercase text-warn">
+                          Review overdue
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   </div>
 </Shell>

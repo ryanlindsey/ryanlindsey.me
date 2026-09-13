@@ -9,7 +9,7 @@ import {
   LIKELIHOODS,
   REVIEW_MAX_AGE_DAYS,
 } from '../src/lib/governance/register';
-import { RETENTION } from '../src/lib/retention';
+import { PUBLISHED_AS, RETENTION } from '../src/lib/retention';
 import { BANNED_PATTERNS } from './candidacy-patterns';
 
 /**
@@ -56,19 +56,25 @@ const register = parse(registerText) as { rows: Record<string, unknown>[] };
 const policy = readFileSync('governance/ai-policy.md', 'utf8');
 
 /**
- * What each `RETENTION` table is called on /ai-policy.
+ * What each `RETENTION` table is called on /ai-policy USED TO BE DECLARED HERE,
+ * and the move is the point rather than a tidy-up.
  *
  * A table name is a schema identifier and the policy is written for a reader, so
  * the two cannot be the same string -- but they have to be bound to each other
- * somewhere, and this is that somewhere. The test below asserts key-set equality
- * with `RETENTION`, so this is a register rather than a lookup that can quietly
- * go out of date.
+ * somewhere, and this file was that somewhere for as long as the binding existed
+ * only to check hand-typed prose. The 2026-09 redesign (issue #110) made the
+ * page RENDER the rows from `RETENTION`, which needs the same binding at
+ * runtime, and a copy in a test file that a page cannot import is a second copy
+ * by construction. It lives in src/lib/retention.ts now, beside the constant and
+ * beside `formatWindow`, for the reason that function's own header already
+ * gives: one spelling, read by every surface that publishes it.
+ *
+ * Completeness is no longer this file's job either. `PUBLISHED_AS` is typed
+ * against `RETENTION`'s own table names, so a table added there without a
+ * published name is a ts(2741) under `npm run check` rather than a green suite
+ * -- earlier and louder than the equality test that used to guard it, which is
+ * kept below anyway because `npm test` does not typecheck.
  */
-const PUBLISHED_AS: Record<string, string> = {
-  chat_turns: 'Chat transcripts',
-  mcp_tool_calls: 'The tool-call audit trail',
-  fit_reports: 'Fit reports',
-};
 
 /**
  * How a window is spelled in prose, DERIVED FROM `days`.
@@ -83,8 +89,13 @@ const PUBLISHED_AS: Record<string, string> = {
  * defect both times; binding the table only moved it.
  *
  * Derived, so every distinct window is a distinct phrase and there is no bucket
- * left to hide in. `formatWindow` is NOT imported -- it lives on a parallel
- * branch and would not resolve here.
+ * left to hide in. `formatWindow` is STILL NOT imported, though the reason has
+ * changed: it used to live on a parallel branch and not resolve here, and it
+ * resolves fine now. It stays a separate copy because the test above asserts an
+ * ABSENCE, and an absence checked with the page's own formatter passes
+ * vacuously the moment that formatter returns something unexpected. An
+ * independent spelling is what keeps "the prose does not say it" from meaning
+ * "we looked for the wrong string".
  */
 function windowPhrase(days: number): string {
   if (days % 365 === 0) {
@@ -174,21 +185,38 @@ describe('the register', () => {
 });
 
 describe('the policy', () => {
-  test('publishes exactly the retention windows the cron enforces, table by table', () => {
-    // BOUND TABLE-TO-WINDOW, not window-to-anywhere. The version this replaces
-    // asserted only that the LITERALS '30 days' and '1 year' appeared somewhere
-    // in the file, which with RETENTION = [30, 365, 365] is nearly free:
-    // changing `chat_turns` to 60 days turns its phrase into '1 year', which the
-    // page still contains for two other tables, so the suite stayed green while
-    // the page said 30 and the cron enforced 60. The published NAME of each
-    // table has to sit next to its own window for this to mean anything.
+  test('restates no retention window in prose, because the page renders them', () => {
+    // INVERTED BY ISSUE #110, and the claim it protects is the same one. This
+    // used to assert that the document said `<label> — <window>` for every
+    // retained table. The page now builds that row from `RETENTION` itself, so
+    // a sentence here saying it again is a second copy of a number that only
+    // the cron can settle: the two agree today and the first edit to either is
+    // free to part them. The rendered assertion moved to tests/pages.test.ts's
+    // "every retention window on the page is the one the cron enforces", which
+    // is where the claim is now made.
     //
-    // The phrase itself is derived -- see `windowPhrase` above for why the
-    // binding alone was not enough.
+    // ANY OCCURRENCE, not just the old `<label> — <window>` shape. Asserting the
+    // absence of that exact string would pass on "Chat transcripts are kept for
+    // 30 days", which is the same duplication wearing a different sentence.
+    //
+    // "a year" at the end of the fingerprinting bullet is untouched by this and
+    // should be: it describes how long an MCP client's name is kept, in prose,
+    // and it is not the phrase `formatWindow` produces.
     for (const { table, days } of RETENTION) {
-      const label = PUBLISHED_AS[table];
-      expect(label, `${table} has no published name in this test's table`).toBeDefined();
-      expect(policy, `${table} window`).toContain(`${label} — ${windowPhrase(days)}`);
+      expect(
+        policy,
+        `${table}'s window is restated in prose; the table on /ai-policy carries it`,
+      ).not.toContain(windowPhrase(days));
+    }
+  });
+
+  test('still names every retained table, in the words the page renders', () => {
+    // The other half of the inversion above. Dropping the windows from the prose
+    // must not turn into dropping the disclosure: each table is still named in
+    // the document, in the same words the rendered table labels it with, so the
+    // section a reader lands on from the rail describes the row they just read.
+    for (const { table } of RETENTION) {
+      expect(policy, `${table} is no longer named in the policy`).toContain(PUBLISHED_AS[table]);
     }
   });
 
@@ -209,9 +237,14 @@ describe('the policy', () => {
     // EQUALITY, the same reasoning as SCAN_EXCEPTIONS: adding a table to
     // RETENTION without giving it a published name fails here rather than
     // silently skipping it above, and dropping one leaves a stale entry that
-    // also fails. Without this, `PUBLISHED_AS[table]` would be `undefined` for a
-    // new table and the `toContain` above would be checking a string beginning
-    // "undefined —", which nobody would read as a missing disclosure.
+    // also fails. Without this, `PUBLISHED_AS[table]` would be `undefined` and
+    // /ai-policy would render a row labelled "undefined", which nobody would
+    // read as a missing disclosure.
+    //
+    // KEPT AFTER THE TYPE MOVED WITH IT (issue #110). `PUBLISHED_AS` is now
+    // typed against `RETENTION`'s table names, so `npm run check` catches a
+    // missing entry first -- but `npm test` does not typecheck, and this suite
+    // is what runs in the loop while somebody is editing the constant.
     expect(Object.keys(PUBLISHED_AS).sort()).toEqual(RETENTION.map((row) => row.table).sort());
   });
 
