@@ -1,4 +1,5 @@
 ---
+import ThemeToggle from './ThemeToggle.astro';
 import { NAV_LINKS, SYSTEM_LINKS, AGENT_LINKS } from '../lib/nav';
 
 /**
@@ -113,6 +114,23 @@ const isExternal = (href: string) => href.startsWith('http');
         >⌘K</span
       >
     </span>
+
+    <!--
+      The theme control, directly under the search placeholder because that is
+      where it sits on the desktop: SiteHeader's right cluster is search and
+      theme side by side, and below `lg` that cluster is hidden, so the overlay
+      repeats the pair stacked rather than inventing a new home for half of it.
+
+      Issue #101's step 5 said not to render one here -- "the design does not
+      place one there, and inventing a spot for it is out of scope". Followed
+      literally that deletes the only way to choose a theme on a phone, since
+      the pre-redesign header rendered this at every width. Raised on the pull
+      request and overruled there, so the instruction is recorded rather than
+      quietly ignored: the design does not place one, and one is placed anyway.
+    -->
+    <div class="mt-4 flex">
+      <ThemeToggle />
+    </div>
 
     <!--
       `mt-auto` is what puts this strip at the bottom of a short viewport and

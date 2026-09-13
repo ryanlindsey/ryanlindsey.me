@@ -19,6 +19,8 @@
  * this repo that need a sub-element share these rather than each growing a
  * slightly different regex.
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 /**
  * Astro emits template `<!-- ... -->` comments into the built page, and this
@@ -50,6 +52,30 @@ export function stripComments(html: string): string {
     stripped = stripped.replace(/<!--[\s\S]*?-->/g, '');
   } while (stripped !== previous);
   return stripped;
+}
+
+/**
+ * The site header as it was BUILT, for the jsdom suites to drive.
+ *
+ * A function rather than a module constant so the harness suites that import
+ * the extractors above do not read the build output they have no use for.
+ *
+ * `new URL('../dist/...', import.meta.url)` -- which every harness suite here
+ * uses to find a file next to itself -- DOES NOT WORK under jsdom, and the
+ * failure reads as a path bug rather than an environment one: the
+ * `@vitest-environment jsdom` transform rewrites `import.meta.url` to
+ * `self.location`, which is the jsdom document's address (an http:// URL for a
+ * page that was never served), so the URL resolves and then `readFileSync`
+ * rejects it with "The URL must be of scheme file". The project root is the
+ * honest anchor instead; vitest runs with cwd there.
+ *
+ * `npm test` is `astro build && vitest run`, so the build always exists by the
+ * time this runs. A bare `npx vitest run` on a suite that calls this needs
+ * `npm run build` first, the same as every harness suite in this directory.
+ */
+export function builtHeaderMarkup(): string {
+  const page = readFileSync(resolve(process.cwd(), 'dist/client/index.html'), 'utf8');
+  return elementWith(page, 'header', 'data-site-header');
 }
 
 /**

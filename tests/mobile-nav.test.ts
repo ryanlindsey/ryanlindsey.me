@@ -89,6 +89,37 @@ test('both 44x44 hit targets are spelled at 44px, because the design floors them
   expect(close).toMatch(/class="[^"]*\bw-11\b/);
 });
 
+test('the overlay carries the theme control, because the header hides it below lg', async () => {
+  // A REGRESSION GUARD, not a new feature's test. Before this issue the right
+  // cluster had no breakpoint on it, so the theme toggle rendered at every
+  // width -- badly, crushed into a wrapping row, but it was there and it
+  // worked. Putting the cluster behind `lg` took the only way to choose a
+  // theme away from every phone, and issue #101's step 5 says in terms not to
+  // put one in the overlay ("the design does not place one there, and
+  // inventing a spot for it is out of scope"). Followed literally, that
+  // instruction deletes a control. Raised on the pull request and overruled
+  // there, which is why this test disagrees with the issue that asked for it.
+  const overlay = overlayOf(await html('/'));
+  expect(overlay).toContain('data-theme-toggle');
+});
+
+test('the page carries exactly two theme controls, one per header', async () => {
+  // The desktop cluster's and the overlay's. Asserted because two is the
+  // number that makes ThemeToggle's script have to paint every instance
+  // rather than the one that was clicked -- see tests/theme-toggle.test.ts.
+  // A third would mean a surface grew one without that being thought about.
+  //
+  // MATCHED ON THE BUTTON TAG, not on the bare attribute name. The first
+  // version of this counted `/data-theme-toggle/g` and passed at RED against
+  // a page carrying ONE button: Astro inlines the component's script, and
+  // that script contains `querySelectorAll('[data-theme-toggle]')`, so the
+  // string occurs twice with only one control on the page. The selector in
+  // global.css's @media print block is a third occurrence waiting to happen
+  // the day that stylesheet is inlined too.
+  const page = await html('/');
+  expect([...page.matchAll(/<button[^>]*data-theme-toggle/g)]).toHaveLength(2);
+});
+
 test('the overlay is a cut, so reduced motion has nothing to disable', async () => {
   // Required behaviour 5, confirmed rather than assumed. The motion budget
   // (05 §4, restated in the epic) spends one of its three moments here and

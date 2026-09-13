@@ -26,24 +26,11 @@
  * that gutter. That is the mechanism, not the reflow. The reflow is checked by
  * hand at 390px and on a desktop browser, per the issue's step 8.
  */
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { beforeEach, expect, test } from 'vitest';
-import { elementWith } from './markup';
+import { builtHeaderMarkup } from './markup';
 import { initMobileNav } from '../src/lib/mobile-nav';
 
-/*
- * `new URL('../dist/...', import.meta.url)` -- which every other suite in this
- * repo uses to find a file next to itself -- DOES NOT WORK HERE, and the
- * failure is worth writing down because it reads as a path bug rather than an
- * environment one. Under `@vitest-environment jsdom` the transform rewrites
- * `import.meta.url` to `self.location`, which is the jsdom document's address
- * (an http:// URL for a page that was never served), so the URL resolves and
- * then `readFileSync` rejects it: "The URL must be of scheme file". The
- * project root is the honest anchor instead; vitest runs with cwd there.
- */
-const builtPage = readFileSync(resolve(process.cwd(), 'dist/client/index.html'), 'utf8');
-const headerMarkup = elementWith(builtPage, 'header', 'data-site-header');
+const headerMarkup = builtHeaderMarkup();
 
 const toggle = () => document.querySelector<HTMLButtonElement>('[aria-controls="rl-mobile-menu"]')!;
 const overlay = () => document.getElementById('rl-mobile-menu')!;
