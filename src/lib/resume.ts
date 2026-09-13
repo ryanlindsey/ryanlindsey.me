@@ -148,7 +148,50 @@ export function workHistoryIssues(work: readonly ResumeWorkEntry[]): string[] {
 export interface WorkGroup {
   name: string;
   location?: string;
+  /**
+   * The tenure across the whole group, in the same YYYY-MM shape a role
+   * carries, so `formatDateRange` renders it and no second formatter exists.
+   * `endDate` absent means "present", exactly as it does on a role.
+   *
+   * Here rather than in the template (2026-09 redesign, design 1k) because
+   * the span is the number that goes beside the company name, and a company
+   * with four titles has a tenure no single role carries: Weedmaps runs from
+   * Mar 2016, and its newest role starts in Feb 2021. Computed once, beside
+   * the grouping it belongs to, for the same reason the grouping itself moved
+   * out of `src/pages/resume.astro` -- so every format that renders it agrees
+   * by construction instead of by agreement.
+   */
+  startDate: string;
+  endDate?: string;
   roles: ResumeWorkEntry[];
+}
+
+/**
+ * The span across every role in one group. YYYY-MM strings compare correctly
+ * with plain string comparison, so this needs no date parsing.
+ *
+ * Read off the dates rather than off the array's ends on purpose.
+ * `groupWorkByCompany` does not sort, and reverse-chronological order is
+ * `workHistoryIssues`' business -- it reports a violation rather than
+ * repairing it. Taking the span from `roles[0]` and `roles.at(-1)` would agree
+ * with this on every well-ordered input and be silently wrong on the one input
+ * already known to be broken.
+ */
+function tenureOf(roles: readonly ResumeWorkEntry[]): Pick<WorkGroup, 'startDate' | 'endDate'> {
+  let startDate = roles[0].startDate;
+  let endDate = roles[0].endDate;
+
+  for (const role of roles.slice(1)) {
+    if (role.startDate < startDate) startDate = role.startDate;
+
+    // One open role leaves the whole tenure open: somebody still at the
+    // company has not left it, whatever the rows for their earlier titles say.
+    if (endDate === undefined) continue;
+    if (role.endDate === undefined) endDate = undefined;
+    else if (role.endDate > endDate) endDate = role.endDate;
+  }
+
+  return { startDate, endDate };
 }
 
 export function groupWorkByCompany(work: readonly ResumeWorkEntry[]): WorkGroup[] {
@@ -158,9 +201,24 @@ export function groupWorkByCompany(work: readonly ResumeWorkEntry[]): WorkGroup[
     if (current && current.name === entry.name) {
       current.roles.push(entry);
     } else {
-      groups.push({ name: entry.name, location: entry.location, roles: [entry] });
+      groups.push({
+        name: entry.name,
+        location: entry.location,
+        startDate: entry.startDate,
+        endDate: entry.endDate,
+        roles: [entry],
+      });
     }
   }
+
+  // Second pass, after every group is closed: a group's tenure is a fact about
+  // all of its roles, and the first pass only ever has some of them.
+  for (const group of groups) {
+    const { startDate, endDate } = tenureOf(group.roles);
+    group.startDate = startDate;
+    group.endDate = endDate;
+  }
+
   return groups;
 }
 

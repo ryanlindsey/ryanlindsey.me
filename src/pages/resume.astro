@@ -1,6 +1,8 @@
 ---
 import Shell from '../layouts/Shell.astro';
 import ResumeFormats from '../components/ResumeFormats.astro';
+import TableOfContents from '../components/TableOfContents.astro';
+import type { TocNode } from '../lib/toc';
 import { getResume } from '../lib/resume-collection';
 import { formatDateRange, resumeGaps, groupWorkByCompany } from '../lib/resume';
 
@@ -18,8 +20,37 @@ const showGapNotice = import.meta.env.DEV && gaps.length > 0;
 
 // Consecutive `work` entries sharing a `name` render under one company
 // heading. groupWorkByCompany lives in src/lib/resume.ts (day 3 Task 3) so
-// /resume.md groups identically by construction instead of by agreement.
+// /resume.md groups identically by construction instead of by agreement, and
+// since the 2026-09 redesign it also carries the tenure across the group --
+// the number beside the company name, which for a company where several
+// titles were held is a span no single role has.
 const workGroups = groupWorkByCompany(resume.work);
+
+/*
+ * The sticky section rail (design 1k, issue #108). Built as TocNode[] and
+ * handed to the article's own TableOfContents rather than to a second rail
+ * written here: that component owns the IntersectionObserver, the
+ * `aria-current` contract, and two fixes its comments record (a symmetric
+ * root margin flickers between headings; a page scrolled to the very bottom
+ * never lights its last section). A hand-built copy would have arrived
+ * without either of them and nothing would have said so.
+ *
+ * DERIVED FROM THE SAME CONDITIONS THE SECTIONS THEMSELVES ARE, not from a
+ * hardcoded list of four. Projects, Education and Skills each disappear while
+ * their array is empty ("no empty scaffolding on any surface", fix round 1),
+ * and a rail item pointing at a section that is not on the page is a broken
+ * link rather than a missing one.
+ */
+const sections: TocNode[] = [
+  { id: 'experience', text: 'Experience', present: true },
+  { id: 'projects', text: 'Projects', present: resume.projects.length > 0 },
+  { id: 'education', text: 'Education', present: resume.education.length > 0 },
+  { id: 'skills', text: 'Skills', present: resume.skills.length > 0 },
+]
+  .filter((section) => section.present)
+  .map((section) => ({ slug: section.id, text: section.text, children: [] }));
+
+const basedIn = `${resume.basics.location.city}, ${resume.basics.location.region}`;
 
 // FIX ROUND 2: `/resume` has a `.md` twin (src/pages/resume.md.ts), is named
 // in wrangler.jsonc's `run_worker_first`, and src/worker.ts negotiates
@@ -29,6 +60,8 @@ const workGroups = groupWorkByCompany(resume.work);
 // an agent is most likely to fetch, did not. The prop below is what Base.astro
 // turns into that tag, and public/_headers's `/resume/` rule carries the same
 // URL in `X-Markdown-Variant` -- the header and the tag must never disagree.
+
+const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading text-ink';
 ---
 
 <Shell
@@ -36,12 +69,12 @@ const workGroups = groupWorkByCompany(resume.work);
   description={resume.basics.summary}
   markdownHref="/resume.md"
 >
-  <div class="mx-auto max-w-3xl px-6 py-16" data-testid="resume">
+  <div data-testid="resume">
     {
       showGapNotice && (
         <div
           data-gap-notice
-          class="mb-10 border border-warn px-4 py-3 font-mono text-small text-warn"
+          class="mx-auto mt-10 max-w-[1440px] border border-warn px-4 py-3 font-mono text-small text-warn lg:px-10"
         >
           <p class="text-micro uppercase tracking-wide">Dev only — résumé gaps</p>
           <ul class="mt-2 list-disc space-y-1 pl-5">
@@ -53,152 +86,242 @@ const workGroups = groupWorkByCompany(resume.work);
       )
     }
 
-    <p class="mb-6 border-t border-accent pt-3 font-mono text-micro uppercase text-accent">
-      Resume
-    </p>
-    <h1 class="font-display text-title text-ink">{resume.basics.name}</h1>
-    <p class="mt-2 font-mono text-micro uppercase text-ink-muted">{resume.basics.label}</p>
-    <p class="mt-6 text-ink-muted">{resume.basics.summary}</p>
+    {
+      /*
+      2px ink, not the 1px rule that divides: the design's "close a masthead"
+      weight, and the only thing telling this line apart from the dozens of
+      hairlines below it. It is on the full-bleed section rather than on the
+      grid inside so it runs edge to edge like the header's, which is what the
+      1440px cap and the 40px gutter on the inner element are for.
+    */
+    }
+    <section data-resume-masthead class="border-b-2 border-ink">
+      <div
+        class="mx-auto grid max-w-[1440px] gap-10 px-5 pb-12 pt-12 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-16 lg:px-10"
+      >
+        <div>
+          <h1 class="font-display text-display text-ink">{resume.basics.name}</h1>
+          <p class="mt-4 font-mono text-subheading uppercase text-accent">{resume.basics.label}</p>
+          {
+            /*
+            text-large (1.1875rem), the scale's "large body / standfirst" step,
+            where the handoff's table asks for `text-body at 1.125rem`. Those
+            two are not the same thing and cannot both be had: text-body IS
+            1.0625rem. A named step one pixel from the number, at body weight
+            and body leading, beats an arbitrary text-[1.125rem] that no other
+            page could reuse -- the whole reason the type scale grew named
+            steps in the first place (issue #97).
+          */
+          }
+          <p class="mt-7 max-w-[66ch] text-large text-ink-muted">{resume.basics.summary}</p>
+        </div>
 
-    <ResumeFormats />
-
-    <section class="mt-16" aria-labelledby="experience">
-      <h2 id="experience" class="border-b border-rule pb-3 font-display text-heading text-ink">
-        Experience
-      </h2>
-      <div class="mt-8 space-y-10">
-        {
-          workGroups.map((group) => (
-            <div>
-              <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                <h3 class="font-display text-subheading text-ink">{group.name}</h3>
-                {group.location && (
-                  <p class="font-mono text-micro uppercase text-ink-muted">{group.location}</p>
-                )}
-              </div>
-              <div class="mt-4 space-y-6 border-l border-rule pl-4">
-                {group.roles.map((role) => (
-                  <div>
-                    <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                      <p class="font-semibold text-ink">{role.position}</p>
-                      <p class="font-mono text-micro text-ink-muted" data-numeric>
-                        {formatDateRange(role.startDate, role.endDate)}
-                      </p>
-                    </div>
-                    {role.highlights.length > 0 && (
-                      <ul class="mt-2 list-disc space-y-1 pl-5 text-ink-muted">
-                        {role.highlights.map((highlight) => (
-                          <li>{highlight}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))
-        }
+        <div class="lg:border-l lg:border-rule lg:pl-10">
+          <ResumeFormats />
+          <div class="mt-8">
+            <p class="font-mono text-micro uppercase text-ink-muted">Based in</p>
+            <p class="mt-2 text-body text-ink">{basedIn}</p>
+          </div>
+        </div>
       </div>
     </section>
 
-    {
-      // Work Ryan owns outright, kept out of `work` deliberately -- see the
-      // `projects` comment in content.config.ts. Same no-empty-scaffolding
-      // rule as Education and Skills below.
-      resume.projects.length > 0 && (
-        <section class="mt-16" aria-labelledby="projects">
-          <h2 id="projects" class="border-b border-rule pb-3 font-display text-heading text-ink">
-            Projects
-          </h2>
-          <div class="mt-8 space-y-10">
-            {resume.projects.map((project) => (
-              <div>
-                <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                  <h3 class="font-display text-subheading text-ink">
-                    {project.url ? (
-                      <a href={project.url} class="hover:text-accent">
-                        {project.name}
-                      </a>
-                    ) : (
-                      project.name
+    <div
+      data-resume-body
+      class="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-12 lg:px-10"
+    >
+      {
+        /*
+        lg:top-24 (96px) is global.css's `scroll-padding-top: 6rem`, so a
+        clicked rail item lands its heading exactly where the rail is sitting.
+        The header does not stick on this page -- that is an article-only prop
+        (issue #99) -- so the offset is buying agreement with the anchor scroll
+        rather than clearance from anything.
+
+        `lg:items-start` on the grid above is what makes the `sticky` below do
+        anything at all, and it is the whole reason ArticleLayout.astro carries
+        it too. A grid item stretches to its row by default, so the aside was
+        as tall as the entire résumé and had no room to move inside its own
+        box: MEASURED before the fix, the rail's top was 4621px above the
+        viewport with the page scrolled to the bottom. It reads as sticky at
+        the top of the page and silently is not.
+      */
+      }
+      <aside data-resume-rail class="mb-2 lg:sticky lg:top-24 lg:mb-0">
+        <TableOfContents toc={sections} label={null} ariaLabel="Résumé sections" />
+      </aside>
+
+      <div>
+        <section aria-labelledby="experience">
+          <h2 id="experience" class={SECTION_HEADING}>Experience</h2>
+          <ul class="mt-10 flex flex-col gap-12">
+            {
+              workGroups.map((group) => (
+                <li
+                  data-employer
+                  data-company={group.name}
+                  class="grid gap-6 border-t border-rule pt-[26px] first:border-t-0 first:pt-0 lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-9"
+                >
+                  <div>
+                    <h3 class="font-display text-subheading text-ink">{group.name}</h3>
+                    {group.location && (
+                      <p class="mt-1.5 font-mono text-micro uppercase text-ink-muted">
+                        {group.location}
+                      </p>
                     )}
-                  </h3>
-                  {project.startDate && (
-                    <p class="font-mono text-micro text-ink-muted" data-numeric>
-                      {formatDateRange(project.startDate, project.endDate)}
+                    <p
+                      data-tenure
+                      data-numeric
+                      class="mt-1.5 font-mono text-micro uppercase text-ink-muted"
+                    >
+                      {formatDateRange(group.startDate, group.endDate)}
                     </p>
-                  )}
-                </div>
-                {project.roles.length > 0 && (
-                  <p class="mt-1 font-mono text-micro uppercase text-ink-muted">
-                    {project.roles.join(', ')}
-                  </p>
-                )}
-                <p class="mt-2 text-ink-muted">{project.description}</p>
-                {project.highlights.length > 0 && (
-                  <ul class="mt-2 list-disc space-y-1 pl-5 text-ink-muted">
-                    {project.highlights.map((highlight) => (
-                      <li>{highlight}</li>
+                  </div>
+
+                  <div class="flex flex-col gap-10">
+                    {group.roles.map((role) => (
+                      <div>
+                        <div class="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+                          <h4 class="font-display text-subheading text-ink">{role.position}</h4>
+                          {/*
+                            A company with one title has already printed this
+                            exact range as its tenure in the column to the
+                            left, and design 1k leaves the role row bare there
+                            -- RED Digital Cinema's is the visible case. The
+                            handoff's prose says every title carries its dates,
+                            but it is describing the multi-title block, and by
+                            construction a single-role group's tenure IS its
+                            role's range. This prints the number once.
+                          */}
+                          {group.roles.length > 1 && (
+                            <p
+                              data-numeric
+                              class="ml-auto font-mono text-micro uppercase text-ink-muted"
+                            >
+                              {formatDateRange(role.startDate, role.endDate)}
+                            </p>
+                          )}
+                        </div>
+                        {role.highlights.length > 0 && (
+                          <ul class="mt-4 flex max-w-[72ch] list-disc flex-col gap-2.5 pl-5 text-body text-ink-muted">
+                            {role.highlights.map((highlight) => (
+                              <li>{highlight}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
                     ))}
-                  </ul>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-      )
-    }
-
-    {
-      // No empty scaffolding on any surface, HTML included (fix round 1):
-      // an empty array means the whole section -- heading included -- is
-      // omitted, not just its contents. Comes back on its own once the
-      // content track populates `education`.
-      resume.education.length > 0 && (
-        <section class="mt-16" aria-labelledby="education">
-          <h2 id="education" class="border-b border-rule pb-3 font-display text-heading text-ink">
-            Education
-          </h2>
-          <div class="mt-8 space-y-6">
-            {resume.education.map((entry) => (
-              <div>
-                <p class="font-semibold text-ink">{entry.institution}</p>
-                {(entry.studyType || entry.area) && (
-                  <p class="text-ink-muted">
-                    {[entry.studyType, entry.area].filter(Boolean).join(', ')}
-                  </p>
-                )}
-                {entry.startDate && (
-                  <p class="font-mono text-micro text-ink-muted" data-numeric>
-                    {formatDateRange(entry.startDate, entry.endDate)}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-      )
-    }
-
-    {
-      // Same rule as Education above: comes back on its own once `skills`
-      // is populated.
-      resume.skills.length > 0 && (
-        <section class="mt-16" aria-labelledby="skills">
-          <h2 id="skills" class="border-b border-rule pb-3 font-display text-heading text-ink">
-            Skills
-          </h2>
-          <ul class="mt-8 space-y-2">
-            {resume.skills.map((skill) => (
-              <li>
-                <span class="font-semibold text-ink">{skill.name}:</span>{' '}
-                <span class="text-ink-muted">{skill.keywords.join(', ')}</span>
-              </li>
-            ))}
+                  </div>
+                </li>
+              ))
+            }
           </ul>
         </section>
-      )
-    }
+
+        {
+          // Work Ryan owns outright, kept out of `work` deliberately -- see the
+          // `projects` comment in content.config.ts. Same no-empty-scaffolding
+          // rule as Education and Skills below.
+          resume.projects.length > 0 && (
+            <section class="mt-20" aria-labelledby="projects">
+              <h2 id="projects" class={SECTION_HEADING}>
+                Projects
+              </h2>
+              <ul class="mt-10 flex flex-col gap-12">
+                {resume.projects.map((project) => (
+                  <li class="grid gap-6 border-t border-rule pt-[26px] first:border-t-0 first:pt-0 lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-9">
+                    <div>
+                      <h3 class="font-display text-subheading text-ink">
+                        {project.url ? <a href={project.url}>{project.name}</a> : project.name}
+                      </h3>
+                      {project.roles.length > 0 && (
+                        <p class="mt-1.5 font-mono text-micro uppercase text-ink-muted">
+                          {project.roles.join(', ')}
+                        </p>
+                      )}
+                      {project.startDate && (
+                        <p
+                          data-numeric
+                          class="mt-1.5 font-mono text-micro uppercase text-ink-muted"
+                        >
+                          {formatDateRange(project.startDate, project.endDate)}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <p class="max-w-[72ch] text-body text-ink-muted">{project.description}</p>
+                      {project.highlights.length > 0 && (
+                        <ul class="mt-4 flex max-w-[72ch] list-disc flex-col gap-2.5 pl-5 text-body text-ink-muted">
+                          {project.highlights.map((highlight) => (
+                            <li>{highlight}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )
+        }
+
+        {
+          // No empty scaffolding on any surface, HTML included (fix round 1):
+          // an empty array means the whole section -- heading included -- is
+          // omitted, not just its contents. Comes back on its own once the
+          // content track populates `education`.
+          resume.education.length > 0 && (
+            <section class="mt-20" aria-labelledby="education">
+              <h2 id="education" class={SECTION_HEADING}>
+                Education
+              </h2>
+              <ul class="mt-10 flex flex-col gap-12">
+                {resume.education.map((entry) => (
+                  <li class="grid gap-6 border-t border-rule pt-[26px] first:border-t-0 first:pt-0 lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-9">
+                    <div>
+                      <h3 class="font-display text-subheading text-ink">{entry.institution}</h3>
+                      {entry.startDate && (
+                        <p
+                          data-numeric
+                          class="mt-1.5 font-mono text-micro uppercase text-ink-muted"
+                        >
+                          {formatDateRange(entry.startDate, entry.endDate)}
+                        </p>
+                      )}
+                    </div>
+                    {(entry.studyType || entry.area) && (
+                      <p class="max-w-[72ch] text-body text-ink-muted">
+                        {[entry.studyType, entry.area].filter(Boolean).join(', ')}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )
+        }
+
+        {
+          // Same rule as Education above: comes back on its own once `skills`
+          // is populated.
+          resume.skills.length > 0 && (
+            <section class="mt-20" aria-labelledby="skills">
+              <h2 id="skills" class={SECTION_HEADING}>
+                Skills
+              </h2>
+              <ul class="mt-10 flex flex-col gap-12">
+                {resume.skills.map((skill) => (
+                  <li class="grid gap-6 border-t border-rule pt-[26px] first:border-t-0 first:pt-0 lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-9">
+                    <h3 class="font-display text-subheading text-ink">{skill.name}</h3>
+                    <p class="max-w-[72ch] text-body text-ink-muted">{skill.keywords.join(', ')}</p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )
+        }
+      </div>
+    </div>
   </div>
 
   <script>

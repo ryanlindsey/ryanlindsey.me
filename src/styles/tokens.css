@@ -94,6 +94,19 @@
  * and a dark-OS visitor with JS disabled prints the dark palette on top of
  * Chrome's backgrounds-off default: near-white ink on white paper.
  *
+ * THE PALETTE IS NOT THE WHOLE JOB, and the comment above used to imply it
+ * was. `color-scheme` decides what the UA paints the page canvas with -- the
+ * part of the sheet outside body's own background box, i.e. the margins --
+ * and the no-JS dark block sets it on the same :root this rule overrides.
+ * MEASURED 2026-09-13, printing /resume over CDP with prefers-color-scheme:
+ * dark, JavaScript disabled and print media: the tokens won and the ink came
+ * out black on a white content area, inside a 0.6in black frame on every one
+ * of the seven sheets. Adding `color-scheme: light` below removed it; the
+ * before and after were both printed and compared. The sentence above about
+ * Chrome printing backgrounds off by default is what hid this for so long --
+ * browserRenderer passes `printBackground: true`, so backgrounds do reach
+ * paper on the path that matters.
+ *
  * The layout side of print (hiding site chrome, single-column flow, URL
  * expansion) lives in global.css's own `@media print` block.
  */
@@ -101,6 +114,8 @@
   :root,
   :root:not([data-theme='light']),
   :root[data-theme='dark'] {
+    color-scheme: light;
+
     --rl-bg: #ffffff;
     --rl-surface: #ffffff;
     --rl-ink: #000000;

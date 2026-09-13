@@ -108,6 +108,21 @@ describe('print rules', () => {
     expect(chromeSelectors).not.toContain('footer');
   });
 
+  test('resets color-scheme, so the sheet itself is light and not just its ink', () => {
+    // MEASURED (2026-09-13), printing /resume over CDP with
+    // prefers-color-scheme: dark, JavaScript disabled and print media -- the
+    // exact case the specificity note below exists for. The tokens won: black
+    // ink on a white content area. The SHEET did not: `color-scheme: dark` was
+    // still on :root from the no-JS block, Chrome paints the page canvas --
+    // the margins, which body's own background box never covers -- from that
+    // rather than from body's background-color, and browserRenderer passes
+    // printBackground: true. Every one of the seven sheets came out framed in
+    // a 0.6in black border. Re-printed after the fix, the frame is gone.
+    // Overriding the palette is not enough on its own; the property that
+    // decides the canvas has to be overridden with it.
+    expect(tokensPrintBlock).toMatch(/color-scheme:\s*light/);
+  });
+
   test('out-specifies the no-JS dark block so the light palette always wins', () => {
     // tokens.css declares the no-JS dark palette under
     // `:root:not([data-theme='light'])`, which is (0,2,0) because :not()

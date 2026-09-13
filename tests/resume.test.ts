@@ -287,7 +287,54 @@ describe('groupWorkByCompany', () => {
 
   test('wraps a single entry in its own group', () => {
     const entry = workEntry({ name: 'A', position: 'Role', startDate: '2020-01' });
-    expect(groupWorkByCompany([entry])).toEqual([{ name: 'A', roles: [entry] }]);
+    expect(groupWorkByCompany([entry])).toEqual([
+      { name: 'A', startDate: '2020-01', roles: [entry] },
+    ]);
+  });
+
+  test('spans the whole group rather than its most recent role', () => {
+    // The number design 1k puts beside the company name. Four Weedmaps stints
+    // start in Mar 2016 and the most recent one starts in Feb 2021 -- so a
+    // tenure taken from the newest role would print "Feb 2021", shortening a
+    // decade at one employer to the length of its current title.
+    const weedmaps = groupWorkByCompany(resumeFixture.work)[0];
+    expect(weedmaps.startDate).toBe('2016-03');
+    expect(weedmaps.endDate).toBeUndefined();
+    expect(formatDateRange(weedmaps.startDate, weedmaps.endDate)).toBe('Mar 2016 — Present');
+  });
+
+  test('closes the span at the latest endDate once every role has ended', () => {
+    const red = groupWorkByCompany(resumeFixture.work)[1];
+    expect(red.name).toBe('RED Digital Cinema');
+    expect(formatDateRange(red.startDate, red.endDate)).toBe('Oct 2011 — Feb 2016');
+  });
+
+  test('takes the span from the dates themselves, not from the array order', () => {
+    // groupWorkByCompany deliberately does not sort -- workHistoryIssues is
+    // what enforces reverse-chronological order, and it reports rather than
+    // repairs. A span read off roles[0] and roles.at(-1) would agree with
+    // this function on every correctly ordered input and be quietly wrong on
+    // the one input that is already known to be broken.
+    const work = [
+      workEntry({ name: 'A', position: 'Middle', startDate: '2019-01', endDate: '2020-01' }),
+      workEntry({ name: 'A', position: 'Earliest', startDate: '2017-01', endDate: '2019-01' }),
+      workEntry({ name: 'A', position: 'Latest', startDate: '2020-01', endDate: '2022-06' }),
+    ];
+    const [group] = groupWorkByCompany(work);
+    expect(group.startDate).toBe('2017-01');
+    expect(group.endDate).toBe('2022-06');
+  });
+
+  test('one open role leaves the whole tenure open', () => {
+    // "Present" outranks every endDate in the group: somebody still at the
+    // company has not left it, whatever the rows for their earlier titles say.
+    const work = [
+      workEntry({ name: 'A', position: 'Current', startDate: '2021-01' }),
+      workEntry({ name: 'A', position: 'Former', startDate: '2019-01', endDate: '2021-01' }),
+    ];
+    const [group] = groupWorkByCompany(work);
+    expect(group.startDate).toBe('2019-01');
+    expect(group.endDate).toBeUndefined();
   });
 
   test('returns an empty array for an empty work history', () => {
