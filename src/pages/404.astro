@@ -209,13 +209,20 @@ const CHIPS = [
     the parser cost is noise, and it runs at parse time with the box already
     above it in the document, so it needs no DOMContentLoaded.
 
+    `data-requested-fill` is the handle tests/pages.test.ts finds this script
+    by. It is on the OPENING TAG rather than inferred from the body because
+    tests/markup.ts's `elementWith` anchors on its needle's opening tag, and
+    both markers in the body (`data-requested-box`, `data-requested-path`)
+    appear in the markup above first, so either one would hand the test the
+    wrong script.
+
     `textContent`, never `innerHTML`. Anyone can craft a URL, and this is the
     one page every unrouted request on the site lands on, so an `innerHTML`
     here would be a reflected XSS on the widest surface there is. Inserting as
     text is the entire defense; nothing below escapes anything, because
     nothing below needs to.
   -->
-  <script is:inline>
+  <script is:inline data-requested-fill>
     (() => {
       const box = document.querySelector('[data-requested-box]');
       const slot = box && box.querySelector('[data-requested-path]');

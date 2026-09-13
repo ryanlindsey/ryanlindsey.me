@@ -4,6 +4,7 @@ import { createTestHarness } from 'wrangler';
 import type { CollectionEntry } from 'astro:content';
 import { SITE_HARNESS_WORKERS } from './workers';
 import { BANNED_PATTERNS } from './candidacy-patterns';
+import { elementWith } from './markup';
 import { GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
 import { PILLAR_LABELS } from '../src/lib/pillars';
 import { formatDateRange, groupWorkByCompany, type ResumeWorkEntry } from '../src/lib/resume';
@@ -1355,15 +1356,15 @@ test('the 404 fills the requested box as text, never as HTML', async () => {
   // XSS on the site's widest surface. Asserted against the shipped script
   // rather than the source file, because it is the shipped one that runs.
   //
-  // Case-insensitive because CodeQL's js/bad-tag-filter flags the `/g` form as
-  // a filter that misses `<SCRIPT>`. It is not a filter and the miss would
-  // fail the assertion below rather than skip it, so the alert is a false
-  // alarm here -- but the flag costs one character and a red high-severity
-  // check on every future pull request touching this file does not.
+  // `elementWith` rather than a regex over <script> tags. Two hand-written
+  // versions of that regex drew a high-severity js/bad-tag-filter alert in a
+  // row -- the first missed `<SCRIPT>`, the second missed `</script >`, which
+  // is legal HTML -- and CodeQL is right about the general case even though
+  // this one parses the site's own build output and renders nothing from it.
+  // The shared helper already counts tags properly and exists because this
+  // repo has been bitten by hand-rolled markup windows twice; see its header.
   const page = await (await server.fetch('/no-such-page')).text();
-  const scripts = [...page.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]);
-  const fill = scripts.find((body) => body.includes('data-requested-box'));
-  expect(fill, 'no inline script fills the requested box').toBeDefined();
+  const fill = elementWith(page, 'script', 'data-requested-fill');
   expect(fill).toContain('textContent');
   expect(fill).not.toContain('innerHTML');
 });
