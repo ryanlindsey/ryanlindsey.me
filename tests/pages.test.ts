@@ -1354,8 +1354,14 @@ test('the 404 fills the requested box as text, never as HTML', async () => {
   // `textContent` is the whole defense; `innerHTML` here would be a reflected
   // XSS on the site's widest surface. Asserted against the shipped script
   // rather than the source file, because it is the shipped one that runs.
+  //
+  // Case-insensitive because CodeQL's js/bad-tag-filter flags the `/g` form as
+  // a filter that misses `<SCRIPT>`. It is not a filter and the miss would
+  // fail the assertion below rather than skip it, so the alert is a false
+  // alarm here -- but the flag costs one character and a red high-severity
+  // check on every future pull request touching this file does not.
   const page = await (await server.fetch('/no-such-page')).text();
-  const scripts = [...page.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  const scripts = [...page.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]);
   const fill = scripts.find((body) => body.includes('data-requested-box'));
   expect(fill, 'no inline script fills the requested box').toBeDefined();
   expect(fill).toContain('textContent');
