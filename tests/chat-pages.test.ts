@@ -38,29 +38,44 @@ afterAll(async () => {
   await server.close();
 });
 
+/**
+ * A rendered page, as text. One helper rather than the `const html = await
+ * (await server.fetch(path)).text()` line this file repeated in every case:
+ * issue #111 added seven more page tests, and seven more copies of one
+ * expression is where a file stops being readable.
+ */
+const html = (path: string): Promise<string> => server.fetch(path).then((res) => res.text());
+
+/** The rail, which several cases below scope themselves to. */
+const railOf = (page: string): string => {
+  const rail = /data-chat-rail[\s\S]*?<\/aside>/.exec(page);
+  expect(rail, 'no rail on the chat page').not.toBeNull();
+  return rail![0];
+};
+
 describe('GET /chat', () => {
   test('renders, and carries the Turnstile widget and the sitekey', async () => {
-    const html = await (await server.fetch('/chat')).text();
-    expect(html).toContain('cf-turnstile');
-    expect(html).toContain('0x4AAAAAAElhnY8ov3OYHN8m');
+    const page = await html('/chat');
+    expect(page).toContain('cf-turnstile');
+    expect(page).toContain('0x4AAAAAAElhnY8ov3OYHN8m');
   });
 
   test('says what it does with what you type, on the page rather than only in the policy', async () => {
-    const html = await (await server.fetch('/chat')).text();
-    expect(html).toContain('/ai-policy');
-    expect(html).toMatch(/30 days/);
+    const page = await html('/chat');
+    expect(page).toContain('/ai-policy');
+    expect(page).toMatch(/30 days/);
   });
 
   test('a visitor without JavaScript is pointed at the corpus, not left with a dead form', async () => {
-    const html = await (await server.fetch('/chat')).text();
-    const noscript = html.slice(html.indexOf('<noscript>'), html.lastIndexOf('</noscript>'));
+    const page = await html('/chat');
+    const noscript = page.slice(page.indexOf('<noscript>'), page.lastIndexOf('</noscript>'));
     expect(noscript).toContain('/llms.txt');
     expect(noscript).toContain('mcp');
   });
 
   test('no copy on the page matches a banned pattern', async () => {
-    const html = await (await server.fetch('/chat')).text();
-    for (const pattern of BANNED_PATTERNS) expect(html).not.toMatch(pattern);
+    const page = await html('/chat');
+    for (const pattern of BANNED_PATTERNS) expect(page).not.toMatch(pattern);
   });
 
   test('the header offers it from every page, including the home page', async () => {
@@ -71,10 +86,95 @@ describe('GET /chat', () => {
     // being deleted -- the invariant is "reachable from every page", and only
     // where it is reachable from changed.
     for (const path of ['/', '/writing', '/resume']) {
-      const page = await (await server.fetch(path)).text();
+      const page = await html(path);
       const nav = /<nav[^>]*aria-label="Primary"[^>]*>([\s\S]*?)<\/nav>/.exec(page)![1];
       expect(nav).toContain('href="/chat"');
     }
+  });
+
+  test('the chat page is a transcript beside a rail', async () => {
+    const page = await html('/chat');
+    expect(page).toContain('data-chat-transcript');
+    expect(page).toContain('data-chat-rail');
+  });
+
+  test('an agent turn is a rule, not a bubble, and carries its citations', async () => {
+    // The asymmetry is the design's argument: citations are part of the
+    // answer. A symmetric chat-bubble transcript loses that.
+    //
+    // WHAT PUTS THIS MARKUP IN A RENDERED PAGE AT ALL is worth stating,
+    // because the transcript is empty until somebody types. The two turn
+    // shapes are <template> elements the client clones, so the design lives
+    // in the .astro file where Tailwind scans it and this test can read it,
+    // rather than in class strings concatenated inside the <script>.
+    const page = await html('/chat');
+    expect(page).toContain('data-turn="agent"');
+    const agent = /data-turn="agent"[\s\S]*?<\/div>/.exec(page);
+    if (agent) {
+      expect(agent[0]).toMatch(/border-l-2[^"]*border-accent/);
+      expect(agent[0]).not.toMatch(/bg-surface-raised/);
+    }
+  });
+
+  test('the composer still works without JavaScript', async () => {
+    // Rendered markup is the no-JS state. This page is the likeliest in the
+    // site to ship a dead form.
+    const page = await html('/chat');
+    expect(page).toMatch(/<form[^>]*data-chat-form/);
+    expect(page).toContain('llms.txt');
+  });
+
+  test('it says what it does with what you type, before the composer', async () => {
+    const page = await html('/chat');
+    const composerAt = page.indexOf('data-chat-form');
+    const railAt = page.indexOf('data-chat-rail');
+    expect(composerAt).toBeGreaterThan(-1);
+    // Asserted explicitly, because `indexOf` returns -1 for a rail that is not
+    // there at all and -1 is less than every real offset: without this line a
+    // deleted rail passes the ordering check below rather than failing it.
+    expect(railAt).toBeGreaterThan(-1);
+    // Rendered before the composer in the DOM, so a reader meets the statement
+    // on the way to the box rather than after using it.
+    expect(railAt).toBeLessThan(composerAt);
+  });
+
+  test('the retention figure is the one the cron enforces', async () => {
+    // chat_turns is the row this page is making a claim about. Read from the
+    // table-driven constant rather than typed, so the sentence a reader sees
+    // above the box and the job that deletes their transcript are one number.
+    const { RETENTION, formatWindow } = await import('../src/lib/retention');
+    const rail = railOf(await html('/chat'));
+    const transcripts = RETENTION.find((row) => row.table === 'chat_turns');
+    expect(transcripts, 'no retention window for chat_turns').toBeDefined();
+    expect(rail).toContain(formatWindow(transcripts!.days));
+  });
+
+  test('the message cap is the one the limiter enforces', async () => {
+    // The other half of THIS SESSION, and the same rule as the retention row
+    // beside it: 30 is `LIMITS.conversation.limit`, which workers/mcp/src/chat.ts
+    // spends through `checkLimit` before it answers. A hand-typed denominator
+    // here would be a published number with nothing holding it to the bucket.
+    const { LIMITS } = await import('../src/lib/mcp/limits');
+    const rail = railOf(await html('/chat'));
+    expect(rail).toContain(`/ ${LIMITS.conversation.limit}`);
+  });
+
+  test('the protocol block points at /mcp, not the bare origin', async () => {
+    // The bare origin 404s -- createMcpHandler mounts the endpoint at /mcp.
+    // Verified live and recorded in src/lib/nav.ts.
+    const rail = railOf(await html('/chat'));
+    expect(rail).toContain('https://mcp.ryanlindsey.me/mcp');
+  });
+
+  test('the Turnstile widget and sitekey survive the restyle', async () => {
+    // Unchanged assertion. Restated here because a layout rewrite is exactly
+    // when a widget gets moved out of the form it belongs to -- so this one
+    // checks the containment the first case does not.
+    const page = await html('/chat');
+    expect(page).toContain('cf-turnstile');
+    const form = /<form[^>]*data-chat-form[\s\S]*?<\/form>/.exec(page);
+    expect(form, 'no chat form on the page').not.toBeNull();
+    expect(form![0]).toContain('cf-turnstile');
   });
 });
 

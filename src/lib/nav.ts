@@ -41,6 +41,23 @@ export const SYSTEM_LINKS = [
 ] as const;
 
 /**
+ * The MCP endpoint, as one string.
+ *
+ * `/mcp` ON THAT HOST, NEVER THE BARE ORIGIN, and the paragraph in AGENT_LINKS
+ * below is the record of how that was established: the custom domain is only
+ * the host, `workers/mcp/src/index.ts`'s `createMcpHandler(..., { route:
+ * '/mcp' })` mounts the JSON-RPC endpoint at that path, and the bare origin
+ * 404s. Verified live with an `initialize` POST.
+ *
+ * Extracted by issue #111, which gave /chat's rail a PREFER A PROTOCOL? block
+ * pointing at the same endpoint. Two surfaces publishing one address is
+ * exactly the arrangement that got this wrong the first time, and a URL a
+ * reader is invited to paste into their own client is a published claim like
+ * any other: it has one spelling or it has none.
+ */
+export const MCP_ENDPOINT = 'https://mcp.ryanlindsey.me/mcp';
+
+/**
  * The footer's FOR AGENTS column.
  *
  * Day 3 Task 9 (02 §3): the agent courtesies -- /llms.txt (the curated index)
@@ -69,6 +86,6 @@ export const SYSTEM_LINKS = [
  */
 export const AGENT_LINKS = [
   { href: '/llms.txt', label: 'llms.txt' },
-  { href: 'https://mcp.ryanlindsey.me/mcp', label: 'MCP' },
+  { href: MCP_ENDPOINT, label: 'MCP' },
   { href: '/rss.xml', label: 'RSS' },
 ] as const;
