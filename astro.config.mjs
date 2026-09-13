@@ -8,6 +8,7 @@ import sitemap from '@astrojs/sitemap';
 import { satteri } from '@astrojs/markdown-satteri';
 import { headingAnchors } from './src/lib/heading-anchors.mjs';
 import { figures } from './src/lib/figures.mjs';
+import { literalDirectives } from './src/lib/literal-directives.mjs';
 import { isUnindexed } from './src/lib/unindexed-routes.mjs';
 
 export default defineConfig({
@@ -69,21 +70,37 @@ export default defineConfig({
     //
     // `features.directive` defaults to false (satteri 0.10.5,
     // node_modules/satteri/dist/compile.d.ts) -- this is the line that makes
-    // any `:::name` block parse at all, for `.mdx` content too: @astrojs/mdx
+    // any directive parse at all, for `.mdx` content too: @astrojs/mdx
     // inherits this `markdown` config rather than running its own, unverified
     // until issue #102's Task 3 built this repo's `.mdx` content and grepped
-    // the output for the rendered grid. Turning it on is a global switch, not
-    // a per-directive one: every `:::name` block in every content file is now
-    // parsed as a directive, and one with no plugin claiming it renders as
-    // the empty string with no warning and no trace in the output (measured
+    // the output for the rendered grid. An unclaimed directive renders as the
+    // empty string with no warning and no trace in the output (measured
     // 2026-09-13, the plan's preflight finding 4 -- the exact failure mode
-    // `figures()` below exists to avoid). Measured the same day that this is
-    // forward-looking risk only: `grep -rn '^:::' src/content/` returned
-    // nothing, so no existing page was parsed differently the moment this
-    // line landed.
+    // `figures()` below exists to avoid).
+    //
+    // THE PARAGRAPH THAT USED TO FOLLOW THAT ONE WAS WRONG, and it is worth
+    // more here as a correction than as a deletion. It read: "Measured the
+    // same day that this is forward-looking risk only: `grep -rn '^:::'
+    // src/content/` returned nothing, so no existing page was parsed
+    // differently the moment this line landed." The grep was real; the
+    // conclusion drawn from it was not. It covered ONE of the three directive
+    // kinds this single switch enables -- container (`:::name`) -- and missed
+    // leaf (`::name`) and, the expensive one, text (`:name`, inline, anywhere
+    // in any paragraph). The real blast radius was every colon in every
+    // sentence: with directives on and nothing claiming the name, "At 05:17
+    // UTC" rendered as "At 05 UTC", "3:2" as "3", "astro:content" as "astro".
+    // It had already rewritten a published post in this branch's own build
+    // output before anyone noticed, and five reviews passed over it because
+    // no test in the suite rendered prose next to a colon.
+    //
+    // `literalDirectives()` is the fix and is listed FIRST: it restores an
+    // unclaimed text or leaf directive to the text it was authored as, so
+    // this switch changes nothing but the `:::figures` container.
+    // `tests/literal-directives.test.ts` pins that as a byte-identity
+    // invariant against the same content rendered with directives off.
     processor: satteri({
       features: { directive: true },
-      mdastPlugins: [figures()],
+      mdastPlugins: [literalDirectives(), figures()],
       hastPlugins: [headingAnchors],
     }),
   },
