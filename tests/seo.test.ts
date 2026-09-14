@@ -267,10 +267,11 @@ test('every indexable page carries a description of at least 70 characters', asy
  * to whichever template happens to build it (issue #153, epic #150).
  *
  * MEASURED against a clean build, 2026-09-13: `— Ryan Lindsey` was appended by
- * four different files (`src/layouts/ArticleLayout.astro`, the `/writing` and
- * `/work` index pages, and `src/pages/ops.astro`, which nobody had listed) and
- * forgotten by two (`/ai-policy/`, whose title was bare, and `/chat/`, whose
- * `Ask my agent` the issue's own audit did not mention). Centralising it in
+ * six different files (`src/layouts/ArticleLayout.astro`, the `/writing` and
+ * `/work` index pages, `src/pages/ops.astro`, `src/pages/resume.astro` and
+ * `src/pages/writing/pillar/[pillar].astro`) and forgotten by two
+ * (`/ai-policy/`, whose title was bare, and `/chat/`, whose `Ask my agent` the
+ * issue's own audit did not mention). Centralising it in
  * `src/layouts/Base.astro` is what makes it correct on every page without six
  * call sites having to agree.
  *
@@ -278,11 +279,10 @@ test('every indexable page carries a description of at least 70 characters', asy
  * `endsWith(' — Ryan Lindsey')` alone is satisfied by a DOUBLED tail --
  * "Resume — Ryan Lindsey — Ryan Lindsey" ends with the suffix too -- and that
  * blind spot is not hypothetical: `src/pages/resume.astro` and
- * `src/pages/writing/pillar/[pillar].astro` were both still building the
- * suffix themselves the moment `src/layouts/Base.astro` started applying it
- * everywhere, and both would have shipped exactly this doubled title had the
- * audit that found this issue's other four hand-applied copies not also
- * caught these two. The guard below exists because that already almost
+ * `src/pages/writing/pillar/[pillar].astro` were the two of the six this
+ * comment's first draft missed, found only in the later pass fix round 1
+ * records, and both would have shipped exactly this doubled title had that
+ * pass not caught them. The guard below exists because that already almost
  * happened, not because it might.
  */
 test('every page title ends with the site suffix, or is exactly the site name', async () => {
@@ -326,7 +326,7 @@ test('the 404 page title carries the site suffix too', async () => {
   expect(titles, '/404 should carry exactly one title').toHaveLength(1);
   // Not `path`-derived and never should be: src/pages/404.astro's own header
   // records why the requested path must not reach this response's markup.
-  expect(titles[0]).toBe('404: Not found — Ryan Lindsey');
+  expect(titles[0], '/404 should carry the site suffix').toBe('404: Not found — Ryan Lindsey');
 });
 
 test('every JSON-LD block on every page parses and declares the schema.org context', async () => {
