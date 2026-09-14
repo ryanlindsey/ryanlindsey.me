@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.17.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.16.1...ryanlindsey-me-v1.17.0) (2026-09-14)
+
+
+### Features
+
+* **article:** rebuild the article as a three-column spine ([#125](https://github.com/ryanlindsey/ryanlindsey.me/issues/125)) ([f36d985](https://github.com/ryanlindsey/ryanlindsey.me/commit/f36d985b1be88bcbbee50f8dada78978d8e6d4d2))
+* **chat:** rebuild the chat page around the transcript ([#132](https://github.com/ryanlindsey/ryanlindsey.me/issues/132)) ([95c2b03](https://github.com/ryanlindsey/ryanlindsey.me/commit/95c2b036a91be34bb0082640ccd876a4ca32f7d5))
+* **chrome:** add the mobile navigation takeover ([#122](https://github.com/ryanlindsey/ryanlindsey.me/issues/122)) ([5d99c6f](https://github.com/ryanlindsey/ryanlindsey.me/commit/5d99c6fa51afff541fa41015f1739d7dd5f24794))
+* **chrome:** rebuild the footer as the five-column colophon ([#121](https://github.com/ryanlindsey/ryanlindsey.me/issues/121)) ([ad7b3d3](https://github.com/ryanlindsey/ryanlindsey.me/commit/ad7b3d319a02401561a08b5e2a8de683de1bc1d8))
+* **chrome:** rebuild the header as the rule bar ([#120](https://github.com/ryanlindsey/ryanlindsey.me/issues/120)) ([5f15582](https://github.com/ryanlindsey/ryanlindsey.me/commit/5f15582e4671686b53e11a9c8b5bffec811288c4))
+* **content:** add the figures directive ([#123](https://github.com/ryanlindsey/ryanlindsey.me/issues/123)) ([c0c139c](https://github.com/ryanlindsey/ryanlindsey.me/commit/c0c139ca6fd612eea51fb293d65c2e930081a51b))
+* **design:** add the shared primitives the redesign repeats ([#119](https://github.com/ryanlindsey/ryanlindsey.me/issues/119)) ([0643bb9](https://github.com/ryanlindsey/ryanlindsey.me/commit/0643bb90b497d27ad8c85337591bcc641cc5cab7))
+* **design:** make the redesign responsive below 1024px ([#135](https://github.com/ryanlindsey/ryanlindsey.me/issues/135)) ([cb87266](https://github.com/ryanlindsey/ryanlindsey.me/commit/cb872668068a24a4eddf66b3ea41c9fb3d3abf58))
+* **design:** widen the type scale for the redesign ([#117](https://github.com/ryanlindsey/ryanlindsey.me/issues/117)) ([a983aea](https://github.com/ryanlindsey/ryanlindsey.me/commit/a983aea45b66ee411660d1b4c9e86296a4d62261))
+* **governance:** rebuild the AI policy page at a document width ([#131](https://github.com/ryanlindsey/ryanlindsey.me/issues/131)) ([406d9dc](https://github.com/ryanlindsey/ryanlindsey.me/commit/406d9dc5fa064c26e94b3bfae782060ce654652d))
+* **home:** rebuild the home page as the editorial lead story ([#124](https://github.com/ryanlindsey/ryanlindsey.me/issues/124)) ([572c7c6](https://github.com/ryanlindsey/ryanlindsey.me/commit/572c7c6d82ff625f3b4335708709d08d28706989))
+* **ops:** rebuild the ops page and redraw the architecture in DOM ([#130](https://github.com/ryanlindsey/ryanlindsey.me/issues/130)) ([73180d7](https://github.com/ryanlindsey/ryanlindsey.me/commit/73180d72e2f3cf054a080c3287e77921b9300535))
+* **resume:** add Armature, print contact details and link the location ([#142](https://github.com/ryanlindsey/ryanlindsey.me/issues/142)) ([edc3351](https://github.com/ryanlindsey/ryanlindsey.me/commit/edc3351febfc67a2833fdcd37e28780e7f385319)), closes [#141](https://github.com/ryanlindsey/ryanlindsey.me/issues/141)
+* **resume:** rebuild the resume around a sticky section rail ([#129](https://github.com/ryanlindsey/ryanlindsey.me/issues/129)) ([2b44918](https://github.com/ryanlindsey/ryanlindsey.me/commit/2b44918817b38f8dd283c674cfb65dca9581a58d)), closes [#108](https://github.com/ryanlindsey/ryanlindsey.me/issues/108)
+* **site:** rebuild the 404 without breaking its byte identity ([#134](https://github.com/ryanlindsey/ryanlindsey.me/issues/134)) ([f118faa](https://github.com/ryanlindsey/ryanlindsey.me/commit/f118faa887c2467914bb15fca5168b720489f2b6))
+* **work:** give case studies the inverted masthead and facts bar ([#128](https://github.com/ryanlindsey/ryanlindsey.me/issues/128)) ([0568465](https://github.com/ryanlindsey/ryanlindsey.me/commit/0568465a67df20e456e96c9d700809535cb3aec4))
+* **work:** rebuild the work index as full-width rows ([#127](https://github.com/ryanlindsey/ryanlindsey.me/issues/127)) ([ec3139f](https://github.com/ryanlindsey/ryanlindsey.me/commit/ec3139fea3c6ded6e5b598347758ea006727ea3b))
+* **writing:** rebuild the writing index as filterable rows ([#126](https://github.com/ryanlindsey/ryanlindsey.me/issues/126)) ([2d4aedb](https://github.com/ryanlindsey/ryanlindsey.me/commit/2d4aedbdebd6b2ba35dbe1fbd6904b7a3c031269))
+
+
+### Bug Fixes
+
+* **copy:** name the published work on the fit report permalink ([#140](https://github.com/ryanlindsey/ryanlindsey.me/issues/140)) ([0250d72](https://github.com/ryanlindsey/ryanlindsey.me/commit/0250d72fe5b96e3572abfdd17d89e6afa407e815)), closes [#139](https://github.com/ryanlindsey/ryanlindsey.me/issues/139)
+* **copy:** say what the reader reads, not "the corpus" ([#138](https://github.com/ryanlindsey/ryanlindsey.me/issues/138)) ([7a67f08](https://github.com/ryanlindsey/ryanlindsey.me/commit/7a67f08072db67341b1f3c1eb0ad47a91598527d))
+* **design:** correct the dark inverted blocks, the prose token mapping and the article spine spacing ([#137](https://github.com/ryanlindsey/ryanlindsey.me/issues/137)) ([ad490fa](https://github.com/ryanlindsey/ryanlindsey.me/commit/ad490fa3fbe77ddda1244a8f0b37ab79cbca05f1))
+
 ## [1.16.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.16.0...ryanlindsey-me-v1.16.1) (2026-09-12)
 
 
