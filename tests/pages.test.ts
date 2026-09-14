@@ -1473,18 +1473,90 @@ test('renders every company name and date range from the real résumé data', as
   }
 });
 
-test('the resume masthead is closed in ink, not in the rule that divides', async () => {
+test('the resume masthead closes with the same hairline as the chrome above it', async () => {
   const page = await html('/resume');
   expect(page).toContain('data-resume-masthead');
-  // --rl-ink is what distinguishes this rule from the dozens of --rl-rule
-  // hairlines on the page, and it is the half of the design this page still
-  // keeps. The WEIGHT is not: design 1k draws 2px and so did this until
-  // 2026-09-13, when review found that a 2px near-black line at full width
-  // read as a bar across the page rather than as a closing rule. Asserted as
-  // "border-b and not border-b-2" rather than by colour alone, because
-  // reverting the weight is the specific regression this guards.
-  expect(page).toMatch(/data-resume-masthead[^>]*class="[^"]*\bborder-b\b[^"]*border-ink/);
+  // INVERTED 2026-09-13. The comment this test used to carry was the argument
+  // for the opposite rule, and it is worth keeping the sentence that was
+  // wrong: "--rl-ink is what distinguishes this rule from the dozens of
+  // --rl-rule hairlines on the page, and it is the half of the design this
+  // page still keeps."
+  //
+  // What that missed is which hairlines this one is actually read against. It
+  // is not competing with the dozens below it; it is seen next to the two
+  // directly above it, and both of those are --rl-rule -- SiteHeader.astro's
+  // own bottom border and ArticleLayout's `article` masthead shell. Ink made
+  // this the only closing rule on the site drawn in a different colour from
+  // its neighbours, which is what "too dark in both themes" was describing.
+  //
+  // The weight assertion survives unchanged. 1px was the half of the earlier
+  // review that was right, and a revert to design 1k's 2px is still the
+  // regression worth guarding.
+  expect(page).toMatch(/data-resume-masthead[^>]*class="[^"]*\bborder-b\b[^"]*border-rule/);
   expect(page).not.toMatch(/data-resume-masthead[^>]*class="[^"]*border-b-2/);
+  expect(page).not.toMatch(/data-resume-masthead[^>]*class="[^"]*border-ink/);
+});
+
+test('the resume links the place it says Ryan is based', async () => {
+  const page = await html('/resume');
+  const masthead = /<section data-resume-masthead[\s\S]*?<\/section>/.exec(page);
+  expect(masthead, 'no résumé masthead on the page').not.toBeNull();
+
+  const line = /<p[^>]*data-based-in[\s\S]*?<\/p>/.exec(masthead![0]);
+  expect(line, 'no data-based-in line in the résumé masthead').not.toBeNull();
+  expect(line![0]).toContain('href="https://en.wikipedia.org/wiki/Laguna_Niguel,_California"');
+  // The site's convention for an external href, and the footer has its own
+  // test for the same pair. A link that leaves the résumé for a geography
+  // detour is the case target="_blank" is actually for.
+  expect(line![0]).toContain('target="_blank"');
+  expect(line![0]).toContain('rel="noopener"');
+
+  // THE DRIFT GUARD, and the only assertion here that is not redundant today.
+  // The city is in the résumé record and the Wikipedia URL is a constant in
+  // the page, so they are two sources for one fact. If Ryan moves, the record
+  // is what gets edited and this fails, rather than the page going on linking
+  // a town he no longer lives in. Derived from the record rather than from the
+  // page's own constant, so it is a real cross-check and not a mirror.
+  const city = /^\s*city:\s*(.+)$/m.exec(readFileSync(resumeYamlPath, 'utf8'))?.[1]?.trim();
+  expect(city, 'no city in the résumé record').toBeTruthy();
+  expect(line![0]).toContain(`/wiki/${city!.replaceAll(' ', '_')},`);
+});
+
+test('the resume sheet carries contact details the screen page does not', async () => {
+  // 02 §1 wants the PDF ATS-safe, and an ATS-safe résumé with no way to reach
+  // the candidate is a contradiction. /resume.pdf is headless Chrome printing
+  // /resume?print (src/lib/resume-pdf.ts), so the only place this block can
+  // live is the page itself, hidden on screen.
+  //
+  // Print-only was the ruling on 2026-09-13 rather than showing it on both:
+  // design 1k's masthead stays as drawn, and the phone number stays off an
+  // indexed HTML page. It is already public in /resume.json, so this is about
+  // where a crawler trips over it, not about whether it is a secret.
+  const page = await html('/resume');
+  const masthead = /<section data-resume-masthead[\s\S]*?<\/section>/.exec(page);
+  expect(masthead, 'no résumé masthead on the page').not.toBeNull();
+
+  // Read from the record, not typed -- the rule the footer and 404 mail links
+  // already follow. A typed copy is a second source that drifts silently, and
+  // this address ships in four formats.
+  const yaml = readFileSync(resumeYamlPath, 'utf8');
+  const email = /^\s*email:\s*(\S+)\s*$/m.exec(yaml)?.[1];
+  const phone = /^\s*phone:\s*(.+)$/m.exec(yaml)?.[1]?.trim();
+  expect(email, 'no email in the résumé record').toBeTruthy();
+  expect(phone, 'no phone in the résumé record').toBeTruthy();
+
+  const block = /<div[^>]*data-resume-contact[\s\S]*?<\/div>/.exec(masthead![0]);
+  expect(block, 'no contact block in the résumé masthead').not.toBeNull();
+  // Hidden on screen, shown on paper. Asserted as both halves, because
+  // `hidden` alone would ship a block that never prints and `print:block`
+  // alone would put the phone number on the screen page.
+  expect(block![0]).toMatch(/class="[^"]*\bhidden\b[^"]*\bprint:block\b/);
+  expect(block![0]).toContain(`mailto:${email}`);
+  expect(block![0]).toContain(phone!);
+  // Hand-derived E.164, not recomputed from the record by the same expression
+  // the page uses -- a mirror assertion here would pass whatever the page
+  // emitted, including `tel:(714) 330-6251`, which is not a dialable href.
+  expect(block![0]).toContain('href="tel:+17143306251"');
 });
 
 test('the section rail carries every rendered section and spies on it', async () => {

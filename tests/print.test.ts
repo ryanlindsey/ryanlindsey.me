@@ -133,6 +133,34 @@ describe('print rules', () => {
     expect(pinned).toContain("[data-masthead='case-study']");
   });
 
+  test('prints the résumé location without appending its URL', () => {
+    // The print block rewrites every external link as "text (https://...)",
+    // which is correct for an article on paper: a printed link has lost its
+    // destination and the URL is the only way to recover it.
+    //
+    // It is wrong in exactly one place. 02 §1 requires /resume.pdf to be
+    // ATS-safe, and the location line is a field a parser reads as an address.
+    // Appending a Wikipedia URL to "Laguna Niguel, CA" is the shape of thing
+    // that makes a parsed address junk, so that one anchor opts out and the
+    // link stays live and clickable in the PDF.
+    const suppressed = selectorsCarrying(printBlock, 'content: none');
+    expect(suppressed).toContain('[data-based-in] a::after');
+
+    // The site-wide rule has to survive, or every external link in a printed
+    // article silently loses its destination -- the opt-out is a scope, not a
+    // repeal.
+    expect(printBlock).toMatch(/a\[href\^='http'\]::after/);
+
+    // THE ASSERTION THAT ACTUALLY MATTERS. Both selectors are (0,1,2): one
+    // attribute selector, the element `a`, and the pseudo-element. Equal
+    // specificity means SOURCE ORDER decides, so a suppression rule written
+    // above the rule it overrides is a rule that does nothing at all, and the
+    // two assertions above would both still pass while the URL kept printing.
+    expect(printBlock.indexOf('[data-based-in] a::after')).toBeGreaterThan(
+      printBlock.indexOf("a[href^='http']::after"),
+    );
+  });
+
   test('out-specifies the no-JS dark block so the light palette always wins', () => {
     // tokens.css declares the no-JS dark palette under
     // `:root:not([data-theme='light'])`, which is (0,2,0) because :not()
