@@ -13,13 +13,15 @@
  * greps the layout for the string `canonical` passes on a layout that renders
  * the tag into a comment.
  *
- * All five assertions below already held when this file was written. That is
- * the point rather than a weakness: the file exists so that #152, #153 and #154
- * each have somewhere to add an assertion that fails first. What makes it worth
- * committing today is the last test, which is the only thing in the repository
- * that checks the sitemap and the robots tags against each other.
+ * The five assertions this file shipped with already held when it was
+ * written. That is the point rather than a weakness: the file exists so that
+ * #152, #153 and #154 each have somewhere to add an assertion that fails
+ * first. What made it worth committing was the sitemap/robots test --
+ * `the sitemap and the robots tags never contradict each other`, below --
+ * the only thing in the repository that checks the sitemap and the robots
+ * tags against each other.
  */
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { SITE_HARNESS_WORKERS } from './workers';
@@ -431,4 +433,190 @@ test('the sitemap and the robots tags never contradict each other', async () => 
   }
 
   expect(problems, `the sitemap and the robots tags disagree:\n${problems.join('\n')}`).toEqual([]);
+});
+
+/**
+ * Issue #154 (epic #150): give the sitemap a `lastmod` from the content the
+ * site already validates, rather than the bare `<loc>` every one of the
+ * twelve entries carried before this test was written.
+ *
+ * Every expected value below is read off disk the same frontmatter-only way
+ * tests/pages.test.ts already reads `draft` and `pillar` -- through
+ * `readFileSync` against the raw `.mdx`/`.yaml`/`.md` source, never through
+ * `astro:content`. That is not a style preference carried over from that
+ * file: `src/lib/sitemap-lastmod.mjs`, which this test exercises indirectly
+ * through the built sitemap, MUST read the same way, because
+ * `astro.config.mjs` runs before the content layer exists and `getCollection`
+ * is not available inside it. A test that computed its expectations through
+ * `getCollection` would therefore be checking the implementation against a
+ * data source the implementation itself is forbidden from using.
+ */
+
+/**
+ * `updatedAt ?? publishedAt` for every PUBLISHED post or case study in `dir`,
+ * as the ISO 8601 string `src/content.config.ts`'s `z.coerce.date()` plus
+ * `.toISOString()` produces -- not the bare `YYYY-MM-DD` frontmatter spelling,
+ * because that coercion is exactly what the schema already does to these two
+ * fields and the sitemap has to serve the same value, not a prettier one.
+ *
+ * Draft entries are skipped rather than mapped to `undefined`: a draft never
+ * reaches the sitemap at all (the filter the previous test in this file
+ * checks), so there is no `lastmod` here to assert a value against.
+ */
+function articleLastmods(dir: URL): Map<string, string> {
+  const dates = new Map<string, string>();
+  for (const name of readdirSync(dir).filter((entry) => entry.endsWith('.mdx'))) {
+    const source = readFileSync(new URL(name, dir), 'utf8');
+    const frontmatterEnd = source.indexOf('\n---', 3);
+    if (frontmatterEnd === -1) {
+      throw new Error(`${name}: no closing frontmatter fence found`);
+    }
+    const frontmatter = source.slice(0, frontmatterEnd);
+    if (/\ndraft:\s*true\b/.test(frontmatter)) continue;
+
+    // Anchored the same way src/lib/sitemap-lastmod.mjs's copy of this pattern
+    // is anchored, and for the same reason: unanchored, it matches only the
+    // date prefix of a `publishedAt: 2026-09-12T14:30:00Z` spelling and
+    // silently drops the time, which this test's character-identical regex
+    // would then reproduce and stay green on, rather than catching it.
+    const publishedAt = /\npublishedAt:\s*['"]?(\d{4}-\d{2}-\d{2})['"]?\s*$/m.exec(
+      frontmatter,
+    )?.[1];
+    const updatedAt = /\nupdatedAt:\s*['"]?(\d{4}-\d{2}-\d{2})['"]?\s*$/m.exec(frontmatter)?.[1];
+    if (!publishedAt) {
+      throw new Error(`${name}: no publishedAt found in frontmatter`);
+    }
+    dates.set(name.replace(/\.mdx$/, ''), new Date(updatedAt ?? publishedAt).toISOString());
+  }
+  return dates;
+}
+
+/**
+ * Every URL the built sitemap should carry a `lastmod` for, mapped to the
+ * exact string it should carry. `/writing/<slug>/` and `/work/<slug>/` come
+ * from the coerced `Date` fields above. `/resume/` and `/ai-policy/` are set
+ * below, separately -- `src/content.config.ts` already types those two as bare
+ * `YYYY-MM-DD` strings (`isoDate`) rather than coerced `Date`s, and the value
+ * asserted for them is NOT that bare string; see the comment at the point
+ * they are added for the measured reason why.
+ */
+const DATED_ROUTES = new Map<string, string>([
+  ...[...articleLastmods(new URL('../src/content/posts/', import.meta.url))].map(
+    ([slug, date]): [string, string] => [`/writing/${slug}/`, date],
+  ),
+  ...[...articleLastmods(new URL('../src/content/caseStudies/', import.meta.url))].map(
+    ([slug, date]): [string, string] => [`/work/${slug}/`, date],
+  ),
+]);
+
+const resumeYamlSource = readFileSync(
+  new URL('../src/content/resume/ryan-lindsey.yaml', import.meta.url),
+  'utf8',
+);
+const resumeLastModified = /^\s*lastModified:\s*'(\d{4}-\d{2}-\d{2})'\s*$/m.exec(
+  resumeYamlSource,
+)?.[1];
+if (!resumeLastModified) {
+  throw new Error('ryan-lindsey.yaml: no meta.lastModified found');
+}
+
+const aiPolicySource = readFileSync(new URL('../governance/ai-policy.md', import.meta.url), 'utf8');
+// Same anchored pattern tests/pages.test.ts's `policyUpdated` already uses to
+// read this file, so both readers of this one field agree on its shape.
+const aiPolicyUpdated = /^updated:\s*'?(\d{4}-\d{2}-\d{2})'?\s*$/m.exec(aiPolicySource)?.[1];
+if (!aiPolicyUpdated) {
+  throw new Error('ai-policy.md: no updated date found in frontmatter');
+}
+
+// Both of these read as PLAIN `YYYY-MM-DD` here, matching what
+// src/lib/sitemap-lastmod.mjs's `resumeLastmod`/`aiPolicyLastmod` return --
+// but the value asserted below is widened to a full timestamp, and that is
+// the served artifact talking rather than a mistake in either of those
+// functions. `@astrojs/sitemap` 3.7.4 pipes every `lastmod`, from whatever
+// `serialize` returns, through the `sitemap` package's `normalizeURL`, which
+// unconditionally runs it through `new Date(x).toISOString()` before writing
+// the XML -- the stream flag that would keep a date-only string date-only
+// (`lastmodDateOnly`) exists one layer down but `@astrojs/sitemap` never sets
+// it and does not expose it. Measured 2026-09-13 against the built
+// `sitemap-0.xml`: the two source functions above return unwidened strings,
+// and the XML shows the widened ones below regardless. Asserting the bare
+// string here would be asserting a value this artifact cannot produce today
+// -- exactly what "assert the artifact, not the source" rules out.
+DATED_ROUTES.set('/resume/', new Date(resumeLastModified).toISOString());
+DATED_ROUTES.set('/ai-policy/', new Date(aiPolicyUpdated).toISOString());
+
+/**
+ * Assembled from other content, with no date of their own that would not be a
+ * guess (task-3-brief.md's table). `/writing/pillar/<pillar>` and `/fit` are
+ * not listed: neither reaches the sitemap at all, so there is no `lastmod` on
+ * either for this test to find present or absent.
+ */
+const DATELESS_ROUTES = ['/', '/writing/', '/work/', '/chat/', '/ops/'];
+
+/** Every `<url>` entry in the served sitemap, as `{ path, lastmod }`. */
+async function sitemapEntries(): Promise<{ path: string; lastmod?: string }[]> {
+  const response = await server.fetch('/sitemap-0.xml');
+  expect(response.status, '/sitemap-0.xml should be 200').toBe(200);
+  const xml = await response.text();
+  const blocks = [...xml.matchAll(/<url>([\s\S]*?)<\/url>/g)].map((match) => match[1]);
+  expect(blocks.length, 'the sitemap should list at least one URL').toBeGreaterThan(0);
+  return blocks.map((block) => {
+    const loc = /<loc>([^<]+)<\/loc>/.exec(block)?.[1];
+    if (!loc) {
+      throw new Error(`sitemap <url> block has no <loc>: ${block}`);
+    }
+    return {
+      path: new URL(loc).pathname,
+      lastmod: /<lastmod>([^<]+)<\/lastmod>/.exec(block)?.[1],
+    };
+  });
+}
+
+test('every dated URL in the sitemap carries a lastmod traceable to its own content, and no URL is stamped with the build date', async () => {
+  const entries = await sitemapEntries();
+  const byPath = new Map(entries.map((entry) => [entry.path, entry.lastmod]));
+  const problems: string[] = [];
+
+  // Every article, the résumé and the AI policy: the sitemap's lastmod must be
+  // the exact value their own frontmatter produces, not merely present.
+  for (const [path, expected] of DATED_ROUTES) {
+    const actual = byPath.get(path);
+    if (actual === undefined) {
+      problems.push(`${path} should carry lastmod ${expected} but has none`);
+    } else if (actual !== expected) {
+      problems.push(`${path} lastmod is ${actual}, expected ${expected} from its own frontmatter`);
+    }
+  }
+
+  // The index and aggregation pages: no date of their own, so no field at all
+  // -- `lastmod` is optional per entry in the sitemap protocol, and omitting
+  // it is the honest answer task-3-brief.md asks for.
+  for (const path of DATELESS_ROUTES) {
+    const actual = byPath.get(path);
+    if (actual !== undefined) {
+      problems.push(`${path} has no date of its own but carries lastmod ${actual}`);
+    }
+  }
+
+  // THE TRAP THIS ISSUE IS ABOUT, checked independently of the two loops
+  // above: a build-time `new Date()` fallback stamps EVERY url with today's
+  // date, which would slip past both loops for any route this file has not
+  // enumerated by hand (a route added after this test was written, say, or a
+  // typo in one of the two lists above that happens to still read as absent).
+  // A `lastmod` landing on today's date is legitimate only when DATED_ROUTES
+  // itself says today is the right answer -- true today for `/resume/`,
+  // coincidentally, which is exactly why this checks the recorded expectation
+  // rather than merely refusing every match against "today".
+  const today = new Date().toISOString().slice(0, 10);
+  for (const { path, lastmod } of entries) {
+    if (lastmod?.startsWith(today) && DATED_ROUTES.get(path) !== lastmod) {
+      problems.push(
+        `${path} carries today's build date (${lastmod}) with no content of its own that says so`,
+      );
+    }
+  }
+
+  expect(problems, `sitemap lastmod values disagree with content:\n${problems.join('\n')}`).toEqual(
+    [],
+  );
 });

@@ -10,6 +10,13 @@ import { headingAnchors } from './src/lib/heading-anchors.mjs';
 import { figures } from './src/lib/figures.mjs';
 import { literalDirectives } from './src/lib/literal-directives.mjs';
 import { isUnindexed } from './src/lib/unindexed-routes.mjs';
+import { sitemapLastmods } from './src/lib/sitemap-lastmod.mjs';
+
+// Read once at config-eval time -- src/lib/sitemap-lastmod.mjs's own header
+// says why this reads the filesystem directly rather than through
+// `getCollection`, and why it never falls back to `new Date()` for a path with
+// no date of its own.
+const lastmods = sitemapLastmods();
 
 export default defineConfig({
   site: 'https://ryanlindsey.me',
@@ -83,7 +90,17 @@ export default defineConfig({
     // the draft convention exists to keep out of navigation, and would publish
     // the scoped token in a `/fit/r/<id>` URL. See src/lib/unindexed-routes.mjs
     // for both reasons in full.
-    sitemap({ filter: (page) => !isUnindexed(page) }),
+    sitemap({
+      filter: (page) => !isUnindexed(page),
+      // No `changefreq`/`priority` here (issue #154): Google ignores both --
+      // its own documentation says so in the section that also documents
+      // `lastmod` -- and shipping a field a crawler ignores is noise a future
+      // reader has to evaluate before dismissing.
+      serialize(item) {
+        const lastmod = lastmods.get(new URL(item.url).pathname);
+        return lastmod ? { ...item, lastmod } : item;
+      },
+    }),
   ],
   markdown: {
     // Astro 7's default processor. `markdown.remarkPlugins` / `rehypePlugins`
