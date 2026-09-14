@@ -99,24 +99,21 @@ const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading tex
 
 <Shell title="Resume" description={resume.basics.summary} markdownHref="/resume.md">
   <div data-testid="resume">
-    {
-      showGapNotice && (
-        <div
-          data-gap-notice
-          class="mx-auto mt-10 max-w-[1440px] border border-warn px-4 py-3 font-mono text-small text-warn lg:px-10"
-        >
-          <p class="text-micro uppercase tracking-wide">Dev only — résumé gaps</p>
-          <ul class="mt-2 list-disc space-y-1 pl-5">
-            {gaps.map((gap) => (
-              <li>{gap}</li>
-            ))}
-          </ul>
-        </div>
-      )
-    }
+    {showGapNotice && (
+      <div
+        data-gap-notice
+        class="mx-auto mt-10 max-w-[1440px] border border-warn px-4 py-3 font-mono text-small text-warn lg:px-10"
+      >
+        <p class="text-micro uppercase tracking-wide">Dev only — résumé gaps</p>
+        <ul class="mt-2 list-disc space-y-1 pl-5">
+          {gaps.map((gap) => (
+            <li>{gap}</li>
+          ))}
+        </ul>
+      </div>
+    )}
 
-    {
-      /*
+    {/*
       Full-bleed rather than on the grid inside, so it runs edge to edge like
       the header's. That is what the 1440px cap and the 40px gutter on the
       inner element are for, and it has not changed.
@@ -146,17 +143,13 @@ const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading tex
       the masthead is full-bleed and the body hairlines are not, and the body
       ones sit inside a 1440px cap. Colour was never the only thing doing that
       work. Weight stays at 1px; only the colour moved this time.
-    */
-    }
+    */}
     <section data-resume-masthead class="border-b border-rule">
-      <div
-        class="mx-auto grid max-w-[1440px] gap-10 px-5 pb-12 pt-12 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-16 lg:px-10"
-      >
+      <div class="mx-auto grid max-w-[1440px] gap-10 px-5 pb-12 pt-12 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-16 lg:px-10">
         <div>
           <h1 class="font-display text-display text-ink">{resume.basics.name}</h1>
           <p class="mt-4 font-mono text-subheading uppercase text-accent">{resume.basics.label}</p>
-          {
-            /*
+          {/*
             text-large (1.1875rem), the scale's "large body / standfirst" step,
             where the handoff's table asks for `text-body at 1.125rem`. Those
             two are not the same thing and cannot both be had: text-body IS
@@ -164,8 +157,7 @@ const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading tex
             and body leading, beats an arbitrary text-[1.125rem] that no other
             page could reuse -- the whole reason the type scale grew named
             steps in the first place (issue #97).
-          */
-          }
+          */}
           <p class="mt-7 max-w-[66ch] text-large text-ink-muted">{resume.basics.summary}</p>
         </div>
 
@@ -173,8 +165,7 @@ const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading tex
           <ResumeFormats />
           <div class="mt-8">
             <p class="font-mono text-micro uppercase text-ink-muted">Based in</p>
-            {
-              /*
+            {/*
               `data-based-in` is a styling and test hook rather than decoration.
               global.css's print block appends every external link's raw URL
               through `a[href^='http']::after`, which is right for an article on
@@ -182,15 +173,15 @@ const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading tex
               location field of a sheet 02 §1 requires to be ATS-safe, where a
               parser reading an address is the thing it would corrupt. The rule
               that switches it off is scoped to this attribute.
-            */
-            }
+            */}
             <p data-based-in class="mt-2 text-body text-ink">
-              <a href={BASED_IN_URL} target="_blank" rel="noopener">{basedIn}</a>
+              <a href={BASED_IN_URL} target="_blank" rel="noopener">
+                {basedIn}
+              </a>
             </p>
           </div>
 
-          {
-            /*
+          {/*
             PRINT ONLY, and the sheet is the whole reason it exists. /resume.pdf
             is headless Chrome printing this page (src/lib/resume-pdf.ts), and
             until 2026-09-13 the only thing this column printed was "Based in":
@@ -215,29 +206,24 @@ const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading tex
             wrapper added in here would silently truncate what that test reads
             and the phone assertion would fail for a reason that has nothing to
             do with the phone.
-          */
-          }
+          */}
           <div data-resume-contact class="hidden print:block">
-            {
-              resume.basics.email && (
-                <Fragment>
-                  <p class="mt-8 font-mono text-micro uppercase text-ink-muted">Email</p>
-                  <p class="mt-2 text-body text-ink">
-                    <a href={`mailto:${resume.basics.email}`}>{resume.basics.email}</a>
-                  </p>
-                </Fragment>
-              )
-            }
-            {
-              resume.basics.phone && telHref && (
-                <Fragment>
-                  <p class="mt-8 font-mono text-micro uppercase text-ink-muted">Phone</p>
-                  <p class="mt-2 text-body text-ink">
-                    <a href={telHref}>{resume.basics.phone}</a>
-                  </p>
-                </Fragment>
-              )
-            }
+            {resume.basics.email && (
+              <Fragment>
+                <p class="mt-8 font-mono text-micro uppercase text-ink-muted">Email</p>
+                <p class="mt-2 text-body text-ink">
+                  <a href={`mailto:${resume.basics.email}`}>{resume.basics.email}</a>
+                </p>
+              </Fragment>
+            )}
+            {resume.basics.phone && telHref && (
+              <Fragment>
+                <p class="mt-8 font-mono text-micro uppercase text-ink-muted">Phone</p>
+                <p class="mt-2 text-body text-ink">
+                  <a href={telHref}>{resume.basics.phone}</a>
+                </p>
+              </Fragment>
+            )}
           </div>
         </div>
       </div>
@@ -247,8 +233,7 @@ const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading tex
       data-resume-body
       class="mx-auto grid max-w-[1440px] gap-10 px-5 py-14 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-12 lg:px-10"
     >
-      {
-        /*
+      {/*
         lg:top-24 (96px) is global.css's `scroll-padding-top: 6rem`, so a
         clicked rail item lands its heading exactly where the rail is sitting.
         The header does not stick on this page -- that is an article-only prop
@@ -262,45 +247,45 @@ const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading tex
         box: MEASURED before the fix, the rail's top was 4621px above the
         viewport with the page scrolled to the bottom. It reads as sticky at
         the top of the page and silently is not.
-      */
-      }
+      */}
       <aside data-resume-rail class="mb-2 lg:sticky lg:top-24 lg:mb-0">
         <TableOfContents toc={sections} label={null} ariaLabel="Résumé sections" />
       </aside>
 
       <div>
         <section aria-labelledby="experience">
-          <h2 id="experience" class={SECTION_HEADING}>Experience</h2>
+          <h2 id="experience" class={SECTION_HEADING}>
+            Experience
+          </h2>
           <ul class="mt-10 flex flex-col gap-12">
-            {
-              workGroups.map((group) => (
-                <li
-                  data-employer
-                  data-company={group.name}
-                  class="grid gap-6 border-t border-rule pt-[26px] first:border-t-0 first:pt-0 lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-9"
-                >
-                  <div>
-                    <h3 class="font-display text-subheading text-ink">{group.name}</h3>
-                    {group.location && (
-                      <p class="mt-1.5 font-mono text-micro uppercase text-ink-muted">
-                        {group.location}
-                      </p>
-                    )}
-                    <p
-                      data-tenure
-                      data-numeric
-                      class="mt-1.5 font-mono text-micro uppercase text-ink-muted"
-                    >
-                      {formatDateRange(group.startDate, group.endDate)}
+            {workGroups.map((group) => (
+              <li
+                data-employer
+                data-company={group.name}
+                class="grid gap-6 border-t border-rule pt-[26px] first:border-t-0 first:pt-0 lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-9"
+              >
+                <div>
+                  <h3 class="font-display text-subheading text-ink">{group.name}</h3>
+                  {group.location && (
+                    <p class="mt-1.5 font-mono text-micro uppercase text-ink-muted">
+                      {group.location}
                     </p>
-                  </div>
+                  )}
+                  <p
+                    data-tenure
+                    data-numeric
+                    class="mt-1.5 font-mono text-micro uppercase text-ink-muted"
+                  >
+                    {formatDateRange(group.startDate, group.endDate)}
+                  </p>
+                </div>
 
-                  <div class="flex flex-col gap-10">
-                    {group.roles.map((role) => (
-                      <div>
-                        <div class="flex flex-wrap items-baseline gap-x-6 gap-y-1">
-                          <h4 class="font-display text-subheading text-ink">{role.position}</h4>
-                          {/*
+                <div class="flex flex-col gap-10">
+                  {group.roles.map((role) => (
+                    <div>
+                      <div class="flex flex-wrap items-baseline gap-x-6 gap-y-1">
+                        <h4 class="font-display text-subheading text-ink">{role.position}</h4>
+                        {/*
                             A company with one title has already printed this
                             exact range as its tenure in the column to the
                             left, and design 1k leaves the role row bare there
@@ -310,28 +295,27 @@ const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading tex
                             construction a single-role group's tenure IS its
                             role's range. This prints the number once.
                           */}
-                          {group.roles.length > 1 && (
-                            <p
-                              data-numeric
-                              class="ml-auto font-mono text-micro uppercase text-ink-muted"
-                            >
-                              {formatDateRange(role.startDate, role.endDate)}
-                            </p>
-                          )}
-                        </div>
-                        {role.highlights.length > 0 && (
-                          <ul class="mt-4 flex max-w-[72ch] list-disc flex-col gap-2.5 pl-5 text-body text-ink-muted">
-                            {role.highlights.map((highlight) => (
-                              <li>{highlight}</li>
-                            ))}
-                          </ul>
+                        {group.roles.length > 1 && (
+                          <p
+                            data-numeric
+                            class="ml-auto font-mono text-micro uppercase text-ink-muted"
+                          >
+                            {formatDateRange(role.startDate, role.endDate)}
+                          </p>
                         )}
                       </div>
-                    ))}
-                  </div>
-                </li>
-              ))
-            }
+                      {role.highlights.length > 0 && (
+                        <ul class="mt-4 flex max-w-[72ch] list-disc flex-col gap-2.5 pl-5 text-body text-ink-muted">
+                          {role.highlights.map((highlight) => (
+                            <li>{highlight}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </li>
+            ))}
           </ul>
         </section>
 

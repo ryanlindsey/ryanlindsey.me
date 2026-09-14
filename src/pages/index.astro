@@ -65,8 +65,9 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
     data-now-strip
   >
     <div class="mx-auto flex max-w-[1440px] items-baseline gap-3 px-5 py-4 lg:px-10">
-      <span class="bg-accent-ground px-[7px] py-[3px] font-mono text-micro text-accent-on">NOW</span
-      >
+      <span class="bg-accent-ground px-[7px] py-[3px] font-mono text-micro text-accent-on">
+        NOW
+      </span>
       <!--
         Edited in src/content/now/now.yaml, often, and expected to go stale
         between edits. See that file's header for what it may and may not say.
@@ -75,44 +76,39 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
     </div>
   </section>
 
-  <section
-    class="mx-auto grid max-w-[1440px] gap-10 border-b border-rule px-5 pb-11 pt-10 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] lg:gap-16 lg:px-10 lg:pt-12"
-  >
-    {
-      lead ? (
-        // One wrapper link around the whole left column, and not underlined:
-        // the design's rule for a whole-card link. `data-lead-story` is the
-        // first attribute on purpose -- tests/pages.test.ts matches from it to
-        // the closing tag and would not see a `class` emitted ahead of it.
-        <a data-lead-story href={`/writing/${lead.id}`} class="block no-underline">
-          <p class="font-mono text-micro uppercase text-accent">
-            Latest &middot; {PILLAR_LABELS[lead.data.pillar] ?? lead.data.pillar}
-          </p>
-          <h1 class="mt-4 font-display text-lead text-ink">{lead.data.title}</h1>
-          <p class="mt-6 max-w-[58ch] text-large text-ink-muted">{lead.data.description}</p>
-          <p class="mt-6 font-mono text-micro uppercase text-ink-muted">
-            <time datetime={lead.data.publishedAt.toISOString()}>{day(lead.data.publishedAt)}</time>
-            {' · '}
-            {readingTimeFor(lead.body).minutes} min read
-          </p>
-        </a>
-      ) : (
-        // No published posts means no lead story, so the 1.55fr column is not
-        // rendered empty -- the right column stands alone and says why. The
-        // site has published posts today, so this is a guard rather than a
-        // live state, and it matches the `writing-empty` state the index
-        // pages have carried since launch.
-        <p data-testid="home-empty" class="font-mono text-micro uppercase text-ink-muted">
-          First pieces land soon.
+  <section class="mx-auto grid max-w-[1440px] gap-10 border-b border-rule px-5 pb-11 pt-10 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] lg:gap-16 lg:px-10 lg:pt-12">
+    {lead ? (
+      // One wrapper link around the whole left column, and not underlined:
+      // the design's rule for a whole-card link. `data-lead-story` is the
+      // first attribute on purpose -- tests/pages.test.ts matches from it to
+      // the closing tag and would not see a `class` emitted ahead of it.
+      <a data-lead-story href={`/writing/${lead.id}`} class="block no-underline">
+        <p class="font-mono text-micro uppercase text-accent">
+          Latest &middot; {PILLAR_LABELS[lead.data.pillar] ?? lead.data.pillar}
         </p>
-      )
-    }
+        <h1 class="mt-4 font-display text-lead text-ink">{lead.data.title}</h1>
+        <p class="mt-6 max-w-[58ch] text-large text-ink-muted">{lead.data.description}</p>
+        <p class="mt-6 font-mono text-micro uppercase text-ink-muted">
+          <time datetime={lead.data.publishedAt.toISOString()}>{day(lead.data.publishedAt)}</time>
+          {' · '}
+          {readingTimeFor(lead.body).minutes} min read
+        </p>
+      </a>
+    ) : (
+      // No published posts means no lead story, so the 1.55fr column is not
+      // rendered empty -- the right column stands alone and says why. The
+      // site has published posts today, so this is a guard rather than a
+      // live state, and it matches the `writing-empty` state the index
+      // pages have carried since launch.
+      <p data-testid="home-empty" class="font-mono text-micro uppercase text-ink-muted">
+        First pieces land soon.
+      </p>
+    )}
 
     <div class="lg:border-l lg:border-rule lg:pl-10">
       <div data-bio>
         <p class="font-mono text-micro uppercase text-ink-muted">Who is writing</p>
-        {
-          /*
+        {/*
           A `{...}` COMMENT, NOT AN HTML ONE, AND THAT IS THE POINT. Astro
           ships `<!-- -->` to the client; this form is evaluated away at build.
           Naming the prototype's copy below is the whole value of this note,
@@ -136,8 +132,7 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
           and this paragraph is the canonical positioning paragraph already:
           it was written under this same constraint, which is why it names no
           employer for this page to have to strip.
-        */
-        }
+        */}
         <p class="mt-3 text-body text-ink">
           <strong class="font-semibold">{basics.name}</strong>, {basics.label}.
         </p>
@@ -148,52 +143,52 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
         <a
           href="/resume"
           class="bg-accent-ground px-[14px] py-[9px] font-mono text-small text-accent-on no-underline"
-          >Read the resume</a
         >
+          Read the resume
+        </a>
         <a
           href="/chat"
           class="border border-ink px-[14px] py-[9px] font-mono text-small text-ink no-underline"
-          >Ask my agent</a
         >
+          Ask my agent
+        </a>
       </div>
     </div>
   </section>
 
-  {
-    more.length > 0 && (
-      <section data-more-writing class="mx-auto max-w-[1440px] px-5 py-10 lg:px-10 lg:py-12">
-        <div class="flex items-baseline justify-between gap-4">
-          <h2 class="font-mono text-micro uppercase text-ink-muted">More writing</h2>
-          <a href="/writing" class="font-mono text-micro uppercase text-accent">
-            All posts &rarr;
-          </a>
-        </div>
+  {more.length > 0 && (
+    <section data-more-writing class="mx-auto max-w-[1440px] px-5 py-10 lg:px-10 lg:py-12">
+      <div class="flex items-baseline justify-between gap-4">
+        <h2 class="font-mono text-micro uppercase text-ink-muted">More writing</h2>
+        <a href="/writing" class="font-mono text-micro uppercase text-accent">
+          All posts &rarr;
+        </a>
+      </div>
 
-        {/* --rl-surface here, not --rl-bg: the cell background is the caller's
+      {/* --rl-surface here, not --rl-bg: the cell background is the caller's
             to choose, which is why hairline-grid does not set one. The figures
             directive picks the other token. */}
-        <div class={`hairline-grid mt-6 grid-cols-1 ${moreColumns}`}>
-          {more.map((post) => (
-            <a
-              href={`/writing/${post.id}`}
-              class="flex min-h-[210px] flex-col bg-surface px-6 pb-7 pt-[26px] no-underline"
-            >
-              <p class="font-mono text-micro uppercase text-ink-muted">
-                <time datetime={post.data.publishedAt.toISOString()}>
-                  {day(post.data.publishedAt)}
-                </time>
-                {' · '}
-                {PILLAR_LABELS[post.data.pillar] ?? post.data.pillar}
-              </p>
-              <h3 class="mt-3 font-display text-heading text-ink">{post.data.title}</h3>
-              <p class="mt-3 text-small text-ink-muted">{post.data.description}</p>
-              <p class="mt-auto pt-6 font-mono text-micro uppercase text-accent">
-                {readingTimeFor(post.body).minutes} min &rarr;
-              </p>
-            </a>
-          ))}
-        </div>
-      </section>
-    )
-  }
+      <div class={`hairline-grid mt-6 grid-cols-1 ${moreColumns}`}>
+        {more.map((post) => (
+          <a
+            href={`/writing/${post.id}`}
+            class="flex min-h-[210px] flex-col bg-surface px-6 pb-7 pt-[26px] no-underline"
+          >
+            <p class="font-mono text-micro uppercase text-ink-muted">
+              <time datetime={post.data.publishedAt.toISOString()}>
+                {day(post.data.publishedAt)}
+              </time>
+              {' · '}
+              {PILLAR_LABELS[post.data.pillar] ?? post.data.pillar}
+            </p>
+            <h3 class="mt-3 font-display text-heading text-ink">{post.data.title}</h3>
+            <p class="mt-3 text-small text-ink-muted">{post.data.description}</p>
+            <p class="mt-auto pt-6 font-mono text-micro uppercase text-accent">
+              {readingTimeFor(post.body).minutes} min &rarr;
+            </p>
+          </a>
+        ))}
+      </div>
+    </section>
+  )}
 </Shell>

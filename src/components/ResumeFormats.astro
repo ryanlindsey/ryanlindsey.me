@@ -36,13 +36,13 @@ const BUTTON =
     Prefer JSON? Markdown? You're my kind of reader.
   </p>
   <div class="mt-4 grid grid-cols-2 gap-3">
-    {
-      FORMATS.map((format) => (
-        <a href={format.href} class={`${BUTTON} border border-ink text-ink`}>
-          {format.label}
-        </a>
-      ))
-    }
-    <a href="/chat" class={`${BUTTON} bg-accent-ground text-accent-on`}>Ask my agent</a>
+    {FORMATS.map((format) => (
+      <a href={format.href} class={`${BUTTON} border border-ink text-ink`}>
+        {format.label}
+      </a>
+    ))}
+    <a href="/chat" class={`${BUTTON} bg-accent-ground text-accent-on`}>
+      Ask my agent
+    </a>
   </div>
 </div>

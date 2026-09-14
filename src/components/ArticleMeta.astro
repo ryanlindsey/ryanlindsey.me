@@ -27,20 +27,20 @@ const iso = (date: Date) => date.toISOString().slice(0, 10);
   <!-- data-numeric is global.css's tabular-nums hook. Dates in a proportional
        numeral set make two stacked meta lines wobble against each other, and
        this line is mostly digits. -->
-  <time datetime={publishedAt.toISOString()} data-numeric>{iso(publishedAt)}</time>
+  <time datetime={publishedAt.toISOString()} data-numeric>
+    {iso(publishedAt)}
+  </time>
   <span aria-hidden="true">&middot;</span>
   <span data-testid="reading-time">{readingTime.text}</span>
-  {
-    updatedAt && (
-      <>
-        <span aria-hidden="true">&middot;</span>
-        <span>
-          Updated{' '}
-          <time datetime={updatedAt.toISOString()} data-numeric>
-            {iso(updatedAt)}
-          </time>
-        </span>
-      </>
-    )
-  }
+  {updatedAt && (
+    <>
+      <span aria-hidden="true">&middot;</span>
+      <span>
+        Updated{' '}
+        <time datetime={updatedAt.toISOString()} data-numeric>
+          {iso(updatedAt)}
+        </time>
+      </span>
+    </>
+  )}
 </p>

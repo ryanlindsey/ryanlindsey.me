@@ -87,17 +87,15 @@ const error = fitErrorCopy(Astro.url.searchParams.get('error'));
     <p class="mt-6 max-w-xl text-ink-muted">
       Paste a description below. You will get a requirement-by-requirement reading of Ryan's
       published record against it &mdash; every claim citing a page you can open, the gaps stated
-      plainly, and questions worth asking him. It is the same engine the <code>analyze_fit</code> MCP
-      tool runs, so you can also point an agent at it instead.
+      plainly, and questions worth asking him. It is the same engine the <code>analyze_fit</code>{' '}
+      MCP tool runs, so you can also point an agent at it instead.
     </p>
 
-    {
-      error && (
-        <p class="mt-8 border-l-2 border-accent bg-accent-ground/10 px-4 py-3 font-mono text-small text-ink">
-          {error}
-        </p>
-      )
-    }
+    {error && (
+      <p class="mt-8 border-l-2 border-accent bg-accent-ground/10 px-4 py-3 font-mono text-small text-ink">
+        {error}
+      </p>
+    )}
 
     <form method="POST" action="/fit/run" class="mt-10">
       <input type="hidden" name="t" value={token} />
@@ -111,8 +109,8 @@ const error = fitErrorCopy(Astro.url.searchParams.get('error'));
         required
         minlength="200"
         class="mt-3 w-full border border-rule bg-transparent p-4 font-mono text-small text-ink"
-        placeholder="Paste the full text here.">{preload}</textarea
-      >
+        placeholder="Paste the full text here."
+      >{preload}</textarea>
 
       <Turnstile sitekey={env.RLME_TURNSTILE_SITEKEY} />
 

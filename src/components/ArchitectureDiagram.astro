@@ -196,18 +196,18 @@ const FLOW = '@3xl:grid-cols-[minmax(0,1fr)_168px_minmax(0,1fr)]';
   aria-describedby="architecture-desc"
   class="not-prose @container mt-10"
 >
-  <p id="architecture-title" class="sr-only">{ARCHITECTURE_TITLE}</p>
-  <p id="architecture-desc" class="sr-only">{ARCHITECTURE_DESCRIPTION}</p>
+  <p id="architecture-title" class="sr-only">
+    {ARCHITECTURE_TITLE}
+  </p>
+  <p id="architecture-desc" class="sr-only">
+    {ARCHITECTURE_DESCRIPTION}
+  </p>
 
-  {
-    /*
+  {/*
       01, the ingress. The one row spanning the whole width, because everything
       below it is downstream of the same door.
-    */
-  }
-  <div
-    class="flex items-baseline justify-between gap-4 border border-rule bg-surface px-[18px] py-3.5"
-  >
+    */}
+  <div class="flex items-baseline justify-between gap-4 border border-rule bg-surface px-[18px] py-3.5">
     <p class="flex gap-3 font-mono text-micro uppercase text-ink">
       <span class="text-ink-muted">01</span>
       <span>Visitors and agents</span>
@@ -215,13 +215,11 @@ const FLOW = '@3xl:grid-cols-[minmax(0,1fr)_168px_minmax(0,1fr)]';
     <p class="font-mono text-micro uppercase text-accent">HTTPS</p>
   </div>
 
-  {
-    /*
+  {/*
       The accent connectors, centred on the Worker box each one lands on. Pure
       decoration: the description says "reach the site Worker" in words, and a
       screen reader gets nothing from a 1px rule.
-    */
-  }
+    */}
   <div class:list={['grid grid-cols-1', FLOW]} aria-hidden="true">
     <span class="mx-auto block h-8 w-px bg-accent"></span>
     <span class="hidden @3xl:block"></span>
@@ -238,18 +236,15 @@ const FLOW = '@3xl:grid-cols-[minmax(0,1fr)_168px_minmax(0,1fr)]';
         <p class="mt-1.5 text-small text-ink-muted">{WORKERS[0].what}</p>
       </div>
       <ul class="border-t border-rule">
-        {
-          WORKERS[0].routes.map((route) => (
-            <li class="border-b border-rule px-[18px] py-[11px] font-mono text-small text-ink last:border-b-0">
-              {route}
-            </li>
-          ))
-        }
+        {WORKERS[0].routes.map((route) => (
+          <li class="border-b border-rule px-[18px] py-[11px] font-mono text-small text-ink last:border-b-0">
+            {route}
+          </li>
+        ))}
       </ul>
     </div>
 
-    {
-      /*
+    {/*
         The gutter, and it is the middle grid item in both layouts rather than
         two copies behind a breakpoint. Stacked it falls between the two boxes
         on its own, which is where it belongs and what it says; side by side it
@@ -270,24 +265,31 @@ const FLOW = '@3xl:grid-cols-[minmax(0,1fr)_168px_minmax(0,1fr)]';
         container query rather than a media query for the reason the file header
         gives, that /ops and agent-native-site.mdx render this at widths that
         differ by half at the same viewport.
-      */
-    }
+      */}
     <div data-binding-gutter class="flex flex-col justify-center gap-1.5 py-6 @3xl:px-5 @3xl:py-0">
       <p class="text-center font-mono text-micro text-ink-muted">/mcp · chat · forms</p>
       <p class="flex flex-col items-center @3xl:hidden">
         <span aria-hidden="true" class="h-6 w-px bg-accent"></span>
-        <span aria-hidden="true" class="-mt-px leading-none text-accent">▼</span>
+        <span aria-hidden="true" class="-mt-px leading-none text-accent">
+          ▼
+        </span>
       </p>
       <p class="hidden items-center @3xl:flex">
         <span aria-hidden="true" class="h-px flex-1 bg-accent"></span>
-        <span aria-hidden="true" class="-ml-px leading-none text-accent">▶</span>
+        <span aria-hidden="true" class="-ml-px leading-none text-accent">
+          ▶
+        </span>
       </p>
       <p class="flex flex-col items-center @3xl:hidden">
-        <span aria-hidden="true" class="-mb-px leading-none text-accent">▲</span>
+        <span aria-hidden="true" class="-mb-px leading-none text-accent">
+          ▲
+        </span>
         <span aria-hidden="true" class="h-6 w-px bg-accent"></span>
       </p>
       <p class="hidden items-center @3xl:flex">
-        <span aria-hidden="true" class="-mr-px leading-none text-accent">◀</span>
+        <span aria-hidden="true" class="-mr-px leading-none text-accent">
+          ◀
+        </span>
         <span aria-hidden="true" class="h-px flex-1 bg-accent"></span>
       </p>
       <p class="text-center font-mono text-micro text-ink-muted">document reads</p>
@@ -302,23 +304,19 @@ const FLOW = '@3xl:grid-cols-[minmax(0,1fr)_168px_minmax(0,1fr)]';
         <p class="mt-1.5 text-small text-ink-muted">{WORKERS[1].what}</p>
       </div>
       <ul class="border-t border-rule">
-        {
-          WORKERS[1].routes.map((route) => (
-            <li class="border-b border-rule px-[18px] py-[11px] font-mono text-small text-ink last:border-b-0">
-              {route}
-            </li>
-          ))
-        }
+        {WORKERS[1].routes.map((route) => (
+          <li class="border-b border-rule px-[18px] py-[11px] font-mono text-small text-ink last:border-b-0">
+            {route}
+          </li>
+        ))}
       </ul>
     </div>
   </div>
 
-  {
-    /*
+  {/*
       The muted connectors down into the bindings, quieter than the accent pair
       above because a binding is not a request.
-    */
-  }
+    */}
   <div class:list={['grid grid-cols-1', FLOW]} aria-hidden="true">
     <span class="mx-auto block h-8 w-px bg-rule"></span>
     <span class="hidden @3xl:block"></span>
@@ -330,8 +328,7 @@ const FLOW = '@3xl:grid-cols-[minmax(0,1fr)_168px_minmax(0,1fr)]';
       04 · Shared by both Workers · bindings
     </p>
   </div>
-  {
-    /*
+  {/*
       hairline-grid owns the ground, the gap and the border; the cell picks its
       own background, and --rl-surface is the one that matches the boxes above.
 
@@ -343,21 +340,17 @@ const FLOW = '@3xl:grid-cols-[minmax(0,1fr)_168px_minmax(0,1fr)]';
 
       `-mt-px` laps this grid's top border over the bar's bottom one, so the two
       meet as the single hairline the idiom is named for rather than as 2px.
-    */
-  }
+    */}
   <div class="hairline-grid -mt-px grid-cols-1 @3xl:grid-cols-5">
-    {
-      BINDINGS.map((binding) => (
-        <div class="bg-surface px-[18px] py-3.5">
-          <p class="font-mono text-small text-ink">{binding.name}</p>
-          <p class="mt-1.5 font-mono text-micro uppercase text-ink-muted">{binding.what}</p>
-        </div>
-      ))
-    }
+    {BINDINGS.map((binding) => (
+      <div class="bg-surface px-[18px] py-3.5">
+        <p class="font-mono text-small text-ink">{binding.name}</p>
+        <p class="mt-1.5 font-mono text-micro uppercase text-ink-muted">{binding.what}</p>
+      </div>
+    ))}
   </div>
 
-  {
-    /*
+  {/*
       The independent-sinks note is on the page rather than only in the header
       comment, because it is the correction a reader is most likely to need: the
       two sinks sit side by side in the panel above and nothing in that layout
@@ -366,13 +359,14 @@ const FLOW = '@3xl:grid-cols-[minmax(0,1fr)_168px_minmax(0,1fr)]';
       The em dash pair the SVG's caption used is a comma pair now. House style
       targets zero em dashes in published prose and this is an appositive, which
       is the case the style's own table sends to commas.
-    */
-  }
+    */}
   <figcaption class="mt-4 max-w-prose text-small text-ink-muted">
     Analytics Engine and the queue are independent sinks; neither feeds the other. Drawn from the
-    deployed configuration, the two <code class="font-mono">wrangler.jsonc</code> files and the two Worker
-    entries in <a class="text-accent" href="https://github.com/ryanlindsey/ryanlindsey.me"
-      >the repository</a
-    >, rather than from a sketch, so it can be checked against what is running.
+    deployed configuration, the two <code class="font-mono">wrangler.jsonc</code> files and the two
+    Worker entries in{' '}
+    <a class="text-accent" href="https://github.com/ryanlindsey/ryanlindsey.me">
+      the repository
+    </a>
+    , rather than from a sketch, so it can be checked against what is running.
   </figcaption>
 </figure>

@@ -228,8 +228,7 @@ const FACT_COLUMNS: Record<number, string> = {
       </div>
     </header>
 
-    {
-      /*
+    {/*
         The facts bar (1j), directly beneath the masthead and rendered only
         when the entry declares something to put in it -- `factsFor` has
         already dropped every undeclared or blank fact, so this is never a row
@@ -246,26 +245,21 @@ const FACT_COLUMNS: Record<number, string> = {
         div holding all four groups would not be conforming, which is why the
         cap and the grid sit on the <dl> itself rather than on a layer inside
         it.
-      */
-    }
-    {
-      facts.length > 0 && (
-        <div class="border-b border-rule">
-          <dl
-            data-facts-bar
-            class:list={['mx-auto grid max-w-[1440px]', FACT_COLUMNS[facts.length]]}
-          >
-            {facts.map((fact) => (
-              // Stacked below `lg` and divided by a horizontal rule there,
-              // vertical rules across the row above it. Responsive collapse is
-              // its own issue (see the spine's note below); four cells at
-              // phone width would be 90px each, and this is the shape that
-              // leaves that issue the least to undo.
-              <div class="border-b border-rule px-6 py-[22px] last:border-b-0 lg:border-b-0 lg:border-r lg:last:border-r-0">
-                <dt data-fact-label class="font-mono text-micro uppercase text-ink-muted">
-                  {fact.label}
-                </dt>
-                {/* `valueClass` is the status ramp and nothing else carries
+      */}
+    {facts.length > 0 && (
+      <div class="border-b border-rule">
+        <dl data-facts-bar class:list={['mx-auto grid max-w-[1440px]', FACT_COLUMNS[facts.length]]}>
+          {facts.map((fact) => (
+            // Stacked below `lg` and divided by a horizontal rule there,
+            // vertical rules across the row above it. Responsive collapse is
+            // its own issue (see the spine's note below); four cells at
+            // phone width would be 90px each, and this is the shape that
+            // leaves that issue the least to undo.
+            <div class="border-b border-rule px-6 py-[22px] last:border-b-0 lg:border-b-0 lg:border-r lg:last:border-r-0">
+              <dt data-fact-label class="font-mono text-micro uppercase text-ink-muted">
+                {fact.label}
+              </dt>
+              {/* `valueClass` is the status ramp and nothing else carries
                     one -- see `factsFor` in src/lib/case-study-shape.ts for
                     why the cell brings its own colour instead of this
                     template matching on the label to work out which is which.
@@ -274,15 +268,14 @@ const FACT_COLUMNS: Record<number, string> = {
                     built stylesheet, not by the order they are written here,
                     so `text-ink text-ok` would be a coin flip that happens to
                     land right today. */}
-                <dd data-fact-value class:list={['mt-2 text-small', fact.valueClass ?? 'text-ink']}>
-                  {fact.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      )
-    }
+              <dd data-fact-value class:list={['mt-2 text-small', fact.valueClass ?? 'text-ink']}>
+                {fact.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    )}
 
     <!--
       The three-column spine. 220px contents / the measure / 240px meta, which
@@ -323,9 +316,7 @@ const FACT_COLUMNS: Record<number, string> = {
       children stack and the contents rail is what lands under the masthead, so
       it is the same seam and it was equally tight.
     -->
-    <div
-      class="mx-auto max-w-[1440px] px-10 pb-[60px] pt-9 lg:grid lg:grid-cols-[220px_minmax(0,1fr)_240px] lg:items-start lg:gap-12"
-    >
+    <div class="mx-auto max-w-[1440px] px-10 pb-[60px] pt-9 lg:grid lg:grid-cols-[220px_minmax(0,1fr)_240px] lg:items-start lg:gap-12">
       <aside data-article-toc class="mb-12 lg:mb-0 lg:sticky lg:top-24">
         <!-- lg:top-24 (96px), not the 32px lg:top-8 this rail shipped with
              before the 2026-09 redesign made the header sticky on this
@@ -350,30 +341,28 @@ const FACT_COLUMNS: Record<number, string> = {
 
         <slot name="footer" />
 
-        {
-          related.length > 0 && (
-            <section data-related-posts class="mt-16 border-t border-rule pt-6">
-              {/* A <p>, not an <h2>. tests/case-studies.test.ts compares a case
+        {related.length > 0 && (
+          <section data-related-posts class="mt-16 border-t border-rule pt-6">
+            {/* A <p>, not an <h2>. tests/case-studies.test.ts compares a case
                   study's <h2> list against the fixed 02 §4 shape by equality,
                   and while this row renders on posts only today, a section
                   label is not one of the article's own sections and should
                   never join that list if it ever does render there. */}
-              <p class="font-mono text-micro uppercase text-ink-muted">Related</p>
-              {/* hairline-grid owns the ground, the gap and the border; the
+            <p class="font-mono text-micro uppercase text-ink-muted">Related</p>
+            {/* hairline-grid owns the ground, the gap and the border; the
                   column count and the cell background are the caller's, which
                   is what the utility's comment in global.css says and why it
                   stops short of both. */}
-              <div class="hairline-grid mt-5 grid-cols-1 sm:grid-cols-2">
-                {related.map((entry) => (
-                  <a href={entry.href} class="block bg-surface p-5 no-underline">
-                    <p class="font-mono text-micro uppercase text-ink-muted">{entry.kicker}</p>
-                    <p class="mt-2 font-display text-subheading text-ink">{entry.title}</p>
-                  </a>
-                ))}
-              </div>
-            </section>
-          )
-        }
+            <div class="hairline-grid mt-5 grid-cols-1 sm:grid-cols-2">
+              {related.map((entry) => (
+                <a href={entry.href} class="block bg-surface p-5 no-underline">
+                  <p class="font-mono text-micro uppercase text-ink-muted">{entry.kicker}</p>
+                  <p class="mt-2 font-display text-subheading text-ink">{entry.title}</p>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
 
       <ArticleMetaRail markdownHref={markdownHref} canonicalUrl={canonicalUrl} />
