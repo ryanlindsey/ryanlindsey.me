@@ -130,6 +130,10 @@ async function sitemapPaths(): Promise<string[]> {
 const robotsDirectives = (html: string): string[] =>
   [...html.matchAll(/<meta name="robots" content="([^"]*)"/g)].map((match) => match[1]);
 
+/** The `content` of every `<meta name="description">` on a commentless page. */
+const metaDescriptions = (html: string): string[] =>
+  [...html.matchAll(/<meta name="description" content="([^"]*)"/g)].map((match) => match[1]);
+
 /**
  * A FINDING THIS TEST DOES NOT YET CATCH, recorded here so it is not
  * rediscovered as a surprise (measured 2026-09-13, through this harness).
@@ -185,6 +189,65 @@ test('every page carries exactly one non-empty title', async () => {
     );
     expect(titles, `${path} should carry exactly one title`).toHaveLength(1);
     expect(titles[0].trim(), `${path} should carry a non-empty title`).not.toBe('');
+  }
+});
+
+/**
+ * Every INDEXABLE page's description is at least 70 characters (issue #152).
+ *
+ * THE BOUND IS A FLOOR, NOT A CEILING, and that is the decision this test
+ * records. Google truncates a displayed description at roughly 155 to 160
+ * characters, and six pages on this site are already past that -- the
+ * reflex is an upper-bound assertion. Rejected: a description on this site
+ * has more than one reader. An article's frontmatter `description` is also
+ * what `/llms.txt`, `/llms-full.txt`, the feeds and the MCP `list_writing`
+ * and `list_case_studies` tools render, `resume.basics.summary` is also the
+ * `/llms.txt` blockquote and part of `/resume.md` and `/resume.json`, and
+ * `policy.data.summary` is also rendered on `/ai-policy/` itself. Shortening
+ * any of them to fit a display limit -- or truncating at render time, or
+ * forking a second `metaDescription` field that agrees with `description`
+ * until someone edits one and not the other -- trades the reader this site
+ * optimizes for on purpose for the one it cannot control anyway, since
+ * Google rewrites descriptions most of the time regardless. A floor catches
+ * the failure that actually happened here: a page falling through to a
+ * generic default rather than a page being too informative.
+ *
+ * 70 sits above every generic stub on the site today and below every
+ * description written on purpose, with one exception.
+ *
+ * SCOPED TO INDEXABLE PAGES, derived from the page's own rendered
+ * `<meta name="robots">` rather than hand-listed, for the reason `ALL_PAGES`
+ * itself is walked rather than hand-listed: a hand-listed exemption list is
+ * a list that silently stops covering the site the day a route's robots
+ * value changes. The three `/writing/pillar/*` pages are `noindex, follow`
+ * and repeat `WRITING_DESCRIPTION` verbatim below 70 characters, and that is
+ * fine -- they are thin duplicates excluded from the sitemap, not documents
+ * this bound is measuring.
+ *
+ * `/404` IS THE ONE EXCEPTION, and it needs no exemption clause here: a 404
+ * has nothing to describe, "Nothing is published at that address." is
+ * correct at 37 characters, and `builtPages` collects `index.html` only, so
+ * `dist/client/404.html` is never in `ALL_PAGES` to begin with. Named here
+ * only so the next reader does not add it.
+ */
+test('every indexable page carries a description of at least 70 characters', async () => {
+  for (const path of ALL_PAGES) {
+    const html = await page(path);
+    const directives = robotsDirectives(html);
+
+    // Only a page that asks to be indexed is held to this floor. `startsWith`
+    // rather than an exact match, because the directive also carries `follow`
+    // or `nofollow` (e.g. `index, follow`).
+    if (!directives[0]?.startsWith('index')) {
+      continue;
+    }
+
+    const descriptions = metaDescriptions(html);
+    expect(descriptions, `${path} should carry exactly one description`).toHaveLength(1);
+    expect(
+      descriptions[0].length,
+      `${path}'s description is ${descriptions[0].length} characters, want at least 70`,
+    ).toBeGreaterThanOrEqual(70);
   }
 });
 
