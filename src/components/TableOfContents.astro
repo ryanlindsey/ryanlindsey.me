@@ -121,11 +121,10 @@ const ITEM =
   '-ml-px block border-l-2 border-transparent py-[7px] pr-0 text-small text-ink-muted aria-[current=true]:border-l-accent aria-[current=true]:text-ink';
 ---
 
-{
-  count > 0 && (
-    <nav aria-label={ariaLabel} data-toc>
-      <Wrapper {...(collapsible ? { open: true, 'data-toc-disclosure': true } : {})}>
-        {/*
+{count > 0 && (
+  <nav aria-label={ariaLabel} data-toc>
+    <Wrapper {...(collapsible ? { open: true, 'data-toc-disclosure': true } : {})}>
+      {/*
             `open` SHIPS IN THE MARKUP and the script below removes it under
             `lg`. Written that way round so a reader with no JavaScript gets
             exactly the pre-#113 behaviour at every width -- the rail expanded --
@@ -133,65 +132,63 @@ const ITEM =
             The enhancement only ever takes the rail away on the viewport where
             it was costing a screen.
           */}
-        {collapsible && (
-          <summary class="cursor-pointer font-mono text-micro uppercase text-ink-muted lg:hidden">
-            {summaryText}
-          </summary>
-        )}
-        {/* At `lg` the summary is gone, so the label does its usual job; below
+      {collapsible && (
+        <summary class="cursor-pointer font-mono text-micro uppercase text-ink-muted lg:hidden">
+          {summaryText}
+        </summary>
+      )}
+      {/* At `lg` the summary is gone, so the label does its usual job; below
              it the summary is already saying the same word and a second copy
              would read as a heading over a heading. */}
-        {label && (
-          <p
-            class:list={[
-              'font-mono text-micro uppercase text-ink-muted',
-              collapsible && 'hidden lg:block',
-            ]}
-          >
-            {label}
-          </p>
-        )}
-        <ul
+      {label && (
+        <p
           class:list={[
-            'flex flex-col gap-0.5 border-l border-rule',
-            // The 16px belongs to the label, not to the rail, so a rail without
-            // one starts flush with the content beside it rather than an inch
-            // below it. A summary needs the same 16px for the same reason, and
-            // only below `lg` -- at `lg` the summary is hidden and /ai-policy's
-            // labelless rail must still start flush, as design 1m draws it.
-            label ? 'mt-4' : collapsible && 'mt-4 lg:mt-0',
+            'font-mono text-micro uppercase text-ink-muted',
+            collapsible && 'hidden lg:block',
           ]}
         >
-          {toc.map((node) => (
-            <li>
-              <a href={`#${node.slug}`} data-toc-link={node.slug} class={`${ITEM} pl-[14px]`}>
-                {node.text}
-              </a>
-              {node.children.length > 0 && (
-                <ul class="flex flex-col gap-0.5">
-                  {node.children.map((child) => (
-                    <li>
-                      <a
-                        href={`#${child.slug}`}
-                        data-toc-link={child.slug}
-                        class={`${ITEM} pl-[26px]`}
-                      >
-                        {child.text}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          ))}
-        </ul>
-      </Wrapper>
-    </nav>
-  )
-}
+          {label}
+        </p>
+      )}
+      <ul
+        class:list={[
+          'flex flex-col gap-0.5 border-l border-rule',
+          // The 16px belongs to the label, not to the rail, so a rail without
+          // one starts flush with the content beside it rather than an inch
+          // below it. A summary needs the same 16px for the same reason, and
+          // only below `lg` -- at `lg` the summary is hidden and /ai-policy's
+          // labelless rail must still start flush, as design 1m draws it.
+          label ? 'mt-4' : collapsible && 'mt-4 lg:mt-0',
+        ]}
+      >
+        {toc.map((node) => (
+          <li>
+            <a href={`#${node.slug}`} data-toc-link={node.slug} class={`${ITEM} pl-[14px]`}>
+              {node.text}
+            </a>
+            {node.children.length > 0 && (
+              <ul class="flex flex-col gap-0.5">
+                {node.children.map((child) => (
+                  <li>
+                    <a
+                      href={`#${child.slug}`}
+                      data-toc-link={child.slug}
+                      class={`${ITEM} pl-[26px]`}
+                    >
+                      {child.text}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Wrapper>
+  </nav>
+)}
 
-{
-  /*
+{/*
     `is:inline`, and it is the one thing in this component that has to be.
     ThemeToggle.astro uses a module script and Base.astro uses `is:inline` for
     the theme; each says why, and this is the theme script's reason rather than
@@ -204,9 +201,8 @@ const ITEM =
     and keeps writing `aria-current` while the disclosure is shut, which is what
     makes the spy degraded rather than dead: open it part-way down an article
     and the section you are in is already marked.
-  */
-}
-{count > 0 && collapsible && <script is:inline set:html={RAIL_SYNC} />}
+  */}
+{count > 0 && collapsible && <script is:inline set:html={RAIL_SYNC}></script>}
 
 <script>
   const links = new Map<string, HTMLAnchorElement>();

@@ -121,42 +121,43 @@ const isExternal = (href: string) => href.startsWith('http');
         </p>
       </div>
 
-      {
-        columns.map((column) => (
-          <div>
-            <p aria-hidden="true" class="font-mono text-micro text-ink-muted">
-              {column.heading}
-            </p>
-            <nav aria-label={column.label} class="mt-3 flex flex-col items-start gap-2">
-              {column.links.map((link) => (
-                <a
-                  href={link.href}
-                  class={column.mono ? 'font-mono text-small text-ink' : 'text-small text-ink'}
-                  target={isExternal(link.href) ? '_blank' : undefined}
-                  rel={isExternal(link.href) ? 'noopener' : undefined}
-                >
-                  {link.label}
-                </a>
-              ))}
-            </nav>
-          </div>
-        ))
-      }
+      {columns.map((column) => (
+        <div>
+          <p aria-hidden="true" class="font-mono text-micro text-ink-muted">
+            {column.heading}
+          </p>
+          <nav aria-label={column.label} class="mt-3 flex flex-col items-start gap-2">
+            {column.links.map((link) => (
+              <a
+                href={link.href}
+                class={column.mono ? 'font-mono text-small text-ink' : 'text-small text-ink'}
+                target={isExternal(link.href) ? '_blank' : undefined}
+                rel={isExternal(link.href) ? 'noopener' : undefined}
+              >
+                {link.label}
+              </a>
+            ))}
+          </nav>
+        </div>
+      ))}
     </div>
 
-    <div
-      class="mt-7 flex flex-wrap items-baseline justify-between gap-4 border-t border-rule pt-[18px] font-mono text-micro text-ink-muted"
-    >
+    <div class="mt-7 flex flex-wrap items-baseline justify-between gap-4 border-t border-rule pt-[18px] font-mono text-micro text-ink-muted">
       <span>&copy; {year} RYAN LINDSEY</span>
       <span>
-        Built <a
+        Built{' '}
+        <a
           href="https://github.com/ryanlindsey/ryanlindsey.me"
           target="_blank"
           rel="noopener"
-          class="text-accent">in the open</a
-        > on <a href="https://www.cloudflare.com" target="_blank" rel="noopener" class="text-accent"
-          >Cloudflare</a
+          class="text-accent"
         >
+          in the open
+        </a>{' '}
+        on{' '}
+        <a href="https://www.cloudflare.com" target="_blank" rel="noopener" class="text-accent">
+          Cloudflare
+        </a>
       </span>
     </div>
   </div>

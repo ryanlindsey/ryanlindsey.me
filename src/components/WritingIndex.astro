@@ -102,8 +102,7 @@ const chipClass = (active: boolean) =>
   <p class="text-body text-ink-muted">{WRITING_DESCRIPTION}</p>
 </section>
 
-{
-  /*
+{/*
   THE CHIPS MUST BE THE FIRST ELEMENT TO CLOSE INSIDE THIS ROW, and that is a
   contract with tests/pages.test.ts rather than a styling choice. Two tests
   scope themselves by matching from the filter row's data attribute to the next
@@ -120,86 +119,77 @@ const chipClass = (active: boolean) =>
   about a scoping trap became the scoping trap. src/pages/index.astro records
   the same lesson from the other direction: an HTML comment is part of the
   response, and a check that reads the response cannot tell the two apart.
-  */
-}
+  */}
 <div data-filter-row class="border-y border-rule">
-  <div
-    class="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-4 px-5 py-[18px] lg:px-10"
-  >
+  <div class="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-4 px-5 py-[18px] lg:px-10">
     <nav aria-label="Filter writing by pillar" class="flex flex-wrap items-center gap-2">
-      {
-        chips.map((chip) => (
-          <a
-            href={chip.href}
-            class={chipClass(chip.active)}
-            aria-current={chip.active ? 'page' : undefined}
-          >
-            {chip.label} {chip.count}
-          </a>
-        ))
-      }
+      {chips.map((chip) => (
+        <a
+          href={chip.href}
+          class={chipClass(chip.active)}
+          aria-current={chip.active ? 'page' : undefined}
+        >
+          {chip.label} {chip.count}
+        </a>
+      ))}
     </nav>
 
     <p class="flex flex-wrap items-center gap-2 font-mono text-micro uppercase text-accent">
-      {
-        FEEDS.map((feed, index) => (
-          <>
-            {index > 0 && <span aria-hidden="true">&middot;</span>}
-            <a href={feed.href} class="text-accent">
-              {feed.label}
-            </a>
-          </>
-        ))
-      }
+      {FEEDS.map((feed, index) => (
+        <>
+          {index > 0 && <span aria-hidden="true">&middot;</span>}
+          <a href={feed.href} class="text-accent">
+            {feed.label}
+          </a>
+        </>
+      ))}
     </p>
   </div>
 </div>
 
-{
-  rows.length === 0 ? (
-    <div class="mx-auto max-w-[1440px] px-5 py-16 lg:px-10">
-      {/*
+{rows.length === 0 ? (
+  <div class="mx-auto max-w-[1440px] px-5 py-16 lg:px-10">
+    {/*
         Two empty states, because they answer two different questions. The
         unfiltered index says the site has not published yet; a pillar view
         says this pillar has not. Both carry `data-testid="writing-empty"`,
         which is the marker tests/pages.test.ts has used since launch.
       */}
-      <p class="font-mono text-micro uppercase text-ink-muted" data-testid="writing-empty">
-        {activePillar ? 'No pieces under this pillar yet.' : 'First pieces land this week.'}
-      </p>
-    </div>
-  ) : (
-    <ul>
-      {rows.map((post) => (
-        // `data-post-row` sits on the WRAPPER, not on the anchor. Also a test
-        // contract: the row assertion counts `<a ` between this attribute and
-        // the first `</a>`, and an attribute on the anchor itself would leave
-        // that opening tag outside the slice and count zero.
-        <li data-post-row class="border-b border-rule">
-          <a
-            href={`/writing/${post.id}`}
-            class="mx-auto grid max-w-[1440px] gap-4 px-5 py-[30px] no-underline lg:grid-cols-[150px_minmax(0,1fr)_300px] lg:gap-10 lg:px-10"
-          >
-            <p class="font-mono text-micro uppercase text-ink-muted">
-              <time datetime={post.data.publishedAt.toISOString()} data-numeric>
-                {day(post.data.publishedAt)}
-              </time>
-              <span class="block text-accent">{readingTimeFor(post.body).minutes} min</span>
-            </p>
+    <p class="font-mono text-micro uppercase text-ink-muted" data-testid="writing-empty">
+      {activePillar ? 'No pieces under this pillar yet.' : 'First pieces land this week.'}
+    </p>
+  </div>
+) : (
+  <ul>
+    {rows.map((post) => (
+      // `data-post-row` sits on the WRAPPER, not on the anchor. Also a test
+      // contract: the row assertion counts `<a ` between this attribute and
+      // the first `</a>`, and an attribute on the anchor itself would leave
+      // that opening tag outside the slice and count zero.
+      <li data-post-row class="border-b border-rule">
+        <a
+          href={`/writing/${post.id}`}
+          class="mx-auto grid max-w-[1440px] gap-4 px-5 py-[30px] no-underline lg:grid-cols-[150px_minmax(0,1fr)_300px] lg:gap-10 lg:px-10"
+        >
+          <p class="font-mono text-micro uppercase text-ink-muted">
+            <time datetime={post.data.publishedAt.toISOString()} data-numeric>
+              {day(post.data.publishedAt)}
+            </time>
+            <span class="block text-accent">{readingTimeFor(post.body).minutes} min</span>
+          </p>
 
-            <div>
-              <h2 class="font-display text-section text-ink">{post.data.title}</h2>
-              <p class="mt-4 max-w-[64ch] text-body text-ink-muted">{post.data.description}</p>
-            </div>
+          <div>
+            <h2 class="font-display text-section text-ink">{post.data.title}</h2>
+            <p class="mt-4 max-w-[64ch] text-body text-ink-muted">{post.data.description}</p>
+          </div>
 
-            <p class="lg:justify-self-start">
-              <span class="inline-block border border-rule px-[11px] py-[6px] font-mono text-micro uppercase text-ink-muted">
-                {PILLAR_LABELS[post.data.pillar] ?? post.data.pillar}
-              </span>
-            </p>
-          </a>
-        </li>
-      ))}
-    </ul>
-  )
-}
+          <p class="lg:justify-self-start">
+            <span class="inline-block border border-rule px-[11px] py-[6px] font-mono text-micro uppercase text-ink-muted">
+              {PILLAR_LABELS[post.data.pillar] ?? post.data.pillar}
+            </span>
+          </p>
+        </a>
+      </li>
+    ))}
+  </ul>
+)}

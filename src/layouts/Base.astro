@@ -143,8 +143,7 @@ const jsonLdNodes = [
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
-    {
-      /* An Astro comment, NOT an HTML one, and that is the fix rather than a
+    {/* An Astro comment, NOT an HTML one, and that is the fix rather than a
          style choice. The `<!-- -->` that stood here shipped into every page
          of the site, and it named the unlisted routes (09 §1) it was warning
          about -- publishing, on every page, the paths whose whole requirement
@@ -154,28 +153,22 @@ const jsonLdNodes = [
          The reasoning it carried lives on the `robots` prop above, where it
          belongs and where it does not ship. The short version: the tag below
          stays even though the default is now permissive, because the callers
-         that pass their own value depend on it being rendered. */
-    }
+         that pass their own value depend on it being rendered. */}
     <meta name="robots" content={robots} />
     {referrer && <meta name="referrer" content={referrer} />}
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
-    {
-      /* Sitewide feed autodiscovery (day 3 Task 11, 02 §3) -- unlike the
+    {/* Sitewide feed autodiscovery (day 3 Task 11, 02 §3) -- unlike the
        markdownHref block below, these are not conditional on any per-page
        prop: every page on the site is covered by the same one RSS feed and
-       one JSON Feed, the same way every page shares one /llms.txt. */
-    }
+       one JSON Feed, the same way every page shares one /llms.txt. */}
     <link rel="alternate" type="application/rss+xml" title="Ryan Lindsey" href="/rss.xml" />
-    {
-      /* JSON Feed's own spec (jsonfeed.org/version/1.1, Discovery section)
+    {/* JSON Feed's own spec (jsonfeed.org/version/1.1, Discovery section)
        gives this exact markup, including `type="application/feed+json"` --
        the same media type the feed is actually served with (see
        src/pages/feed.json.ts and public/_headers), not the more generic
-       `application/json` some older feeds still use. */
-    }
+       `application/json` some older feeds still use. */}
     <link rel="alternate" type="application/feed+json" title="Ryan Lindsey" href="/feed.json" />
-    {
-      /* rel="describedby" points at the llms.txt file that COVERS this page
+    {/* rel="describedby" points at the llms.txt file that COVERS this page
        (llms.txt v2, research appendix B1.2/B2.2), not at the page's own .md
        twin -- that was Task 7's mistake, fixed in Task 9 (the earliest point
        /llms.txt existed to point at). No `type` attribute, matching the
@@ -196,8 +189,7 @@ const jsonLdNodes = [
        Fix round 1 (task-9-report.md): this is genuinely spec-only today --
        the research appendix found no site in its sample emitting
        rel="describedby" yet. Shipped because it is free and correct, not
-       because anything is known to consume it. */
-    }
+       because anything is known to consume it. */}
     <link rel="describedby" href="/llms.txt" />
     {
       /* rel="alternate" has pre-existing adoption (OpenAI's Codex CLI
@@ -217,7 +209,7 @@ const jsonLdNodes = [
       // embedded JSON; `stringifyJsonLd` already neutralises the one
       // injection risk (a field value containing a literal `</script>`).
       jsonLdNodes.map((node) => (
-        <script type="application/ld+json" is:inline set:html={stringifyJsonLd(node)} />
+        <script type="application/ld+json" is:inline set:html={stringifyJsonLd(node)}></script>
       ))
     }
     <title>{pageTitle}</title>

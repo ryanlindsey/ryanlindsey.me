@@ -67,8 +67,7 @@ const {
 } = Astro.props;
 ---
 
-{
-  /*
+{/*
     A FIGURE CARRYING A SENTENCE USED TO TAKE TWO COLUMNS, and the 2026-09
     redesign is why it no longer does. The old grid was `gap-10` over the page
     background, where a wide cell cost nothing. The band is a `hairline-grid`
@@ -78,21 +77,17 @@ const {
     carries ten figures and the band runs five across for the same arithmetic.
     The note reads as a quieter line inside its own cell instead, which is what
     `text-micro` is doing below.
-  */
-}
-{
-  /*
+  */}
+{/*
     `data-ops-metric` is a TEST HOOK and says so. tests/ops-page.test.ts has to
     assert a property of ONE tile -- that the analytics figures render their
     absence and never a rendered zero -- and slicing the page on class names
     would make that assertion fail the next time a margin changes. Same
     convention as `data-testid="resume"` and `data-gap-notice` elsewhere in this
     repo. The label is the value because it is what the test looks a tile up by.
-  */
-}
+  */}
 <div data-ops-metric={label} class="bg-surface px-6 pb-7 pt-[26px]">
-  {
-    /*
+  {/*
       The figure, or the absence in its place. `data-numeric` is what
       global.css turns into tabular figures -- so a column of these lines up
       rather than shimmering, which is the whole reason that rule names /ops.
@@ -103,22 +98,18 @@ const {
       hooked to the figure alone it would assert nothing about the tiles that
       have no figure, which are the only ones that could ever have rendered a
       bare zero in the first place.
-    */
-  }
-  {
-    value === null ? (
-      <p class="font-mono text-heading text-ink-muted" data-metric-value>
-        {absentState}
-      </p>
-    ) : (
-      <p class="font-display text-figure text-ink" data-metric-value data-numeric>
-        {value}
-      </p>
-    )
-  }
+    */}
+  {value === null ? (
+    <p class="font-mono text-heading text-ink-muted" data-metric-value>
+      {absentState}
+    </p>
+  ) : (
+    <p class="font-display text-figure text-ink" data-metric-value data-numeric>
+      {value}
+    </p>
+  )}
   <p class="mt-3 text-small text-ink-muted">{label}</p>
-  {
-    /*
+  {/*
       Provenance, quieter than the label on purpose: figure, then what it
       counts, then where it came from.
 
@@ -134,15 +125,15 @@ const {
       sentence, not a system name, and "ANALYTICS ENGINE — THIS NEEDS THE
       READ-ONLY ANALYTICS TOKEN" shouts an apology across the band. Uppercasing
       is CSS either way, so the text a test reads is the same in both arms.
-    */
-  }
+    */}
   <p
     class:list={[
       'mt-1 font-mono text-micro text-ink-muted',
       value === null ? 'normal-case' : 'uppercase',
     ]}
   >
-    {source}{value === null ? ` — ${absentReason}` : ''}
+    {source}
+    {value === null ? ` — ${absentReason}` : ''}
   </p>
   {note && <p class="mt-4 text-micro text-ink-muted">{note}</p>}
 </div>

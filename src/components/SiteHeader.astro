@@ -73,20 +73,20 @@ const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`)
     overlay that replaces it. 40px from `lg` up, as everywhere else.
   -->
   <div class="mx-auto flex h-[60px] max-w-[1440px] items-center gap-9 px-5 lg:h-[68px] lg:px-10">
-    <a href="/" class="font-display text-subheading text-ink">Ryan Lindsey</a>
+    <a href="/" class="font-display text-subheading text-ink">
+      Ryan Lindsey
+    </a>
 
     <nav aria-label="Primary" class="ml-2 hidden items-center gap-[30px] lg:flex">
-      {
-        NAV_LINKS.map((link) => (
-          <a
-            href={link.href}
-            aria-current={isCurrent(link.href) ? 'page' : undefined}
-            class="border-b-2 border-transparent py-6 font-mono text-small text-ink-muted aria-[current=page]:border-accent aria-[current=page]:text-ink"
-          >
-            {link.label}
-          </a>
-        ))
-      }
+      {NAV_LINKS.map((link) => (
+        <a
+          href={link.href}
+          aria-current={isCurrent(link.href) ? 'page' : undefined}
+          class="border-b-2 border-transparent py-6 font-mono text-small text-ink-muted aria-[current=page]:border-accent aria-[current=page]:text-ink"
+        >
+          {link.label}
+        </a>
+      ))}
     </nav>
 
     <div class="ml-auto hidden items-center gap-[14px] lg:flex">
@@ -105,9 +105,9 @@ const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`)
         class="flex w-[260px] items-center gap-2.5 border border-rule px-3 py-2"
       >
         <span class="text-small font-mono text-ink-muted">Search</span>
-        <span class="ml-auto border border-rule px-[5px] py-px text-micro font-mono text-ink-muted"
-          >⌘K</span
-        >
+        <span class="ml-auto border border-rule px-[5px] py-px text-micro font-mono text-ink-muted">
+          ⌘K
+        </span>
       </span>
       <ThemeToggle />
     </div>
