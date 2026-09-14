@@ -21,9 +21,9 @@
     "evals": "node evals/run.mjs"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "14.3.0",
-    "@astrojs/markdown-satteri": "0.4.0",
-    "@astrojs/mdx": "8.0.0",
+    "@astrojs/cloudflare": "14.3.1",
+    "@astrojs/markdown-satteri": "0.4.1",
+    "@astrojs/mdx": "8.0.1",
     "@astrojs/rss": "4.0.19",
     "@astrojs/sitemap": "3.7.4",
     "@cloudflare/puppeteer": "1.4.0",
@@ -33,25 +33,25 @@
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@modelcontextprotocol/server": "2.0.0",
-    "agents": "0.22.0",
-    "astro": "7.3.1",
+    "agents": "0.23.0",
+    "astro": "7.3.2",
     "astro-expressive-code": "0.44.2",
     "github-slugger": "2.0.0",
     "reading-time": "1.5.0",
-    "zod": "4.5.4"
+    "zod": "4.6.2"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.10",
     "@tailwindcss/typography": "0.5.20",
     "@tailwindcss/vite": "4.3.3",
-    "@types/node": "26.4.1",
+    "@types/node": "26.5.1",
     "jsdom": "30.0.1",
     "prettier": "3.9.6",
     "prettier-plugin-astro": "0.14.1",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3",
     "vitest": "5.0.0",
-    "wrangler": "4.129.0",
+    "wrangler": "4.131.1",
     "yaml": "2.9.0"
   },
   "allowScripts": {
