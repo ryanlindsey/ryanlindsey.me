@@ -71,10 +71,21 @@ const page = async (path: string): Promise<string> => {
  * asserts a site-wide rule against a stale subset of the site is worth less
  * than no suite at all, because it reads as coverage.
  *
- * `index.html` only, so `dist/client/404.html` is not collected: it is an error
- * document rather than a page. Nothing in this file asserts anything about it,
- * deliberately -- see the last test for why an error document cannot satisfy
- * the sitemap invariant and should not be made to.
+ * `index.html` only, so `dist/client/404.html` is not collected: it is an
+ * error document rather than a page, and every sweep driven by `ALL_PAGES`
+ * below is therefore structurally unable to assert anything about it -- not
+ * merely choosing not to.
+ *
+ * TWO PLACES HANDLE IT SEPARATELY INSTEAD, each for its own reason and each
+ * saying so where it lives (fix round 1, issue #153: an earlier version of
+ * this paragraph claimed nothing in the file asserted anything about `/404`,
+ * which stopped being true the moment the second of these two tests was
+ * added). The sitemap/robots test names `/404` explicitly and exempts it from
+ * Direction 2, because an error document served with a 404 status has nothing
+ * there for a crawler to index and cannot satisfy the sitemap invariant.
+ * `the 404 page title carries the site suffix too` fetches `/404` directly,
+ * for the same structural reason this list cannot see it, rather than relying
+ * on a sweep it is invisible to.
  */
 function builtPages(dir: URL, prefix = ''): string[] {
   const found: string[] = [];
@@ -262,6 +273,17 @@ test('every indexable page carries a description of at least 70 characters', asy
  * `Ask my agent` the issue's own audit did not mention). Centralising it in
  * `src/layouts/Base.astro` is what makes it correct on every page without six
  * call sites having to agree.
+ *
+ * COUNTED, NOT MERELY MATCHED AT THE END (fix round 1, controller ruling).
+ * `endsWith(' — Ryan Lindsey')` alone is satisfied by a DOUBLED tail --
+ * "Resume — Ryan Lindsey — Ryan Lindsey" ends with the suffix too -- and that
+ * blind spot is not hypothetical: `src/pages/resume.astro` and
+ * `src/pages/writing/pillar/[pillar].astro` were both still building the
+ * suffix themselves the moment `src/layouts/Base.astro` started applying it
+ * everywhere, and both would have shipped exactly this doubled title had the
+ * audit that found this issue's other four hand-applied copies not also
+ * caught these two. The guard below exists because that already almost
+ * happened, not because it might.
  */
 test('every page title ends with the site suffix, or is exactly the site name', async () => {
   for (const path of ALL_PAGES) {
@@ -274,6 +296,16 @@ test('every page title ends with the site suffix, or is exactly the site name', 
       carriesSuffix,
       `${path} should end with " — Ryan Lindsey" or be exactly "Ryan Lindsey" -- got "${title}"`,
     ).toBe(true);
+
+    // The home page is the one page that carries the suffix zero times (its
+    // title is exactly the site name, asserted above); every other page
+    // carries it exactly once, never doubled.
+    const suffixCount = [...title.matchAll(/ — Ryan Lindsey/g)].length;
+    const expectedSuffixCount = title === 'Ryan Lindsey' ? 0 : 1;
+    expect(
+      suffixCount,
+      `${path} should carry the suffix exactly ${expectedSuffixCount} time(s), not doubled -- got "${title}"`,
+    ).toBe(expectedSuffixCount);
   }
 });
 
