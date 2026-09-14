@@ -232,10 +232,14 @@ test('every page carries exactly one non-empty title', async () => {
  * `<meta name="robots">` rather than hand-listed, for the reason `ALL_PAGES`
  * itself is walked rather than hand-listed: a hand-listed exemption list is
  * a list that silently stops covering the site the day a route's robots
- * value changes. The three `/writing/pillar/*` pages are `noindex, follow`
- * and repeat `WRITING_DESCRIPTION` verbatim below 70 characters, and that is
- * fine -- they are thin duplicates excluded from the sitemap, not documents
- * this bound is measuring.
+ * value changes. Measured against this branch's build, the exemption covers
+ * exactly one page below the floor: `/writing/type-specimen/`, a draft that
+ * renders `noindex, nofollow` and repeats its own 55-character frontmatter
+ * description, a specimen no crawler reads. The three `/writing/pillar/*`
+ * pages are `noindex, follow` and share `WRITING_DESCRIPTION` with
+ * `/writing/`, but this commit rewrote that constant to 107 characters, so
+ * all three clear the floor on their own now; they stay out of this test's
+ * scope because they are `noindex`, not because they need the exemption.
  *
  * `/404` IS THE ONE EXCEPTION, and it needs no exemption clause here: a 404
  * has nothing to describe, "Nothing is published at that address." is
