@@ -13,11 +13,13 @@
  * greps the layout for the string `canonical` passes on a layout that renders
  * the tag into a comment.
  *
- * All five assertions below already held when this file was written. That is
- * the point rather than a weakness: the file exists so that #152, #153 and #154
- * each have somewhere to add an assertion that fails first. What makes it worth
- * committing today is the last test, which is the only thing in the repository
- * that checks the sitemap and the robots tags against each other.
+ * The five assertions this file shipped with already held when it was
+ * written. That is the point rather than a weakness: the file exists so that
+ * #152, #153 and #154 each have somewhere to add an assertion that fails
+ * first. What made it worth committing was the sitemap/robots test --
+ * `the sitemap and the robots tags never contradict each other`, below --
+ * the only thing in the repository that checks the sitemap and the robots
+ * tags against each other.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
@@ -472,8 +474,15 @@ function articleLastmods(dir: URL): Map<string, string> {
     const frontmatter = source.slice(0, frontmatterEnd);
     if (/\ndraft:\s*true\b/.test(frontmatter)) continue;
 
-    const publishedAt = /\npublishedAt:\s*['"]?(\d{4}-\d{2}-\d{2})['"]?/.exec(frontmatter)?.[1];
-    const updatedAt = /\nupdatedAt:\s*['"]?(\d{4}-\d{2}-\d{2})['"]?/.exec(frontmatter)?.[1];
+    // Anchored the same way src/lib/sitemap-lastmod.mjs's copy of this pattern
+    // is anchored, and for the same reason: unanchored, it matches only the
+    // date prefix of a `publishedAt: 2026-09-12T14:30:00Z` spelling and
+    // silently drops the time, which this test's character-identical regex
+    // would then reproduce and stay green on, rather than catching it.
+    const publishedAt = /\npublishedAt:\s*['"]?(\d{4}-\d{2}-\d{2})['"]?\s*$/m.exec(
+      frontmatter,
+    )?.[1];
+    const updatedAt = /\nupdatedAt:\s*['"]?(\d{4}-\d{2}-\d{2})['"]?\s*$/m.exec(frontmatter)?.[1];
     if (!publishedAt) {
       throw new Error(`${name}: no publishedAt found in frontmatter`);
     }

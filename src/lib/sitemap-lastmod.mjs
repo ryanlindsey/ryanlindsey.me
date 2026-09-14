@@ -73,8 +73,16 @@ function articleLastmods(dir, routePrefix) {
     const frontmatter = source.slice(0, frontmatterEnd);
     if (/\ndraft:\s*true\b/.test(frontmatter)) continue;
 
-    const publishedAt = /\npublishedAt:\s*['"]?(\d{4}-\d{2}-\d{2})['"]?/.exec(frontmatter)?.[1];
-    const updatedAt = /\nupdatedAt:\s*['"]?(\d{4}-\d{2}-\d{2})['"]?/.exec(frontmatter)?.[1];
+    // Anchored to end of line (`m` flag, whole-branch review of epic #150):
+    // without the trailing `\s*$`, this pattern matches only the date prefix
+    // of a `publishedAt: 2026-09-12T14:30:00Z` spelling and silently drops
+    // the time, which `src/content.config.ts`'s `z.coerce.date()` accepts,
+    // so nothing upstream would catch it. Anchored, that spelling falls
+    // through to the `throw` below instead of being truncated.
+    const publishedAt = /\npublishedAt:\s*['"]?(\d{4}-\d{2}-\d{2})['"]?\s*$/m.exec(
+      frontmatter,
+    )?.[1];
+    const updatedAt = /\nupdatedAt:\s*['"]?(\d{4}-\d{2}-\d{2})['"]?\s*$/m.exec(frontmatter)?.[1];
     if (!publishedAt) {
       throw new Error(`${name}: no publishedAt found in frontmatter`);
     }
