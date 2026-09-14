@@ -86,14 +86,18 @@ const telHref = resume.basics.phone ? `tel:+1${resume.basics.phone.replace(/\D/g
 // turns into that tag, and public/_headers's `/resume/` rule carries the same
 // URL in `X-Markdown-Variant` -- the header and the tag must never disagree.
 
+// TITLE WAS `Resume — ${resume.basics.name}` until issue #153 (epic #150).
+// Base.astro now appends the site name to every title itself, and MEASURED
+// 2026-09-13, `resume.basics.name` reads "Ryan Lindsey" -- the exact string
+// Base.astro's suffix appends -- so the two were building the same tail
+// independently. Left as it was, this page would have rendered "Resume — Ryan
+// Lindsey — Ryan Lindsey"; this file was not in the issue's own list of
+// hand-applied copies and was found only by auditing every `title=` prop
+// under src/pages.
 const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading text-ink';
 ---
 
-<Shell
-  title={`Resume — ${resume.basics.name}`}
-  description={resume.basics.summary}
-  markdownHref="/resume.md"
->
+<Shell title="Resume" description={resume.basics.summary} markdownHref="/resume.md">
   <div data-testid="resume">
     {
       showGapNotice && (

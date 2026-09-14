@@ -10,6 +10,6 @@ const posts = (await getCollection('posts', ({ data }) => !data.draft)).sort(
 );
 ---
 
-<Shell title="Writing — Ryan Lindsey" description={WRITING_DESCRIPTION}>
+<Shell title="Writing" description={WRITING_DESCRIPTION}>
   <WritingIndex posts={posts} />
 </Shell>

@@ -52,13 +52,15 @@ const posts = (await getCollection('posts', ({ data }) => !data.draft)).sort(
  * response, and tests/pages.test.ts reads the response for exactly this
  * directive. See the note in src/components/WritingIndex.astro for the version
  * of this mistake that actually broke a test on the first run.
+ *
+ * TITLE WAS `${label} — Writing — Ryan Lindsey` until issue #153 (epic #150),
+ * which centralised the `— Ryan Lindsey` suffix in Base.astro. Left as it
+ * was, this route would have doubled it to "… — Writing — Ryan Lindsey — Ryan
+ * Lindsey"; it was not in the issue's own list of hand-applied copies and was
+ * found only by auditing every `title=` prop under src/pages, 2026-09-13.
  */
 ---
 
-<Shell
-  title={`${label} — Writing — Ryan Lindsey`}
-  description={WRITING_DESCRIPTION}
-  robots="noindex, follow"
->
+<Shell title={`${label} — Writing`} description={WRITING_DESCRIPTION} robots="noindex, follow">
   <WritingIndex posts={posts} activePillar={pillar} />
 </Shell>

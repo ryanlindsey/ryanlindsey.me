@@ -251,6 +251,52 @@ test('every indexable page carries a description of at least 70 characters', asy
   }
 });
 
+/**
+ * The site name suffix, asserted once against every page instead of trusted
+ * to whichever template happens to build it (issue #153, epic #150).
+ *
+ * MEASURED against a clean build, 2026-09-13: `— Ryan Lindsey` was appended by
+ * four different files (`src/layouts/ArticleLayout.astro`, the `/writing` and
+ * `/work` index pages, and `src/pages/ops.astro`, which nobody had listed) and
+ * forgotten by two (`/ai-policy/`, whose title was bare, and `/chat/`, whose
+ * `Ask my agent` the issue's own audit did not mention). Centralising it in
+ * `src/layouts/Base.astro` is what makes it correct on every page without six
+ * call sites having to agree.
+ */
+test('every page title ends with the site suffix, or is exactly the site name', async () => {
+  for (const path of ALL_PAGES) {
+    const titles = [...(await page(path)).matchAll(/<title>([^<]*)<\/title>/g)].map(
+      (match) => match[1],
+    );
+    const title = titles[0] ?? '';
+    const carriesSuffix = title === 'Ryan Lindsey' || title.endsWith(' — Ryan Lindsey');
+    expect(
+      carriesSuffix,
+      `${path} should end with " — Ryan Lindsey" or be exactly "Ryan Lindsey" -- got "${title}"`,
+    ).toBe(true);
+  }
+});
+
+/**
+ * `/404` NEEDS ITS OWN CHECK RATHER THAN A LINE IN `ALL_PAGES`, the same
+ * reason the sitemap/robots test at the end of this file names it instead of
+ * trusting the sweep to see it: `builtPages` collects `index.html` only (see
+ * its own comment), and the 404 is `dist/client/404.html`, so the assertion
+ * above cannot see this page at all -- it would stay green even if this
+ * title lost its suffix entirely.
+ */
+test('the 404 page title carries the site suffix too', async () => {
+  const response = await server.fetch('/no-such-page-for-title-check');
+  expect(response.status, '/no-such-page-for-title-check should 404').toBe(404);
+  const titles = [...stripComments(await response.text()).matchAll(/<title>([^<]*)<\/title>/g)].map(
+    (match) => match[1],
+  );
+  expect(titles, '/404 should carry exactly one title').toHaveLength(1);
+  // Not `path`-derived and never should be: src/pages/404.astro's own header
+  // records why the requested path must not reach this response's markup.
+  expect(titles[0]).toBe('404: Not found — Ryan Lindsey');
+});
+
 test('every JSON-LD block on every page parses and declares the schema.org context', async () => {
   for (const path of ALL_PAGES) {
     const blocks = [

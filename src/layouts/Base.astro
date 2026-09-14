@@ -5,6 +5,19 @@ import { buildPerson, stringifyJsonLd } from '../lib/structured-data';
 
 interface Props {
   title: string;
+  /**
+   * True for the one page whose title already IS the site name (issue #153,
+   * epic #150) -- today, only the home page. Without this opt-out, applying
+   * the suffix below unconditionally turns "Ryan Lindsey" into "Ryan Lindsey
+   * — Ryan Lindsey", which tests/pages.test.ts:507 and
+   * tests/site.smoke.test.ts:39 both assert against by exact string and
+   * neither may be edited to tolerate.
+   *
+   * A boolean rather than a format-string prop: there is one suffix, it has
+   * never varied since this file started applying it, and a template would be
+   * a configuration point with a single caller.
+   */
+  titleIsSiteName?: boolean;
   description?: string;
   // Root-relative URL of this page's markdown variant (e.g. `/writing/foo.md`),
   // e.g. from Task 6's toMarkdown() by way of a `.md.ts` sibling route (Task 7).
@@ -62,6 +75,7 @@ interface Props {
 
 const {
   title,
+  titleIsSiteName = false,
   // The sitewide fallback for a page that omits `description`. `/` was the
   // one page that did, until issue #152: `src/pages/index.astro` passed a
   // `title` and nothing else, so the site's most important page carried this
@@ -81,6 +95,19 @@ const {
   robots = 'index, follow',
   referrer,
 } = Astro.props;
+
+/**
+ * `— Ryan Lindsey`, applied in the one file that renders `<title>` (issue
+ * #153, epic #150). It used to be built in six different places -- MEASURED
+ * against a clean build, 2026-09-13: `src/layouts/ArticleLayout.astro`, the
+ * `/writing` and `/work` index pages, `src/pages/ops.astro`,
+ * `src/pages/writing/pillar/[pillar].astro` and `src/pages/resume.astro` all
+ * hand-built it -- and forgotten on two: `/ai-policy/`, whose title rendered
+ * bare, and `/chat/`, whose `Ask my agent` no earlier audit of this suffix had
+ * named. Six call sites agreeing was never the property to rely on; this line
+ * is.
+ */
+const pageTitle = titleIsSiteName ? title : `${title} — Ryan Lindsey`;
 
 // Person, sitewide (task-10-brief.md), built here rather than passed in by
 // every page: it is the same node everywhere, sourced from the one
@@ -193,7 +220,7 @@ const jsonLdNodes = [
         <script type="application/ld+json" is:inline set:html={stringifyJsonLd(node)} />
       ))
     }
-    <title>{title}</title>
+    <title>{pageTitle}</title>
 
     <!--
       Blocking and inline on purpose. Anything deferred paints the wrong theme
