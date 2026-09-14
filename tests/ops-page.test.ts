@@ -199,7 +199,12 @@ describe('/ops', () => {
     // takes, and the only way this suite can reach it without a seam.
     const list = breakdown('By tool');
     expect(list, 'By tool must have been read at all').toContain('Nothing recorded in this window');
+    // THE COUNT ALONE DOES NOT PIN POSITION: if a later change moved D1 from the
+    // kicker to an unconditional trailing line, the count would still be 1 and
+    // this test would falsely pass. Both assertions together say "exactly one
+    // mention, and it is the kicker."
     expect(list.match(/D1/g) ?? [], 'By tool must name D1 exactly once').toHaveLength(1);
+    expect(list, 'the one mention must be the kicker').toContain('By tool · D1');
   });
 
   test('a breakdown that could not be read still names its cause', () => {
