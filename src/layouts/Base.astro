@@ -62,6 +62,19 @@ interface Props {
 
 const {
   title,
+  // The sitewide fallback for a page that omits `description`. `/` was the
+  // one page that did, until issue #152: `src/pages/index.astro` passed a
+  // `title` and nothing else, so the site's most important page carried this
+  // generic line by falling through rather than by decision. `/` writes its
+  // own description now, so nothing in this repository reaches this default
+  // as of that fix -- `description` stays optional because a future page
+  // still could omit it, and if one does, it lands here.
+  //
+  // Left under the 70-character floor tests/seo.test.ts asserts for every
+  // indexable page, rather than padded to clear it: a page reaching this
+  // default is the exact failure #152 found, so the test failing on it is
+  // the push back toward writing that page a real description, not a defect
+  // in this string.
   description = 'Engineering leadership and agentic systems.',
   markdownHref,
   structuredData,
