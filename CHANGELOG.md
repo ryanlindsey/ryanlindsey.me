@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.18.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.17.0...ryanlindsey-me-v1.18.0) (2026-09-14)
+
+
+### Features
+
+* **seo:** give the sitemap a lastmod from content frontmatter ([#159](https://github.com/ryanlindsey/ryanlindsey.me/issues/159)) ([90dbed4](https://github.com/ryanlindsey/ryanlindsey.me/commit/90dbed410c9f4f751ab799bc6f890071b38d9634))
+
+
+### Bug Fixes
+
+* **seo:** apply the title suffix in one place ([#158](https://github.com/ryanlindsey/ryanlindsey.me/issues/158)) ([f83e483](https://github.com/ryanlindsey/ryanlindsey.me/commit/f83e48308b8b99335c6c3e73848d3445b7202dde))
+* **seo:** give the home page and writing index a real description ([#157](https://github.com/ryanlindsey/ryanlindsey.me/issues/157)) ([2ab0332](https://github.com/ryanlindsey/ryanlindsey.me/commit/2ab033249230394f1a402ec3504a3e49c35c2e6c))
+
 ## [1.17.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.16.1...ryanlindsey-me-v1.17.0) (2026-09-14)
 
 
