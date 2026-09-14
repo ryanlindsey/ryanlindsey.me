@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.19.0...ryanlindsey-me-v1.19.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* **ops:** state each breakdown's source once ([#178](https://github.com/ryanlindsey/ryanlindsey.me/issues/178)) ([a60f94e](https://github.com/ryanlindsey/ryanlindsey.me/commit/a60f94ee884f7169a339dc50bdffe666594efadc))
+
 ## [1.19.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.18.1...ryanlindsey-me-v1.19.0) (2026-09-14)
 
 
