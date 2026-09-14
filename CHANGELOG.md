@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.18.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.18.0...ryanlindsey-me-v1.18.1) (2026-09-14)
+
+
+### Dependencies
+
+* bump the all group across 1 directory with 8 updates ([#163](https://github.com/ryanlindsey/ryanlindsey.me/issues/163)) ([265af67](https://github.com/ryanlindsey/ryanlindsey.me/commit/265af674d04e6944a8a1345aab9f6ab72fd49eae))
+* bump the all group in /workers/mcp with 3 updates ([#162](https://github.com/ryanlindsey/ryanlindsey.me/issues/162)) ([716580f](https://github.com/ryanlindsey/ryanlindsey.me/commit/716580f927a79dc4cdd91284c74a22cbe777305a))
+
 ## [1.18.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.17.0...ryanlindsey-me-v1.18.0) (2026-09-14)
 
 
