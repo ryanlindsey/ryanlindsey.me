@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.18.1...ryanlindsey-me-v1.19.0) (2026-09-14)
+
+
+### Features
+
+* **content:** rewrite the agent-native post description ([#175](https://github.com/ryanlindsey/ryanlindsey.me/issues/175)) ([917b3be](https://github.com/ryanlindsey/ryanlindsey.me/commit/917b3be6afd6ac3750825ca047680fb81f44937d))
+
 ## [1.18.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.18.0...ryanlindsey-me-v1.18.1) (2026-09-14)
 
 
