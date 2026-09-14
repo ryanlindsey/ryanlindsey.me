@@ -1,6 +1,6 @@
 ---
 title: An agent-native personal site on Cloudflare
-description: 'Two Workers, a Model Context Protocol server, a resume in four formats, and 791 tests. What this site is built from, and the five findings that cost the most to learn, four of which are versions of one sentence: a green check is not evidence.'
+description: 'An agent can read every page of this site as markdown, call the resume, the case studies and a retrieval-backed search as Model Context Protocol tools, and present a scoped token for what is not public. Underneath sits most of the Cloudflare developer platform: D1, KV, R2, Queues, Durable Objects, Vectorize, Workers AI, Browser Rendering, Analytics Engine and crons. Nearly all of it was written by agents working a plan. This is the build log, including the checks that were green about the wrong thing.'
 publishedAt: 2026-09-11
 pillar: building-in-the-open
 series:
@@ -11,7 +11,7 @@ draft: false
 
 import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
 
-**TL;DR.** This site is two Cloudflare Workers. One serves the pages, the resume in four formats, the chat endpoint, a queue consumer and two crons; the other serves a Model Context Protocol server with eight public tools, three resources and a scoped-token tier behind it. It was built in seven days, nearly all of the code written by agents, and the source is [public](https://github.com/ryanlindsey/ryanlindsey.me). This post is the build log. The first half is what is actually running. The second half is what it cost to learn, and most of that is versions of one sentence: a green check is not evidence.
+**TL;DR.** This site is two Cloudflare Workers. One serves the pages, the resume in four formats, the chat endpoint, a queue consumer and two crons; the other serves a Model Context Protocol server with eight public tools, three resources and a scoped-token tier behind it. Nearly all of the code was written by agents, and the source is [public](https://github.com/ryanlindsey/ryanlindsey.me). This post is the build log. The first half is what is actually running. The second half is what it cost to learn, and most of that is versions of one sentence: a green check is not evidence.
 
 ## The dry run passed and the Worker could not start
 
@@ -47,7 +47,7 @@ The one design decision I would defend hardest is the authorization boundary, an
 
 Tools on the scoped tier are registered only for a request whose grant already carries the matching scope, so an unauthenticated listing cannot enumerate a name that exists.
 
-As of this build: 791 tests across 52 files, run against real Workers inside workerd rather than against mocks, with the site Worker booted from the adapter's build output so the tests exercise the artifact that ships.
+The suite runs against real Workers inside workerd rather than against mocks, with the site Worker booted from the adapter's build output, so the tests exercise the artifact that ships. That property is the part worth stating, because the count moves every week and the property does not: 791 tests across 52 files when this post went up, and 1,072 across 66 files at last measurement, one of them skipped.
 
 ## A green check is not evidence
 
