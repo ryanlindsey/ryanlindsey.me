@@ -87,7 +87,7 @@ function tile(label: string, doc: string = html): string {
   return hooked('data-ops-metric', label, doc);
 }
 
-/** One Analytics Engine breakdown list's markup, looked up by its title. */
+/** One breakdown list's markup, looked up by its title. */
 function breakdown(title: string, doc: string = html): string {
   return hooked('data-ops-breakdown', title, doc);
 }
@@ -184,6 +184,41 @@ describe('/ops', () => {
       );
       expect(list, `${title} must not render a row`).not.toContain('data-numeric');
     }
+  });
+
+  test('a breakdown that was read names its source once, in its header', () => {
+    // The 2026-09 redesign put the source in the panel kicker (`By tool · D1`)
+    // and left the trailing provenance line under the list, so every panel that
+    // could be read named where its numbers came from twice, about fifteen rows
+    // apart. 06 §1 asks that a figure state its source. It does not ask twice.
+    //
+    // `By tool` IS THE ARM THIS CAN ASSERT, and the reason is two layers down:
+    // its D1 query narrows to `tier = 'public'` (src/lib/ops/metrics.ts) and the
+    // only row planted above is private, so this render reaches the
+    // rows-not-null path with an empty list -- the same branch a populated panel
+    // takes, and the only way this suite can reach it without a seam.
+    const list = breakdown('By tool');
+    expect(list, 'By tool must have been read at all').toContain('Nothing recorded in this window');
+    // THE COUNT ALONE DOES NOT PIN POSITION: if a later change moved D1 from the
+    // kicker to an unconditional trailing line, the count would still be 1 and
+    // this test would falsely pass. Both assertions together say "exactly one
+    // mention, and it is the kicker."
+    expect(list.match(/D1/g) ?? [], 'By tool must name D1 exactly once').toHaveLength(1);
+    expect(list, 'the one mention must be the kicker').toContain('By tool · D1');
+  });
+
+  test('a breakdown that could not be read still names its cause', () => {
+    // The other half of the assertion above, and the reason the line is made
+    // conditional rather than deleted. `degraded` renders before the migrations
+    // exist, so `By tool` takes the rows === null path, where this line is the
+    // only place the CAUSE appears: the body carries the two-word state alone,
+    // and "not available" without "the metrics store could not be read" is the
+    // labelled absence with the label taken off.
+    const list = breakdown('By tool', degraded);
+    expect(list, 'By tool must render its absence').toContain('not available');
+    expect(list, 'By tool must name the cause').toContain(
+      'D1 — the metrics store could not be read',
+    );
   });
 
   test('the changelog shows dates and never a time', () => {

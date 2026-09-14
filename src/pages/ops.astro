@@ -719,15 +719,30 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
                 ))}
               </ul>
             )}
-            {/* ONE EXPRESSION, not a literal beside a conditional: the two
+            {/* ABSENT-ONLY SINCE 2026-09, and the duplication that made it so
+                  is the reason to leave it that way. The redesign moved the
+                  source into the panel kicker above (`By tool · D1`) and this
+                  line stayed, so a panel that could be read named its source
+                  twice, about fifteen rows apart. 06 §1 asks that every figure
+                  state its source, which the kicker does; a second statement
+                  further down is not a stronger claim.
+
+                  IT CANNOT SIMPLY GO. On the `rows === null` arm this is the
+                  only place the CAUSE appears -- the body renders the two-word
+                  state alone -- and "not configured" without "this needs the
+                  read-only analytics token" is the labelled absence with the
+                  label taken off, which is the error `D1_ABSENT` exists to
+                  prevent.
+
+                  ONE EXPRESSION, not a literal beside a conditional: the two
                   would be separated by the source's own newline in the rendered
                   HTML, and the provenance line has to read as one sentence and
-                  match as one string. */}
-            <p class="mt-5 font-mono text-micro text-ink-muted">
-              {`${breakdown.source}${
-                breakdown.rows === null ? ` — ${breakdown.absentReason}` : ''
-              }`}
-            </p>
+                  match as one string (tests/ops-page.test.ts). */}
+            {breakdown.rows === null && (
+              <p class="mt-5 font-mono text-micro text-ink-muted">
+                {`${breakdown.source} — ${breakdown.absentReason}`}
+              </p>
+            )}
           </div>
         ))}
       </div>
