@@ -71,10 +71,21 @@ const page = async (path: string): Promise<string> => {
  * asserts a site-wide rule against a stale subset of the site is worth less
  * than no suite at all, because it reads as coverage.
  *
- * `index.html` only, so `dist/client/404.html` is not collected: it is an error
- * document rather than a page. Nothing in this file asserts anything about it,
- * deliberately -- see the last test for why an error document cannot satisfy
- * the sitemap invariant and should not be made to.
+ * `index.html` only, so `dist/client/404.html` is not collected: it is an
+ * error document rather than a page, and every sweep driven by `ALL_PAGES`
+ * below is therefore structurally unable to assert anything about it -- not
+ * merely choosing not to.
+ *
+ * TWO PLACES HANDLE IT SEPARATELY INSTEAD, each for its own reason and each
+ * saying so where it lives (fix round 1, issue #153: an earlier version of
+ * this paragraph claimed nothing in the file asserted anything about `/404`,
+ * which stopped being true the moment the second of these two tests was
+ * added). The sitemap/robots test names `/404` explicitly and exempts it from
+ * Direction 2, because an error document served with a 404 status has nothing
+ * there for a crawler to index and cannot satisfy the sitemap invariant.
+ * `the 404 page title carries the site suffix too` fetches `/404` directly,
+ * for the same structural reason this list cannot see it, rather than relying
+ * on a sweep it is invisible to.
  */
 function builtPages(dir: URL, prefix = ''): string[] {
   const found: string[] = [];
@@ -249,6 +260,73 @@ test('every indexable page carries a description of at least 70 characters', asy
       `${path}'s description is ${descriptions[0].length} characters, want at least 70`,
     ).toBeGreaterThanOrEqual(70);
   }
+});
+
+/**
+ * The site name suffix, asserted once against every page instead of trusted
+ * to whichever template happens to build it (issue #153, epic #150).
+ *
+ * MEASURED against a clean build, 2026-09-13: `— Ryan Lindsey` was appended by
+ * six different files (`src/layouts/ArticleLayout.astro`, the `/writing` and
+ * `/work` index pages, `src/pages/ops.astro`, `src/pages/resume.astro` and
+ * `src/pages/writing/pillar/[pillar].astro`) and forgotten by two
+ * (`/ai-policy/`, whose title was bare, and `/chat/`, whose `Ask my agent` the
+ * issue's own audit did not mention). Centralising it in
+ * `src/layouts/Base.astro` is what makes it correct on every page without six
+ * call sites having to agree.
+ *
+ * COUNTED, NOT MERELY MATCHED AT THE END (fix round 1, controller ruling).
+ * `endsWith(' — Ryan Lindsey')` alone is satisfied by a DOUBLED tail --
+ * "Resume — Ryan Lindsey — Ryan Lindsey" ends with the suffix too -- and that
+ * blind spot is not hypothetical: `src/pages/resume.astro` and
+ * `src/pages/writing/pillar/[pillar].astro` were the two of the six this
+ * comment's first draft missed, found only in the later pass fix round 1
+ * records, and both would have shipped exactly this doubled title had that
+ * pass not caught them. The guard below exists because that already almost
+ * happened, not because it might.
+ */
+test('every page title ends with the site suffix, or is exactly the site name', async () => {
+  for (const path of ALL_PAGES) {
+    const titles = [...(await page(path)).matchAll(/<title>([^<]*)<\/title>/g)].map(
+      (match) => match[1],
+    );
+    const title = titles[0] ?? '';
+    const carriesSuffix = title === 'Ryan Lindsey' || title.endsWith(' — Ryan Lindsey');
+    expect(
+      carriesSuffix,
+      `${path} should end with " — Ryan Lindsey" or be exactly "Ryan Lindsey" -- got "${title}"`,
+    ).toBe(true);
+
+    // The home page is the one page that carries the suffix zero times (its
+    // title is exactly the site name, asserted above); every other page
+    // carries it exactly once, never doubled.
+    const suffixCount = [...title.matchAll(/ — Ryan Lindsey/g)].length;
+    const expectedSuffixCount = title === 'Ryan Lindsey' ? 0 : 1;
+    expect(
+      suffixCount,
+      `${path} should carry the suffix exactly ${expectedSuffixCount} time(s), not doubled -- got "${title}"`,
+    ).toBe(expectedSuffixCount);
+  }
+});
+
+/**
+ * `/404` NEEDS ITS OWN CHECK RATHER THAN A LINE IN `ALL_PAGES`, the same
+ * reason the sitemap/robots test at the end of this file names it instead of
+ * trusting the sweep to see it: `builtPages` collects `index.html` only (see
+ * its own comment), and the 404 is `dist/client/404.html`, so the assertion
+ * above cannot see this page at all -- it would stay green even if this
+ * title lost its suffix entirely.
+ */
+test('the 404 page title carries the site suffix too', async () => {
+  const response = await server.fetch('/no-such-page-for-title-check');
+  expect(response.status, '/no-such-page-for-title-check should 404').toBe(404);
+  const titles = [...stripComments(await response.text()).matchAll(/<title>([^<]*)<\/title>/g)].map(
+    (match) => match[1],
+  );
+  expect(titles, '/404 should carry exactly one title').toHaveLength(1);
+  // Not `path`-derived and never should be: src/pages/404.astro's own header
+  // records why the requested path must not reach this response's markup.
+  expect(titles[0], '/404 should carry the site suffix').toBe('404: Not found — Ryan Lindsey');
 });
 
 test('every JSON-LD block on every page parses and declares the schema.org context', async () => {

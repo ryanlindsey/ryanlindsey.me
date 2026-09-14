@@ -5,6 +5,9 @@ import SiteFooter from '../components/SiteFooter.astro';
 
 interface Props {
   title: string;
+  // Pure pass-through to Base.astro's opt-out (issue #153) -- see that file
+  // for what it is and why a boolean is enough.
+  titleIsSiteName?: boolean;
   description?: string;
   markdownHref?: string;
   // Task 10 (02 §3): pure pass-through, same as `markdownHref` -- see
@@ -20,11 +23,13 @@ interface Props {
   stickyHeader?: boolean;
 }
 
-const { title, description, markdownHref, structuredData, robots, stickyHeader } = Astro.props;
+const { title, titleIsSiteName, description, markdownHref, structuredData, robots, stickyHeader } =
+  Astro.props;
 ---
 
 <Base
   title={title}
+  titleIsSiteName={titleIsSiteName}
   description={description}
   markdownHref={markdownHref}
   structuredData={structuredData}
