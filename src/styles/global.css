@@ -869,6 +869,26 @@
     word-break: break-all;
   }
 
+  /*
+   * The one anchor on the site that opts out of the rule directly above.
+   *
+   * 02 §1 requires /resume.pdf to be ATS-safe, and the résumé's location line
+   * is a field a parser reads as an address. The rule above would render it
+   * "Laguna Niguel, CA (https://en.wikipedia.org/wiki/Laguna_Niguel,_California)",
+   * which is not an address any more. The link itself stays: a PDF keeps live
+   * anchors, so the destination is not lost the way it is on paper, which is
+   * the case the rule above was written for.
+   *
+   * MUST STAY BELOW IT. Both selectors are (0,1,2) -- one attribute selector,
+   * the element `a`, and the pseudo-element -- so nothing but source order
+   * decides which one wins, and moved above it this rule would be a silent
+   * no-op that no build step or type check would flag. tests/print.test.ts
+   * asserts the ordering for that reason and not for tidiness.
+   */
+  [data-based-in] a::after {
+    content: none;
+  }
+
   h1,
   h2,
   h3 {

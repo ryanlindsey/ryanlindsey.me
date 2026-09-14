@@ -52,6 +52,31 @@ const sections: TocNode[] = [
 
 const basedIn = `${resume.basics.location.city}, ${resume.basics.location.region}`;
 
+// The one fact on this page held in two places. `location` in the résumé
+// record is the source for the TEXT; this is the article it points at, and
+// JSON Resume's `location` has no field for a URL, so putting it in the record
+// would mean an `x_`-prefixed extension that /resume.json strips again on the
+// way out -- a schema change to carry one string that no consumer would ever
+// read.
+//
+// The duplication is left visible and guarded instead: the test beside this
+// page's others derives the expected slug from the record's `city` and fails
+// if the two stop agreeing, so a move edits the record and this line together
+// rather than leaving the page linking a town nobody lives in.
+const BASED_IN_URL = 'https://en.wikipedia.org/wiki/Laguna_Niguel,_California';
+
+// A `tel:` href has to be dialable, and the record stores the number the way a
+// person reads it, `(714) 330-6251`. E.164 is the form every dialer accepts
+// without guessing, so it is derived here rather than stored a second time --
+// the record keeps one spelling of the number and this is the only place it is
+// reshaped.
+//
+// `+1` is written in rather than mapped from `location.countryCode`, which is
+// `US` today. A country-code table for a résumé with one owner is scaffolding
+// for a move that has not happened; the assumption is worth stating out loud
+// instead, so the next reader knows it is an assumption and not a lookup.
+const telHref = resume.basics.phone ? `tel:+1${resume.basics.phone.replace(/\D/g, '')}` : null;
+
 // FIX ROUND 2: `/resume` has a `.md` twin (src/pages/resume.md.ts), is named
 // in wrangler.jsonc's `run_worker_first`, and src/worker.ts negotiates
 // `Accept: text/markdown` for it -- but it passed no `markdownHref`, so it
@@ -88,27 +113,38 @@ const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading tex
 
     {
       /*
-      Ink, not the --rl-rule that divides: this closes the masthead, and the
-      colour is what tells it apart from the dozens of hairlines below it. It is
-      on the full-bleed section rather than on the grid inside so it runs edge
-      to edge like the header's, which is what the 1440px cap and the 40px
-      gutter on the inner element are for.
+      Full-bleed rather than on the grid inside, so it runs edge to edge like
+      the header's. That is what the 1440px cap and the 40px gutter on the
+      inner element are for, and it has not changed.
 
-      1px SINCE 2026-09-13, AND THIS IS A DEPARTURE FROM design 1k, which draws
-      2px. It was built at 2px to match, and the epic's global constraint says
-      the same: 1px --rl-rule to divide, 2px --rl-ink to close a masthead. Both
-      were measured against the handoff and agreed. Changed on review anyway --
-      at 2px, full width, near-black on near-white, the line read as a bar
-      across the page rather than as a closing rule, and it read that way in
-      both themes.
+      1px SINCE 2026-09-13, A DEPARTURE FROM design 1k, which draws 2px. Built
+      at 2px to match the handoff and the epic's global constraint, which reads
+      "1px --rl-rule to divide, 2px --rl-ink to close a masthead". Changed on
+      review: at 2px, full width, near-black on near-white, the line read as a
+      bar across the page rather than as a closing rule, in both themes.
 
-      The weight is what moved; the colour deliberately did not. Dropping to
-      --rl-rule as well would have made this identical to the body hairlines,
-      which is the distinction the paragraph above exists to protect, so ink at
-      1px keeps the masthead closed while halving the mass.
+      --rl-rule SINCE 2026-09-13 TOO, ON A SECOND REVIEW, AND THE FIRST REVIEW'S
+      REASONING FOR KEEPING INK WAS WRONG. It argued: "the colour is what tells
+      it apart from the dozens of hairlines below it", and concluded that
+      dropping to --rl-rule "would have made this identical to the body
+      hairlines, which is the distinction the paragraph above exists to
+      protect".
+
+      The error was picking the wrong comparison. This rule is not read against
+      the hairlines below it, which are a scroll away and never share the
+      viewport with it at rest. It is read against the two immediately above
+      it, and both are --rl-rule: SiteHeader.astro's own bottom border, and
+      ArticleLayout's `article` masthead shell. Ink made this the only closing
+      rule on the site drawn in a different colour from the ones beside it,
+      which is what it looked like -- too dark, in both themes.
+
+      The distinction the first review wanted is real and is carried elsewhere:
+      the masthead is full-bleed and the body hairlines are not, and the body
+      ones sit inside a 1440px cap. Colour was never the only thing doing that
+      work. Weight stays at 1px; only the colour moved this time.
     */
     }
-    <section data-resume-masthead class="border-b border-ink">
+    <section data-resume-masthead class="border-b border-rule">
       <div
         class="mx-auto grid max-w-[1440px] gap-10 px-5 pb-12 pt-12 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-16 lg:px-10"
       >
@@ -133,7 +169,71 @@ const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading tex
           <ResumeFormats />
           <div class="mt-8">
             <p class="font-mono text-micro uppercase text-ink-muted">Based in</p>
-            <p class="mt-2 text-body text-ink">{basedIn}</p>
+            {
+              /*
+              `data-based-in` is a styling and test hook rather than decoration.
+              global.css's print block appends every external link's raw URL
+              through `a[href^='http']::after`, which is right for an article on
+              paper and wrong here: it would print the Wikipedia URL inside the
+              location field of a sheet 02 §1 requires to be ATS-safe, where a
+              parser reading an address is the thing it would corrupt. The rule
+              that switches it off is scoped to this attribute.
+            */
+            }
+            <p data-based-in class="mt-2 text-body text-ink">
+              <a href={BASED_IN_URL} target="_blank" rel="noopener">{basedIn}</a>
+            </p>
+          </div>
+
+          {
+            /*
+            PRINT ONLY, and the sheet is the whole reason it exists. /resume.pdf
+            is headless Chrome printing this page (src/lib/resume-pdf.ts), and
+            until 2026-09-13 the only thing this column printed was "Based in":
+            ResumeFormats carries `data-format-bar`, which global.css's @media
+            print block hides. So the PDF stated no way to reach anyone, which
+            for the artifact 02 §1 asks to be ATS-safe is the one omission that
+            makes the rest of it useless.
+
+            Hidden on screen rather than shown in both places, ruled on review.
+            Design 1k's masthead is left as drawn, and the number stays off a
+            crawled HTML page. That is about where a scraper trips over it, not
+            about whether it is published: /resume.json has carried both fields
+            since the 2026-09-07 ruling recorded in the résumé record.
+
+            `hidden print:block` rather than a rule in global.css, because this
+            is one page's element and not a site-wide print concern. Tailwind
+            emits the print variant after the base utility, so the media query
+            wins on paper without either side needing !important.
+
+            DELIBERATELY FLAT -- paragraphs, no nested <div>. Its test slices
+            the block with a non-greedy match up to the first `</div>`, so a
+            wrapper added in here would silently truncate what that test reads
+            and the phone assertion would fail for a reason that has nothing to
+            do with the phone.
+          */
+          }
+          <div data-resume-contact class="hidden print:block">
+            {
+              resume.basics.email && (
+                <Fragment>
+                  <p class="mt-8 font-mono text-micro uppercase text-ink-muted">Email</p>
+                  <p class="mt-2 text-body text-ink">
+                    <a href={`mailto:${resume.basics.email}`}>{resume.basics.email}</a>
+                  </p>
+                </Fragment>
+              )
+            }
+            {
+              resume.basics.phone && telHref && (
+                <Fragment>
+                  <p class="mt-8 font-mono text-micro uppercase text-ink-muted">Phone</p>
+                  <p class="mt-2 text-body text-ink">
+                    <a href={telHref}>{resume.basics.phone}</a>
+                  </p>
+                </Fragment>
+              )
+            }
           </div>
         </div>
       </div>

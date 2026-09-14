@@ -28,7 +28,16 @@ import resumeSource from '../content/resume/ryan-lindsey.yaml?raw';
 // deployed manifest keeps pointing at bytes rendered from the old page, and
 // /resume.pdf would go on serving the pre-redesign PDF until the YAML next
 // changed -- the exact stale-cache failure this constant exists to prevent.
-export const RESUME_PDF_CONTRACT_VERSION = 2;
+//
+// 3 since 2026-09-13 (issue #141): the sheet gained a contact block that exists
+// only in print, and the location line became a link whose printed URL suffix
+// is suppressed. Both change what identical résumé data renders.
+//
+// The YAML changed in the same commit, so the hash would have moved without
+// this. Bumped anyway, because the two are independent: reverting the Armature
+// entry later would restore the old hash while the page still renders the new
+// sheet, and the manifest would then point at bytes nobody can reproduce.
+export const RESUME_PDF_CONTRACT_VERSION = 3;
 
 /** KV key holding the manifest. The manifest write is the commit point. */
 export const RESUME_PDF_MANIFEST_KEY = 'resume-pdf:manifest';

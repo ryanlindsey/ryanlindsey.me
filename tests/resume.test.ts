@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { SITE_HARNESS_WORKERS } from './workers';
@@ -22,6 +23,11 @@ import { stripXKeys } from '../src/lib/json-resume';
 // progress.md's Task 1 entry for the mid-task ruling that produced this
 // split. Schema validity of the real YAML data file is `astro check`'s job
 // (`npm run check`), not this suite's.
+
+// The real résumé record. Read only by the HTTP suite at the foot of this
+// file, never by the pure-function tests above it -- those keep the hand-built
+// fixture below on purpose, for the reason its own comment gives.
+const resumeYamlPath = new URL('../src/content/resume/ryan-lindsey.yaml', import.meta.url);
 
 const workEntry = (
   entry: Pick<ResumeWorkEntry, 'name' | 'position' | 'startDate'> & Partial<ResumeWorkEntry>,
@@ -635,6 +641,65 @@ describe('/resume.json and /resume.md over HTTP', () => {
     for (const range of dateRanges) {
       expect(markdown, `${range} should appear on /resume.md`).toContain(range);
       expect(html, `${range} should appear on /resume`).toContain(htmlEscape(range));
+    }
+  });
+
+  test('/resume.json, /resume.md and /resume carry the same projects', async () => {
+    // The companies test above has existed since day 3; this is its missing
+    // twin. `projects` had no multi-format assertion at all, and the only
+    // project coverage anywhere was a hardcoded
+    // `[Pixelsonly Racing](https://pixelsonly.racing)` on /resume.md -- which
+    // is a change detector for one entry rather than a check that the section
+    // renders everywhere. Adding a second project on 2026-09-13 is what made
+    // the gap visible: nothing would have failed if one of the three renderers
+    // had quietly dropped it.
+    //
+    // 02 §1's rule is that one commit updates every format atomically. This is
+    // the assertion that makes that a fact rather than an intention.
+    //
+    // THE BREAK IT CATCHES: a renderer that stops emitting projects, drops the
+    // link on a project that carries a `url`, or renders only the first entry.
+    // Read from the record rather than from any one route, so no format is
+    // both the subject and the source of its own expectation.
+    // Names come from the RECORD, not from a route. The companies test above
+    // takes its list from /resume.json, which cannot catch that route dropping
+    // an entry -- it would just check a shorter list against itself. Scoped to
+    // the `projects:` block by the same idiom tests/pages.test.ts uses for
+    // `work:`, and for the same reason: `skills` and `work` sit at identical
+    // indentation, so an unscoped `/^\s{2}- name:/gm` would pull all three.
+    const yaml = readFileSync(resumeYamlPath, 'utf8');
+    const projectsBlock = /^projects:\n([\s\S]*?)(?=^\S)/m.exec(yaml);
+    expect(projectsBlock, 'no projects: block found in the résumé YAML').not.toBeNull();
+    const recorded = [...projectsBlock![1].matchAll(/^\s{2}- name:\s*(.+)$/gm)].map((m) =>
+      m[1].trim(),
+    );
+    expect(recorded.length, 'no projects in the résumé record').toBeGreaterThan(0);
+
+    const jsonResume = (await (await fetchOk('/resume.json')).json()) as Resume;
+    const markdown = await (await fetchOk('/resume.md')).text();
+    const html = await (await fetchOk('/resume')).text();
+
+    // Count first: this is what catches a route emitting a strict subset,
+    // which every per-entry assertion below would otherwise sail past.
+    expect(jsonResume.projects.map((entry) => entry.name)).toEqual(recorded);
+
+    for (const project of jsonResume.projects) {
+      expect(markdown, `${project.name} should appear on /resume.md`).toContain(project.name);
+      expect(html, `${project.name} should appear on /resume`).toContain(project.name);
+      expect(markdown, `${project.name}'s description should appear on /resume.md`).toContain(
+        project.description,
+      );
+      expect(html, `${project.name}'s description should appear on /resume`).toContain(
+        project.description,
+      );
+      if (project.url) {
+        expect(markdown, `${project.name} should be linked on /resume.md`).toContain(
+          `[${project.name}](${project.url})`,
+        );
+        expect(html, `${project.name} should be linked on /resume`).toContain(
+          `href="${project.url}"`,
+        );
+      }
     }
   });
 });
