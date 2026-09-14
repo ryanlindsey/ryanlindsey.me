@@ -695,6 +695,59 @@ test('the permalink page copy carries no search language', async () => {
   for (const pattern of BANNED_PATTERNS) expect(html).not.toMatch(pattern);
 });
 
+test('the permalink page copy does not call the published work "the corpus"', async () => {
+  // Same audience argument as the test above: this page is read by more
+  // strangers than /fit itself, and a retrieval term borrowed into copy is
+  // worst exactly there. `corpus` came off this page after it had already
+  // come off /chat, the fit error sentences and /ops (#133, #139), which is
+  // twice, so it gets a guard rather than a third pass.
+  //
+  // The guard lives HERE and not in BANNED_PATTERNS: that list is asserted
+  // against the whole tracked tree by equality in tier-invisibility.test.ts,
+  // and `corpus` is the right name in engineering context -- src/lib/corpus.ts,
+  // the Vectorize index, CORPUS_REFRESH, /ops's rate-limit table and the MCP
+  // tool descriptions all keep it deliberately. Only the rendered HTML of
+  // this page is in scope.
+  //
+  // The fixture is local rather than `storeReport`'s for the same reason:
+  // that one's `gaps[0].why` reads "Not evidenced in the corpus." as stand-in
+  // MODEL OUTPUT, which the page renders verbatim and should. A guard that
+  // used it would fail on report data instead of on page copy, which is the
+  // opposite of the thing being protected.
+  //
+  // `evidence: []` and a nonzero dropped count are both load-bearing on the
+  // fixture: the empty array is the only way the requirement-level sentence
+  // renders at all, and the counts are what put the provenance footer's
+  // sentence on the page. Without them this passes against a page that still
+  // says the word.
+  await db
+    .prepare(
+      `INSERT INTO fit_reports (id, created_at, audience, model, target_description,
+         report_json, citations_checked, citations_dropped)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      'fixture-vocabulary-id',
+      '2026-09-08T00:00:00.000Z',
+      'web',
+      'anthropic/claude-opus-5',
+      'A generic description of a role.',
+      JSON.stringify({
+        overall_read: 'A generic read of the comparison.',
+        requirement_map: [{ requirement: 'Runs platform teams', strength: 'strong', evidence: [] }],
+        gaps: [],
+        questions_to_ask: [],
+      }),
+      4,
+      3,
+    )
+    .run();
+  const html = await (await server.fetch('/fit/r/fixture-vocabulary-id')).text();
+  expect(html).toContain('No supporting evidence in the published work.');
+  expect(html).toContain('checked against the published work');
+  expect(html).not.toMatch(/\bcorpus\b/i);
+});
+
 test('a forged ?error= renders nothing on the form', async () => {
   // The phish final-review Important 7 named, run end to end: a `/fit?t=...`
   // link is handed out and meant to be forwarded, so whoever holds one can
