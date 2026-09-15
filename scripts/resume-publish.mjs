@@ -5,14 +5,17 @@
  * TWO VERBS, AND THE SPLIT IS THE POINT.
  *
  *   plan     compute the hash, ask R2 whether that object is already there,
- *            and say whether anything needs building. Costs one request.
+ *            and say whether anything needs building. Costs two requests,
+ *            one per key.
  *   publish  upload the sheet scripts/resume-sheet.mjs has just rendered.
  *
  * .github/workflows/resume-pdf.yml runs `plan` before it installs a browser or
  * builds the site, and gates every later step on its answer. That is what makes
- * the epic's claim true -- "running the job to discover the object already
- * exists costs one request" -- rather than paying for a full render on every
- * push to main to discover the sheet did not change. There is deliberately no
+ * the epic's claim true -- that running the job to discover the object already
+ * exists is cheap -- rather than paying for a full render on every push to main
+ * to discover the sheet did not change. The epic says "one request"; it is two,
+ * because publishDecision below probes both keys, and the reason it has to is
+ * recorded there. There is deliberately no
  * `paths:` filter on the workflow: a filter listing the YAML and the route is
  * exactly how a stylesheet change silently fails to republish, and the hash
  * gate here is the correctness mechanism instead.
@@ -31,19 +34,41 @@
  * metadata stamp. publishDecision() below carries what that costs and how this
  * script survives it; `force` is the way out when it does not.
  *
- * WHY WRANGLER RATHER THAN THE S3 API. scripts/private-doc.mjs already talks to
- * R2 this way and wrangler is already in the lockfile, so this adds no
- * dependency and no second spelling of an R2 write. The difference is only
- * where the credential comes from: that script runs on the owner's machine
- * behind a wrangler OAuth login, and this one runs in Actions behind
- * CLOUDFLARE_API_TOKEN. See CLAUDE.md for the token's scope and why it is
- * scoped that way.
+ * WHY THE S3 API RATHER THAN WRANGLER, and this is the correction of a mistake
+ * rather than a preference (issue #205). The first version of this script
+ * copied its mechanism from scripts/private-doc.mjs, which shells out to
+ * `wrangler r2 object`. That script works because it runs on the owner's
+ * machine behind a wrangler OAuth login, which is an ACCOUNT-LEVEL credential.
+ * The mechanism was copied; the credential it depended on was not. Every run of
+ * this workflow failed, from the first.
+ *
+ * MEASURED 2026-09-15 by a read-only job inside the runner, against the stored
+ * secret: `/user/tokens/verify` answered `1000 Invalid API Token`, and R2
+ * answered `10000 Authentication error` for BOTH accounts on `r2/buckets` --
+ * which merely LISTS buckets, a coarser permission than reading one object. A
+ * credential that cannot list was never going to read, which is why widening
+ * the bucket scope changed nothing across four failed runs and three tokens.
+ *
+ * WHAT THE MEASUREMENT PROVES, stated no wider than that: the value stored in
+ * the secret was not a valid Cloudflare API token. Cloudflare's R2 token screen
+ * hands out several values at once -- an Access Key ID and a Secret Access Key
+ * for S3, and a bearer token value -- so this does not establish that no value
+ * on that screen would have worked with wrangler, only that the one CI held did
+ * not. The S3 pair is the form chosen regardless, because it is the only one
+ * that can be restricted to a single bucket, which is the property the section
+ * below is about.
+ *
+ * THE CHOICE THIS ENCODES. The other repair was a Custom Cloudflare API token
+ * carrying the `Workers R2 Storage` permission groups, which wrangler would
+ * accept -- but those groups are account-wide, and CI would then hold a
+ * credential that can reach `ryanlindsey-me-private`. CLAUDE.md rests the
+ * private tier on nobody being ABLE to, rather than on nobody writing the
+ * request. S3 credentials really are restricted to one bucket, so this repair
+ * is the one that keeps that sentence true.
  */
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -74,38 +99,118 @@ const RESUME_YAML = new URL('src/content/resume/ryan-lindsey.yaml', root);
  * ./wrangler.jsonc and workers/mcp/wrangler.jsonc, committed in this public
  * repo, and is recorded as public in 10 §2.6.
  *
- * Root wrangler.jsonc already carries it and this script runs from the repo
- * root, so wrangler would find it there. Set anyway, and belt-and-braces is the
- * honest description: `r2 object` is not a Worker command, nothing here passes
- * `--config`, and a bucket-scoped token cannot list accounts to recover from
- * wrangler ever deciding not to read that file for these subcommands.
+ * It used to be passed to wrangler as CLOUDFLARE_ACCOUNT_ID, with a note about
+ * wrangler possibly not reading the config for `r2 object` subcommands. Nothing
+ * sets that variable now and wrangler is never invoked; the id addresses R2 by
+ * being the endpoint's hostname instead.
  */
 const ACCOUNT_ID = '1b764d090899bf1ee61a8d1e87c10710';
 
+/**
+ * R2's S3 endpoint for this account. The account id is the hostname here, which
+ * is why it stays a public value rather than becoming a secret: it is already
+ * committed in both wrangler.jsonc files and recorded as public in 10 §2.6.
+ *
+ * No jurisdiction prefix. The bucket is in the default jurisdiction; an EU or
+ * FedRAMP bucket would need `<account>.eu.r2.cloudflarestorage.com` and would
+ * fail loudly here rather than silently addressing the wrong place.
+ */
+export const RESUME_S3_ENDPOINT = `https://${ACCOUNT_ID}.r2.cloudflarestorage.com`;
+
 /* -------------------------------------------------------------------------- *
- * wrangler
+ * R2, over the S3 API
  * -------------------------------------------------------------------------- */
 
 /**
- * MEASURED against wrangler 4.131.1 on 2026-09-15 via `npx wrangler r2 object
- * put --help`: `--content-type`, `--cache-control` and `--content-disposition`
- * are all flags it accepts, and `--remote` is what makes the write hit the real
- * bucket rather than a local simulation.
+ * The AWS CLI, which GitHub's ubuntu-latest runner image ships preinstalled
+ * (v2), so this adds no dependency to the repository and no second spelling of
+ * an S3 write. A node SDK would pull a large dependency tree into a repo with
+ * one script's worth of S3 to do, and hand-rolling SigV4 would be signing code
+ * written by hand to avoid a binary that is already on the machine.
  *
- * The three values come from RESUME_PDF_HTTP_METADATA rather than from literals
- * here, because src/lib/resume-pdf.ts sets the same three on the object it
- * writes from the Worker, and two copies of them would drift the first time one
- * was edited.
+ * NEITHER CREDENTIAL IS NAMED HERE. Both arrive as AWS_ACCESS_KEY_ID and
+ * AWS_SECRET_ACCESS_KEY in the environment, set on the two workflow steps that
+ * talk to R2 and nowhere else, so no secret appears in this file and no value
+ * reaches an argument vector where `ps` could read it.
+ *
+ * `AWS_DEFAULT_REGION=auto` because R2 has no regions and the CLI refuses to
+ * sign without one.
+ *
+ * THE TWO CHECKSUM VARIABLES ARE A PRECAUTION, NOT A MEASUREMENT, and are
+ * marked as such because everything else in this file is the other kind. AWS
+ * CLI v2.23 began sending `x-amz-checksum-*` headers by default and several
+ * S3-compatible services rejected them; `when_required` restores the older
+ * behaviour. This repository has NOT observed R2 rejecting them.
+ *
+ * THE COST IS REAL AND WORTH NAMING: under `when_required` the CLI sends no
+ * checksum and no Content-MD5, so the upload carries no integrity check of its
+ * own beyond TLS. Removing these two is therefore the SAFER default and keeping
+ * them is the compatibility hedge, which is the opposite of how a precaution
+ * usually reads. They are kept because a rejected upload fails the run loudly
+ * while a corrupted one would not, and because the sheet is re-uploaded from
+ * source on any hash change.
+ */
+function aws(arguments_, options = {}) {
+  try {
+    return execFileSync('aws', arguments_, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', options.captureStderr ? 'pipe' : 'inherit'],
+      env: {
+        ...process.env,
+        AWS_DEFAULT_REGION: 'auto',
+        AWS_REQUEST_CHECKSUM_CALCULATION: 'when_required',
+        AWS_RESPONSE_CHECKSUM_VALIDATION: 'when_required',
+      },
+    });
+  } catch (error) {
+    // A MISSING BINARY IS NOT A PROBE RESULT. `probeOutcome` reads this
+    // function's failures and answers "absent" for one specific shape, so an
+    // ENOENT arriving there as an unrecognised message would at least throw --
+    // but it would throw saying "could not read R2", which is a lie that sends
+    // the next reader to the bucket and the credentials. Named here instead.
+    // This relies on the AWS CLI being preinstalled on the runner image, which
+    // it is on ubuntu-latest, and is the one dependency this script does not
+    // install for itself.
+    if (error.code === 'ENOENT') {
+      const missing = new Error(
+        'the AWS CLI is not on PATH. It ships with the GitHub ubuntu-latest runner image; ' +
+          'install it to run this script anywhere else.',
+      );
+      // The tag is what `objectExists` reads to rethrow this BEFORE probeOutcome
+      // sees it. Without it the message still arrives, wearing a `could not read
+      // R2:` prefix that sends the next reader to the bucket and the
+      // credentials. The flag is the difference between a true message and a
+      // true message behind a false heading.
+      missing.notAProbeResult = true;
+      throw missing;
+    }
+    throw error;
+  }
+}
+
+/**
+ * The three response values come from RESUME_PDF_HTTP_METADATA rather than from
+ * literals here. They were literals in two places until #185, a duplicate
+ * nothing would have caught: a sheet served as an attachment rather than
+ * inline, or as the wrong media type, renders as a download prompt, and no test
+ * in this repo sees the headers.
+ *
+ * THE BUCKET IS AN ARGUMENT NOW rather than a prefix on a path. That is the
+ * shape tests/resume-publish.test.ts asserts against the private bucket's name:
+ * nothing this script can construct addresses `ryanlindsey-me-private`.
  */
 export function objectPutArguments(key, file) {
   return [
-    'r2',
-    'object',
-    'put',
-    `${RESUME_ASSETS_BUCKET}/${key}`,
-    '--file',
+    's3api',
+    'put-object',
+    '--bucket',
+    RESUME_ASSETS_BUCKET,
+    '--key',
+    key,
+    '--body',
     file,
-    '--remote',
+    '--endpoint-url',
+    RESUME_S3_ENDPOINT,
     '--content-type',
     RESUME_PDF_HTTP_METADATA.contentType,
     '--cache-control',
@@ -115,64 +220,79 @@ export function objectPutArguments(key, file) {
   ];
 }
 
-function wrangler(arguments_, options = {}) {
-  return execFileSync('npx', ['wrangler', ...arguments_], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', options.captureStderr ? 'pipe' : 'inherit'],
-    env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID },
-  });
+/**
+ * A REAL HEAD, which the Cloudflare REST API had no verb for. The previous
+ * version of this script downloaded the whole object into a temp file to ask
+ * whether it existed -- 215 KB to learn a boolean -- and its comment blamed R2
+ * for offering no `head` subcommand. That was a property of the API being
+ * spoken, not of R2.
+ *
+ * A MISSING BUCKET IS INDISTINGUISHABLE FROM A MISSING OBJECT here, because a
+ * HEAD response carries no body and so no `NoSuchBucket` code to read: both
+ * arrive as a bare 404 and both read as absence. Benign in this design -- the
+ * run goes on to render and then `put-object` fails loudly with the real code,
+ * since a PUT response does have a body -- but it costs a full render first,
+ * and the bucket name is a constant so it can only be wrong by an edit here.
+ */
+export function objectHeadArguments(key) {
+  return [
+    's3api',
+    'head-object',
+    '--bucket',
+    RESUME_ASSETS_BUCKET,
+    '--key',
+    key,
+    '--endpoint-url',
+    RESUME_S3_ENDPOINT,
+  ];
 }
 
 /**
- * Turns a failed `r2 object get` into an answer, or refuses to.
+ * Turns a failed `head-object` into an answer, or refuses to.
  *
- * MEASURED for scripts/private-doc.mjs on 2026-09-08 against a key confirmed
- * not to exist: wrangler's miss is `[ERROR] The specified key does not exist.`
- * wrapped in ANSI colour codes that never split that phrase. Stripped below so
- * a plain terminal, or a future wrangler that drops colour, still matches.
+ * THE MISS: `head-object` on a key that is not there exits non-zero with
+ * `An error occurred (404) when calling the HeadObject operation: Not Found`.
+ * Matched on the status AND the operation together, rather than on `Not Found`,
+ * which is generic enough to appear in messages that are not this. Naming the
+ * operation also keeps a future second caller from inheriting an answer that
+ * was only ever measured for this one.
+ *
+ * The ANSI strip is kept from the wrangler version. The AWS CLI does not colour
+ * this message, but stripping costs nothing and a future one might.
  *
  * EVERYTHING ELSE THROWS, and that direction is the one that matters. An auth
  * failure read as `absent` costs a needless upload of bytes that are already
  * there. An auth failure read as `present` skips the upload and reports
- * success, so the sheet quietly stops being republished -- which is the frozen
- * file this epic exists to fix, arriving through a new door. So this function
- * only ever returns one value, and the caller treats a return as absence.
+ * success, so the sheet quietly stops being republished -- the frozen file this
+ * epic exists to fix, arriving through a new door. So this function only ever
+ * returns one value, and the caller treats a return as absence.
+ *
+ * SigV4 makes that direction newly load-bearing: `SignatureDoesNotMatch` and
+ * `InvalidAccessKeyId` are failures the wrangler path could not produce, and a
+ * clock skew on the runner is enough to raise the first.
  */
 export function probeOutcome(error) {
   const stderr = String(error.stderr ?? '').replace(/\x1b\[[0-9;]*m/g, '');
-  if (/specified key does not exist/i.test(stderr)) return 'absent';
+  if (/An error occurred \(404\) when calling the HeadObject operation/i.test(stderr)) {
+    return 'absent';
+  }
   throw new Error(`could not read R2: ${stderr.trim() || error.message || 'no output'}`);
 }
 
 /**
- * `wrangler r2 object get` writes the body to stdout unless `--file` is given,
- * so it goes to a temp file that is removed either way. There is no `head`
- * subcommand and no object listing without S3 credentials this account
- * deliberately does not issue, so a download is how existence is asked.
+ * Existence, in one request and no bytes. Exit 0 is the object; a 404 naming
+ * HeadObject is its absence; anything else throws out of probeOutcome.
  */
 function objectExists(key) {
-  const directory = mkdtempSync(join(tmpdir(), 'rlme-resume-publish-'));
   try {
-    wrangler(
-      [
-        'r2',
-        'object',
-        'get',
-        `${RESUME_ASSETS_BUCKET}/${key}`,
-        '--remote',
-        '--file',
-        join(directory, 'object'),
-      ],
-      {
-        captureStderr: true,
-      },
-    );
+    aws(objectHeadArguments(key), { captureStderr: true });
     return true;
   } catch (error) {
+    // Anything that is not R2 answering is not an answer about R2. See the
+    // ENOENT branch in aws() for the one case this currently covers.
+    if (error.notAProbeResult) throw error;
     probeOutcome(error);
     return false;
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
   }
 }
 
@@ -302,10 +422,10 @@ const commands = {
      * Both writes are idempotent: identical bytes at a content-addressed key,
      * so a re-run after a failure costs an upload and changes nothing else.
      */
-    wrangler(objectPutArguments(aliasKey, file));
+    aws(objectPutArguments(aliasKey, file));
     process.stdout.write(`put ${aliasKey}\n`);
 
-    wrangler(objectPutArguments(key, file));
+    aws(objectPutArguments(key, file));
     process.stdout.write(`put ${key}\n`);
   },
 };
