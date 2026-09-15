@@ -49,19 +49,19 @@
  * credential that cannot list was never going to read, which is why widening
  * the bucket scope changed nothing across four failed runs and three tokens.
  *
- * WHAT THE MEASUREMENT PROVES, stated no wider than that: the value stored in
- * the secret was not a valid Cloudflare API token. Cloudflare's R2 token screen
- * hands out several values at once -- an Access Key ID and a Secret Access Key
- * for S3, and a bearer token value -- so this does not establish that no value
- * on that screen would have worked with wrangler, only that the one CI held did
- * not. The S3 pair is the form chosen regardless, because it is the only one
- * that can be restricted to a single bucket, which is the property the section
- * below is about.
+ * WHY, in one line from developers.cloudflare.com/r2/api/tokens: `Object Read &
+ * Write` and `Object Read only` are supported ONLY by the S3-compatible API,
+ * not the Cloudflare REST API. `wrangler r2 object` speaks the REST API. A
+ * permission-type mismatch answers 403 with `10000 Authentication error`, the
+ * same shape a revoked or malformed token gives, which is why four runs were
+ * spent hunting the token value, the bucket scope and the account instead.
  *
- * THE CHOICE THIS ENCODES. The other repair was a Custom Cloudflare API token
- * carrying the `Workers R2 Storage` permission groups, which wrangler would
- * accept -- but those groups are account-wide, and CI would then hold a
- * credential that can reach `ryanlindsey-me-private`. CLAUDE.md rests the
+ * THE CHOICE THIS ENCODES. `Admin Read & Write` works over the REST API and
+ * would have kept wrangler -- but it cannot be scoped to specific buckets,
+ * and only object-level permissions can, so wrangler and least privilege are
+ * not both available here. The same is true of a Custom API token carrying the
+ * `Workers R2 Storage` permission groups: account-wide, and CI would then hold
+ * a credential that can reach `ryanlindsey-me-private`. CLAUDE.md rests the
  * private tier on nobody being ABLE to, rather than on nobody writing the
  * request. S3 credentials really are restricted to one bucket, so this repair
  * is the one that keeps that sentence true.
@@ -136,19 +136,23 @@ export const RESUME_S3_ENDPOINT = `https://${ACCOUNT_ID}.r2.cloudflarestorage.co
  * `AWS_DEFAULT_REGION=auto` because R2 has no regions and the CLI refuses to
  * sign without one.
  *
- * THE TWO CHECKSUM VARIABLES ARE A PRECAUTION, NOT A MEASUREMENT, and are
- * marked as such because everything else in this file is the other kind. AWS
- * CLI v2.23 began sending `x-amz-checksum-*` headers by default and several
- * S3-compatible services rejected them; `when_required` restores the older
- * behaviour. This repository has NOT observed R2 rejecting them.
+ * THE TWO CHECKSUM VARIABLES ARE LOAD-BEARING, and an earlier version of this
+ * comment called them "a precaution, not a measurement" and said removing them
+ * was "a safe thing to try". That was wrong, and it is corrected here rather
+ * than deleted because it is the kind of wrong that reads as cautious.
  *
- * THE COST IS REAL AND WORTH NAMING: under `when_required` the CLI sends no
- * checksum and no Content-MD5, so the upload carries no integrity check of its
- * own beyond TLS. Removing these two is therefore the SAFER default and keeping
- * them is the compatibility hedge, which is the opposite of how a precaution
- * usually reads. They are kept because a rejected upload fails the run loudly
- * while a corrupted one would not, and because the sheet is re-uploaded from
- * source on any hash change.
+ * AWS CLI v2.23 turned on S3 data-integrity protections by default: it sends a
+ * CRC checksum trailer (`request_checksum_calculation=when_supported`) and
+ * validates checksums on responses. R2's S3 API REJECTS the trailer with
+ * `An error occurred (400) ... Bad Request`, and this bites read paths too,
+ * because `aws s3 cp` issues a HeadObject first. `when_required` restores the
+ * pre-2.23 behaviour. See github.com/aws/aws-cli/issues/9214. It does not
+ * affect the Workers R2 binding, only this S3 path.
+ *
+ * THE COST, named because it is real: under `when_required` the CLI sends no
+ * checksum and no Content-MD5, so an upload carries no integrity check beyond
+ * TLS. That is the trade being made, and it is made knowingly -- without these
+ * two the upload does not happen at all.
  */
 function aws(arguments_, options = {}) {
   try {

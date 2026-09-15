@@ -78,10 +78,16 @@ jobs:
       #
       # AN S3 PAIR RATHER THAN A BEARER TOKEN, and that is a correction (#205).
       # `CLOUDFLARE_API_TOKEN: secrets.RLME_R2_STORAGE` sat here and every run
-      # failed: an R2 API token is an S3 credential, not a Cloudflare API token,
-      # so `wrangler r2 object` could not authenticate with it. The script's
-      # header carries the measurement. The account id stays public and lives in
-      # scripts/resume-publish.mjs, where it is now the endpoint's hostname.
+      # failed, because an R2 token's `Object Read & Write` permission is
+      # supported only by the S3 API and not by the Cloudflare REST API that
+      # `wrangler r2 object` speaks. The script's header carries the rest. The
+      # account id stays public and lives in scripts/resume-publish.mjs, where
+      # it is now the endpoint's hostname.
+      #
+      # THESE TWO SECRETS ARE ONE CREDENTIAL. The Access Key ID is an API
+      # token's id and the Secret Access Key is a hash of its value, so
+      # revoking that token invalidates both and breaks this job. Roll and
+      # re-set together; never delete.
       - name: Plan
         id: plan
         env:
