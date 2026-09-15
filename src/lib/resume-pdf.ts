@@ -9,52 +9,14 @@ import type { BrowserWorker } from '@cloudflare/puppeteer';
 // A rename of the file breaks the build loudly rather than silently hashing
 // something else.
 import resumeSource from '../content/resume/ryan-lindsey.yaml?raw';
+// The contract version and the key it addresses moved to their own module for
+// issue #185: scripts/resume-publish.mjs has to import them from a plain node
+// process, and the two imports above resolve only inside a bundle. That file's
+// header carries the measurement. They are re-exported here so every existing
+// caller keeps importing them from where it always has.
+import { resumePdfKey, resumeSourceHash as hashResumeSource } from './resume-pdf-contract';
 
-/**
- * Bump when src/pages/resume.astro's rendered contract changes in a way that
- * should produce a different PDF from identical résumé data -- a layout change,
- * a new section, different print CSS.
- *
- * This constant exists because the hash is taken over the résumé INPUTS, not
- * over the rendered HTML. Hashing the HTML would look more correct and be
- * badly wrong: the rendered page carries content-hashed asset URLs
- * (/_astro/*.css) that change on every deploy, so the PDF would regenerate
- * every deploy forever and browser-hours would scale with deploys instead of
- * with content.
- */
-// 2 since 2026-09-13: the redesign (design 1k, issue #108) rebuilt the page
-// around a masthead grid and a section rail and added print rules for both, so
-// identical résumé data renders a different sheet. Without this bump the
-// deployed manifest keeps pointing at bytes rendered from the old page, and
-// /resume.pdf would go on serving the pre-redesign PDF until the YAML next
-// changed -- the exact stale-cache failure this constant exists to prevent.
-//
-// 3 since 2026-09-13 (issue #141): the sheet gained a contact block that exists
-// only in print, and the location line became a link whose printed URL suffix
-// is suppressed. Both change what identical résumé data renders.
-//
-// The YAML changed in the same commit, so the hash would have moved without
-// this. Bumped anyway, because the two are independent: reverting the Armature
-// entry later would restore the old hash while the page still renders the new
-// sheet, and the manifest would then point at bytes nobody can reproduce.
-// 4 since 2026-09-15 (issue #184): the running foot moved out of Chrome's
-// footer template and into the page. That template's document does not load
-// webfonts at all, so every glyph of the foot had been drawing in a host system
-// serif rather than the sheet's mono face -- visible in the text layer as
-// `R YA N` in the foot against `R Y A N` in the docline above it, because a
-// proportional face kerns the RY pair and IBM Plex Mono has none to apply. Only
-// `n / total` is still drawn there, because `counter(page)` outside an `@page`
-// margin box evaluates to 0 in Chrome.
-//
-// Identical résumé data therefore renders a different sheet, which is what this
-// constant is for. Note that no runtime input moved: src/lib/resume-pdf.ts
-// renders `/resume?print` and nothing here imports the stamper or the sheet's
-// stylesheet, so today the bump changes no deployed byte. It is made anyway,
-// for the reason version 3's note gives about the Armature entry -- the golden
-// moved, and the gate added in #184 requires the constant to move with it, so
-// that once 05 publishes from the golden's own render the hash cannot point at
-// bytes nobody can reproduce.
-export const RESUME_PDF_CONTRACT_VERSION = 4;
+export { RESUME_PDF_CONTRACT_VERSION, resumePdfKey } from './resume-pdf-contract';
 
 /** KV key holding the manifest. The manifest write is the commit point. */
 export const RESUME_PDF_MANIFEST_KEY = 'resume-pdf:manifest';
@@ -124,21 +86,13 @@ export interface ResumePdfEnv {
   RESUME_PDF_RENDERER?: string;
 }
 
-const encoder = new TextEncoder();
-
 /**
- * SHA-256 over the contract version and the résumé source bytes, hex-encoded.
- * Stable across deploys by construction: nothing in the input moves unless the
- * résumé content or the page's contract does.
+ * The hash, over the résumé source this bundle carries. The construction lives
+ * in ./resume-pdf-contract; the only thing added here is the default, because
+ * this is the module that can reach the file.
  */
 export async function resumeSourceHash(source: string = resumeSource): Promise<string> {
-  const input = `resume-pdf/v${RESUME_PDF_CONTRACT_VERSION}\n${source}`;
-  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(input));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-export function resumePdfKey(hash: string): string {
-  return `resume/${hash}.pdf`;
+  return await hashResumeSource(source);
 }
 
 export async function readResumePdfManifest(

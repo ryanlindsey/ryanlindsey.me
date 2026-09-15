@@ -45,8 +45,15 @@ const PDF = new URL('tests/fixtures/resume-sheet.pdf', root);
  */
 const GOLDEN = 'tests/fixtures/resume-sheet.txt';
 
-/** The file holding RESUME_PDF_CONTRACT_VERSION. See the `contract` check. */
-const CONTRACT_SOURCE = 'src/lib/resume-pdf.ts';
+/**
+ * The file holding RESUME_PDF_CONTRACT_VERSION. See the `contract` check.
+ *
+ * It was src/lib/resume-pdf.ts until #185 moved the constant into its own
+ * module, so that scripts/resume-publish.mjs could import it from a plain node
+ * process. A merge base older than that commit does not have this file, which
+ * is why the read below tolerates a missing one rather than throwing.
+ */
+const CONTRACT_SOURCE = 'src/lib/resume-pdf-contract.ts';
 
 const RESUME_YAML = new URL('src/content/resume/ryan-lindsey.yaml', root);
 
@@ -398,9 +405,20 @@ function checkContract() {
   const goldenMoved = !gitSucceeds(['diff', '--quiet', mergeBase, 'HEAD', '--', GOLDEN]);
   if (!goldenMoved) return { ok: true, detail: 'the golden is unchanged on this branch' };
 
+  // `git show` of a path that is not in that commit exits non-zero, and run()
+  // turns that into a throw. A stack trace is the wrong report here: the check
+  // below already says what a missing version means, so a revision that does
+  // not carry the file reads as "no version" and fails as one.
+  const showOrEmpty = (revision) => {
+    try {
+      return run('git', ['show', `${revision}:${CONTRACT_SOURCE}`]);
+    } catch {
+      return '';
+    }
+  };
   const version = (source) => source.match(/RESUME_PDF_CONTRACT_VERSION\s*=\s*(\d+)/)?.[1];
-  const before = version(run('git', ['show', `${mergeBase}:${CONTRACT_SOURCE}`]));
-  const after = version(run('git', ['show', `HEAD:${CONTRACT_SOURCE}`]));
+  const before = version(showOrEmpty(mergeBase));
+  const after = version(showOrEmpty('HEAD'));
 
   if (!before || !after) {
     return {

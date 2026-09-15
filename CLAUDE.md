@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The source of [ryanlindsey.me](https://ryanlindsey.me): an Astro site on the Cloudflare developer platform, plus a second Worker serving a remote MCP server at `mcp.ryanlindsey.me`. One repository, two deployed Workers, one shared set of D1, KV, R2, Queues and Analytics Engine resources.
 
-Deploys run on Workers Builds from `main`. CI has no deploy step and holds no Cloudflare credential.
+Deploys run on Workers Builds from `main`. CI has no deploy step. It holds exactly one Cloudflare credential, an R2 token that reaches one bucket, described under [The one credential in CI](#the-one-credential-in-ci).
 
 ## Commands
 
@@ -99,6 +99,14 @@ Prompts are code. They change by pull request and this suite is what gates them.
 `scripts/token.mjs` mints, lists and revokes scoped tokens through wrangler's own login, holding no credential of its own. Minting needs a temporary `/__sign` route inside a running Worker, because a Cloudflare Secrets Store value is write-only and only a binding can read it. The script's header carries the route to paste and the instruction to delete it before committing.
 
 `scripts/private-doc.mjs` is invoked from the private planning repo, not from here. The mechanism is generic and lives in this repo; every document it deploys is authored elsewhere and never enters this repository's history.
+
+## The one credential in CI
+
+`.github/workflows/resume-pdf.yml` publishes the résumé sheet to R2, and it is the only workflow in this repository that authenticates to Cloudflare. The secret is `RLME_R2_STORAGE`, an R2 API token carrying object read and write on the `ryanlindsey-me-assets` bucket and on nothing else. `scripts/resume-publish.mjs` hands it to wrangler as `CLOUDFLARE_API_TOKEN`, and the account id beside it is a public value already committed in both `wrangler.jsonc` files.
+
+The narrow scope is the point, and an account-wide token would defeat it. The private tier is a partition rather than a filter: `R2_PRIVATE` holds what a grant unlocks, `src/lib/tier/private-docs.ts` is its only reader, and the public document layer's env interface does not name that bucket at all, which `tests/tier-private-docs.test.ts` asserts at the type level. A token in CI that could reach `ryanlindsey-me-private` would be the first thing in this repository holding a reference to that bucket, and the guarantee would then rest on nobody writing the request rather than on nobody being able to.
+
+Three things follow. Rotation happens in the Cloudflare dashboard and needs no change here. The token cannot deploy a Worker, so Workers Builds still owns deploys and still mints its own credential. And `10 §2.4` in the private docs repo states that CI holds zero Cloudflare credentials, which is now false there as well; correcting it is a separate change in that repository.
 
 ## The private docs repo
 

@@ -1,0 +1,98 @@
+name: resume-pdf
+
+# Publishes the résumé sheet to R2 when the résumé content changes (issue #185,
+# epic #180).
+#
+# NO `paths:` FILTER, DELIBERATELY. A filter listing the YAML and the route is
+# exactly how a stylesheet change silently fails to republish. The hash gate in
+# the `plan` step is the correctness mechanism instead: it computes the content
+# hash and asks R2 whether that object is already there. Running this job to
+# discover the sheet has not changed costs one request and about twenty seconds,
+# because everything expensive below is gated on that answer.
+#
+# THIS IS THE ONLY WORKFLOW IN THE REPOSITORY THAT HOLDS A CLOUDFLARE
+# CREDENTIAL, and CLAUDE.md records why the credential is scoped the way it is.
+
+on:
+  push:
+    branches: [main]
+  # The acceptance path, and the repair path: a run that uploaded the alias and
+  # then failed leaves the content-addressed key absent, so a dispatch
+  # re-publishes both.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Not cancel-in-progress. Two runs racing write identical bytes to identical
+# keys, so the race is harmless, but cancelling one mid-upload is how a run ends
+# between the two writes.
+concurrency:
+  group: resume-pdf
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # fetch-depth: 1, unlike checks.yml. The résumé gate's `contract` check
+      # diffs against a merge base and needs full history; it reports `skip`
+      # outside a pull request, which is what this is, so there is nothing here
+      # for a deep clone to buy.
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # ONE REQUEST, AND IT DECIDES THE REST OF THE JOB. Reads the résumé YAML,
+      # hashes it with the same code the Worker uses, and asks R2 for that key.
+      #
+      # THE TOKEN IS SET ON THE TWO STEPS THAT TALK TO R2, NOT ON THE JOB.
+      # `npm run build` below is `astro build`, and CLAUDE.md records that an
+      # `ai` binding in the site's config would make it open a remote proxy
+      # session that credential-free CI cannot authenticate. That reasoning is
+      # about a binding this Worker does not have, but a build running with a
+      # Cloudflare token in its environment is a different build from the one
+      # checks.yml runs, and there is no reason to find out how different. The
+      # account id is public and lives in scripts/resume-publish.mjs.
+      - name: Plan
+        id: plan
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.RLME_R2_STORAGE }}
+        run: node scripts/resume-publish.mjs plan
+
+      - name: Build
+        if: steps.plan.outputs.publish == 'true'
+        run: npm run build
+
+      # Chrome is preinstalled on the runner image and scripts/resume-sheet.mjs
+      # finds it at /usr/bin/google-chrome-stable. `npm run resume:pdf` would
+      # build a second time; the step above already wrote dist/client, which is
+      # what the renderer serves.
+      - name: Render the sheet
+        if: steps.plan.outputs.publish == 'true'
+        run: node scripts/resume-sheet.mjs
+
+      # pdffonts and pdfinfo answer for the gate's `fonts` and `tagged` checks.
+      - name: Install poppler
+        if: steps.plan.outputs.publish == 'true'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
+
+      # THE GATE RUNS BEFORE THE UPLOAD, NOT ONLY IN checks.yml. Both workflows
+      # trigger on a push to main and neither waits for the other, so without
+      # this step there is a path from a commit to a live PDF that no assertion
+      # stands in -- which is the hole the whole epic exists to close. It costs
+      # seconds on the few runs a year that get past the hash gate.
+      - name: Gate the sheet
+        if: steps.plan.outputs.publish == 'true'
+        run: npm run resume:gate
+
+      - name: Publish to R2
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.RLME_R2_STORAGE }}
+        run: node scripts/resume-publish.mjs publish
