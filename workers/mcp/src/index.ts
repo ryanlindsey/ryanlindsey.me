@@ -2,6 +2,7 @@ import { createMcpHandler } from 'agents/mcp/server';
 import { corpusRefreshEnabled, refreshCorpus, type CorpusEnv } from '../../../src/lib/corpus';
 import { buildMcpDiscovery, buildMcpRobotsTxt } from '../../../src/lib/mcp/discovery';
 import { buildMcpServerCard } from '../../../src/lib/discovery/server-card';
+import { buildProtectedResource } from '../../../src/lib/discovery/protected-resource';
 import { handleChat } from './chat';
 import { resolveGrant } from '../../../src/lib/tier/grant';
 import { type McpEnv } from './env';
@@ -166,6 +167,24 @@ export default {
     // '/mcp'` and 404s everything else it sees.
     if (pathname === '/.well-known/mcp/server-card.json') {
       return new Response(JSON.stringify(buildMcpServerCard(MCP_ORIGIN), null, 2), {
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      });
+    }
+
+    // Issue #167 (epic #165, "agent readiness"): RFC 9728 protected-resource
+    // metadata, served from THIS origin because it is where MCP's own
+    // authorization discovery sends a client -- an agent that reached
+    // mcp.ryanlindsey.me and wants to know what a bearer token here would
+    // unlock looks for this document on THIS origin, not on ryanlindsey.me,
+    // which also carries a copy for a reader who starts from the site
+    // instead (src/pages/.well-known/oauth-protected-resource.ts). Same
+    // reason it has to sit here rather than fall through to
+    // createMcpHandler: HANDLER_OPTIONS answers exactly `route: '/mcp'` and
+    // 404s everything else it sees. `/auth.md`, the prose half, stays
+    // site-only -- there is no reason for this Worker to carry a second copy
+    // of static markdown it does not otherwise serve.
+    if (pathname === '/.well-known/oauth-protected-resource') {
+      return new Response(JSON.stringify(buildProtectedResource(`${MCP_ORIGIN}/mcp`), null, 2), {
         headers: { 'Content-Type': 'application/json; charset=utf-8' },
       });
     }
