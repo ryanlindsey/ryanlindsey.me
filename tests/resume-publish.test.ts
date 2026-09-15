@@ -106,18 +106,16 @@ describe('publishDecision', () => {
 
 describe('the S3 endpoint', () => {
   /*
-   * WHY S3 AND NOT THE CLOUDFLARE REST API (issue #205). `wrangler r2 object`
-   * speaks to api.cloudflare.com with a Bearer token. Measured 2026-09-15 in
-   * the runner, against the stored secret: `/user/tokens/verify` answered
-   * `1000 Invalid API Token` and R2 answered `10000 Authentication error` for
-   * BOTH accounts, including on `r2/buckets`, which merely lists. A credential
-   * that cannot list buckets was never going to read an object, which is why
-   * widening the bucket scope changed nothing across four failed runs.
+   * WHY S3 AND NOT THE CLOUDFLARE REST API (issue #205). An R2 token's
+   * `Object Read & Write` permission is supported only by the S3 API, not by
+   * the Cloudflare REST API that `wrangler r2 object` speaks. Measured
+   * 2026-09-15 in the runner against the stored secret: R2 answered
+   * `10000 Authentication error` for both accounts, including on `r2/buckets`,
+   * which merely lists -- so widening the bucket scope changed nothing across
+   * four failed runs.
    *
-   * That proves the stored value was not a valid Cloudflare API token, and no
-   * more than that -- the R2 token screen issues several values at once. S3 is
-   * the form chosen because it is the only one restricted to a single bucket,
-   * which is what keeps CI unable to reach `ryanlindsey-me-private`.
+   * `Admin Read & Write` would work over REST but cannot be bucket-scoped, so
+   * S3 is the only form that keeps CI unable to reach `ryanlindsey-me-private`.
    *
    * The account id is PUBLIC (10 §2.6) and already committed in both
    * wrangler.jsonc files; in the S3 form it is the endpoint's hostname.
