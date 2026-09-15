@@ -140,6 +140,24 @@
 /.well-known/mcp/server-card.json
   Content-Type: application/json; charset=utf-8
 
+# Issue #167 (epic #165, "agent readiness"): RFC 9728 protected-resource
+# metadata (src/pages/.well-known/oauth-protected-resource.ts). This path is
+# EXTENSIONLESS, unlike every `.json`/`.md` rule elsewhere in this file, so
+# Cloudflare's mime lookup has nothing to guess a type from at all -- this
+# rule is the only thing standing between the document and whatever fallback
+# content type an extensionless static asset gets, which is not a usable one.
+/.well-known/oauth-protected-resource
+  Content-Type: application/json; charset=utf-8
+
+# The prose half of the same surface, auth.md (src/pages/auth.md.ts).
+# Cloudflare's asset server already maps `.md` to `text/markdown; charset=utf-8`
+# by default -- /resume.md.ts relies on exactly that default with no rule of
+# its own -- but this rule is added anyway so the two halves of this surface
+# ship their Content-Type the same explicit way rather than one depending on
+# a default and the other not.
+/auth.md
+  Content-Type: text/markdown; charset=utf-8
+
 # Day 4 Task 14 (08 v1 item 2): the two discovery headers, verbatim, on
 # every response this origin serves FROM A STATIC ASSET. `/*` is the broadest
 # pattern in this file and sets no header any rule above also sets, so there is

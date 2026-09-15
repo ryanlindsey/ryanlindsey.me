@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { buildMcpDiscovery } from '../src/lib/mcp/discovery';
 import { buildMcpServerCard } from '../src/lib/discovery/server-card';
+import { buildProtectedResource } from '../src/lib/discovery/protected-resource';
 import { MCP_HARNESS_WORKERS, TEST_SITE_ORIGIN } from './workers';
 
 // The exact instructions the server is expected to advertise. Asserting the
@@ -201,6 +202,23 @@ test('the MCP origin serves its own server card', async () => {
   const card = (await response.json()) as ReturnType<typeof buildMcpServerCard>;
   expect(card.serverInfo.name).toBe('ryanlindsey-me');
   expect(card.url).toBe('https://mcp.ryanlindsey.me/mcp');
+});
+
+// Issue #167 (epic #165, "agent readiness"): RFC 9728 protected-resource
+// metadata, this origin's own copy -- structurally the sibling of the server-
+// card test immediately above, and it has to be proven here rather than
+// assumed from tests/discovery-auth.test.ts's site-only coverage: this is the
+// origin MCP's own authorization discovery actually sends a refused client
+// to, and workers/mcp/src/index.ts ships an independent branch for it.
+test('the MCP origin serves its own protected-resource metadata', async () => {
+  const response = await server.fetch('/.well-known/oauth-protected-resource');
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8');
+  // Cast to the shape `buildProtectedResource` actually returns -- same
+  // as-cast convention as the discovery-document and server-card tests above.
+  const doc = (await response.json()) as ReturnType<typeof buildProtectedResource>;
+  expect(doc.resource).toBe('https://mcp.ryanlindsey.me/mcp');
+  expect(doc).not.toHaveProperty('authorization_servers');
 });
 
 test('an unrouted path on the MCP origin is a 404, not the MCP handler', async () => {
