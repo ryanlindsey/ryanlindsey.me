@@ -192,13 +192,23 @@ export async function publishPlan(source) {
  *
  * `regenerateResumePdf` in src/lib/resume-pdf.ts still writes
  * `resume/<hash>.pdf` into this same bucket, from the 05:17 cron and from every
- * stale or cold-miss request to /resume.pdf, and it has been computing the same
- * contract version 4 hash as this script. So the content-addressed key can
- * already be sitting in the bucket the first time this workflow runs, written
- * by the runtime path from a different route and without the metadata stamp.
- * Probing that key alone would answer "unchanged" against a bucket that has
- * never held `resume/latest.pdf`, the workflow would go green having published
- * nothing, and the alias 06 reads from would not exist.
+ * stale or cold-miss request to /resume.pdf, and it computes the same contract
+ * version 4 hash as this script.
+ *
+ * MEASURED against the live bucket on 2026-09-15, before this ever ran in CI:
+ * `resume/6457fef2...cfe3.pdf` was ALREADY THERE and `resume/latest.pdf` was
+ * not. The object at that key reads `Pages: 9`, 215,154 bytes, no Author and no
+ * Subject, `Producer: Skia/PDF m128` from a Linux HeadlessChrome -- the Browser
+ * Rendering runtime, not this repo's renderer. #184 bumped the contract to 4
+ * earlier the same day, which moved the Worker's hash and had it re-render
+ * `/resume?print` under the new key hours before this workflow existed.
+ *
+ * So an earlier draft of this script, which probed the content-addressed key
+ * alone, would have answered "unchanged" against a bucket that had never held
+ * the alias. The first run would have gone green having published nothing, and
+ * the 9-page sheet would have stayed live with no way to recover short of
+ * editing the résumé. That is not a hypothetical this comment is guarding
+ * against; it is what the bucket held when the probe was written.
  *
  * So the alias is probed too, and a missing alias is enough to publish. Two
  * requests rather than one on the no-op path.
@@ -206,11 +216,19 @@ export async function publishPlan(source) {
  * WHAT THIS STILL DOES NOT FIX, said out loud rather than left to be
  * discovered: the runtime path can overwrite a key this workflow has just
  * published, because CI writes R2 and does not write the KV manifest the
- * Worker gates on. Until 06 retires that path, a cron run whose manifest is
- * behind will re-render `/resume?print` and put its own bytes over
- * `resume/<hash>.pdf`. Nothing here can prevent that without a KV credential,
- * and widening the token is the one thing #185 rules out. A dispatch with
- * `force` is the repair.
+ * Worker gates on. On the next content change both writers target the new
+ * hashed key, and whichever lands second wins. Nothing here can prevent that
+ * without a KV credential, and widening the token is the one thing #185 rules
+ * out. A dispatch with `force` is the repair.
+ *
+ * WHAT IS SAFE MEANWHILE, and it is the reason 05 is worth landing before 06:
+ * nothing in src/lib/resume-pdf.ts writes RESUME_ALIAS_KEY. `regenerateResumePdf`
+ * writes `resumePdfKey(currentHash)` and nothing else, so the alias is this
+ * workflow's alone. Once written it holds the gated three-page sheet and stays
+ * holding it, whatever the runtime path does to the hashed key beside it. The
+ * interim state is therefore not a regression: /resume.pdf goes on serving what
+ * it serves today, and the artifact 06 will read from is already in place and
+ * correct when 06 arrives.
  */
 export function publishDecision({ hashedPresent, aliasPresent, force }) {
   if (force) {
