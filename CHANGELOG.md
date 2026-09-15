@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.20.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.19.1...ryanlindsey-me-v1.20.0) (2026-09-15)
+
+
+### Features
+
+* **discovery:** advertise the discovery documents in Link headers ([#193](https://github.com/ryanlindsey/ryanlindsey.me/issues/193)) ([2da1fe9](https://github.com/ryanlindsey/ryanlindsey.me/commit/2da1fe931dc08677691d8b9c8c2a12ed08d9b4b9))
+* **discovery:** expose the public MCP tools to browser agents ([#194](https://github.com/ryanlindsey/ryanlindsey.me/issues/194)) ([559dbd2](https://github.com/ryanlindsey/ryanlindsey.me/commit/559dbd242fad3a5c8c27e81a8907e0bf82c500af))
+* **discovery:** publish an agent skills index ([#192](https://github.com/ryanlindsey/ryanlindsey.me/issues/192)) ([e3e3a0a](https://github.com/ryanlindsey/ryanlindsey.me/commit/e3e3a0ad3a767fb37ded29e29e63cdb07c591bf3))
+* **discovery:** publish an API catalog and an ARD manifest ([#191](https://github.com/ryanlindsey/ryanlindsey.me/issues/191)) ([b170bb9](https://github.com/ryanlindsey/ryanlindsey.me/commit/b170bb9a035eb05ddb3a9ea2e02b30f1209eaa43))
+* **discovery:** publish protected-resource metadata and auth.md ([#190](https://github.com/ryanlindsey/ryanlindsey.me/issues/190)) ([9d9e4e2](https://github.com/ryanlindsey/ryanlindsey.me/commit/9d9e4e2cd0d06fc9eab94036fa7852db862ae139))
+* **discovery:** serve an MCP server card on both origins ([#189](https://github.com/ryanlindsey/ryanlindsey.me/issues/189)) ([c784e36](https://github.com/ryanlindsey/ryanlindsey.me/commit/c784e361c59ef4388fef94e8b0845d335270ddf2))
+* **site:** negotiate markdown on the homepage ([#187](https://github.com/ryanlindsey/ryanlindsey.me/issues/187)) ([38dca92](https://github.com/ryanlindsey/ryanlindsey.me/commit/38dca9238947c6f96fcd9887a8abf0316d254d40))
+
+
+### Bug Fixes
+
+* **discovery:** correct stale claims and conform three documents to their specs ([#195](https://github.com/ryanlindsey/ryanlindsey.me/issues/195)) ([b36866f](https://github.com/ryanlindsey/ryanlindsey.me/commit/b36866f8b6a52c7271c563f86876c7ad7e93ca47))
+
 ## [1.19.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.19.0...ryanlindsey-me-v1.19.1) (2026-09-14)
 
 
