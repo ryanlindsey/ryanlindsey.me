@@ -73,10 +73,12 @@ const MIN_WORDS_PER_PAGE = 200;
 /**
  * Chrome renders the running head and foot in a SEPARATE document that cannot
  * see the page's fonts, and that document contributes one Times-Roman to the
- * font list no matter what the template asks for (measured for #183, and the
- * reason the foot inlines its own face as a data URL). It is invisible on the
- * sheet. So the face is allowed through by name rather than failing the run --
- * but only this one name, and Type 3 is refused even here.
+ * font list no matter what the template asks for (measured for #183, then
+ * measured again for #184, which found that the document loads no `@font-face`
+ * at all). The page number is drawn there and is therefore set in it, so unlike
+ * the earlier reading of this the face is not invisible on the sheet. It is
+ * allowed through by name rather than failing the run -- but only this one
+ * name, and Type 3 is refused even here.
  */
 const FOOTER_FACE = /Times-Roman$/;
 
@@ -204,13 +206,6 @@ async function expectations() {
   const { email, phone, url, profiles = [] } = resume.basics;
 
   return {
-    /* The running foot, which draws once per sheet. Squashed rather than
-     * compared literally, because it is letter-spaced and extracts one
-     * character at a time -- see checkFoot(). */
-    foot: {
-      credit: `${resume.basics.name} · ${resume.basics.label}`,
-      site: displayForm(url),
-    },
     /* What must appear in the text layer. The sheet prints URLs in display
      * form, so these are compared after the same trimming -- see displayForm(). */
     fields: [
@@ -331,37 +326,32 @@ function checkLinks(expected, found) {
 }
 
 /**
- * THE RUNNING FOOT, WHICH THE GOLDEN CANNOT FULLY COVER.
+ * THE ONE THING IN THE BOTTOM BAND THE GOLDEN CANNOT COVER.
  *
- * Two things draw down there and only one of them is reproducible. The credit
- * and the site are page content in the embedded mono face, so they sit in the
- * golden and `extraction` already compares them byte for byte. `n / total`
- * comes from Chrome's footer template, which renders in a host system serif
- * (see footerTemplate() in scripts/resume-sheet.mjs), so goldenText() drops its
- * line and this is the check that keeps it honest: presence, per page, which is
- * the strongest claim that survives not knowing the font.
+ * This check used to cover three things, because a credit line and the site URL
+ * drew there as page content in the embedded mono face. Those sat in the golden
+ * and `extraction` compared them byte for byte, so asserting them here was a
+ * second opinion on a reproducible thing. The element went on 2026-09-15 and
+ * they went with it, which leaves only the half that was ever this check's own
+ * job: `n / total` comes from Chrome's footer template, which renders in a host
+ * system serif (see footerTemplate() in scripts/resume-sheet.mjs), so
+ * goldenText() drops its line and nothing else asserts it at all. Presence, per
+ * page, is the strongest claim that survives not knowing the font.
  *
- * Squashed to bare characters before comparing. The foot is letter-spaced, so
- * it extracts as `R Y A N  L I N D S E Y`, and a literal comparison would be
- * asserting the tracking rather than the words.
+ * Squashed to bare characters before comparing, because the number is
+ * letter-spaced and extracts as `1 / 3` with the tracking between the glyphs.
+ * A literal comparison would be asserting the tracking rather than the number.
  */
-function checkFoot(expected, pages) {
+function checkFoot(pages) {
   const squash = (value) => value.replace(/[\s]/g, '').toUpperCase();
-  const credit = squash(expected.credit);
-  const site = squash(expected.site);
-  const missing = [];
-
-  pages.forEach((page, index) => {
-    const flat = squash(page);
-    const sheet = index + 1;
-    if (!flat.includes(credit)) missing.push(`page ${sheet} credit`);
-    if (!flat.includes(site)) missing.push(`page ${sheet} site`);
-    if (!flat.includes(`${sheet}/${pages.length}`)) missing.push(`page ${sheet} number`);
-  });
+  const missing = pages
+    .map((page, index) => [index + 1, squash(page)])
+    .filter(([sheet, flat]) => !flat.includes(`${sheet}/${pages.length}`))
+    .map(([sheet]) => `page ${sheet}`);
 
   return missing.length === 0
-    ? { ok: true, detail: `credit, site and n/total on ${pages.length} of ${pages.length} sheets` }
-    : { ok: false, detail: `absent from the foot: ${missing.join(', ')}` };
+    ? { ok: true, detail: `n/total on ${pages.length} of ${pages.length} sheets` }
+    : { ok: false, detail: `no page number on: ${missing.join(', ')}` };
 }
 
 function checkTagged(info) {
@@ -459,7 +449,7 @@ async function main() {
     ['fonts', checkFonts(readFonts(path))],
     ['pages', checkPages(totalPages, pages)],
     ['links', checkLinks(expected.links, links)],
-    ['foot', checkFoot(expected.foot, pages)],
+    ['foot', checkFoot(pages)],
     ['tagged', checkTagged(readInfo(path))],
     ['contract', checkContract()],
   ];

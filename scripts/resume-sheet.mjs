@@ -367,17 +367,21 @@ async function serveDist() {
  * first CI run, with `R YA N` here against `R Y A N` in the `.docline` above.
  *
  * So the foot moved into the page (src/pages/resume.print.astro), where it
- * draws in the embedded face. Only the page number stays, because
- * `counter(page)` outside an `@page` margin box evaluates to 0 in Chrome and
- * `@page` margin boxes are not implemented at all. One field in a host font is
- * the price of numbering the sheets, and goldenText() drops its line for that
- * reason rather than pretending it is stable.
+ * drew in the embedded face until 2026-09-15, when a visual review of the
+ * rendered PDF cut the credit line and deleted the element with it. The page
+ * number never had that option: `counter(page)` outside an `@page` margin box
+ * evaluates to 0 in Chrome, and `@page` margin boxes are not implemented at
+ * all. One field in a host font is the price of numbering the sheets, and
+ * goldenText() drops its line for that reason rather than pretending it is
+ * stable.
  *
- * The padding repeats @page's 0.66in side margin from
- * src/styles/resume-sheet.css, and the size and tracking match `.foot` there so
- * the number sits where the reserved `.foot-page` column leaves room for it.
- * Those numbers are coupled across the two files and nothing will say so if
- * they drift.
+ * This is now the only thing drawn in the bottom band, and its position was
+ * deliberately left alone when the foot went, so the number sits where the
+ * approved render put it. The padding repeats @page's 0.66in side margin from
+ * src/styles/resume-sheet.css, and the size and tracking match the `.docline`
+ * there, which is the one remaining mono rule this has to look like. Those
+ * numbers are coupled across the two files and nothing will say so if they
+ * drift.
  */
 function footerTemplate() {
   return `<style>
@@ -386,11 +390,12 @@ function footerTemplate() {
     box-sizing: border-box;
     text-align: right;
     /*
-     * The bottom padding lifts the number off the paper edge to sit one
-     * line under the in-page foot rather than stranded in the margin. Tuned
-     * against the render: 29pt puts its baseline at about 45pt, and the
-     * in-page foot in src/styles/resume-sheet.css draws at 52.5pt. No
-     * backticks in this comment -- it lives inside a template literal.
+     * The bottom padding lifts the number off the paper edge rather than
+     * leaving it stranded in the margin. Tuned against the render while an
+     * in-page foot still drew at 52.5pt: 29pt puts this baseline at about
+     * 45pt, one line under where that foot was. The foot went on 2026-09-15
+     * and this did not move, so the number keeps the position it has always
+     * had. No backticks in this comment -- it lives inside a template literal.
      */
     padding: 0 0.66in 29pt;
     font-size: 6.8pt;
