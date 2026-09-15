@@ -210,61 +210,39 @@ body {
 }
 
 /*
- * THE RUNNING FOOT, AND WHY IT IS DRAWN HERE RATHER THAN BY CHROME.
- *
- * It used to live entirely in `Page.printToPDF`'s `footerTemplate`, with the
- * mono face inlined as a base64 data URL so the foot and the sheet could not
- * drift onto different versions of one font. That never worked, and the
- * comment claiming it did was wrong for two releases.
+ * THERE IS NO RUNNING FOOT ON THIS SHEET, and two measurements from the one
+ * that used to be here are worth keeping, because anyone restoring a foot pays
+ * for both again.
  *
  * MEASURED 2026-09-15, in isolation against Chrome 152: the header and footer
- * templates render in a separate document that DOES NOT LOAD `@font-face` AT
- * ALL, data URL or otherwise. The declared `monospace` fallback does not take
- * either -- the text draws in that document's default serif, which Skia embeds
- * as `Times-Roman`. So every glyph of the foot was a host system font. The
- * signature is visible in the text layer: this sheet rendered `R YA N` and
- * `L I N D S E Y. M E` in the foot while the `.docline` above rendered the same
- * letters as `R Y A N`, because a proportional face kerns the RY and Y. pairs
- * and IBM Plex Mono has no kern pairs to apply.
+ * templates `Page.printToPDF` accepts render in a SEPARATE DOCUMENT THAT DOES
+ * NOT LOAD `@font-face` AT ALL, data URL or otherwise, and the declared
+ * `monospace` fallback does not take either -- the text draws in that
+ * document's default serif, which Skia embeds as `Times-Roman`. The foot lived
+ * there first, with the mono face inlined as a base64 data URL and a comment
+ * claiming that worked, which was wrong for two releases. Every glyph of it was
+ * a host system font, and the signature was visible in the text layer: that
+ * sheet rendered `R YA N` and `L I N D S E Y. M E` in the foot while the
+ * `.docline` above rendered the same letters as `R Y A N`, because a
+ * proportional face kerns the RY and Y. pairs and IBM Plex Mono has no kern
+ * pairs to apply. A system serif resolves differently on macOS and on a Linux
+ * runner, so the extraction golden was unreproducible, and CI caught it on the
+ * gate's first run (#184). That measurement is still live: it is why the page
+ * number draws in Times-Roman, why `FOOTER_FACE` in scripts/resume-gate.mjs
+ * lets one through by name, and why goldenText() drops that line.
  *
- * That made the extraction golden unreproducible: a system serif resolves
- * differently on macOS and on a Linux runner, the advances differ, and pdf.js
- * reconstructs a different set of spaces from them. CI caught it on the first
- * run of the gate (#184), which is the gate working as intended.
+ * MEASURED the same day: a fixed element is positioned against the PAGE AREA
+ * and anything outside that area is clipped, so `bottom: -34.8pt`, meant to
+ * drop the foot into @page's 0.72in bottom margin, rendered on no page at all.
+ * The foot ended up at `bottom: 0`, on the bottom edge of the text column, at
+ * about 52pt off the paper.
  *
- * `position: fixed` in a paged context repeats on every sheet and paints into
- * the bottom margin, so the foot lands where it always did while drawing in the
- * embedded face the rest of the page uses. The one thing it CANNOT do is count
- * pages: Chrome has no `@page` margin boxes, and `counter(page)` outside one
- * evaluates to 0 (measured the same day). So `n / total` stays in Chrome's
- * footer template, which draws it on the line below this one, inside the
- * bottom margin band. Two lines rather than one, because the band begins where
- * this element ends and nothing can straddle the two.
+ * The element went on 2026-09-15, after a visual review of the rendered PDF cut
+ * the credit line it carried. The page number was the only other thing in the
+ * band and it was never in this file: Chrome has no `@page` margin boxes, and
+ * `counter(page)` outside one evaluates to 0, so it draws from the footer
+ * template in scripts/resume-sheet.mjs and draws there still.
  */
-.foot {
-  position: fixed;
-  left: 0;
-  right: 0;
-  /*
-   * Zero, and it cannot be anything else. A fixed element is positioned against
-   * the PAGE AREA, and anything outside that area is clipped: measured
-   * 2026-09-15, a `bottom: -34.8pt` meant to drop the foot into @page's 0.72in
-   * bottom margin rendered on no page at all. So the foot sits on the bottom
-   * edge of the text column, at about 52pt off the paper, and the page number
-   * Chrome draws sits just under it inside the margin band.
-   */
-  bottom: 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding: 0;
-  font-family: 'IBM Plex Mono';
-  font-size: 6.8pt;
-  line-height: 1;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
 
 h1 {
   font-family: 'Space Grotesk';

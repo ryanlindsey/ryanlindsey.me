@@ -65,7 +65,6 @@ consumer platform serving more than 8 million monthly active users. Reports span
 Android.
 • Decoupled deployment from feature release, so the product and go-to-market teams could control launch timing
 independently of engineering deploys. This removed a standing coupling between shipping software and announcing it.
-R Y A N L I N D S E Y · S E N I O R E N G I N E E R I N G M A N A G E R R Y A N L I N D S E Y . M E
 
 --- page 2 of 3 ---
 
@@ -113,7 +112,6 @@ technical assessment during the conceptual phase of new work.
 • Recognized with Lester Wunderman awards for the Southwest Airlines "A new form of free media" campaign (2009) and
 the Toshiba "Gamer Preparedness" (2009) and "Boring vs Normal" (2008) campaigns, and with a 38th Annual
 Creativity Award for Toshiba "Fusion Finish" (2008).
-R Y A N L I N D S E Y · S E N I O R E N G I N E E R I N G M A N A G E R R Y A N L I N D S E Y . M E
 
 --- page 3 of 3 ---
 
@@ -162,4 +160,3 @@ disclosure controls, AI Gateway
 PLATFORM AND DELIVERY CI/CD, Blue/green deployment, CDN and edge caching, Bot defense and mitigation, API
 design, High availability, Serverless, Infrastructure as code, Containerization
 LANGUAGES AND RUNTIMES TypeScript, JavaScript, ESNext, Ruby, Node.js, Python, *nix shell
-R Y A N L I N D S E Y · S E N I O R E N G I N E E R I N G M A N A G E R R Y A N L I N D S E Y . M E

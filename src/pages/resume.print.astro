@@ -365,26 +365,23 @@ const fields: Field[] = [
     )}
 
     {/*
-      THE RUNNING FOOT. Drawn in the page rather than in Chrome's footer
-      template, because that template's document does not load webfonts and
-      every glyph it drew was a host system serif -- see the long note on
-      `.foot` in src/styles/resume-sheet.css for the measurement and what it
-      broke. `position: fixed` repeats this on every sheet.
+      THERE IS NO RUNNING FOOT HERE, and the absence is a decision rather than
+      an oversight. A `.foot` element drew `{name} · {label}` and the site URL on
+      every sheet until 2026-09-15, when a visual review of the rendered PDF cut
+      that line and kept the numbering alone. See the note where its rule was in
+      src/styles/resume-sheet.css for what the element cost to get right, which
+      is what anyone restoring one would pay again.
 
-      The page number is NOT here, and cannot be: `counter(page)` outside an
+      Nothing left the text layer with it. The name is in the docline and the
+      masthead, the label beside it, and the URL in the contact block, which is
+      where the gate's `fields` and `links` checks find all three.
+
+      The page number is not here and never could be: `counter(page)` outside an
       `@page` margin box evaluates to 0 in Chrome. scripts/resume-sheet.mjs
-      still passes a footer template carrying that one field, which draws on the
-      line below this one, inside @page's bottom margin.
-
-      Read from the record for the same reason the docline above is: a value
-      typed here is wrong the first time the YAML changes, and wrong silently.
+      passes a footer template carrying that one field, which draws inside
+      @page's bottom margin. Its baseline did not move when the foot went,
+      because the two were never in the same box.
     */}
-    <div class="foot" aria-hidden="true">
-      <span>
-        {resume.basics.name} · {resume.basics.label}
-      </span>
-      <span>{resume.basics.url ? displayUrl(resume.basics.url) : ''}</span>
-    </div>
 
     {/*
       `is:inline` IS LOAD-BEARING, not a preference. Without it Astro bundles

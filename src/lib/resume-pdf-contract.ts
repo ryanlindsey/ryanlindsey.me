@@ -75,7 +75,17 @@
 // rendered and scripts/resume-gate.mjs checked, so a bump here now moves the
 // key that workflow publishes to and the key /resume.pdf reads from together.
 // A bump with no matching golden fails the `contract` check in the gate.
-export const RESUME_PDF_CONTRACT_VERSION = 4;
+// 5 since 2026-09-15: a visual review of the rendered PDF cut the credit line
+// from the bottom band, and the `.foot` element that drew it is gone. The page
+// number stays, in the position it already had, so the band is one line rather
+// than two and identical résumé data renders a different sheet.
+//
+// Unlike version 4's bump this one moves live bytes. Since #186 this constant
+// picks the key .github/workflows/resume-pdf.yml publishes to and the key
+// /resume.pdf reads from, so without it the workflow would read a hash it has
+// already seen, skip the upload, and go on serving the sheet with the credit
+// line on it.
+export const RESUME_PDF_CONTRACT_VERSION = 5;
 
 const encoder = new TextEncoder();
 
