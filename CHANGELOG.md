@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.21.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.20.1...ryanlindsey-me-v1.21.0) (2026-09-15)
+
+
+### Features
+
+* **resume:** gate the sheet in CI on extraction, fonts, pages and links ([#202](https://github.com/ryanlindsey/ryanlindsey.me/issues/202)) ([13543f5](https://github.com/ryanlindsey/ryanlindsey.me/commit/13543f5507c0a3ba20b22d26d064808aaa689810))
+* **resume:** publish the sheet to R2 from GitHub Actions ([#203](https://github.com/ryanlindsey/ryanlindsey.me/issues/203)) ([418885f](https://github.com/ryanlindsey/ryanlindsey.me/commit/418885f5f4df828acbcabc0d1ccef95b1a056763))
+* **resume:** render the résumé sheet from its own /resume.print route ([#198](https://github.com/ryanlindsey/ryanlindsey.me/issues/198)) ([468774e](https://github.com/ryanlindsey/ryanlindsey.me/commit/468774eb097d5665b93a8c3376af5438047f84a3))
+* **resume:** render the sheet in a script and record its golden extraction ([#201](https://github.com/ryanlindsey/ryanlindsey.me/issues/201)) ([97de84c](https://github.com/ryanlindsey/ryanlindsey.me/commit/97de84cfd520e6362cebe3a54cb15f40c577be58))
+* **resume:** retire the runtime render path and serve the PDF from R2 ([#204](https://github.com/ryanlindsey/ryanlindsey.me/issues/204)) ([1a0417e](https://github.com/ryanlindsey/ryanlindsey.me/commit/1a0417e25715c48e7110f7bea79b65a56a1dc21e))
+* **resume:** stamp PDF metadata without rewriting the document ([#200](https://github.com/ryanlindsey/ryanlindsey.me/issues/200)) ([d8c144d](https://github.com/ryanlindsey/ryanlindsey.me/commit/d8c144d727cba815230df771558f0eefa9cf0c48)), closes [#182](https://github.com/ryanlindsey/ryanlindsey.me/issues/182)
+
+
+### Bug Fixes
+
+* **resume:** publish to R2 over the S3 API, not the Cloudflare REST API ([#206](https://github.com/ryanlindsey/ryanlindsey.me/issues/206)) ([c1db00e](https://github.com/ryanlindsey/ryanlindsey.me/commit/c1db00e255e500162acef688ed4f8d2044dbe48a))
+
+
+### Documentation
+
+* **resume:** state why the REST API refused the R2 token, and correct the checksum note ([#207](https://github.com/ryanlindsey/ryanlindsey.me/issues/207)) ([27e9613](https://github.com/ryanlindsey/ryanlindsey.me/commit/27e961307c7931fc8c99fe8509bed1e0e05346ec)), closes [#205](https://github.com/ryanlindsey/ryanlindsey.me/issues/205)
+
 ## [1.20.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.20.0...ryanlindsey-me-v1.20.1) (2026-09-15)
 
 
