@@ -128,5 +128,8 @@ jobs:
           "verapdf-greenfield-${VERAPDF_VERSION}/verapdf-install" "${RUNNER_TEMP}/auto-install.xml"
 
           cd "${GITHUB_WORKSPACE}"
-          "${RUNNER_TEMP}/verapdf/verapdf" --flavour ua1 --format text \
+          # --verbose is what makes this a report rather than a verdict: without
+          # it the text format prints one FAIL line and names no rule, which is
+          # a step that runs and tells nobody anything.
+          "${RUNNER_TEMP}/verapdf/verapdf" --flavour ua1 --format text --verbose \
             tests/fixtures/resume-sheet.pdf
