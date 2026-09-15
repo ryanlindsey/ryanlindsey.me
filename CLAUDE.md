@@ -74,6 +74,12 @@ Collections are defined in `src/content.config.ts`: `posts` and `caseStudies` as
 
 Every draft has a real route by design. `src/lib/unindexed-routes.mjs` is what keeps drafts and scoped `/fit/r/<id>` URLs out of the sitemap, so a new unpublished or token-bearing route needs a line there rather than trusting the listing pages.
 
+### DNS, which this repository does not manage
+
+The `ryanlindsey.me` zone carries two DNS-AID entrypoint records, added by hand in the Cloudflare dashboard. `_index._agents` is a ServiceMode SVCB record targeting the apex, and the document it stands for is `/.well-known/ai-catalog.json`. `_mcp._agents` targets `mcp.ryanlindsey.me`, and the endpoint path comes from the server card at `/.well-known/mcp/server-card.json`.
+
+Neither record names its own path, and not by choice. The draft defines a `well-known` service parameter for exactly that job, and Cloudflare rejects it: the parameter has no assigned IANA key number, and an unknown key fails validation. So each record carries `alpn` and `port`, and the path lives one fetch away in the document its target serves. Moving or renaming either document breaks a DNS record that no test in this repository can see.
+
 ## Tests
 
 Vitest plus `createTestHarness` from wrangler, booting real Workers inside workerd. `tests/workers.ts` holds the shared worker lists and the reasoning behind each override; read it before adding a suite. The site Worker boots from the adapter's build output rather than from the source config, so the tests exercise the artifact that ships.
