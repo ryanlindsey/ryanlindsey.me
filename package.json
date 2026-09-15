@@ -19,6 +19,7 @@
     "token": "node scripts/token.mjs",
     "private-doc": "node scripts/private-doc.mjs",
     "resume:pdf": "astro build && node scripts/resume-sheet.mjs",
+    "resume:gate": "node scripts/resume-gate.mjs",
     "evals": "node evals/run.mjs"
   },
   "dependencies": {

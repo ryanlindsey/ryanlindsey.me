@@ -278,6 +278,16 @@ describe('the XMP packet', () => {
     expect(xmp()).toContain(`<dc:identifier>${fields.identifier}</dc:identifier>`);
   });
 
+  test('identifies itself as PDF/UA-1, which clause 5 requires of any such file', () => {
+    // Without this schema veraPDF reports a violation before it has looked at
+    // the structure at all, so the file cannot be clean without it. It is a
+    // statement of the target: scripts/resume-gate.mjs runs veraPDF report-only
+    // because Chrome gives the link annotations no alternate description, and
+    // this module appends rather than rewrites, so it cannot add one.
+    expect(xmp()).toContain('xmlns:pdfuaid="http://www.aiim.org/pdfua/ns/id/"');
+    expect(xmp()).toContain('<pdfuaid:part>1</pdfuaid:part>');
+  });
+
   test('is stored uncompressed, so the bytes stay readable without a parser', () => {
     const dict = dictAround(xmp(), '/Subtype /XML');
     expect(dict).toContain('/Type /Metadata');
