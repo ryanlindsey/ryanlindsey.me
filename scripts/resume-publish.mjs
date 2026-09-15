@@ -15,10 +15,11 @@
  * exists is cheap -- rather than paying for a full render on every push to main
  * to discover the sheet did not change. The epic says "one request"; it is two,
  * because publishDecision below probes both keys, and the reason it has to is
- * recorded there. There is deliberately no
- * `paths:` filter on the workflow: a filter listing the YAML and the route is
- * exactly how a stylesheet change silently fails to republish, and the hash
- * gate here is the correctness mechanism instead.
+ * recorded there.
+ *
+ * There is deliberately no `paths:` filter on the workflow: a filter listing the
+ * YAML and the route is exactly how a stylesheet change silently fails to
+ * republish, and the hash gate here is the correctness mechanism instead.
  *
  * WHAT THE HASH COVERS, AND WHAT IT DOES NOT. The résumé YAML and
  * RESUME_PDF_CONTRACT_VERSION, and nothing else -- not the route, not the
@@ -340,8 +341,8 @@ export async function publishPlan(source) {
  * the résumé.
  *
  * SO THE SECOND PROBE STAYS, and the justification for it is now the plainer
- * one it always also had: the two keys are written by two `wrangler r2 object
- * put` calls, and the second can fail on its own. A run that uploads the hashed
+ * one it always also had: the two keys are written by two separate
+ * `put-object` calls, and the second can fail on its own. A run that uploads the hashed
  * key and then fails leaves a bucket this function must not call finished --
  * which matters more since #186, because /resume.pdf's fallback reads the
  * alias and a missing alias is the difference between a stale sheet and a 503.

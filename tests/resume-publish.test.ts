@@ -151,9 +151,12 @@ describe('the S3 endpoint', () => {
 
 describe('objectPutArguments', () => {
   /*
-   * ONE COPY OF THESE VALUES, in src/lib/resume-pdf-contract.ts, read by the
-   * flags here and by the `httpMetadata` the Worker passes to R2.put. There are
-   * still two readers: #186 retires the second, and has not merged.
+   * ONE COPY OF THESE VALUES, in src/lib/resume-pdf-contract.ts. There was a
+   * second reader until #186: the `httpMetadata` the Worker passed to R2.put on
+   * its own render. The constant stays shared because /resume.pdf and
+   * tests/resume-pdf.test.ts now assert these exact values on the response the
+   * stamp below produces, so the two ends of one contract are still checked
+   * against each other.
    *
    * An earlier draft of this test compared literals to literals, which would
    * have gone on passing while the two copies drifted apart. A PDF served with
