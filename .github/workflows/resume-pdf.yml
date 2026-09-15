@@ -43,47 +43,6 @@ concurrency:
   group: resume-pdf
 
 jobs:
-  # TEMPORARY -- REMOVE BEFORE MERGE. Proves the S3 credentials, the endpoint
-  # and the argument shape before any of this reaches main, because the flags
-  # could not be validated locally and four runs have already been spent
-  # discovering credential problems in production.
-  #
-  # UNGUARDED, SO IT RUNS FROM A BRANCH, and therefore READ-ONLY: one
-  # head-object and nothing else. The publish job below is guarded to main so a
-  # branch dispatch cannot put a branch's resume into the bucket; this job holds
-  # no write of any kind, so that guard has nothing to protect here.
-  #
-  # A 404 IS A PASS. resume/latest.pdf does not exist yet, so
-  # `An error occurred (404) ... HeadObject` means the request was signed,
-  # accepted and answered -- which is the whole question. A 401, 403,
-  # SignatureDoesNotMatch or InvalidAccessKeyId means the credentials or the
-  # endpoint are wrong.
-  verify-credentials:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-      - name: Head the alias key
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.RLME_R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.RLME_R2_SECRET_ACCESS_KEY }}
-        run: |
-          aws --version
-          node -e "
-            const { objectHeadArguments } = await import('./scripts/resume-publish.mjs');
-            console.log(objectHeadArguments('resume/latest.pdf').join(' '));
-          " --input-type=module
-          set +e
-          OUT=$(AWS_DEFAULT_REGION=auto aws s3api head-object \
-            --bucket ryanlindsey-me-assets \
-            --key resume/latest.pdf \
-            --endpoint-url https://1b764d090899bf1ee61a8d1e87c10710.r2.cloudflarestorage.com 2>&1)
-          echo "$OUT"
-          echo "$OUT" | grep -q 'An error occurred (404) when calling the HeadObject operation' \
-            && { echo "PASS: signed, accepted, object simply absent"; exit 0; }
-          echo "$OUT" | grep -q '^{' && { echo "PASS: object exists and was read"; exit 0; }
-          echo "FAIL: not an authenticated answer"; exit 1
-
   publish:
     # A dispatch can name any ref, and this job renders that ref's résumé and
     # puts it straight into the production bucket. Restricting the job rather

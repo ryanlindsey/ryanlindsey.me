@@ -224,8 +224,18 @@ describe('probeOutcome', () => {
    * strip rot silently until some future CLI started colouring again.
    */
   test('reads the AWS not-found status as absent, through ANSI colour', () => {
+    // MEASURED 2026-09-15 against the real endpoint from the runner, aws-cli
+    // 2.36.40 on ubuntu-24.04, asking for a key that did not exist:
+    //
+    //   aws: [ERROR]: An error occurred (404) when calling the HeadObject operation: Not Found
+    //
+    // The `aws: [ERROR]: ` prefix is the CLI's own and is why the regex in
+    // probeOutcome is unanchored. The ESC codes are added on top so the ANSI
+    // strip keeps its coverage: the AWS CLI does not colour this message,
+    // wrangler did, the strip is inherited from that version, and a plain
+    // fixture would let it rot until some future CLI started colouring again.
     const stderr =
-      '\u001b[31mAn error occurred (404) when calling the HeadObject operation: Not Found\u001b[0m';
+      '\u001b[31maws: [ERROR]: An error occurred (404) when calling the HeadObject operation: Not Found\u001b[0m';
 
     expect(probeOutcome({ stderr })).toBe('absent');
   });
