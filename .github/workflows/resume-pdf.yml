@@ -6,9 +6,14 @@ name: resume-pdf
 # NO `paths:` FILTER, DELIBERATELY. A filter listing the YAML and the route is
 # exactly how a stylesheet change silently fails to republish. The hash gate in
 # the `plan` step is the correctness mechanism instead: it computes the content
-# hash and asks R2 whether that object is already there. Running this job to
-# discover the sheet has not changed costs one request and about twenty seconds,
-# because everything expensive below is gated on that answer.
+# hash and asks R2 whether both keys are already there. Running this job to
+# discover the sheet has not changed costs two requests and about twenty
+# seconds, because everything expensive below is gated on that answer.
+#
+# Two rather than one because the Worker still writes the content-addressed key
+# at runtime until issue 06 lands, so that key alone does not answer whether
+# this workflow has ever published. publishDecision() in
+# scripts/resume-publish.mjs carries the full reasoning.
 #
 # THIS IS THE ONLY WORKFLOW IN THE REPOSITORY THAT HOLDS A CLOUDFLARE
 # CREDENTIAL, and CLAUDE.md records why the credential is scoped the way it is.
@@ -20,6 +25,11 @@ on:
   # then failed leaves the content-addressed key absent, so a dispatch
   # re-publishes both.
   workflow_dispatch:
+    inputs:
+      force:
+        description: 'Republish both keys even when the bucket already holds them'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -32,6 +42,11 @@ concurrency:
 
 jobs:
   publish:
+    # A dispatch can name any ref, and this job renders that ref's résumé and
+    # puts it straight into the production bucket. Restricting the job rather
+    # than the publish step means a dispatch from a branch reads as skipped in
+    # the Actions UI instead of running green having published nothing.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -63,7 +78,19 @@ jobs:
         id: plan
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.RLME_R2_STORAGE }}
+          RESUME_PUBLISH_FORCE: ${{ inputs.force }}
         run: node scripts/resume-publish.mjs plan
+
+      # EVERY STEP BELOW IS GATED ON ONE STRING, so a plan that exits 0 without
+      # emitting it would skip the whole job and report success. That is the
+      # frozen file this epic exists to fix, wearing a green check. The script
+      # guards its own entry point carefully for the same reason; this is the
+      # assertion that the guard worked.
+      - name: Assert the plan answered
+        if: steps.plan.outputs.publish != 'true' && steps.plan.outputs.publish != 'false'
+        run: |
+          echo "The plan step emitted no publish output. Nothing was checked and nothing would be published."
+          exit 1
 
       - name: Build
         if: steps.plan.outputs.publish == 'true'

@@ -405,25 +405,28 @@ function checkContract() {
   const goldenMoved = !gitSucceeds(['diff', '--quiet', mergeBase, 'HEAD', '--', GOLDEN]);
   if (!goldenMoved) return { ok: true, detail: 'the golden is unchanged on this branch' };
 
-  // `git show` of a path that is not in that commit exits non-zero, and run()
-  // turns that into a throw. A stack trace is the wrong report here: the check
-  // below already says what a missing version means, so a revision that does
-  // not carry the file reads as "no version" and fails as one.
-  const showOrEmpty = (revision) => {
-    try {
-      return run('git', ['show', `${revision}:${CONTRACT_SOURCE}`]);
-    } catch {
-      return '';
-    }
-  };
-  const version = (source) => source.match(/RESUME_PDF_CONTRACT_VERSION\s*=\s*(\d+)/)?.[1];
-  const before = version(showOrEmpty(mergeBase));
-  const after = version(showOrEmpty('HEAD'));
+  // A revision that predates #185 does not carry CONTRACT_SOURCE at all, and
+  // `git show` of a missing path exits non-zero, which run() turns into a
+  // throw. Asking `cat-file -e` first separates "that revision has no such
+  // file", which the check below reports cleanly, from a git that is genuinely
+  // broken, which still throws rather than being flattened into the same
+  // message.
+  const versionAt = (revision) =>
+    gitSucceeds(['cat-file', '-e', `${revision}:${CONTRACT_SOURCE}`])
+      ? run('git', ['show', `${revision}:${CONTRACT_SOURCE}`]).match(
+          /RESUME_PDF_CONTRACT_VERSION\s*=\s*(\d+)/,
+        )?.[1]
+      : undefined;
+  const before = versionAt(mergeBase);
+  const after = versionAt('HEAD');
 
   if (!before || !after) {
+    const missing = [!before && `merge base ${mergeBase.slice(0, 9)}`, !after && 'HEAD']
+      .filter(Boolean)
+      .join(' and ');
     return {
       ok: false,
-      detail: `could not read RESUME_PDF_CONTRACT_VERSION from ${CONTRACT_SOURCE}`,
+      detail: `could not read RESUME_PDF_CONTRACT_VERSION from ${CONTRACT_SOURCE} at ${missing}`,
     };
   }
   return before === after

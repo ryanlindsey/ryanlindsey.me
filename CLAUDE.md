@@ -22,6 +22,8 @@ Deploys run on Workers Builds from `main`. CI has no deploy step. It holds exact
 | `npm run evals`                   | the model evals, against a deployed endpoint (see `evals/README.md`)    |
 | `npm run token`                   | mint, list and revoke scoped tokens                                     |
 | `npm run private-doc`             | put one document into the private R2 bucket                             |
+| `npm run resume:pdf`              | `astro build` then render the résumé sheet and its golden extraction    |
+| `npm run resume:gate`             | assert the rendered sheet, needs poppler and a prior render             |
 
 `npm test` does not typecheck. Run `npm run check` before pushing; CI runs check, lint, build and test in that order, and the typecheck catches what vitest never sees.
 
@@ -32,7 +34,7 @@ npm run build && npx vitest run tests/mcp-search.test.ts
 npx vitest run tests/mcp-search.test.ts -t 'name of the test'
 ```
 
-CI's `checks` workflow is the gate that matters. A red Cloudflare Workers Builds check on a pull request does not mean the build is broken.
+CI's `checks` workflow is the gate that matters on a pull request. A red Cloudflare Workers Builds check on a pull request does not mean the build is broken. The `resume-pdf` workflow gates as well, on pushes to `main` and on manual dispatch rather than on pull requests, and it runs the same résumé gate again before it uploads anything.
 
 ## Architecture
 
@@ -67,6 +69,8 @@ Gated tools are registered only for a request whose grant carries the matching s
 `tests/mcp-env.test.ts` regenerates the MCP binding list with `wrangler types` and fails when `McpEnv` drifts from `workers/mcp/wrangler.jsonc` in either direction. Adding a binding means editing both.
 
 The `x-release-please-version` marker on one line of `workers/mcp/src/server.ts` is what keeps the version the MCP server advertises in step with `package.json`. Moving the version off that line, or letting a formatter split the line, strands it silently.
+
+Two writers share the `resume/<hash>.pdf` key in `ryanlindsey-me-assets`, and this is temporary. `.github/workflows/resume-pdf.yml` publishes the gated three-page sheet there, and `regenerateResumePdf` in `src/lib/resume-pdf.ts` still writes the same key from the Worker, on the 05:17 cron and on any stale or cold-miss request to `/resume.pdf`, rendering `/resume?print` instead and stamping no metadata. So the Worker can overwrite what the workflow published, because CI writes R2 and does not write the KV manifest the Worker gates on. Widening the token to reach KV is the one thing the credential's scope rules out, so the workflow probes `resume/latest.pdf` as well as the hashed key, and a dispatch with `force` is the repair. Issue 06 retires the runtime path and ends this.
 
 ### Content
 

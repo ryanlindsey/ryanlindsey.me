@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
   RESUME_PDF_CONTRACT_VERSION,
+  RESUME_PDF_HTTP_METADATA,
   resumePdfKey,
   resumeSourceHash,
 } from '../src/lib/resume-pdf-contract';
@@ -12,6 +13,7 @@ import {
   RESUME_ASSETS_BUCKET,
   objectPutArguments,
   probeOutcome,
+  publishDecision,
   publishPlan,
 } from '../scripts/resume-publish.mjs';
 
@@ -62,23 +64,67 @@ describe('publishPlan', () => {
   });
 });
 
+/*
+ * TWO WRITERS, ONE KEY SPACE, UNTIL 06. src/lib/resume-pdf.ts still writes
+ * `resume/<hash>.pdf` to this same bucket, from the 05:17 cron and from every
+ * stale or cold-miss request to /resume.pdf. So the content-addressed key can
+ * already be there when this workflow first runs, and probing it alone would
+ * answer "unchanged" on a bucket that has never held `resume/latest.pdf`. The
+ * alias is probed for exactly that reason.
+ */
+describe('publishDecision', () => {
+  test('publishes nothing when both keys are already there', () => {
+    const decision = publishDecision({ hashedPresent: true, aliasPresent: true, force: false });
+
+    expect(decision.publish).toBe(false);
+    expect(decision.reason).toMatch(/already/i);
+  });
+
+  test('publishes when the content-addressed key is missing', () => {
+    const decision = publishDecision({ hashedPresent: false, aliasPresent: true, force: false });
+
+    expect(decision.publish).toBe(true);
+  });
+
+  /* The case a single probe misses, and the one that fails acceptance item 1. */
+  test('publishes when only the alias is missing', () => {
+    const decision = publishDecision({ hashedPresent: true, aliasPresent: false, force: false });
+
+    expect(decision.publish).toBe(true);
+    expect(decision.reason).toMatch(/latest\.pdf/);
+  });
+
+  test('force overrides a bucket that holds both', () => {
+    const decision = publishDecision({ hashedPresent: true, aliasPresent: true, force: true });
+
+    expect(decision.publish).toBe(true);
+    expect(decision.reason).toMatch(/force/i);
+  });
+});
+
 describe('objectPutArguments', () => {
   /*
-   * The same three values src/lib/resume-pdf.ts puts on the object it writes
-   * from the Worker. 06 retires that path, and when it does these become the
-   * only place they are set -- a PDF served with the wrong content type, or as
-   * an attachment rather than inline, is a regression no other test would see.
+   * ONE COPY OF THESE VALUES, in src/lib/resume-pdf-contract.ts, read by the
+   * wrangler flags here and by the `httpMetadata` src/lib/resume-pdf.ts passes
+   * to R2.put. An earlier draft of this test compared literals to literals,
+   * which would have gone on passing while the two copies drifted apart. A PDF
+   * served with the wrong content type, or as an attachment rather than inline,
+   * is a regression no other test in this repo would see.
    */
-  test('carries the response metadata the Worker path sets', () => {
+  test('carries the response metadata from the shared contract', () => {
     const arguments_ = objectPutArguments('resume/abc.pdf', 'tests/fixtures/resume-sheet.pdf');
+    const flag = (name: string) => arguments_[arguments_.indexOf(name) + 1];
 
     expect(arguments_).toContain('--remote');
     expect(arguments_.join(' ')).toContain(`${RESUME_ASSETS_BUCKET}/resume/abc.pdf`);
-    expect(arguments_[arguments_.indexOf('--content-type') + 1]).toBe('application/pdf');
-    expect(arguments_[arguments_.indexOf('--cache-control') + 1]).toBe('public, max-age=300');
-    expect(arguments_[arguments_.indexOf('--content-disposition') + 1]).toBe(
-      'inline; filename="ryan-lindsey-resume.pdf"',
-    );
+    expect(flag('--content-type')).toBe(RESUME_PDF_HTTP_METADATA.contentType);
+    expect(flag('--cache-control')).toBe(RESUME_PDF_HTTP_METADATA.cacheControl);
+    expect(flag('--content-disposition')).toBe(RESUME_PDF_HTTP_METADATA.contentDisposition);
+  });
+
+  test('the shared metadata still says inline PDF', () => {
+    expect(RESUME_PDF_HTTP_METADATA.contentType).toBe('application/pdf');
+    expect(RESUME_PDF_HTTP_METADATA.contentDisposition).toMatch(/^inline;/);
   });
 
   test('writes to the public assets bucket and never to the private one', () => {

@@ -90,3 +90,20 @@ export async function resumeSourceHash(source: string): Promise<string> {
 export function resumePdfKey(hash: string): string {
   return `resume/${hash}.pdf`;
 }
+
+/**
+ * The response metadata the stored object carries, in one place because two
+ * writers set it: `regenerateResumePdf` passes it to `R2.put` as `httpMetadata`,
+ * and scripts/resume-publish.mjs turns it into wrangler flags. It lived as
+ * literals in both until #185, which is a duplicate nothing would have caught:
+ * a sheet served as an attachment rather than inline, or as the wrong media
+ * type, renders as a download prompt and no test in this repo sees the headers.
+ *
+ * `contentDisposition` names the file a visitor saves, which is why it is a
+ * person's name and not the content-addressed key.
+ */
+export const RESUME_PDF_HTTP_METADATA = {
+  contentType: 'application/pdf',
+  cacheControl: 'public, max-age=300',
+  contentDisposition: 'inline; filename="ryan-lindsey-resume.pdf"',
+} as const;

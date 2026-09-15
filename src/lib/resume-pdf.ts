@@ -14,9 +14,17 @@ import resumeSource from '../content/resume/ryan-lindsey.yaml?raw';
 // process, and the two imports above resolve only inside a bundle. That file's
 // header carries the measurement. They are re-exported here so every existing
 // caller keeps importing them from where it always has.
-import { resumePdfKey, resumeSourceHash as hashResumeSource } from './resume-pdf-contract';
+import {
+  RESUME_PDF_HTTP_METADATA,
+  resumePdfKey,
+  resumeSourceHash as hashResumeSource,
+} from './resume-pdf-contract';
 
-export { RESUME_PDF_CONTRACT_VERSION, resumePdfKey } from './resume-pdf-contract';
+export {
+  RESUME_PDF_CONTRACT_VERSION,
+  RESUME_PDF_HTTP_METADATA,
+  resumePdfKey,
+} from './resume-pdf-contract';
 
 /** KV key holding the manifest. The manifest write is the commit point. */
 export const RESUME_PDF_MANIFEST_KEY = 'resume-pdf:manifest';
@@ -235,11 +243,7 @@ export async function regenerateResumePdf(
   const bytes = await render(resumePrintUrl(env));
   const key = resumePdfKey(currentHash);
   const object = await env.R2_ASSETS.put(key, bytes, {
-    httpMetadata: {
-      contentType: 'application/pdf',
-      cacheControl: 'public, max-age=300',
-      contentDisposition: 'inline; filename="ryan-lindsey-resume.pdf"',
-    },
+    httpMetadata: { ...RESUME_PDF_HTTP_METADATA },
   });
   if (object === null) {
     throw new Error(`R2 put of ${key} did not return an object`);

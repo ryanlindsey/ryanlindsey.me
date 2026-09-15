@@ -25,6 +25,12 @@
  * scripts/resume-gate.mjs, which fails any pull request that moves the golden
  * without moving the constant. The two are one mechanism in two files.
  *
+ * TWO WRITERS SHARE THIS KEY SPACE UNTIL 06. src/lib/resume-pdf.ts writes the
+ * same `resume/<hash>.pdf` from the Worker, on a daily cron and on stale or
+ * cold-miss requests to /resume.pdf, from a different route and without the
+ * metadata stamp. publishDecision() below carries what that costs and how this
+ * script survives it; `force` is the way out when it does not.
+ *
  * WHY WRANGLER RATHER THAN THE S3 API. scripts/private-doc.mjs already talks to
  * R2 this way and wrangler is already in the lockfile, so this adds no
  * dependency and no second spelling of an R2 write. The difference is only
@@ -34,13 +40,17 @@
  * scoped that way.
  */
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { resumePdfKey, resumeSourceHash } from '../src/lib/resume-pdf-contract.ts';
+import {
+  RESUME_PDF_HTTP_METADATA,
+  resumePdfKey,
+  resumeSourceHash,
+} from '../src/lib/resume-pdf-contract.ts';
 
 const root = new URL('../', import.meta.url);
 
@@ -62,22 +72,15 @@ const RESUME_YAML = new URL('src/content/resume/ryan-lindsey.yaml', root);
 /*
  * A PUBLIC identifier, not a secret: the same value sits in both
  * ./wrangler.jsonc and workers/mcp/wrangler.jsonc, committed in this public
- * repo, and is recorded as public in 10 §2.6. Hardcoded for the reason
- * scripts/private-doc.mjs gives at length -- a bucket-scoped token cannot list
- * accounts, so wrangler has no way to discover it and would refuse to guess.
+ * repo, and is recorded as public in 10 §2.6.
+ *
+ * Root wrangler.jsonc already carries it and this script runs from the repo
+ * root, so wrangler would find it there. Set anyway, and belt-and-braces is the
+ * honest description: `r2 object` is not a Worker command, nothing here passes
+ * `--config`, and a bucket-scoped token cannot list accounts to recover from
+ * wrangler ever deciding not to read that file for these subcommands.
  */
 const ACCOUNT_ID = '1b764d090899bf1ee61a8d1e87c10710';
-
-/**
- * The response metadata the object carries. These are the three values
- * src/lib/resume-pdf.ts puts on the object when the Worker writes it, repeated
- * rather than imported because they are wrangler flags here and an
- * `R2PutOptions` there. Issue 06 retires that path, and when it does this
- * becomes the only place they are set.
- */
-const CONTENT_TYPE = 'application/pdf';
-const CACHE_CONTROL = 'public, max-age=300';
-const CONTENT_DISPOSITION = 'inline; filename="ryan-lindsey-resume.pdf"';
 
 /* -------------------------------------------------------------------------- *
  * wrangler
@@ -88,6 +91,11 @@ const CONTENT_DISPOSITION = 'inline; filename="ryan-lindsey-resume.pdf"';
  * put --help`: `--content-type`, `--cache-control` and `--content-disposition`
  * are all flags it accepts, and `--remote` is what makes the write hit the real
  * bucket rather than a local simulation.
+ *
+ * The three values come from RESUME_PDF_HTTP_METADATA rather than from literals
+ * here, because src/lib/resume-pdf.ts sets the same three on the object it
+ * writes from the Worker, and two copies of them would drift the first time one
+ * was edited.
  */
 export function objectPutArguments(key, file) {
   return [
@@ -99,11 +107,11 @@ export function objectPutArguments(key, file) {
     file,
     '--remote',
     '--content-type',
-    CONTENT_TYPE,
+    RESUME_PDF_HTTP_METADATA.contentType,
     '--cache-control',
-    CACHE_CONTROL,
+    RESUME_PDF_HTTP_METADATA.cacheControl,
     '--content-disposition',
-    CONTENT_DISPOSITION,
+    RESUME_PDF_HTTP_METADATA.contentDisposition,
   ];
 }
 
@@ -178,6 +186,48 @@ export async function publishPlan(source) {
   return { hash, key: resumePdfKey(hash), aliasKey: RESUME_ALIAS_KEY };
 }
 
+/**
+ * BOTH KEYS ARE PROBED, AND THE REASON IS THAT THIS WORKFLOW IS NOT THE ONLY
+ * WRITER YET.
+ *
+ * `regenerateResumePdf` in src/lib/resume-pdf.ts still writes
+ * `resume/<hash>.pdf` into this same bucket, from the 05:17 cron and from every
+ * stale or cold-miss request to /resume.pdf, and it has been computing the same
+ * contract version 4 hash as this script. So the content-addressed key can
+ * already be sitting in the bucket the first time this workflow runs, written
+ * by the runtime path from a different route and without the metadata stamp.
+ * Probing that key alone would answer "unchanged" against a bucket that has
+ * never held `resume/latest.pdf`, the workflow would go green having published
+ * nothing, and the alias 06 reads from would not exist.
+ *
+ * So the alias is probed too, and a missing alias is enough to publish. Two
+ * requests rather than one on the no-op path.
+ *
+ * WHAT THIS STILL DOES NOT FIX, said out loud rather than left to be
+ * discovered: the runtime path can overwrite a key this workflow has just
+ * published, because CI writes R2 and does not write the KV manifest the
+ * Worker gates on. Until 06 retires that path, a cron run whose manifest is
+ * behind will re-render `/resume?print` and put its own bytes over
+ * `resume/<hash>.pdf`. Nothing here can prevent that without a KV credential,
+ * and widening the token is the one thing #185 rules out. A dispatch with
+ * `force` is the repair.
+ */
+export function publishDecision({ hashedPresent, aliasPresent, force }) {
+  if (force) {
+    return { publish: true, reason: 'force requested, republishing both keys' };
+  }
+  if (!hashedPresent) {
+    return { publish: true, reason: 'the content-addressed key is not in the bucket' };
+  }
+  if (!aliasPresent) {
+    return {
+      publish: true,
+      reason: `the content-addressed key is there and ${RESUME_ALIAS_KEY} is not`,
+    };
+  }
+  return { publish: false, reason: 'both keys are already in the bucket' };
+}
+
 async function planFromDisk() {
   return await publishPlan(await readFile(RESUME_YAML, 'utf8'));
 }
@@ -200,14 +250,18 @@ function emit(pairs) {
 
 const commands = {
   async plan() {
-    const { hash, key } = await planFromDisk();
-    const present = objectExists(key);
+    const { hash, key, aliasKey } = await planFromDisk();
+    const force = process.env.RESUME_PUBLISH_FORCE === 'true';
+    // Short-circuited by `force`, so a repair dispatch costs no probe at all.
+    const hashedPresent = force ? false : objectExists(key);
+    const aliasPresent = force ? false : hashedPresent && objectExists(aliasKey);
 
-    emit({ publish: String(!present), hash, key });
+    const { publish, reason } = publishDecision({ hashedPresent, aliasPresent, force });
+
+    emit({ publish: String(publish), hash, key });
     process.stdout.write(
-      present
-        ? `unchanged: ${key} is already in ${RESUME_ASSETS_BUCKET}, nothing to render or upload\n`
-        : `changed: ${key} is not in ${RESUME_ASSETS_BUCKET}, rendering and uploading\n`,
+      `${publish ? 'publishing' : 'skipping'}: ${reason}\n` +
+        `  bucket ${RESUME_ASSETS_BUCKET}\n  key    ${key}\n  alias  ${aliasKey}\n`,
     );
   },
 
@@ -243,8 +297,26 @@ const command = process.argv[2];
 /*
  * Guarded, because tests/resume-publish.test.ts imports this file for the pure
  * functions above and importing it must not reach for a credential.
+ *
+ * realpathSync on both sides, not a string compare of the raw values. Node
+ * resolves the main entry through symlinks while `process.argv[1]` is only made
+ * absolute, so a symlink anywhere in the invocation path makes a naive compare
+ * false, and the failure is the silent kind: the script exits 0 having done
+ * nothing, `plan` emits no output, every gated step in the workflow skips, and
+ * the run is green. The workflow asserts the output arrived for the same
+ * reason; a green run that published nothing is the frozen file this epic
+ * exists to fix.
  */
-if (process.argv[1] && import.meta.filename === process.argv[1]) {
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(import.meta.filename) === realpathSync(process.argv[1]);
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint()) {
   if (!commands[command]) {
     process.stderr.write('usage: resume-publish.mjs <plan|publish>\n');
     process.exit(2);
