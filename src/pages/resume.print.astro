@@ -365,6 +365,28 @@ const fields: Field[] = [
     )}
 
     {/*
+      THE RUNNING FOOT. Drawn in the page rather than in Chrome's footer
+      template, because that template's document does not load webfonts and
+      every glyph it drew was a host system serif -- see the long note on
+      `.foot` in src/styles/resume-sheet.css for the measurement and what it
+      broke. `position: fixed` repeats this on every sheet.
+
+      The page number is NOT here, and cannot be: `counter(page)` outside an
+      `@page` margin box evaluates to 0 in Chrome. scripts/resume-sheet.mjs
+      still passes a footer template carrying that one field, which draws on the
+      line below this one, inside @page's bottom margin.
+
+      Read from the record for the same reason the docline above is: a value
+      typed here is wrong the first time the YAML changes, and wrong silently.
+    */}
+    <div class="foot" aria-hidden="true">
+      <span>
+        {resume.basics.name} · {resume.basics.label}
+      </span>
+      <span>{resume.basics.url ? displayUrl(resume.basics.url) : ''}</span>
+    </div>
+
+    {/*
       `is:inline` IS LOAD-BEARING, not a preference. Without it Astro bundles
       this into an external module script, and the readiness contract stops
       being visible in the served document at all -- neither the attribute name

@@ -449,6 +449,26 @@ const xml = (value: string): string => value.replace(/[&<>"]/g, (char) => XML_ES
  * an agent holding the PDF where the structured record is, without embedding a
  * copy that would go stale the moment the YAML changed (epic #180, decision 6:
  * metadata only, no embedded attachment).
+ *
+ * THE pdfuaid DESCRIPTION STATES THE TARGET, NOT A PASSING GRADE. ISO 14289-1
+ * clause 5 requires a PDF/UA file to identify itself through this schema, and
+ * without it veraPDF reports a violation before it has looked at anything else
+ * -- so the file cannot be clean without it. It is its own rdf:Description
+ * because the schema is a separate namespace from Dublin Core, which is how
+ * every reference packet writes it.
+ *
+ * MEASURED 2026-09-15, AND THE SHEET DOES NOT YET MEET WHAT THIS CLAIMS. Chrome
+ * writes each Link annotation with a /StructParent and no /Contents, and there
+ * is no /Alt anywhere in the file, so none of the seven links has an alternate
+ * description. veraPDF, run for the first time that day by the report-only step
+ * in checks.yml, reports 7.18.1-2 and 7.18.5-2 for exactly that, and 7.1-3 for
+ * standard structure roles besides. That cannot be repaired here:
+ * this module appends and never rewrites, which is the guarantee that keeps the
+ * tag tree, the embedded fonts and those same annotations safe, and fixing the
+ * links would mean giving it up. The honest arrangement is this declaration
+ * plus the report-only veraPDF step in checks.yml: the target is stated, the
+ * gap is printed on every run, and neither is quietly true. Do not make that
+ * step blocking until the link descriptions exist.
  */
 function xmpPacket(fields: PdfMetadataFields): string {
   const keywords = fields.keywords
@@ -493,6 +513,9 @@ ${keywords}
    <xmp:ModifyDate>${xml(fields.date)}</xmp:ModifyDate>
    <xmp:MetadataDate>${xml(fields.date)}</xmp:MetadataDate>
    <pdf:Keywords>${xml(fields.keywords.join(', '))}</pdf:Keywords>
+  </rdf:Description>
+  <rdf:Description rdf:about="" xmlns:pdfuaid="http://www.aiim.org/pdfua/ns/id/">
+   <pdfuaid:part>1</pdfuaid:part>
   </rdf:Description>
  </rdf:RDF>
 </x:xmpmeta>

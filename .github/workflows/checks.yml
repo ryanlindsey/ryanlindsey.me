@@ -17,7 +17,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # fetch-depth: 0 because the résumé gate's `contract` check diffs this
+      # branch against its merge base. A shallow clone has no base ref, and the
+      # check fails loudly rather than passing on a history it cannot see.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v7
         with:
@@ -37,3 +42,100 @@ jobs:
 
       - name: Smoke tests
         run: npm test
+
+      # ---------------------------------------------------------------- #
+      # The résumé sheet (issue #184, epic #180)
+      #
+      # No test above this line can see the PDF: vitest may not reach a
+      # browser, so the sheet does not exist inside it. That is how an
+      # eight-page file carrying no email address and one hyperlink shipped
+      # and stayed shipped. These steps render the artifact and then look at
+      # it.
+      # ---------------------------------------------------------------- #
+
+      # pdffonts and pdfinfo answer for the `fonts` and `tagged` checks. The
+      # rest of the gate reads the PDF through unpdf, which is pure JavaScript
+      # and already in the lockfile, so this is the gate's only system
+      # dependency.
+      - name: Install poppler
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
+
+      # `npm run resume:pdf` would build a second time; the Build step above
+      # already wrote dist/client, which is what the renderer serves. Chrome is
+      # preinstalled on the runner image and scripts/resume-sheet.mjs finds it
+      # at /usr/bin/google-chrome-stable.
+      - name: Render the sheet
+        run: node scripts/resume-sheet.mjs
+
+      - name: Gate the sheet
+        run: npm run resume:gate
+
+      # REPORT ONLY, AND DELIBERATELY SO. Chrome writes every Link annotation
+      # with a /StructParent and no /Contents, and the file carries no /Alt at
+      # all, so the seven links have no alternate description. It cannot be
+      # repaired downstream -- src/lib/resume-pdf-metadata.ts appends and never
+      # rewrites, which is the guarantee protecting the tag tree, the embedded
+      # fonts and those annotations, and fixing the links means giving that up.
+      #
+      # MEASURED, not predicted. This step's first real run (2026-09-15) reports
+      # three rules: 7.18.1-2 and 7.18.5-2, both clause 7.18 and both the
+      # annotation gap above, plus 7.1-3, which is about standard structure
+      # roles and is a separate defect nobody had looked for. Keep this list in
+      # step with what the log actually says; a stale one is worse than none.
+      #
+      # So the report is printed on every run and blocks nothing. Making this
+      # step blocking before those three are addressed turns every pull request
+      # red for a defect none of them introduced.
+      #
+      # The runner image already carries a JDK, which is the only reason this
+      # is affordable here: veraPDF is a Java application and its installer is
+      # a 33 MB IzPack jar.
+      - name: PDF/UA-1 conformance (report only)
+        continue-on-error: true
+        env:
+          # Pinned. `releases/verapdf-installer.zip` is the moving latest, and a
+          # validator that changes under the build would make this report
+          # incomparable run to run. Verified 2026-09-15: this URL answers 200
+          # and the archive holds verapdf-greenfield-1.30.2/, containing the
+          # `verapdf-install` wrapper and verapdf-izpack-installer-1.30.2.jar.
+          VERAPDF_VERSION: 1.30.2
+          VERAPDF_URL: https://software.verapdf.org/releases/1.30/verapdf-greenfield-1.30.2-installer.zip
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}"
+          curl -fsSL -o verapdf.zip "${VERAPDF_URL}"
+          unzip -q verapdf.zip
+
+          # veraPDF's own template, from veraPDF-apps/auto-install-tmp.xml, with
+          # the install path pointed at the runner temp and the sample plugins
+          # left out. The CLI pack is the one that matters -- the `verapdf`
+          # executable comes from it, and selecting only the GUI installs an
+          # application with nothing to run.
+          cat > auto-install.xml <<XML
+          <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+          <AutomatedInstallation langpack="eng">
+          <com.izforge.izpack.panels.htmlhello.HTMLHelloPanel id="welcome"/>
+          <com.izforge.izpack.panels.target.TargetPanel id="install_dir">
+          <installpath>${RUNNER_TEMP}/verapdf</installpath>
+          </com.izforge.izpack.panels.target.TargetPanel>
+          <com.izforge.izpack.panels.packs.PacksPanel id="sdk_pack_select">
+          <pack index="0" name="veraPDF GUI" selected="true"/>
+          <pack index="1" name="veraPDF CLI" selected="true"/>
+          <pack index="2" name="veraPDF Documentation" selected="false"/>
+          <pack index="3" name="veraPDF Sample Plugins" selected="false"/>
+          </com.izforge.izpack.panels.packs.PacksPanel>
+          <com.izforge.izpack.panels.install.InstallPanel id="install"/>
+          <com.izforge.izpack.panels.finish.FinishPanel id="finish"/>
+          </AutomatedInstallation>
+          XML
+
+          # An absolute path, because the wrapper cd's to its own directory
+          # before handing the argument to java.
+          "verapdf-greenfield-${VERAPDF_VERSION}/verapdf-install" "${RUNNER_TEMP}/auto-install.xml"
+
+          cd "${GITHUB_WORKSPACE}"
+          # --verbose is what makes this a report rather than a verdict: without
+          # it the text format prints one FAIL line and names no rule, which is
+          # a step that runs and tells nobody anything.
+          "${RUNNER_TEMP}/verapdf/verapdf" --flavour ua1 --format text --verbose \
+            tests/fixtures/resume-sheet.pdf
