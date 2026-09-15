@@ -45,7 +45,15 @@ const PRIVATE_ACCESS_TEXT =
 export function buildAuthDoc(): string {
   const scopeList = PUBLIC_SCOPES.map((scope) => `- \`${scope}\``).join('\n');
 
-  return `# Authorization
+  // `# auth.md`, lowercase, matching the filename -- do not "fix" the
+  // capitalization. The canonical auth.md protocol
+  // (github.com/workos/auth.md) opens its own document with exactly this
+  // heading, and the epic's own acceptance scanner (isitagentready.com,
+  // verified against production 2026-09-14) checks for it literally: a
+  // different heading, however reasonable, reads to that scanner as a
+  // missing document and fails the check. This used to open
+  // `# Authorization`, which read fine to a person and failed exactly that.
+  return `# auth.md
 
 Most of this corpus needs no credential at all. An MCP client that connects to \`https://mcp.ryanlindsey.me/mcp\` with no \`Authorization\` header reaches the public tier: the résumé, every published case study and post, semantic search over that corpus, and a tool that explains how to reach Ryan. Every result cites a URL a browser can open on its own, and nothing served at this tier depends on holding a token.
 

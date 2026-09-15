@@ -29,7 +29,7 @@ test('every entry carries two to five representative queries', () => {
 });
 
 test('urn identifiers are unique and well formed', () => {
-  const ids = buildAiCatalog('https://ryanlindsey.me').entries.map((e) => e.id);
+  const ids = buildAiCatalog('https://ryanlindsey.me').entries.map((e) => e.identifier);
   expect(new Set(ids).size).toBe(ids.length);
   for (const id of ids) expect(id).toMatch(/^urn:air:ryanlindsey\.me:[a-z-]+:[a-z0-9-]+$/);
 });
@@ -37,6 +37,25 @@ test('urn identifiers are unique and well formed', () => {
 test('every ARD entry carries exactly one of url or data', () => {
   for (const entry of buildAiCatalog('https://ryanlindsey.me').entries) {
     expect(Number('url' in entry) + Number('data' in entry)).toBe(1);
+  }
+});
+
+// Epic-165 follow-up review, second wave, finding C: the manifest's shape was
+// designed without checking it against the real spec (`ards-project/ard-spec`,
+// `spec/schemas/ai-catalog.schema.json`), and the scanner (isitagentready.com)
+// caught what that missed -- `entries[].id` should have been `identifier`
+// (asserted above via `.identifier`), `specVersion` is an enum whose only
+// allowed value is `"1.0"`, and `host`, when present, requires `displayName`
+// and forbids any field the schema does not name (including the `url` this
+// manifest used to carry). Pinned here directly against the schema's own
+// requirements, not against this repo's prior shape.
+test('the manifest conforms to the real ARD schema: pinned specVersion and a schema-shaped host', () => {
+  const doc = buildAiCatalog('https://ryanlindsey.me');
+  expect(doc.specVersion).toBe('1.0');
+  expect(doc.host).toEqual({ displayName: 'ryanlindsey-me' });
+  for (const entry of doc.entries) {
+    expect(entry).toHaveProperty('identifier');
+    expect(entry).not.toHaveProperty('id');
   }
 });
 
@@ -115,7 +134,7 @@ test('every URL the discovery builders emit for the advertised surface actually 
     // the check here as a real failure rather than a silent skip, because a
     // future `data` entry would otherwise vanish from this loop instead of
     // being counted as a resource this test has not checked.
-    if (!('url' in entry)) throw new Error(`ARD entry ${entry.id} carries data, not a url`);
+    if (!('url' in entry)) throw new Error(`ARD entry ${entry.identifier} carries data, not a url`);
     return entry.url;
   });
 
