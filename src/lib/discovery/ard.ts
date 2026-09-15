@@ -55,7 +55,23 @@ export interface ArdManifest {
  */
 export function buildAiCatalog(origin: string): ArdManifest {
   return {
+    // `specVersion` names the version of THIS DOCUMENT FORMAT, not this
+    // site's software -- it is deliberately not `DISCOVERY_VERSION`
+    // (./version.ts), which tracks the release the MCP server advertises and
+    // has nothing to do with how an ARD manifest is shaped. There is no
+    // pinned external ARD schema this repository builds against to cite a
+    // version from, so '1.0.0' is not a citation of one -- it is this
+    // manifest's own starting value, to be bumped here if the shape below
+    // ever changes in a way a reader would need to detect.
     specVersion: '1.0.0',
+    // `host.name` identifies the Worker serving this document, not the
+    // person -- same value as `wrangler.jsonc`'s own `name` field and
+    // `server-card.ts`'s `serverInfo.name`, both of which are the site
+    // Worker's name regardless of which origin's copy of a document is being
+    // read (see that file's comment for why an identity string is a literal
+    // rather than derived from `origin`). `host.url`, unlike `host.name`,
+    // DOES vary with `origin`, for the reason this function's own docstring
+    // gives.
     host: { name: 'ryanlindsey-me', url: origin },
     entries: ADVERTISED_SURFACE.map((endpoint) => ({
       id: `urn:air:ryanlindsey.me:${endpoint.namespace}:${endpoint.name}`,
