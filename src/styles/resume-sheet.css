@@ -52,6 +52,18 @@
  * print palette in tokens.css rather than declaring a second one.
  */
 
+/*
+ * WHERE THAT LAST SENTENCE LANDS, because it is not the `:root` directly below.
+ * This one is the brand palette, and its pink `--accent` matches nothing in
+ * tokens.css's print block. The values that do match tokens.css:119-124 are in
+ * the monochrome pass at the foot of this file, which overrides every name
+ * declared here; that block's own comment says why it must stay last.
+ *
+ * The four sentences above are the text this file was required to carry
+ * verbatim, so they are left exactly as handed over and this paragraph is
+ * separate rather than folded into them.
+ */
+
 :root {
   --ink: #0a0a0b;
   --muted: #3f3f46;

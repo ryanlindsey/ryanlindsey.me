@@ -56,14 +56,34 @@ afterAll(async () => {
 const SHEET_PATH = '/resume.print/';
 
 /**
- * The résumé record, cast to the schema's OUTPUT type. The cast is safe for
- * this one file rather than in general: every field `content.config.ts` gives
- * a `.default([])` is written out explicitly in the YAML, so nothing the
- * assertions below read is a default the raw parse would leave undefined.
+ * The résumé record, cast to the schema's OUTPUT type.
+ *
+ * THE CAST IS A LIE IN ONE DIRECTION AND THE READS BELOW ALLOW FOR IT. Every
+ * field `content.config.ts` gives a `.default([])` -- `basics.profiles`,
+ * `work[].highlights`, `projects` and `projects[].highlights` -- is written out
+ * explicitly in today's YAML, so the cast is accurate right now. It is the raw
+ * parse, though: Zod's defaults never run here, so a future entry that
+ * legitimately omits `highlights:` arrives as `undefined` while the type says
+ * `string[]`.
+ *
+ * That would turn a `flatMap` into a TypeError, which is a test failing with a
+ * stack trace about a missing method instead of a report about the sheet. The
+ * defaulted fields are therefore read through `?? []` at their call sites. It
+ * costs nothing and weakens no assertion: an absent array and an empty one both
+ * mean "nothing to check here", which is the same answer Zod would have given.
  */
 const resume = parse(
   readFileSync(new URL('../src/content/resume/ryan-lindsey.yaml', import.meta.url), 'utf8'),
 ) as Resume;
+
+/**
+ * The two defaulted top-level arrays, read once through the guard the comment
+ * above describes, so no test below has to remember to. `education` and
+ * `skills` need no equivalent: the schema requires both, so a record without
+ * them never reaches a build.
+ */
+const profiles = resume.basics.profiles ?? [];
+const projects = resume.projects ?? [];
 
 /**
  * Astro's own text escaping, reproduced so expectations can be compared
@@ -93,6 +113,15 @@ function escapeHtml(text: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/** A literal for use inside a `RegExp`, so a URL's dots match only dots. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Every `<link rel="stylesheet">` href on a commentless page, in order. */
+const stylesheetHrefs = (markup: string): string[] =>
+  [...markup.matchAll(/<link rel="stylesheet" href="([^"]*)"/g)].map((match) => match[1]);
+
 /** The sheet as served, commentless -- see tests/markup.ts on why. */
 async function sheet(): Promise<string> {
   const response = await server.fetch(SHEET_PATH);
@@ -111,7 +140,7 @@ test('every contact value in the résumé record reaches the sheet', async () =>
   expect(basics.email, 'the record should carry an email').toBeTruthy();
   expect(basics.phone, 'the record should carry a phone number').toBeTruthy();
   expect(basics.url, 'the record should carry a url').toBeTruthy();
-  expect(basics.profiles.length, 'the record should carry at least one profile').toBeGreaterThan(0);
+  expect(profiles.length, 'the record should carry at least one profile').toBeGreaterThan(0);
 
   expect(html, 'the sheet should carry the email').toContain(basics.email);
   expect(html, 'the sheet should carry the phone number').toContain(basics.phone);
@@ -120,7 +149,7 @@ test('every contact value in the résumé record reaches the sheet', async () =>
   // DERIVED FROM THE ARRAY, which is the whole point of this assertion: a
   // third network added to the record has to appear on the sheet without an
   // edit to the page or to this file.
-  for (const profile of basics.profiles) {
+  for (const profile of profiles) {
     expect(html, `the sheet should carry the ${profile.network} url`).toContain(profile.url);
   }
 
@@ -142,11 +171,105 @@ test('the email and phone fields are dialable links, not plain text', async () =
   expect(html).toContain(`href="tel:+1${digits}"`);
 });
 
-test('every profile url is a link, not just printed text', async () => {
+/**
+ * Two halves of one row, asserted together because a test that checked either
+ * alone would miss the other.
+ *
+ * THE HREF carries the URL exactly as the record spells it, so the link
+ * annotation in the printed PDF resolves.
+ *
+ * THE TEXT is the URL with its scheme and any `www.` stripped -- `displayUrl`
+ * in src/pages/resume.print.astro, and this is the only place that function is
+ * observable at all. Every other URL assertion in this suite matches the full
+ * URL, which appears in the `href` whatever the text says, so a `displayUrl`
+ * that returned its input unchanged -- printing `https://www.linkedin.com/in/…`
+ * across a field column designed at 7.5pt -- passed every one of them.
+ *
+ * The expected text is computed here rather than imported, because the function
+ * lives in an `.astro` frontmatter block and no plain vitest process can import
+ * one. So the computed comparison is backed by two assertions that do not
+ * restate the transform: a printed URL must not begin with a scheme, and must
+ * not begin with `www.`. A reimplementation that drifted the same way twice
+ * still fails those.
+ */
+test('every printed URL drops its scheme while its link keeps it', async () => {
   const html = await sheet();
-  for (const profile of resume.basics.profiles) {
-    expect(html, `${profile.network} should be linked`).toContain(`href="${profile.url}"`);
+  const linked = [resume.basics.url, ...profiles.map((profile) => profile.url)].filter(
+    (url): url is string => typeof url === 'string' && url.length > 0,
+  );
+  expect(linked.length, 'the record should carry at least two linked URLs').toBeGreaterThan(1);
+
+  for (const url of linked) {
+    const anchor = new RegExp(`<a href="${escapeRegExp(url)}">([^<]*)</a>`).exec(html);
+    expect(anchor, `${url} should be linked, not printed as plain text`).not.toBeNull();
+
+    const printed = anchor?.[1] ?? '';
+    expect(printed, `${url} should print without its scheme or www.`).toBe(
+      url.replace(/^https?:\/\//, '').replace(/^www\./, ''),
+    );
+    expect(printed, `${url} printed a scheme`).not.toMatch(/^https?:/);
+    expect(printed, `${url} printed a www. prefix`).not.toMatch(/^www\./);
   }
+});
+
+/**
+ * THE PROPERTY THIS ROUTE EXISTS FOR, and the one nothing else in this
+ * repository can see.
+ *
+ * src/pages/resume.print.astro uses neither Base.astro nor Shell.astro, and
+ * forty lines across that file and src/styles/resume-sheet.css argue for it:
+ * those layouts pull in global.css, tokens.css, Tailwind's preflight and the
+ * theme script, and the measured three-page layout is a measurement of a
+ * document carrying none of them.
+ *
+ * THE REGRESSION IS NOT EXOTIC. The hand-written `<head>` tags on that page
+ * look like duplication of what Base.astro already renders, and the obvious
+ * tidy-up is to wrap the page in it. Every other test in this repository stays
+ * green if someone does: tests/seo.test.ts passes because the layout supplies
+ * the same tags, every assertion in this file passes because every value it
+ * checks still renders, and /resume is untouched. The sheet silently stops
+ * being three pages and nothing says so.
+ *
+ * THE SIBLING'S STYLESHEETS ARE FETCHED RATHER THAN NAMED. Asserting that the
+ * sheet does not link `Shell.<hash>.css` would hardcode a Vite chunk name that
+ * is not this repository's to promise. `/resume` is the page that does use
+ * Shell, so what it loads IS the definition of "what the site loads", and the
+ * two sets must not intersect.
+ *
+ * The count is links PLUS inline `<style>` blocks, not links alone: Astro
+ * inlines a stylesheet under 4 KB (`build.inlineStylesheets: 'auto'`), and the
+ * sheet's own bundle is 4.4 KB today. If it ever drops under that, this stays
+ * correct instead of going red for a reason that has nothing to do with
+ * layouts.
+ */
+test('the sheet loads its own stylesheet and nothing the site loads', async () => {
+  const html = await sheet();
+
+  const linked = stylesheetHrefs(html);
+  const inlined = [...html.matchAll(/<style[\s>]/g)].length;
+  expect(
+    linked.length + inlined,
+    `the sheet should load exactly one stylesheet, got ${linked.length} linked and ${inlined} inline`,
+  ).toBe(1);
+
+  const response = await server.fetch('/resume/');
+  expect(response.status, '/resume/ should be 200').toBe(200);
+  const siblingSheets = stylesheetHrefs(stripComments(await response.text()));
+  expect(
+    siblingSheets.length,
+    '/resume/ should load at least one stylesheet, or this test compares against nothing',
+  ).toBeGreaterThan(0);
+
+  const shared = linked.filter((href) => siblingSheets.includes(href));
+  expect(
+    shared,
+    "the sheet is loading the site's own bundle, so it has been wrapped in a layout -- see this page's header for why it must not be",
+  ).toEqual([]);
+
+  // The theme script is the other half of what a layout would bring, and it is
+  // inline rather than bundled, so it leaves no stylesheet for the check above
+  // to catch. A sheet printed on paper has no theme.
+  expect(html, 'the sheet should carry no theme machinery').not.toContain('data-theme');
 });
 
 test('the sheet refuses indexing', async () => {
@@ -204,8 +327,8 @@ test('every highlight in the résumé record prints on the sheet', async () => {
   // Work and projects both. Checking only `work` would let a project bullet
   // disappear silently, which is exactly the half of the sheet that is newest.
   const highlights = [
-    ...resume.work.flatMap((entry) => entry.highlights),
-    ...resume.projects.flatMap((project) => project.highlights),
+    ...resume.work.flatMap((entry) => entry.highlights ?? []),
+    ...(resume.projects ?? []).flatMap((project) => project.highlights ?? []),
   ];
   expect(highlights.length, 'the record should carry highlights').toBeGreaterThan(0);
 
@@ -326,8 +449,59 @@ test('every section of the record prints: summary, education and skills', async 
     );
   }
 
-  for (const project of resume.projects) {
-    expect(html, `${project.name} should appear`).toContain(escapeHtml(project.description));
+  /*
+   * BOTH THE NAME AND THE DESCRIPTION, and the heading asserted in the shape
+   * the `project.url ? <a> : name` branch produces.
+   *
+   * Until fix round 2 this loop's failure message named `project.name` while
+   * its only assertion read `project.description`, and nothing anywhere checked
+   * the name at all. A project that lost its heading, or a broken link branch
+   * that printed the URL where the title belongs, left every test in this file
+   * green.
+   */
+  for (const project of projects) {
+    const heading = project.url
+      ? `<span class="org-name"><a href="${project.url}">${escapeHtml(project.name)}</a></span>`
+      : `<span class="org-name">${escapeHtml(project.name)}</span>`;
+    expect(
+      html,
+      `${project.name} should head its entry${project.url ? ', linked to its url' : ''}`,
+    ).toContain(heading);
+    expect(html, `${project.name}'s description should appear`).toContain(
+      escapeHtml(project.description),
+    );
+  }
+});
+
+/**
+ * The run-in rows, pinned join by join.
+ *
+ * NOT A RESTATEMENT of the presence assertions above. Those ask whether a skill
+ * name and its keywords reached the page; this asks whether anything got
+ * BETWEEN them, which is a different failure and one the presence checks pass
+ * straight through.
+ *
+ * WHY IT MATTERS HERE AND NOWHERE ELSE ON THE SHEET. `.runin .sep` is
+ * `display: none` in Skills, so nothing absorbs whitespace written between the
+ * label and the keyword list: one newline in the template renders as a real
+ * space, and a space in front of the keywords pushes every row off the 116pt
+ * hanging column the `.runin` rules exist to hold. What removes it today is
+ * Astro's `compressHTML`, a default astro.config.mjs never sets -- so the
+ * layout of this row rests on a build-tool default rather than on anything in
+ * this repository. src/pages/resume.print.astro records that in full; this is
+ * the assertion that makes it fail loudly rather than shift quietly.
+ *
+ * Each row is asserted whole, so a stray space anywhere in the join fails.
+ */
+test('the run-in rows join their label to their value with no whitespace', async () => {
+  const html = await sheet();
+
+  for (const skill of resume.skills) {
+    expect(html, `${skill.name}'s row should carry no whitespace in its joins`).toContain(
+      `<span class="lead">${escapeHtml(skill.name)}</span><span class="sep"> · </span>${escapeHtml(
+        skill.keywords.join(', '),
+      )}`,
+    );
   }
 });
 
