@@ -621,6 +621,13 @@ test('carries no candidacy language on any public surface', async () => {
     // the other two résumé formats alongside the HTML page above.
     '/resume.md',
     '/resume.json',
+    // Issue #181: the print sheet is a fourth résumé surface, public HTML and
+    // served over the same origin, so it belongs in this sweep with the other
+    // three. It is `noindex` and unlisted, which is not the same as unreachable
+    // -- 09 §2 is about what a surface says, not about who is expected to find
+    // it. The static scan in tests/tier-invisibility.test.ts already reads all
+    // of src/, so this closes a runtime gap rather than an absolute one.
+    '/resume.print/',
     // Day 3 Task 9: the single highest-risk leak surface on this site is
     // /llms-full.txt (task-9-brief.md's own words) -- it concatenates every
     // published document into one response, so anything that leaks

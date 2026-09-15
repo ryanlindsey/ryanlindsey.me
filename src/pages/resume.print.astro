@@ -1,0 +1,395 @@
+---
+import '../styles/resume-sheet.css';
+import { getResume } from '../lib/resume-collection';
+import { formatDateRange, groupWorkByCompany } from '../lib/resume';
+import { buildPerson, stringifyJsonLd } from '../lib/structured-data';
+
+/*
+ * The print sheet (issue #181): the résumé as a designed three-page document,
+ * rendered from the same `resume` collection every other format reads.
+ *
+ * WHAT THIS ROUTE IS FOR. It is a render source rather than a page for a
+ * reader. /resume is the page a visitor lands on; this one exists so a
+ * renderer can fetch one document over HTTP and print it, which is why it
+ * carries `noindex, nofollow`, stays out of the sitemap
+ * (src/lib/unindexed-routes.mjs) and is linked from nowhere.
+ *
+ * THE SERVED SPELLING IS `/resume.print/`, WITH THE SLASH. Measured through the
+ * harness, 2026-09-15: this file emits `dist/client/resume.print/index.html`,
+ * the slashed form answers 200, and the bare `/resume.print` answers 307 to it.
+ * Worth knowing before pointing a renderer at the bare form and paying for a
+ * redirect on every run. tests/resume-sheet.test.ts pins both.
+ *
+ * IT USES NEITHER Base.astro NOR Shell.astro, deliberately. Those pull in
+ * global.css, tokens.css, the theme script and the site chrome, and avoiding
+ * all four is the entire reason this file exists -- src/styles/resume-sheet.css
+ * is the only stylesheet here. The cost is that the `<head>` tags
+ * tests/seo.test.ts asserts on every built page are hand-written below rather
+ * than inherited; that is the trade, and it is cheaper than teaching the site's
+ * layout to render nothing.
+ *
+ * PORTED FROM THE REFERENCE SHEET IN ISSUE #181, which is where the approved
+ * markup and the render measured from it live. There is a working copy at
+ * .superpowers/plans/issue-181-reference-sheet.html, and an earlier version of
+ * this line cited it instead -- but `.gitignore` excludes `.superpowers`, so
+ * that path is unknown to `git ls-files` and unopenable by a future reader, and
+ * the copy is abridged besides. Cite the issue.
+ *
+ * The class names and element shapes below are what src/styles/resume-sheet.css
+ * selects on, so they are reproduced exactly; only the content moved, from
+ * hardcoded markup to the collection. That stylesheet's header carries what has
+ * and has not been measured.
+ */
+const resume = await getResume();
+
+// Same grouping the HTML, Markdown and JSON formats use, from
+// src/lib/resume.ts. A second implementation here is the drift this repo has
+// already been bitten by once -- see that file's header.
+const workGroups = groupWorkByCompany(resume.work);
+
+/*
+ * The sitewide Person node, built the way src/layouts/Base.astro builds it and
+ * from the same record.
+ *
+ * A render source carrying structured data looks like belt and braces and is
+ * not. tests/seo.test.ts holds EVERY built page to "at least one JSON-LD block
+ * that parses and declares the schema.org context", and this page is built, so
+ * the sweep sees it. The alternative was an exemption in that test, which is
+ * precisely the hand-listed carve-out its own comments argue against: a list
+ * that silently stops covering the site the day someone adds the second entry
+ * to it.
+ *
+ * It costs nothing on paper. JSON-LD generates no box, so the measured
+ * three-page layout is untouched, and this is the same node from the same
+ * builder rather than a second description of the same person.
+ */
+const person = buildPerson({
+  name: resume.basics.name,
+  url: new URL('/', Astro.site).href,
+  jobTitle: resume.basics.label,
+  sameAs: resume.basics.profiles.map((profile) => profile.url),
+});
+
+/*
+ * BOTH HALVES COME FROM THE RECORD, so no page on this site spells "Ryan
+ * Lindsey" into a title by hand. The suffix order is not the reference sheet's
+ * (`Ryan Lindsey — Senior Engineering Manager`) and cannot be:
+ * tests/seo.test.ts requires every title to end with " — Ryan Lindsey" exactly
+ * once, which puts the name last.
+ */
+const title = `${resume.basics.label} — ${resume.basics.name}`;
+
+// E.164, derived rather than stored a second time. src/pages/resume.astro
+// carries the full reasoning on its own copy of this line, including why `+1`
+// is written in rather than mapped from `location.countryCode`; it is not
+// repeated here.
+const telHref = resume.basics.phone ? `tel:+1${resume.basics.phone.replace(/\D/g, '')}` : null;
+
+/**
+ * A URL as it should PRINT: scheme and `www.` gone, so the field column reads
+ * `linkedin.com/in/ryanclindsey` rather than a line of protocol. The `href`
+ * keeps the URL exactly as the record spells it -- what a reader sees and what
+ * a link annotation resolves to are two different jobs.
+ */
+function displayUrl(url: string): string {
+  return url.replace(/^https?:\/\//, '').replace(/^www\./, '');
+}
+
+interface Field {
+  key: string;
+  value: string;
+  href?: string;
+}
+
+/*
+ * Based, Email, Phone, Web, then every profile in the order the record lists
+ * them.
+ *
+ * THE PROFILE ROWS ARE DERIVED FROM THE ARRAY, not written out as GitHub and
+ * LinkedIn. A third network added to the résumé record appears on the sheet
+ * with no edit here, which is the failure mode this block is shaped against:
+ * the contact information going stale on the one artifact whose whole job is
+ * telling someone how to make contact.
+ *
+ * APPEARING IS NOT THE SAME AS FITTING, though. `.fields .k` is
+ * `flex: 0 0 58pt`, which at 7.5pt mono with 0.1em tracking holds about as much
+ * as "LINKEDIN" -- a longer `profile.network` wraps its label and grows a sheet
+ * whose whole property is being three pages. So a new profile needs the sheet
+ * re-measured, not merely looked at.
+ */
+const fields: Field[] = [
+  { key: 'Based', value: `${resume.basics.location.city}, ${resume.basics.location.region}` },
+  ...(resume.basics.email
+    ? [{ key: 'Email', value: resume.basics.email, href: `mailto:${resume.basics.email}` }]
+    : []),
+  ...(resume.basics.phone && telHref
+    ? [{ key: 'Phone', value: resume.basics.phone, href: telHref }]
+    : []),
+  ...(resume.basics.url
+    ? [{ key: 'Web', value: displayUrl(resume.basics.url), href: resume.basics.url }]
+    : []),
+  ...resume.basics.profiles.map((profile) => ({
+    key: profile.network,
+    value: displayUrl(profile.url),
+    href: profile.url,
+  })),
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    {/*
+      `noindex, nofollow` and the sitemap exclusion in
+      src/lib/unindexed-routes.mjs are two independent mechanisms, kept that way
+      for the reason that file's header gives: neither should ever be the only
+      thing between a document and a crawler. tests/seo.test.ts asserts the two
+      never contradict each other.
+    */}
+    <meta name="robots" content="noindex, nofollow" />
+    {/* Absolute and pointing at itself, the same shape src/layouts/Base.astro
+        renders -- tests/seo.test.ts holds every built page to exactly one. */}
+    <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+    {/* `is:inline` and `set:html` exactly as src/layouts/Base.astro writes it:
+        `stringifyJsonLd` escapes every `<` so a value containing a closing
+        script tag cannot end the element early, and tests/seo.test.ts parses
+        this block on every page to prove that escape survived the render. */}
+    <script type="application/ld+json" is:inline set:html={stringifyJsonLd(person)}></script>
+  </head>
+  <body>
+    <header>
+      <p class="docline">
+        <span>Résumé · {resume.basics.name}</span>
+        {/*
+          READ FROM THE RECORD, never typed here. `meta.version` and
+          `meta.lastModified` are schema-validated fields of the résumé itself
+          (src/content.config.ts), so they move in the same commit as the
+          content they describe. A hand-typed revision string on a résumé is
+          wrong the first time anything else on the page changes, and wrong
+          silently -- the one place a stale date is worse than no date.
+        */}
+        <span>
+          Rev {resume.meta.version} · {resume.meta.lastModified}
+        </span>
+      </p>
+      <h1>{resume.basics.name}</h1>
+      <p class="label">{resume.basics.label}</p>
+      <div class="fields">
+        {fields.map((field) => (
+          <p class="f">
+            <span class="k">{field.key}</span>
+            <span class="v">
+              {field.href ? <a href={field.href}>{field.value}</a> : field.value}
+            </span>
+          </p>
+        ))}
+      </div>
+      <p class="summary">{resume.basics.summary}</p>
+    </header>
+
+    <section>
+      <h2>Experience</h2>
+      {workGroups.map((group) => (
+        <div class="entry">
+          <h3 class="org row">
+            <span class="org-name">{group.name}</span>
+            {group.location && <span class="org-loc">{group.location}</span>}
+            <span class="fill" />
+            <span class="dates">{formatDateRange(group.startDate, group.endDate)}</span>
+          </h3>
+          {group.roles.map((role) => (
+            <div class="role">
+              {/*
+                  A COMPANY WITH ONE TITLE PRINTS ITS RANGE ONCE. The tenure
+                  beside the company name, four lines up, is BY CONSTRUCTION
+                  that role's own range when the group holds a single role --
+                  `tenureOf` in src/lib/resume.ts derives the span from the
+                  roles themselves -- so a dates span here would print the
+                  identical string twice, three lines apart.
+
+                  The `<h4>` then ends at `<span class="fill"></span>`, which
+                  is the shape the reference sheet draws for those four and
+                  the same ruling src/pages/resume.astro records for the
+                  screen. THE FIRST IMPLEMENTATION PASS RULED THE OPPOSITE WAY
+                  and this comment argued for it, on the grounds that the
+                  reference printed both and that a print sheet was free to
+                  differ from the screen page. The reference does not: the
+                  copy that pass worked from was abridged to one work entry
+                  and the entry it kept was the four-role Weedmaps block, so
+                  the single-role shape was simply missing from the evidence.
+                  Kept as a correction rather than deleted, because "the sheet
+                  deliberately differs from /resume here" is exactly the
+                  belief a future reader would otherwise re-derive.
+                */}
+              <h4 class="row">
+                <span class="title">{role.position}</span>
+                <span class="fill" />
+                {group.roles.length > 1 && (
+                  <span class="dates">{formatDateRange(role.startDate, role.endDate)}</span>
+                )}
+              </h4>
+              {role.highlights.length > 0 && (
+                <ul>
+                  {role.highlights.map((highlight) => (
+                    <li>{highlight}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+    </section>
+
+    {
+      /* No empty scaffolding on any surface: an empty array omits the heading
+         too, exactly as src/pages/resume.astro does for the same three
+         sections. */
+      resume.projects.length > 0 && (
+        <section>
+          <h2>Projects</h2>
+          {resume.projects.map((project) => (
+            <div class="entry">
+              <h3 class="org row">
+                <span class="org-name">
+                  {project.url ? <a href={project.url}>{project.name}</a> : project.name}
+                </span>
+                {project.roles.length > 0 && (
+                  <span class="org-loc">{project.roles.join(', ')}</span>
+                )}
+                <span class="fill" />
+                {/*
+                  THE URL, NOT A DATE, in the slot the work entries use for
+                  their tenure -- the reference sheet's own arrangement and
+                  worth keeping. A link annotation is invisible on paper, so
+                  printing the host is the only way the address survives being
+                  photocopied or parsed by an ATS.
+
+                  `project.startDate` is therefore not rendered on this sheet.
+                  The schema allows one, no project declares one today, and the
+                  slot it would occupy is taken; if a project ever needs both,
+                  that is a design decision about this row rather than a field
+                  someone forgot.
+                */}
+                {project.url && <span class="dates">{displayUrl(project.url)}</span>}
+              </h3>
+              <p class="project-desc">{project.description}</p>
+              {project.highlights.length > 0 && (
+                <ul>
+                  {project.highlights.map((highlight) => (
+                    <li>{highlight}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </section>
+      )
+    }
+
+    {resume.education.length > 0 && (
+      <section>
+        <h2>Education</h2>
+        <ul class="runin edu">
+          {resume.education.map((entry) => {
+            const degree = [entry.studyType, entry.area].filter(Boolean).join(', ');
+            const dates = entry.startDate ? formatDateRange(entry.startDate, entry.endDate) : null;
+            /*
+             * The newlines between these spans are harmless on this row
+             * whatever happens: `.edu .sep` renders as ` · ` with a space on
+             * each side, so any whitespace written around it collapses into
+             * those spaces. The Skills row below is the one where that is not
+             * true; its note records what is carrying it there.
+             */
+            return (
+              <li>
+                <span class="lead">{entry.institution}</span>
+                {degree && (
+                  <Fragment>
+                    <span class="sep"> · </span>
+                    {degree}
+                  </Fragment>
+                )}
+                {dates && (
+                  <Fragment>
+                    <span class="sep"> · </span>
+                    <span class="dates">{dates}</span>
+                  </Fragment>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+    )}
+
+    {resume.skills.length > 0 && (
+      <section>
+        <h2>Skills</h2>
+        <ul class="runin">
+          {/*
+              THE WHITESPACE BETWEEN THESE SPANS IS NOT INERT HERE, and what
+              makes it harmless is a build default rather than anything in this
+              file. `.runin .sep` is `display: none` in Skills, so nothing
+              absorbs a newline written between the lead and the keyword list:
+              as authored it is a real space, and a space in front of the
+              keywords pushes every Skills row off the 116pt hanging column the
+              `.runin` rules exist to hold.
+
+              MEASURED 2026-09-15 against dist/client/resume.print/index.html:
+              Astro's `compressHTML` is on (astro.config.mjs never sets it, and
+              the default is true) and removes every whitespace-only text node
+              between these elements, so the built row is
+              `<span class="lead">…</span><span class="sep"> · </span>…` with
+              nothing between them and the sheet measures as it was designed.
+
+              WRITING THE ROW ON ONE LINE TO MAKE THAT INDEPENDENT OF THE
+              DEFAULT WAS TRIED AND REVERTED: Prettier reformats it straight
+              back, and `<!-- prettier-ignore -->` buys one row its safety at
+              the cost of a file the formatter no longer owns. So this row does
+              depend on `compressHTML` staying on. If it is ever turned off,
+              this is the row that moves, and this is the note that says so.
+            */}
+          {resume.skills.map((skill) => (
+            <li>
+              <span class="lead">{skill.name}</span>
+              <span class="sep"> · </span>
+              {skill.keywords.join(', ')}
+            </li>
+          ))}
+        </ul>
+      </section>
+    )}
+
+    {/*
+      `is:inline` IS LOAD-BEARING, not a preference. Without it Astro bundles
+      this into an external module script, and the readiness contract stops
+      being visible in the served document at all -- neither the attribute name
+      nor the call appears in the HTML, and tests/resume-sheet.test.ts asserts
+      both do. A render source that depends on one extra request resolving is
+      also strictly more fragile than one that does not.
+
+      `data-resume-ready` on <html>, NOT the reference sheet's `data-ready`:
+      the live contract is `RESUME_READY_SELECTOR` in src/lib/resume-pdf.ts,
+      which is `[data-resume-ready]`, and src/pages/resume.astro already writes
+      it. Set with setAttribute rather than `dataset.resumeReady`, per the
+      day-2 ruling src/pages/resume.astro records: a data-* contract has to
+      stay greppable at every write site, and `dataset.resumeReady` does not
+      contain the string the selector uses.
+
+      `document.fonts.ready` is the wait, for the reason that page gives too:
+      it is the only deterministic "this document is painted in its real
+      typefaces" event, and on this sheet the typefaces are load-bearing -- the
+      approved render is three pages at these metrics and a fallback face is
+      not.
+    */}
+    <script is:inline>
+      document.fonts.ready.then(() => {
+        document.documentElement.setAttribute('data-resume-ready', '1');
+      });
+    </script>
+  </body>
+</html>

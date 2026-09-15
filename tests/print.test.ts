@@ -3,8 +3,16 @@ import { describe, expect, test } from 'vitest';
 
 const css = readFileSync(new URL('../src/styles/global.css', import.meta.url), 'utf8');
 // The --rl-* palette override lives in tokens.css (tokens.css is the only
-// file in the repo that declares a colour) -- global.css's own `@media
-// print` block now only hides site chrome and adjusts layout.
+// file in the repo that declares a colour, with one reasoned exception noted
+// below) -- global.css's own `@media print` block now only hides site chrome
+// and adjusts layout.
+//
+// THE EXCEPTION IS src/styles/resume-sheet.css (issue #181), a standalone print
+// document that loads no tokens.css and no Tailwind, so it has no --rl-*
+// property in scope to consume and declares its own ported measured values.
+// It is not part of the site's print path and nothing in this file reads it;
+// tests/tokens.test.ts states the invariant at length and that file's own
+// header carries the other half.
 const tokensCss = readFileSync(new URL('../src/styles/tokens.css', import.meta.url), 'utf8');
 
 /**

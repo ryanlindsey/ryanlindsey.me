@@ -94,6 +94,20 @@ describe('colour ownership', () => {
   // Invariant: tokens.css is the only file in the repo that declares a
   // colour. Everywhere else -- including global.css's print block -- must
   // consume a --rl-* custom property rather than hardcoding a hex literal.
+  //
+  // ONE REASONED EXCEPTION SINCE ISSUE #181: src/styles/resume-sheet.css, which
+  // declares eleven hex literals across two :root blocks. It is a standalone
+  // print document that loads no tokens.css and no Tailwind, so no --rl-*
+  // custom property is in scope for it to consume, and its values are ported
+  // from an approved, measured render rather than being a second theme anybody
+  // edits. Its own header carries the other half of this note.
+  //
+  // RECORDED HERE BECAUSE THIS PARAGRAPH IS WHAT A FUTURE AUTHOR CONSULTS
+  // before writing a hex into a new stylesheet, and it was stating as a
+  // repo-wide rule something that had stopped being true. The assertion below
+  // reads global.css by name and so never covered that file either way -- no
+  // test went red, which is exactly why the comment had to be the thing that
+  // moved.
   test('global.css contains no hex colour literal', () => {
     expect(globalCss).not.toMatch(/#[0-9a-f]{3,8}\b/i);
   });

@@ -8,7 +8,7 @@ import { readdirSync, readFileSync } from 'node:fs';
  * layer exists, so `getCollection` is not available to it. Same reason
  * heading-anchors.mjs is `.mjs` and imported the same way.
  *
- * THREE SEPARATE REASONS A ROUTE IS EXCLUDED, and conflating them would be the
+ * FOUR SEPARATE REASONS A ROUTE IS EXCLUDED, and conflating them would be the
  * bug here:
  *
  * 1. DRAFTS. `src/pages/writing/[...slug].astro` deliberately gives every
@@ -42,6 +42,20 @@ import { readdirSync, readFileSync } from 'node:fs';
  *    Revisit when a pillar carries enough posts to be a destination rather than
  *    a filter; it is one line here and one prop on the route.
  *
+ * 4. RENDER SOURCES. `/resume.print` (issue #181) is not a page for a reader.
+ *    It is a document that exists so a renderer can fetch the résumé over HTTP
+ *    and print it, and every measurement in src/styles/resume-sheet.css was
+ *    made on paper rather than on a screen. Nothing links to it and nobody is
+ *    meant to arrive at it.
+ *
+ *    THIS IS NOT REASON 2. An unlisted page is a real page kept quiet -- `/fit`
+ *    serves a form to a person holding a token. A render source has no audience
+ *    at all: offering it to a crawler would publish a second, chromeless copy
+ *    of `/resume`, which is the duplicate-content problem reason 3 describes
+ *    with none of reason 3's excuse that the filtered view is worth addressing.
+ *    It carries its own `noindex, nofollow` as well, for the reason reason 1
+ *    gives about drafts: neither mechanism should ever be the only one.
+ *
  * The draft half is derived from disk rather than hand-listed, so a new draft
  * is covered the day it lands rather than the day someone remembers this file.
  * The pillar half is a single prefix, which `isUnindexed` already extends to
@@ -73,6 +87,14 @@ function draftSlugs(dir) {
  * `/writing/pillar` excludes the filtered indexes WITHOUT touching `/writing`
  * itself: `isUnindexed` matches a route exactly or as a path prefix, and
  * `/writing` is neither equal to nor beneath `/writing/pillar`.
+ *
+ * `/resume.print` leaves `/resume` alone by the same rule, and the dot is not
+ * a suffix on the résumé's own route: the two are separate pathnames that
+ * happen to share a prefix, and prefix matching here is on path SEGMENTS
+ * (`${route}/`), so neither can ever swallow the other. MEASURED against the
+ * build: `src/pages/resume.print.astro` emits
+ * `dist/client/resume.print/index.html`, so the route is `/resume.print/` and
+ * tests/seo.test.ts's `builtPages()` does collect it.
  */
 export function unindexedRoutes() {
   const drafts = [
@@ -81,7 +103,7 @@ export function unindexedRoutes() {
       (slug) => `/work/${slug}`,
     ),
   ];
-  return ['/fit', '/writing/pillar', ...drafts];
+  return ['/fit', '/writing/pillar', '/resume.print', ...drafts];
 }
 
 /**
