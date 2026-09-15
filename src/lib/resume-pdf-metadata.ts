@@ -459,8 +459,10 @@ const xml = (value: string): string => value.replace(/[&<>"]/g, (char) => XML_ES
  *
  * MEASURED 2026-09-15, AND THE SHEET DOES NOT YET MEET WHAT THIS CLAIMS. Chrome
  * writes each Link annotation with a /StructParent and no /Contents, and there
- * is no /Alt anywhere in the file, so clause 7.18.5 wants an alternate
- * description that none of the seven links has. That cannot be repaired here:
+ * is no /Alt anywhere in the file, so none of the seven links has an alternate
+ * description. veraPDF, run for the first time that day by the report-only step
+ * in checks.yml, reports 7.18.1-2 and 7.18.5-2 for exactly that, and 7.1-3 for
+ * standard structure roles besides. That cannot be repaired here:
  * this module appends and never rewrites, which is the guarantee that keeps the
  * tag tree, the embedded fonts and those same annotations safe, and fixing the
  * links would mean giving it up. The honest arrangement is this declaration

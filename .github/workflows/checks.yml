@@ -70,16 +70,22 @@ jobs:
       - name: Gate the sheet
         run: npm run resume:gate
 
-      # REPORT ONLY, AND DELIBERATELY SO. Measured 2026-09-15: Chrome writes
-      # every Link annotation with a /StructParent and no /Contents, and the
-      # file carries no /Alt at all, so ISO 14289-1 clause 7.18.5 wants an
-      # alternate description that none of the seven links has. It cannot be
+      # REPORT ONLY, AND DELIBERATELY SO. Chrome writes every Link annotation
+      # with a /StructParent and no /Contents, and the file carries no /Alt at
+      # all, so the seven links have no alternate description. It cannot be
       # repaired downstream -- src/lib/resume-pdf-metadata.ts appends and never
       # rewrites, which is the guarantee protecting the tag tree, the embedded
       # fonts and those annotations, and fixing the links means giving that up.
+      #
+      # MEASURED, not predicted. This step's first real run (2026-09-15) reports
+      # three rules: 7.18.1-2 and 7.18.5-2, both clause 7.18 and both the
+      # annotation gap above, plus 7.1-3, which is about standard structure
+      # roles and is a separate defect nobody had looked for. Keep this list in
+      # step with what the log actually says; a stale one is worse than none.
+      #
       # So the report is printed on every run and blocks nothing. Making this
-      # step blocking before the link descriptions exist turns every pull
-      # request red for a defect none of them introduced.
+      # step blocking before those three are addressed turns every pull request
+      # red for a defect none of them introduced.
       #
       # The runner image already carries a JDK, which is the only reason this
       # is affordable here: veraPDF is a Java application and its installer is
