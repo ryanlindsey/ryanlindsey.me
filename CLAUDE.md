@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The source of [ryanlindsey.me](https://ryanlindsey.me): an Astro site on the Cloudflare developer platform, plus a second Worker serving a remote MCP server at `mcp.ryanlindsey.me`. One repository, two deployed Workers, one shared set of D1, KV, R2, Queues and Analytics Engine resources.
 
-Deploys run on Workers Builds from `main`. CI has no deploy step and holds no Cloudflare credential.
+Deploys run on Workers Builds from `main`. CI has no deploy step. It holds exactly one Cloudflare credential, an R2 token that reaches one bucket, described under [The one credential in CI](#the-one-credential-in-ci).
 
 ## Commands
 
@@ -22,6 +22,8 @@ Deploys run on Workers Builds from `main`. CI has no deploy step and holds no Cl
 | `npm run evals`                   | the model evals, against a deployed endpoint (see `evals/README.md`)    |
 | `npm run token`                   | mint, list and revoke scoped tokens                                     |
 | `npm run private-doc`             | put one document into the private R2 bucket                             |
+| `npm run resume:pdf`              | `astro build` then render the résumé sheet and its golden extraction    |
+| `npm run resume:gate`             | assert the rendered sheet, needs poppler and a prior render             |
 
 `npm test` does not typecheck. Run `npm run check` before pushing; CI runs check, lint, build and test in that order, and the typecheck catches what vitest never sees.
 
@@ -32,7 +34,7 @@ npm run build && npx vitest run tests/mcp-search.test.ts
 npx vitest run tests/mcp-search.test.ts -t 'name of the test'
 ```
 
-CI's `checks` workflow is the gate that matters. A red Cloudflare Workers Builds check on a pull request does not mean the build is broken.
+CI's `checks` workflow is the gate that matters on a pull request. A red Cloudflare Workers Builds check on a pull request does not mean the build is broken. The `resume-pdf` workflow gates as well, on pushes to `main` and on manual dispatch rather than on pull requests, and it runs the same résumé gate again before it uploads anything.
 
 ## Architecture
 
@@ -68,6 +70,10 @@ Gated tools are registered only for a request whose grant carries the matching s
 
 The `x-release-please-version` marker on one line of `workers/mcp/src/server.ts` is what keeps the version the MCP server advertises in step with `package.json`. Moving the version off that line, or letting a formatter split the line, strands it silently.
 
+Two writers share the `resume/<hash>.pdf` key in `ryanlindsey-me-assets`, and this is temporary. `.github/workflows/resume-pdf.yml` publishes the gated three-page sheet there, and `regenerateResumePdf` in `src/lib/resume-pdf.ts` still writes the same key from the Worker, on the 05:17 cron and on any stale or cold-miss request to `/resume.pdf`, rendering `/resume?print` instead and stamping no metadata. Measured on 2026-09-15, before the workflow had ever run: that key already held a nine-page, 215 KB render from Browser Rendering carrying no Author and no Subject. So the Worker can overwrite what the workflow published, because CI writes R2 and does not write the KV manifest the Worker gates on. Widening the token to reach KV is the one thing the credential's scope rules out, so the workflow probes `resume/latest.pdf` as well as the hashed key, and a dispatch with `force` is the repair.
+
+`resume/latest.pdf` is not affected by any of that. The single `R2_ASSETS.put` in this repository writes the hashed key and never the alias, so the alias belongs to the workflow alone and keeps holding the gated sheet whatever happens beside it. Issue 06 retires the runtime path and ends the sharing.
+
 ### Content
 
 Collections are defined in `src/content.config.ts`: `posts` and `caseStudies` as MDX under `src/content/`, `resume` as one YAML file validated against a JSON Resume shape, and `governance` plus `riskRegister` loaded from `./governance`.
@@ -99,6 +105,14 @@ Prompts are code. They change by pull request and this suite is what gates them.
 `scripts/token.mjs` mints, lists and revokes scoped tokens through wrangler's own login, holding no credential of its own. Minting needs a temporary `/__sign` route inside a running Worker, because a Cloudflare Secrets Store value is write-only and only a binding can read it. The script's header carries the route to paste and the instruction to delete it before committing.
 
 `scripts/private-doc.mjs` is invoked from the private planning repo, not from here. The mechanism is generic and lives in this repo; every document it deploys is authored elsewhere and never enters this repository's history.
+
+## The one credential in CI
+
+`.github/workflows/resume-pdf.yml` publishes the résumé sheet to R2, and it is the only workflow in this repository that authenticates to Cloudflare. The secret is `RLME_R2_STORAGE`, an R2 API token carrying object read and write on the `ryanlindsey-me-assets` bucket and on nothing else. `scripts/resume-publish.mjs` hands it to wrangler as `CLOUDFLARE_API_TOKEN`, and the account id beside it is a public value already committed in both `wrangler.jsonc` files.
+
+The narrow scope is the point, and an account-wide token would defeat it. The private tier is a partition rather than a filter: `R2_PRIVATE` holds what a grant unlocks, `src/lib/tier/private-docs.ts` is its only reader, and the public document layer's env interface does not name that bucket at all, which `tests/tier-private-docs.test.ts` asserts at the type level. A token in CI that could reach `ryanlindsey-me-private` would be the first thing in this repository holding a reference to that bucket, and the guarantee would then rest on nobody writing the request rather than on nobody being able to.
+
+Three things follow. Rotation happens in the Cloudflare dashboard and needs no change here. The token cannot deploy a Worker, so Workers Builds still owns deploys and still mints its own credential. And `10 §2.4` in the private docs repo states that CI holds zero Cloudflare credentials, which is now false there as well; correcting it is a separate change in that repository.
 
 ## The private docs repo
 
