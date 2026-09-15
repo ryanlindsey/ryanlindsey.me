@@ -141,6 +141,7 @@ test('answers 304 when the request already carries the stored etag', async () =>
   // `httpEtag`, not `etag`: only the quoted form round-trips through
   // If-None-Match, so a 304 proves the right one was stored and served.
   expect(response.headers.get('etag')).toBe(object.httpEtag);
+  expect(response.headers.get('x-resume-pdf-state')).toBe('exact');
   expect(await response.text()).toBe('');
 });
 
@@ -153,4 +154,6 @@ test('answers 304 on the fallback too, so the alias is cacheable as well', async
 
   expect(response.status).toBe(304);
   expect(response.headers.get('x-resume-pdf-state')).toBe('fallback');
+  expect(response.headers.get('etag')).toBe(object.httpEtag);
+  expect(await response.text()).toBe('');
 });

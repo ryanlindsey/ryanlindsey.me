@@ -504,13 +504,13 @@ export async function documentHash(key: string, markdown: string): Promise<strin
  * commit, but the shape stays right for this one, which genuinely does run on a
  * schedule against content that moves independently of it. Field for field:
  *
- * | field     | what it holds                                          |
- * | --------- | ------------------------------------------------------ |
- * | `hash`    | the document's markdown hash                           |
- * | `key`     | `<type>:<slug>`, the vector-id prefix                   |
- * | `etag`    | Vectorize's `mutationId` for the upsert                 |
- * | `builtAt` | ISO 8601                                               |
- * | `size`    | bytes of source markdown                               |
+ * | field     | what it holds                           |
+ * | --------- | --------------------------------------- |
+ * | `hash`    | the document's markdown hash            |
+ * | `key`     | `<type>:<slug>`, the vector-id prefix   |
+ * | `etag`    | Vectorize's `mutationId` for the upsert |
+ * | `builtAt` | ISO 8601                                |
+ * | `size`    | bytes of source markdown                |
  *
  * `etag` is the one field that had to be re-pointed rather than reused
  * verbatim: a vector has no entity tag, because nothing serves it over HTTP.

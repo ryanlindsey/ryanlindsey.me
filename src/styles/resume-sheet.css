@@ -182,11 +182,11 @@ li {
  * `@page` of its own -- which describes a different box from the asymmetric one
  * below, and whichever lost would have moved the layout with nothing saying so.
  * The margin object was the one to drop, because these three values are part of
- * the approved render. scripts/resume-sheet.mjs passes no margins (see the note
- * on its `Page.printToPDF` call) and #186 deleted the other renderer, so the
- * collision resolved in this rule's favour. Nothing in
- * resume-pdf.ts is touched by this change -- it is the later change moving the
- * render target that has to remove it.
+ * the approved render. It went two ways at once: scripts/resume-sheet.mjs, the
+ * renderer that produces the published sheet, passes no margins at all (see the
+ * note on its `Page.printToPDF` call), and #186 deleted the renderer that was
+ * still passing them. So the collision resolved in this rule's favour and there
+ * is no second page box left to lose to.
  */
 @page {
   size: letter;

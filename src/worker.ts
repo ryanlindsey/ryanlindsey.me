@@ -21,10 +21,14 @@ import { listCampaigns } from './lib/tier/campaigns';
  * to its Vite plugin and the build is assets-only, which would leave
  * `scheduled()` below working under `astro dev` and silently absent from the
  * deployed Worker. src/pages/resume.pdf.ts was the first route to keep that
- * from happening and this comment named it alone until #186; /chat, /fit, /ops
- * and /404 have opted out since, so the condition now rests on five routes
- * rather than one. Every one of them is on-demand by nature rather than a
- * contrivance, which is why none of them is a load-bearing thing to protect.
+ * from happening and this comment named it alone until #186. Seven files carry
+ * `export const prerender = false` now -- chat.astro, chat/send.ts,
+ * fit/index.astro, fit/run.ts, fit/r/[id].astro, ops.astro and resume.pdf.ts --
+ * so no single one of them is holding the build shape up on its own.
+ *
+ * src/pages/404.astro is NOT among them and must not join them: its own
+ * docblock records why, and an on-demand 404 reopens the path-leak that
+ * tests/fit-pages.test.ts pins.
  *
  * Task 8's `Accept:` negotiation is the other handler here. Task 15's corpus
  * embedding job is NOT, though it briefly was: it needs the `ai` binding, and an

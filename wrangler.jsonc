@@ -213,12 +213,21 @@
   // Object, not array: the schema is `{ binding, remote? }` with
   // additionalProperties: false, and it is not inherited by named environments.
   //
+  // MEASURED, and kept here because #186 deleted the only file that recorded
+  // it: Browser Run stamps `cf-biso-devtools` (the Quick Actions spelling) or
+  // `cf-brapi-devtools` (the Puppeteer/CDP one) on every request it makes, and
+  // neither can be stripped or overridden with `setExtraHTTPHeaders`. The
+  // deleted route used them as a recursion guard, 404ing its own renderer so a
+  // rendered page that linked back could not cost a Worker invocation AND a
+  // browser session per level. Anything that reaches for this binding again
+  // needs that fact, and would otherwise pay to rediscover it.
+  //
   // DECLARED AND UNUSED ON THIS WORKER since #186, which deleted the runtime
   // renderer that was its only reader: the résumé sheet is now rendered by
   // scripts/resume-sheet.mjs in GitHub Actions against a local headless Chrome,
   // and this Worker only reads the result out of R2. Kept rather than removed
   // as a locked decision of epic #180, following the convention `R2_PRIVATE`
-  // already uses -- and the comment is the load-bearing half, because a config
+  // already uses -- and the comment is the half that matters, because a config
   // granting browser access reads exactly like one where the Worker still
   // renders. tests/site-env.test.ts pins the binding list and this note.
   "browser": { "binding": "BROWSER" },
@@ -394,10 +403,15 @@
   // https://ryanlindsey.me/... even under local dev -- deriving the render URL
   // from it would have made local dev silently render production.
   //
-  // Kept because the MCP Worker declares the same var and DOES read it (it is
-  // the origin every citation URL is built from, and the base the `SITE`
-  // service binding resolves paths against), so the two configs stating one
-  // origin in the same spelling is worth more than deleting four lines here.
+  // Kept, and WHERE THE ORIGIN ACTUALLY LIVES is worth stating because this is
+  // now the copy that no code reads. Every site route resolves the CONSTANT in
+  // src/lib/markdown-export.ts, which hardcodes the same string for the reason
+  // its own comment gives about not loading astro.config.mjs into a plain
+  // vitest process. workers/mcp/wrangler.jsonc declares this var a second time
+  // and the MCP Worker DOES read it, for citation URLs and as the base its
+  // `SITE` service binding resolves paths against. Three spellings of one
+  // origin, then. This one is kept so the two Worker configs stay symmetrical
+  // rather than one of them quietly lacking a var its sibling has.
   // The test harness overrides it (tests/workers.ts); under `astro dev`,
   // override it in .dev.vars rather than editing this value.
   "vars": {

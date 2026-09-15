@@ -324,8 +324,8 @@ export const MOCK_AI_WORKER = { configPath: './workers/mock-ai/wrangler.jsonc' }
 export const SITE_HARNESS_WORKERS = [SITE_WORKER, MCP_WORKER, MOCK_AI_WORKER];
 
 /**
- * The same four Workers with the MCP Worker FIRST, for a suite whose subject is
- * the MCP Worker and which therefore wants it as the primary one.
+ * The same three Workers with the MCP Worker FIRST, for a suite whose subject
+ * is the MCP Worker and which therefore wants it as the primary one.
  *
  * The list used to be `[MCP_WORKER, MOCK_AI_WORKER]` in tests/mcp.smoke.test.ts,
  * and the site's absence there was not an oversight -- nothing in that suite
@@ -362,14 +362,20 @@ export const MCP_HARNESS_WORKERS = [MCP_WORKER, SITE_WORKER, MOCK_AI_WORKER];
  * `exact` path. tests/resume-pdf.test.ts owns the other two states; this is
  * here so that a suite whose subject is routing or negotiation does not have to
  * know which key answered.
+ *
+ * DYNAMIC IMPORTS, in a module that otherwise has none. Everything above this
+ * line is plain data, so nearly every suite in the repo imports this file and
+ * pays for whatever it pulls in. A static import of ../src/lib/resume-pdf
+ * would put the résumé YAML and its `?raw` transform in that path for all of
+ * them, to serve the three that call this. Deferring to call time is the whole
+ * reason, and it is not a pattern to copy into a suite that needs the module
+ * anyway -- tests/resume-pdf.test.ts imports it statically and should.
  */
-export async function seedResumePdf(
-  env: { R2_ASSETS: R2Bucket },
-  body = '%PDF-1.7 seeded',
-): Promise<void> {
+export async function seedResumePdf(env: { R2_ASSETS: R2Bucket }): Promise<void> {
   const { resumeSourceHash } = await import('../src/lib/resume-pdf');
   const { RESUME_PDF_HTTP_METADATA, resumePdfKey } = await import('../src/lib/resume-pdf-contract');
-  await env.R2_ASSETS.put(resumePdfKey(await resumeSourceHash()), new TextEncoder().encode(body), {
+  const body = new TextEncoder().encode('%PDF-1.7 seeded');
+  await env.R2_ASSETS.put(resumePdfKey(await resumeSourceHash()), body, {
     httpMetadata: { ...RESUME_PDF_HTTP_METADATA },
   });
 }

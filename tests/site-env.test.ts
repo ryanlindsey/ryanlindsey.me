@@ -115,7 +115,7 @@ test('the site Worker is granted exactly the bindings wrangler.jsonc declares', 
   expect(declared).toEqual([...SITE_BINDING_NAMES].sort());
 });
 
-test('every declared-and-unused binding carries a comment saying so', async () => {
+test('the three declared-and-unused bindings carry a comment saying so', async () => {
   // The plan's locked decision is *"the binding it already declares stays
   // declared and unused, with a comment saying so"*, and the comment was the
   // half that went missing. A grep-shaped test, because the property being
@@ -127,6 +127,14 @@ test('every declared-and-unused binding carries a comment saying so', async () =
   // was its only reader. Epic #180 locked the decision to keep the binding, and
   // it is the case this test protects most directly: a config granting browser
   // access reads as a Worker that renders, and this one has not since #186.
+  //
+  // THREE, NOT "EVERY", AND THE GAP IS DELIBERATE RATHER THAN OVERLOOKED. This
+  // greps for `"binding": "<NAME>"`, so it can only reach `bindings`, never
+  // `vars`. `SITE_ORIGIN` is in SITE_BINDING_NAMES above and has been declared
+  // and unread on this Worker since #186 too, and this check cannot see it --
+  // wrangler.jsonc carries the explanation beside the var instead. Widening the
+  // grep to `vars` would close that, and is the right change the day a second
+  // unread var appears.
   const { readFile } = await import('node:fs/promises');
   const config = await readFile('wrangler.jsonc', 'utf8');
   for (const binding of ['R2_PRIVATE', 'RLME_TOKEN_SIGNING_KEY', 'BROWSER']) {

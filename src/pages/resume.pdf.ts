@@ -32,9 +32,11 @@ import { RESUME_ALIAS_KEY, resumePdfKey, resumeSourceHash } from '../lib/resume-
  * `output: 'static'` with zero `prerender = false` routes also makes the
  * Cloudflare adapter emit `main: undefined` and build an assets-only Worker,
  * dropping `queue()` and `scheduled()` from the deployment with no error
- * anywhere. Other routes opt out too now -- /chat, /fit, /ops and /404 -- so
- * this one is no longer the only thing holding that up, and a paragraph here
- * claiming it was outlived the truth of it by several issues.
+ * anywhere. This route was the first to opt out and a paragraph here claimed
+ * it was the only one, which stopped being true several issues ago: /chat,
+ * /fit and /ops and their endpoints opt out too, seven files in all. Note that
+ * /404 is deliberately NOT one of them -- see src/pages/404.astro, which
+ * forbids it in as many words.
  */
 export const prerender = false;
 

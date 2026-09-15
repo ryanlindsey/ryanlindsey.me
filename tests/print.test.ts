@@ -153,12 +153,12 @@ describe('print rules', () => {
     // link stays live and clickable.
     //
     // WHAT THIS BLOCK GOVERNS HAS NARROWED, and the assertion has not. It was
-    // written when /resume.pdf was headless Chrome printing /resume; since #186
-    // the published sheet is rendered from /resume.print with its own
-    // stylesheet, and scripts/resume-gate.mjs checks the extraction there. What
-    // this file still pins is a person printing /resume from a browser, which
-    // is worth pinning for its own sake and is the only thing these rules now
-    // reach.
+    // written when /resume.pdf was headless Chrome printing /resume. #181 gave
+    // the sheet its own route and its own stylesheet, gated by
+    // scripts/resume-gate.mjs since #184, and #186 deleted the renderer that
+    // still pointed here -- so these rules stopped reaching the published PDF
+    // by two changes, not one. What this file pins now is a person printing
+    // /resume from a browser, which is worth pinning for its own sake.
     const suppressed = selectorsCarrying(printBlock, 'content: none');
     expect(suppressed).toContain('[data-based-in] a::after');
 

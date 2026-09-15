@@ -1536,9 +1536,10 @@ test('the resume sheet carries contact details the screen page does not', async 
   // 02 §1 wants the résumé ATS-safe, and an ATS-safe résumé with no way to
   // reach anyone is a contradiction. This block was added when /resume.pdf was
   // headless Chrome printing /resume, which made the page itself the only place
-  // it could live; #186 moved the published sheet to /resume.print, and the
-  // block stays hidden on screen here because a browser print of /resume should
-  // carry the details too.
+  // it could live. #181 gave the sheet its own route and #186 deleted the
+  // renderer that printed this one, so the published PDF no longer comes from
+  // here. The block stays hidden on screen because a browser print of /resume
+  // should still carry the details.
   //
   // Print-only was the ruling on 2026-09-13 rather than showing it on both:
   // design 1k's masthead stays as drawn, and the phone number stays off an
