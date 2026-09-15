@@ -41,6 +41,17 @@ test('auth.md claims no OAuth flow it cannot perform', () => {
   }
 });
 
+// Epic-165 follow-up review, finding 5: `evals` withholding is structural on
+// the JSON side (buildProtectedResource's `scopes_supported` is derived from
+// PUBLIC_SCOPES, a typo cannot silently widen an array nothing hand-writes),
+// but auth.md is prose -- a reviewer or an editor typing a sentence that
+// names the scope would pass every other assertion in this file, because
+// none of them scans the WHOLE document for the literal word. This is that
+// scan.
+test('auth.md never names the evals scope', () => {
+  expect(buildAuthDoc()).not.toContain('evals');
+});
+
 // Served-response coverage for both new site routes, the same discipline
 // tests/discovery-server-card.test.ts applies to /.well-known/mcp/server-
 // card.json: a public/_headers RULE with no assertion against a real

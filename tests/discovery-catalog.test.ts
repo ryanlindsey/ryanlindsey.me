@@ -92,3 +92,55 @@ test('the deployed ARD manifest ships JSON and allows cross-origin reads', async
   const doc = (await response.json()) as ReturnType<typeof buildAiCatalog>;
   expect(doc.entries).toHaveLength(ADVERTISED_SURFACE.length);
 });
+
+// Epic-165 follow-up review, finding 3: every other test in this file checks
+// the SHAPE of the advertised surface, and nothing fetched it -- which is how
+// `/chat`'s entry could advertise `mediaType: 'text/event-stream'` while
+// `GET /chat` actually answered `text/html`, with no test catching the
+// disagreement. This test closes that gap.
+//
+// Iterates the BUILDERS' EMITTED URLs (`buildApiCatalog(...).linkset[].anchor`
+// and `buildAiCatalog(...).entries[].url`), not `ADVERTISED_SURFACE`'s raw
+// `path` strings -- the same review flagged that the "no advertised path is
+// an unindexed route" guard above iterates raw paths and would miss a future
+// builder-side transform of one, and this is where closing that gap actually
+// matters: what a caller reaches is whatever the builder put in the document
+// it fetched, not whatever `./surface.ts` says was intended.
+test('every URL the discovery builders emit for the advertised surface actually resolves', async () => {
+  const origin = 'https://ryanlindsey.me';
+  const apiCatalogUrls = buildApiCatalog(origin).linkset.map((entry) => entry.anchor);
+  const aiCatalogUrls = buildAiCatalog(origin).entries.map((entry) => {
+    // "every ARD entry carries exactly one of url or data" above already
+    // pins that `url` is the arm every entry actually takes; this repeats
+    // the check here as a real failure rather than a silent skip, because a
+    // future `data` entry would otherwise vanish from this loop instead of
+    // being counted as a resource this test has not checked.
+    if (!('url' in entry)) throw new Error(`ARD entry ${entry.id} carries data, not a url`);
+    return entry.url;
+  });
+
+  // Both builders map the same ADVERTISED_SURFACE in the same order
+  // (./api-catalog.ts, ./ard.ts), so their emitted URLs should name the same
+  // resources in the same order. Asserted rather than assumed: a divergence
+  // here is exactly the builder-side drift this test exists to catch, and it
+  // would otherwise surface only as the loop below silently checking one
+  // builder's URLs twice.
+  expect(aiCatalogUrls).toEqual(apiCatalogUrls);
+
+  for (const url of apiCatalogUrls) {
+    // `new URL(...).pathname`, not a string slice off `origin` -- this repo's
+    // CodeQL gate blocks substring/startsWith checks against a URL or origin.
+    const { pathname } = new URL(url);
+    const response = await server.fetch(pathname);
+    if (pathname === '/mcp') {
+      // The one deliberate exception, named rather than folded into a loose
+      // status check that would also pass a 404. Verified against production
+      // (2026-09-14): an MCP endpoint that only speaks JSON-RPC POST answers
+      // GET with 405, and public/_headers and src/pages/llms.txt.ts both
+      // already record that same measurement.
+      expect(response.status, pathname).toBe(405);
+    } else {
+      expect(response.status, pathname).toBe(200);
+    }
+  }
+});

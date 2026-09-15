@@ -248,6 +248,24 @@ function specOf(tool: PublicTool): Pick<PublicTool, 'name' | 'title' | 'descript
 
 const PUBLIC_TOOLS: readonly PublicTool[] = [
   {
+    name: 'get_contact',
+    title: 'Contact details',
+    description: 'How to reach Ryan Lindsey, and his working timezone.',
+    register: (server, tc, tool) =>
+      defineTool(
+        server,
+        tc,
+        // No `inputSchema`: this tool takes no arguments, and the
+        // empty-object form resolves to the deprecated raw-shape overload.
+        { ...specOf(tool), cost: 'cheap' },
+        async () => ({
+          email: 'hello@ryanlindsey.me',
+          site: 'https://ryanlindsey.me',
+          timezone: 'America/Los_Angeles',
+        }),
+      ),
+  },
+  {
     name: 'get_resume',
     title: 'Résumé',
     description:
@@ -599,17 +617,31 @@ const PUBLIC_TOOLS: readonly PublicTool[] = [
  * rather than against a hand-typed copy, which is the whole point of the
  * fix -- a hand-typed copy is exactly what could rename a tool here and not
  * there and stay green.
+ *
+ * THE COMMENT ABOVE WAS NOT TRUE FROM ISSUE #172 UNTIL THE EPIC-165 FOLLOW-UP
+ * REVIEW: `get_contact` registered itself directly inside ./server.ts's
+ * `createServer`, outside this table, so this export omitted a real public
+ * tool while its own docstring called it "every public tool's name" --
+ * exactly the drift `tests/discovery-webmcp.test.ts`'s guard above exists to
+ * catch, on the one tool that guard could not see. `get_contact` now lives in
+ * `PUBLIC_TOOLS` like the other seven, so the claim is genuinely true rather
+ * than true of everything except the tool most likely to be named first.
  */
 export const PUBLIC_TOOL_NAMES: readonly string[] = PUBLIC_TOOLS.map((tool) => tool.name);
 
 /**
- * Every tool this server exposes beyond the one `createServer` registers
- * itself, through `defineTool` and nothing else (03 §3).
+ * Every tool this server exposes, through `defineTool` and nothing else
+ * (03 §3). `get_contact` used to be the one exception, registered inline in
+ * ./server.ts's `createServer` rather than through this table -- moved in
+ * here in the same change that fixed `PUBLIC_TOOL_NAMES`'s docstring above,
+ * so `createServer` now reaches every tool through `registerTools`,
+ * `registerGatedTools` and `registerResources`, and calls nothing else
+ * directly.
  *
- * Iterates `PUBLIC_TOOLS` rather than calling `defineTool` inline seven times
- * (issue #172): adding a tool is still one entry appended to that array, and
- * there is still no second place to remember -- the loop below is the only
- * thing this function does now, and `PUBLIC_TOOL_NAMES` above is what the
+ * Iterates `PUBLIC_TOOLS` rather than calling `defineTool` inline (issue
+ * #172): adding a tool is still one entry appended to that array, and there
+ * is still no second place to remember -- the loop below is the only thing
+ * this function does now, and `PUBLIC_TOOL_NAMES` above is what the
  * restructure was for.
  */
 export function registerTools(server: McpServer, tc: ToolContext): void {

@@ -60,8 +60,13 @@ export function buildMcpDiscovery(origin: string) {
  * the MCP Worker holds no copy of it and fetches every document, per call,
  * from https://ryanlindsey.me over `SITE_ORIGIN` (global constraint,
  * src/lib/corpus.ts) -- so the only things a GET on mcp.ryanlindsey.me can
- * ever return are this file and /.well-known/mcp.json, neither of which is
- * the corpus. That content already carries its reservation at the origin
+ * ever return are this file, /.well-known/mcp.json,
+ * /.well-known/mcp/server-card.json and /.well-known/oauth-protected-resource,
+ * none of which is the corpus. (This paragraph named only this file and
+ * /.well-known/mcp.json when it was written on day 3; issues #166 and #167 of
+ * the agent-readiness epic added the other two documents to this origin, and
+ * the reasoning below still holds unchanged, because neither addition is the
+ * corpus either.) That content already carries its reservation at the origin
  * where it actually lives: every group in the site's own robots.txt repeats
  * `ai-train=no` for exactly this reason. Restating the line here would not
  * extend the reservation to anything new -- there is nothing new here to
@@ -73,18 +78,21 @@ export function buildMcpDiscovery(origin: string) {
  * Named agents are welcomed by the same tokens the site's own file uses,
  * for legibility -- consistent with 03 §5's framing, not because any of
  * them fetches anything different here than `*` would already allow: `/mcp`
- * only answers JSON-RPC POST, so there is no page for any crawler, named or
- * not, to actually retrieve.
+ * and `/chat` both answer only POST (JSON-RPC and chat respectively), and the
+ * three `.well-known` documents above are the same three GET responses for a
+ * named agent as for `*` -- so there is no page, named crawler or not, that
+ * this origin serves differently.
  */
 export function buildMcpRobotsTxt(): string {
   return `# robots.txt for https://mcp.ryanlindsey.me
 #
 # robots.txt is per-origin (RFC 9309 §2.3): https://ryanlindsey.me/robots.txt
 # says nothing about this host, and this file says nothing about that one.
-# This origin serves a Model Context Protocol tool endpoint, not pages --
-# POST /mcp speaks JSON-RPC and there is nothing here for a crawler to read
-# or index. See https://ryanlindsey.me/llms.txt for the curated, agent-facing
-# index of what this corpus actually publishes, and /.well-known/mcp.json on
+# This origin serves a Model Context Protocol tool endpoint plus a handful of
+# machine-readable metadata documents, not pages -- POST /mcp speaks JSON-RPC
+# and there is nothing here for a crawler to read or index. See
+# https://ryanlindsey.me/llms.txt for the curated, agent-facing index of what
+# this corpus actually publishes, and /.well-known/mcp/server-card.json on
 # this origin for the machine-readable description of the endpoint itself.
 #
 # Permissive anyway (\`Allow: /\`, no \`Disallow\`), same reasoning as the
@@ -96,8 +104,10 @@ User-agent: *
 Allow: /
 
 # Named for legibility, matching the site's own robots.txt -- there is
-# nothing on this origin for any of these to fetch beyond this file,
-# /.well-known/mcp.json, and /mcp itself (JSON-RPC POST only, not a page).
+# nothing on this origin for any of these to fetch beyond this file, the
+# metadata documents at /.well-known/mcp.json, /.well-known/mcp/server-card.json
+# and /.well-known/oauth-protected-resource, and /mcp and /chat themselves
+# (POST only, JSON-RPC and chat respectively -- neither is a page).
 User-agent: ClaudeBot
 User-agent: Claude-User
 User-agent: Claude-SearchBot

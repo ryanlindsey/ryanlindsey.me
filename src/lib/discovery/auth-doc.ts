@@ -1,4 +1,4 @@
-import { SCOPES } from '../tier/token';
+import { PUBLIC_SCOPES } from '../tier/token';
 
 /**
  * The private-tier paragraph, verbatim from `PRIVATE_ACCESS_TEXT`
@@ -31,16 +31,19 @@ const PRIVATE_ACCESS_TEXT =
  * the prose anyway because the metadata alone cannot say WHY there is no
  * authorization server, only that there is not one).
  *
- * The scope list is DERIVED from `SCOPES`, same discipline as
- * ./protected-resource.ts and for the same reason: `evals` must not appear
- * in a document served to anonymous callers (see that scope's own comment in
- * ../tier/token.ts), and deriving rather than typing the four names out means
- * a sixth scope added to the closed set cannot silently go unlisted here
- * while `evals` cannot silently leak in.
+ * The scope list is DERIVED from `PUBLIC_SCOPES` (../tier/token.ts), same
+ * discipline as ./protected-resource.ts and for the same reason: `evals` must
+ * not appear in a document served to anonymous callers (see that scope's own
+ * comment in ../tier/token.ts), and deriving rather than typing the names out
+ * means a sixth scope added to the closed set cannot silently go unlisted
+ * here while `evals` cannot silently leak in. `PUBLIC_SCOPES` used to be a
+ * filter written out independently in this file and in
+ * ./protected-resource.ts -- two copies of the epic's highest-stakes
+ * invariant with nothing tying them together. It is now derived once, there,
+ * and both files import it.
  */
 export function buildAuthDoc(): string {
-  const publicScopes = SCOPES.filter((scope) => scope !== 'evals');
-  const scopeList = publicScopes.map((scope) => `- \`${scope}\``).join('\n');
+  const scopeList = PUBLIC_SCOPES.map((scope) => `- \`${scope}\``).join('\n');
 
   return `# Authorization
 
@@ -50,7 +53,7 @@ ${PRIVATE_ACCESS_TEXT}
 
 ## Scopes
 
-A token carries one or more of four scopes, and only these four exist:
+A token carries one or more of these scopes:
 
 ${scopeList}
 
