@@ -7,13 +7,13 @@ import { buildMcpDiscovery } from '../src/lib/mcp/discovery';
 import { SITE_HARNESS_WORKERS } from './workers';
 
 test('the document names every scope except evals, derived rather than typed', () => {
-  const doc = buildProtectedResource('https://mcp.ryanlindsey.me/mcp');
+  const doc = buildProtectedResource('https://mcp.ryanlindsey.me');
   expect(doc.scopes_supported).toEqual(SCOPES.filter((s) => s !== 'evals'));
   expect(doc.scopes_supported).not.toContain('evals');
 });
 
 test('no authorization server is named, because none exists', () => {
-  expect(buildProtectedResource('https://mcp.ryanlindsey.me/mcp')).not.toHaveProperty(
+  expect(buildProtectedResource('https://mcp.ryanlindsey.me')).not.toHaveProperty(
     'authorization_servers',
   );
 });
@@ -23,9 +23,34 @@ test('no authorization server is named, because none exists', () => {
 // endpoint REQUIRES; the protected-resource document says what it ACCEPTS.
 test('the two discovery documents still disagree in the intended direction', () => {
   expect(buildMcpDiscovery('https://ryanlindsey.me').authentication).toBe('none');
-  expect(buildProtectedResource('https://mcp.ryanlindsey.me/mcp').bearer_methods_supported).toEqual(
-    ['header'],
+  expect(buildProtectedResource('https://mcp.ryanlindsey.me').bearer_methods_supported).toEqual([
+    'header',
+  ]);
+});
+
+// Epic-165 follow-up review, finding B: `resource` must identify the origin
+// that served THIS copy of the document (RFC 9728 §2), not a literal shared
+// between the two origins that each publish one. A production scan
+// (isitagentready.com) caught the old shared-literal version failing exactly
+// this check against the site's own copy. `buildProtectedResource` now takes
+// an origin and derives `resource` from it, so this is asserted directly
+// rather than trusted to the two callers passing the right string.
+test('resource identifies whichever origin served this document, per RFC 9728', () => {
+  expect(buildProtectedResource('https://ryanlindsey.me').resource).toBe(
+    'https://ryanlindsey.me/mcp',
   );
+  expect(buildProtectedResource('https://mcp.ryanlindsey.me').resource).toBe(
+    'https://mcp.ryanlindsey.me/mcp',
+  );
+});
+
+// Epic-165 follow-up review, finding A: the canonical auth.md protocol
+// (github.com/workos/auth.md) opens with exactly this heading, and the
+// epic's own acceptance scanner (isitagentready.com) checks for it
+// literally -- our document opened `# Authorization` instead, which read
+// fine to a person and read as a missing document to the scanner.
+test('auth.md opens with the canonical heading the scanner checks for', () => {
+  expect(buildAuthDoc().startsWith('# auth.md\n')).toBe(true);
 });
 
 test('auth.md sends the reader to the address that issues tokens', () => {
@@ -39,6 +64,17 @@ test('auth.md claims no OAuth flow it cannot perform', () => {
   for (const claim of ['authorization_endpoint', 'token_endpoint', 'client_id', 'redirect_uri']) {
     expect(doc).not.toContain(claim);
   }
+});
+
+// Epic-165 follow-up review, finding 5: `evals` withholding is structural on
+// the JSON side (buildProtectedResource's `scopes_supported` is derived from
+// PUBLIC_SCOPES, a typo cannot silently widen an array nothing hand-writes),
+// but auth.md is prose -- a reviewer or an editor typing a sentence that
+// names the scope would pass every other assertion in this file, because
+// none of them scans the WHOLE document for the literal word. This is that
+// scan.
+test('auth.md never names the evals scope', () => {
+  expect(buildAuthDoc()).not.toContain('evals');
 });
 
 // Served-response coverage for both new site routes, the same discipline
@@ -66,7 +102,12 @@ test('the deployed protected-resource document ships the declared Content-Type',
   expect(response.status).toBe(200);
   expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8');
   const doc = (await response.json()) as ReturnType<typeof buildProtectedResource>;
-  expect(doc.resource).toBe('https://mcp.ryanlindsey.me/mcp');
+  // The SITE's own copy, so `resource` names the site's own `/mcp` -- NOT the
+  // MCP Worker's vanity domain. This used to read `https://mcp.ryanlindsey.me/mcp`
+  // here, which was the exact self-inconsistency (epic-165 follow-up review,
+  // finding B) a production scan caught: this document is served FROM
+  // ryanlindsey.me, so RFC 9728 §2 requires it to name ryanlindsey.me.
+  expect(doc.resource).toBe('https://ryanlindsey.me/mcp');
   expect(doc.scopes_supported).toEqual(SCOPES.filter((s) => s !== 'evals'));
 });
 

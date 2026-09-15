@@ -1,4 +1,4 @@
-import { SCOPES } from '../tier/token';
+import { PUBLIC_SCOPES } from '../tier/token';
 
 /**
  * The private-tier paragraph, verbatim from `PRIVATE_ACCESS_TEXT`
@@ -31,18 +31,29 @@ const PRIVATE_ACCESS_TEXT =
  * the prose anyway because the metadata alone cannot say WHY there is no
  * authorization server, only that there is not one).
  *
- * The scope list is DERIVED from `SCOPES`, same discipline as
- * ./protected-resource.ts and for the same reason: `evals` must not appear
- * in a document served to anonymous callers (see that scope's own comment in
- * ../tier/token.ts), and deriving rather than typing the four names out means
- * a sixth scope added to the closed set cannot silently go unlisted here
- * while `evals` cannot silently leak in.
+ * The scope list is DERIVED from `PUBLIC_SCOPES` (../tier/token.ts), same
+ * discipline as ./protected-resource.ts and for the same reason: `evals` must
+ * not appear in a document served to anonymous callers (see that scope's own
+ * comment in ../tier/token.ts), and deriving rather than typing the names out
+ * means a sixth scope added to the closed set cannot silently go unlisted
+ * here while `evals` cannot silently leak in. `PUBLIC_SCOPES` used to be a
+ * filter written out independently in this file and in
+ * ./protected-resource.ts -- two copies of the epic's highest-stakes
+ * invariant with nothing tying them together. It is now derived once, there,
+ * and both files import it.
  */
 export function buildAuthDoc(): string {
-  const publicScopes = SCOPES.filter((scope) => scope !== 'evals');
-  const scopeList = publicScopes.map((scope) => `- \`${scope}\``).join('\n');
+  const scopeList = PUBLIC_SCOPES.map((scope) => `- \`${scope}\``).join('\n');
 
-  return `# Authorization
+  // `# auth.md`, lowercase, matching the filename -- do not "fix" the
+  // capitalization. The canonical auth.md protocol
+  // (github.com/workos/auth.md) opens its own document with exactly this
+  // heading, and the epic's own acceptance scanner (isitagentready.com,
+  // verified against production 2026-09-14) checks for it literally: a
+  // different heading, however reasonable, reads to that scanner as a
+  // missing document and fails the check. This used to open
+  // `# Authorization`, which read fine to a person and failed exactly that.
+  return `# auth.md
 
 Most of this corpus needs no credential at all. An MCP client that connects to \`https://mcp.ryanlindsey.me/mcp\` with no \`Authorization\` header reaches the public tier: the résumé, every published case study and post, semantic search over that corpus, and a tool that explains how to reach Ryan. Every result cites a URL a browser can open on its own, and nothing served at this tier depends on holding a token.
 
@@ -50,7 +61,7 @@ ${PRIVATE_ACCESS_TEXT}
 
 ## Scopes
 
-A token carries one or more of four scopes, and only these four exist:
+A token carries one or more of these scopes:
 
 ${scopeList}
 

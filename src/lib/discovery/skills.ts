@@ -98,6 +98,12 @@ export async function buildSkillsIndex(origin: string): Promise<SkillsIndex> {
     })),
   );
   return {
+    // Checked from here on 2026-09-14: schemas.agentskills.io does not
+    // resolve at all (DNS failure, not a 404). Kept anyway, not "fixed" --
+    // this value is the RFC v0.2.0 literal a conforming consumer matches
+    // against, so changing it would break conformance rather than repair a
+    // typo. Recorded so the next reader finds a verified fact here instead
+    // of re-checking, or worse, assuming the unresolving host is a mistake.
     $schema: 'https://schemas.agentskills.io/discovery/0.2.0/schema.json',
     skills,
   };

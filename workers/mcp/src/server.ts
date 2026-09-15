@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import type { Grant, GrantRefusal } from '../../../src/lib/tier/grant';
-import { defineTool, type ToolContext } from './define';
+import type { ToolContext } from './define';
 import { gatedToolLines, registerGatedTools } from './gated';
 import { registerResources } from './resources';
 import { registerTools } from './tools';
@@ -127,24 +127,12 @@ export function createServer(tc: ToolContext, refusal: GrantRefusal | null = nul
     { instructions: buildInstructions(tc.grant, refusal) },
   );
 
-  defineTool(
-    server,
-    tc,
-    {
-      name: 'get_contact',
-      title: 'Contact details',
-      description: 'How to reach Ryan Lindsey, and his working timezone.',
-      // No `inputSchema`: this tool takes no arguments, and the empty-object
-      // form resolves to the deprecated raw-shape overload.
-      cost: 'cheap',
-    },
-    async () => ({
-      email: 'hello@ryanlindsey.me',
-      site: 'https://ryanlindsey.me',
-      timezone: 'America/Los_Angeles',
-    }),
-  );
-
+  // `get_contact` used to be registered here directly, the one public tool
+  // outside ./tools.ts's `PUBLIC_TOOLS` table -- which is what let
+  // `PUBLIC_TOOL_NAMES` there call itself "every public tool's name" while
+  // omitting a real one (epic-165 follow-up review). It now lives in that
+  // table like the other seven, so `registerTools` below is the whole of the
+  // public tier.
   registerTools(server, tc);
   // The private tier (03 §2). A no-op without a grant -- and a no-op is
   // stronger than a refusal here: the tools are not registered, so there is

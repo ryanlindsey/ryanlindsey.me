@@ -1,12 +1,34 @@
 import { ADVERTISED_SURFACE } from './surface';
 
+/**
+ * Pinned against `ards-project/ard-spec`'s `ai-catalog.schema.json`
+ * (`$defs.ai-catalog.schema.json#/properties/host`, fetched and read
+ * directly on 2026-09-14, not paraphrased): `host` is `additionalProperties:
+ * false` with `displayName` its only required field. `identifier` (a
+ * verifiable host identity, typically a `did:web:` DID per that schema's own
+ * conformance examples) and `documentationUrl` are both optional and both
+ * absent here on purpose -- this site publishes no DID document a caller
+ * could resolve `identifier` against, and there is no general documentation
+ * page at either origin's bare root for `documentationUrl` to name (`GET /`
+ * on the MCP origin is a genuine 404; see src/pages/llms.txt.ts's own note on
+ * the site side). Publishing either would be exactly the failure mode the
+ * epic's global constraints warn about: a field that claims a capability
+ * (verifiable identity, documentation) this site does not actually have.
+ *
+ * `url` used to live here instead, carrying which origin served this
+ * particular copy -- REMOVED, not renamed: the real schema has no field for
+ * that at all (`additionalProperties: false` rejects an unrecognised key
+ * outright), so there is nowhere in a conformant `host` object for that fact
+ * to live. It is not lost information; a caller who wants to know which
+ * origin served this copy already knows, because they are the one who
+ * fetched it from there.
+ */
 export interface ArdHost {
-  name: string;
-  url: string;
+  displayName: string;
 }
 
 interface ArdEntryFields {
-  id: string;
+  identifier: string;
   displayName: string;
   type: string;
   representativeQueries: string[];
@@ -38,43 +60,48 @@ export interface ArdManifest {
  * both builders (`./surface.ts`), so the two documents cannot drift the way
  * two hand-maintained copies would the first time an endpoint moved.
  *
- * Each entry's `id` is a URN, `urn:air:ryanlindsey.me:<namespace>:<name>`.
- * The site name inside it is a literal rather than derived from `origin`,
- * deliberately: a URN names a resource independent of where it is currently
- * reachable, the way `ADVERTISED_SURFACE`'s `namespace`/`name` pair names an
- * endpoint independent of which origin's copy of this document is being
- * read. `host`, by contrast, DOES vary with `origin`, because it answers a
- * different question: who is serving this particular copy.
+ * Each entry's `identifier` is a URN, `urn:air:ryanlindsey.me:<namespace>:<name>`
+ * -- named `identifier` because that is the field name
+ * `ards-project/ard-spec`'s schema actually requires (see this function's
+ * own `specVersion` comment below); it used to be `id` here, which is why
+ * every entry failed schema validation until the epic-165 follow-up review's
+ * second wave caught it against a real scan. The site name inside the URN is
+ * a literal rather than derived from `origin`, deliberately: a URN names a
+ * resource independent of where it is currently reachable, the way
+ * `ADVERTISED_SURFACE`'s `namespace`/`name` pair names an endpoint
+ * independent of which origin's copy of this document is being read.
  *
- * `origin` is the caller's to supply, for the two reasons every builder in
- * this directory gives (see src/lib/mcp/discovery.ts's own header): the site
- * and the MCP Worker's vanity domain each serve documents describing
- * themselves and neither can derive the other's hostname, and under
- * `createTestHarness` `request.url` reads as a loopback address rather than
- * the real custom domain.
+ * `host`, unlike an entry's `url`, does NOT vary with `origin` -- it used to,
+ * carrying which origin served this copy, but the real schema's `host`
+ * object has no field for that (see `ArdHost`'s own comment). `origin` is
+ * still this function's argument regardless, because every entry's own `url`
+ * does need it, for the two reasons every builder in this directory gives
+ * (see src/lib/mcp/discovery.ts's own header): the site and the MCP Worker's
+ * vanity domain each serve documents describing themselves and neither can
+ * derive the other's hostname, and under `createTestHarness` `request.url`
+ * reads as a loopback address rather than the real custom domain.
  */
 export function buildAiCatalog(origin: string): ArdManifest {
   return {
-    // `specVersion` names the version of THIS DOCUMENT FORMAT, not this
-    // site's software -- it is deliberately not `DISCOVERY_VERSION`
-    // (./version.ts), which tracks the release the MCP server advertises and
-    // has nothing to do with how an ARD manifest is shaped. There is no
-    // pinned external ARD schema this repository builds against to cite a
-    // version from, so '1.0.0' is not a citation of one -- it is this
-    // manifest's own starting value, to be bumped here if the shape below
-    // ever changes in a way a reader would need to detect.
-    specVersion: '1.0.0',
-    // `host.name` identifies the Worker serving this document, not the
-    // person -- same value as `wrangler.jsonc`'s own `name` field and
-    // `server-card.ts`'s `serverInfo.name`, both of which are the site
-    // Worker's name regardless of which origin's copy of a document is being
-    // read (see that file's comment for why an identity string is a literal
-    // rather than derived from `origin`). `host.url`, unlike `host.name`,
-    // DOES vary with `origin`, for the reason this function's own docstring
-    // gives.
-    host: { name: 'ryanlindsey-me', url: origin },
+    // PINNED, not chosen: `ards-project/ard-spec`'s `ai-catalog.schema.json`
+    // (fetched and read directly 2026-09-14, not assumed) declares
+    // `specVersion` an enum of exactly one allowed value, `"1.0"`. This used
+    // to read `'1.0.0'`, on the reasoning that there was no pinned external
+    // schema to cite a version from and this was the manifest's own starting
+    // value -- that reasoning was wrong the day it was written (a real,
+    // versioned schema existed and was never checked against), and a
+    // production scan (isitagentready.com) is what surfaced the mismatch.
+    specVersion: '1.0',
+    // `ArdHost`'s own comment explains why this is `displayName` alone, with
+    // no `identifier` or `documentationUrl`: this site has neither a
+    // resolvable DID document nor a general documentation page to name
+    // truthfully in either field. The value matches `wrangler.jsonc`'s own
+    // `name` field and `server-card.ts`'s `serverInfo.name`, both of which
+    // identify the Worker serving this document (not the person) regardless
+    // of which origin's copy is being read.
+    host: { displayName: 'ryanlindsey-me' },
     entries: ADVERTISED_SURFACE.map((endpoint) => ({
-      id: `urn:air:ryanlindsey.me:${endpoint.namespace}:${endpoint.name}`,
+      identifier: `urn:air:ryanlindsey.me:${endpoint.namespace}:${endpoint.name}`,
       displayName: endpoint.displayName,
       type: endpoint.mediaType,
       url: `${origin}${endpoint.path}`,

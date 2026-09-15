@@ -42,6 +42,20 @@ export const SCOPES = [
 ] as const satisfies readonly Scope[];
 
 /**
+ * `SCOPES` with `evals` withheld -- the epic's highest-stakes invariant
+ * (global-constraints.md: "`evals` never appears in public metadata"), and
+ * derived here once rather than written out as `SCOPES.filter((scope) =>
+ * scope !== 'evals')` at each call site. `evals`'s own comment above explains
+ * why the scope must not be named to an anonymous caller; until the
+ * epic-165 follow-up review, that reasoning was expressed as the same filter
+ * written out independently in src/lib/discovery/protected-resource.ts and
+ * src/lib/discovery/auth-doc.ts, with nothing tying the two together --
+ * deleting the filter in either one would have been a silent leak with no
+ * structural obstacle. Both now import this constant instead.
+ */
+export const PUBLIC_SCOPES: readonly Scope[] = SCOPES.filter((scope) => scope !== 'evals');
+
+/**
  * Type guard for `Scope`, so a caller holding an `unknown`/`string` value can
  * narrow it against `SCOPES` without repeating the `SCOPES as readonly
  * unknown[]` cast that `Array.prototype.includes` otherwise forces (`SCOPES`

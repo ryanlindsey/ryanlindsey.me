@@ -39,11 +39,22 @@ export const ADVERTISED_SURFACE = [
     path: '/chat',
     namespace: 'mcp',
     name: 'chat',
-    displayName: 'Grounded chat endpoint',
-    mediaType: 'text/event-stream',
+    // NOT the SSE stream itself. `/chat` is `src/pages/chat.astro`, a page a
+    // person or an agent that reads HTML can open; verified against
+    // production on 2026-09-14, `GET https://ryanlindsey.me/chat` answers
+    // `text/html`. The stream lives at `POST /chat/send`, which needs a
+    // Turnstile response token an agent cannot mint, so it is not
+    // advertised here -- `mediaType: 'text/event-stream'` used to sit on
+    // this entry and was wrong for exactly that reason: it named a media
+    // type this path never serves and implied an agent-callable endpoint
+    // this path is not. `src/pages/llms.txt.ts`'s own `/chat` entry, the
+    // document this catalog names as its `service-doc`, has always
+    // described the same path as a page; this entry now agrees with it.
+    displayName: 'Grounded chat page',
+    mediaType: 'text/html',
     representativeQueries: [
-      'Ask a question about this portfolio and get a cited answer',
-      'What did this project actually change?',
+      'Where can I ask a question about this portfolio and read a cited answer?',
+      'Is there a page for asking what a project actually changed?',
     ],
   },
   {

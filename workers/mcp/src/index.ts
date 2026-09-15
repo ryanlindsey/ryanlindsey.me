@@ -217,15 +217,20 @@ export default {
     // authorization discovery sends a client -- an agent that reached
     // mcp.ryanlindsey.me and wants to know what a bearer token here would
     // unlock looks for this document on THIS origin, not on ryanlindsey.me,
-    // which also carries a copy for a reader who starts from the site
-    // instead (src/pages/.well-known/oauth-protected-resource.ts). Same
+    // which independently serves the same document SHAPE describing ITS OWN
+    // `/mcp` (src/pages/.well-known/oauth-protected-resource.ts) -- not a
+    // copy of this one. `buildProtectedResource` takes the serving origin
+    // and derives `resource` from it (epic-165 follow-up review, finding B):
+    // RFC 9728 §2 requires `resource` to identify the origin a client
+    // fetched the document FROM, so the two origins' copies cannot share one
+    // hard-coded value without one of them failing that validation. Same
     // reason it has to sit here rather than fall through to
     // createMcpHandler: HANDLER_OPTIONS answers exactly `route: '/mcp'` and
     // 404s everything else it sees. `/auth.md`, the prose half, stays
     // site-only -- there is no reason for this Worker to carry a second copy
     // of static markdown it does not otherwise serve.
     if (pathname === '/.well-known/oauth-protected-resource') {
-      return new Response(JSON.stringify(buildProtectedResource(`${MCP_ORIGIN}/mcp`), null, 2), {
+      return new Response(JSON.stringify(buildProtectedResource(MCP_ORIGIN), null, 2), {
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
           Link: discoveryLinkHeader(),

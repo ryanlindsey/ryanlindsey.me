@@ -29,7 +29,7 @@ test('every entry carries two to five representative queries', () => {
 });
 
 test('urn identifiers are unique and well formed', () => {
-  const ids = buildAiCatalog('https://ryanlindsey.me').entries.map((e) => e.id);
+  const ids = buildAiCatalog('https://ryanlindsey.me').entries.map((e) => e.identifier);
   expect(new Set(ids).size).toBe(ids.length);
   for (const id of ids) expect(id).toMatch(/^urn:air:ryanlindsey\.me:[a-z-]+:[a-z0-9-]+$/);
 });
@@ -37,6 +37,25 @@ test('urn identifiers are unique and well formed', () => {
 test('every ARD entry carries exactly one of url or data', () => {
   for (const entry of buildAiCatalog('https://ryanlindsey.me').entries) {
     expect(Number('url' in entry) + Number('data' in entry)).toBe(1);
+  }
+});
+
+// Epic-165 follow-up review, second wave, finding C: the manifest's shape was
+// designed without checking it against the real spec (`ards-project/ard-spec`,
+// `spec/schemas/ai-catalog.schema.json`), and the scanner (isitagentready.com)
+// caught what that missed -- `entries[].id` should have been `identifier`
+// (asserted above via `.identifier`), `specVersion` is an enum whose only
+// allowed value is `"1.0"`, and `host`, when present, requires `displayName`
+// and forbids any field the schema does not name (including the `url` this
+// manifest used to carry). Pinned here directly against the schema's own
+// requirements, not against this repo's prior shape.
+test('the manifest conforms to the real ARD schema: pinned specVersion and a schema-shaped host', () => {
+  const doc = buildAiCatalog('https://ryanlindsey.me');
+  expect(doc.specVersion).toBe('1.0');
+  expect(doc.host).toEqual({ displayName: 'ryanlindsey-me' });
+  for (const entry of doc.entries) {
+    expect(entry).toHaveProperty('identifier');
+    expect(entry).not.toHaveProperty('id');
   }
 });
 
@@ -91,4 +110,56 @@ test('the deployed ARD manifest ships JSON and allows cross-origin reads', async
   expect(response.headers.get('access-control-allow-origin')).toBe('*');
   const doc = (await response.json()) as ReturnType<typeof buildAiCatalog>;
   expect(doc.entries).toHaveLength(ADVERTISED_SURFACE.length);
+});
+
+// Epic-165 follow-up review, finding 3: every other test in this file checks
+// the SHAPE of the advertised surface, and nothing fetched it -- which is how
+// `/chat`'s entry could advertise `mediaType: 'text/event-stream'` while
+// `GET /chat` actually answered `text/html`, with no test catching the
+// disagreement. This test closes that gap.
+//
+// Iterates the BUILDERS' EMITTED URLs (`buildApiCatalog(...).linkset[].anchor`
+// and `buildAiCatalog(...).entries[].url`), not `ADVERTISED_SURFACE`'s raw
+// `path` strings -- the same review flagged that the "no advertised path is
+// an unindexed route" guard above iterates raw paths and would miss a future
+// builder-side transform of one, and this is where closing that gap actually
+// matters: what a caller reaches is whatever the builder put in the document
+// it fetched, not whatever `./surface.ts` says was intended.
+test('every URL the discovery builders emit for the advertised surface actually resolves', async () => {
+  const origin = 'https://ryanlindsey.me';
+  const apiCatalogUrls = buildApiCatalog(origin).linkset.map((entry) => entry.anchor);
+  const aiCatalogUrls = buildAiCatalog(origin).entries.map((entry) => {
+    // "every ARD entry carries exactly one of url or data" above already
+    // pins that `url` is the arm every entry actually takes; this repeats
+    // the check here as a real failure rather than a silent skip, because a
+    // future `data` entry would otherwise vanish from this loop instead of
+    // being counted as a resource this test has not checked.
+    if (!('url' in entry)) throw new Error(`ARD entry ${entry.identifier} carries data, not a url`);
+    return entry.url;
+  });
+
+  // Both builders map the same ADVERTISED_SURFACE in the same order
+  // (./api-catalog.ts, ./ard.ts), so their emitted URLs should name the same
+  // resources in the same order. Asserted rather than assumed: a divergence
+  // here is exactly the builder-side drift this test exists to catch, and it
+  // would otherwise surface only as the loop below silently checking one
+  // builder's URLs twice.
+  expect(aiCatalogUrls).toEqual(apiCatalogUrls);
+
+  for (const url of apiCatalogUrls) {
+    // `new URL(...).pathname`, not a string slice off `origin` -- this repo's
+    // CodeQL gate blocks substring/startsWith checks against a URL or origin.
+    const { pathname } = new URL(url);
+    const response = await server.fetch(pathname);
+    if (pathname === '/mcp') {
+      // The one deliberate exception, named rather than folded into a loose
+      // status check that would also pass a 404. Verified against production
+      // (2026-09-14): an MCP endpoint that only speaks JSON-RPC POST answers
+      // GET with 405, and public/_headers and src/pages/llms.txt.ts both
+      // already record that same measurement.
+      expect(response.status, pathname).toBe(405);
+    } else {
+      expect(response.status, pathname).toBe(200);
+    }
+  }
 });
