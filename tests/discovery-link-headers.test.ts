@@ -75,17 +75,39 @@ const mcpServer = createTestHarness({
  * (the MCP Worker here) with the pathname intact, which has no branch for
  * `/llms.txt`. `getWorker(name).fetch(path)` -- the mechanism the harness's own
  * doc comment names for this exact case -- sidesteps host routing entirely.
+ *
+ * Does not conflict with tests/site.smoke.test.ts's own warning against
+ * `getWorker().fetch()` for the SITE worker, even though this function calls
+ * exactly that. That suite avoids it because bypassing the platform's asset
+ * router also bypasses `public/_headers` (Content-Type, this file's own
+ * `Link` rule among them) -- it cares about header and asset-routing parity
+ * with production. This function's callers only assert a live 200, and
+ * `getWorker('ryanlindsey-me').fetch(...)` still reaches `src/worker.ts`'s
+ * exported handler, which still calls `handle()` (@astrojs/cloudflare/handler)
+ * and still serves the real asset -- the passing status below is what confirms
+ * that, not an assumption. A real content-serving path, just not the one to
+ * reach for where header parity is the point.
+ *
+ * Origins are compared by PARSED EQUALITY (`new URL(target).origin ===`)
+ * rather than by `target.startsWith(origin)`. CodeQL's
+ * js/incomplete-url-substring-sanitization flagged the earlier `startsWith`
+ * form, correctly: it also matches a lookalike host like
+ * `https://ryanlindsey.me.evil.com`, which `===` on the parsed origin cannot.
+ * `target` here only ever comes from this suite's own `parseLink()` of a
+ * response this repo generated, so there is no attacker in this path -- but a
+ * malformed `Link` header advertising a lookalike host is exactly the
+ * regression this suite exists to catch, and the prefix form would have
+ * dispatched it to the real site Worker with a mangled path instead of
+ * failing loudly. The `throw` below now fires for that case too, which
+ * `startsWith` never did.
  */
 function dispatchTo(target: string) {
-  if (target.startsWith('https://mcp.ryanlindsey.me')) {
-    return mcpServer
-      .getWorker('ryanlindsey-me-mcp')
-      .fetch(target.replace('https://mcp.ryanlindsey.me', ''));
+  const { origin, pathname, search } = new URL(target);
+  if (origin === 'https://mcp.ryanlindsey.me') {
+    return mcpServer.getWorker('ryanlindsey-me-mcp').fetch(pathname + search);
   }
-  if (target.startsWith('https://ryanlindsey.me')) {
-    return mcpServer
-      .getWorker('ryanlindsey-me')
-      .fetch(target.replace('https://ryanlindsey.me', ''));
+  if (origin === 'https://ryanlindsey.me') {
+    return mcpServer.getWorker('ryanlindsey-me').fetch(pathname + search);
   }
   throw new Error(`unrecognised target origin: ${target}`);
 }
@@ -124,4 +146,18 @@ test('every relation the MCP origin advertises actually resolves', async () => {
     const fetched = await dispatchTo(target);
     expect(fetched.status, `${rel} -> ${target}`).toBe(200);
   }
+});
+
+// The regression `dispatchTo`'s parsed-origin comparison exists to catch: a
+// lookalike host that a `startsWith` check would have accepted as the real
+// origin (CodeQL js/incomplete-url-substring-sanitization, PR #193). Neither
+// call reaches `mcpServer` -- the throw fires before either `getWorker` call
+// -- so this needs no harness state, only the exact-equality check itself.
+test('refuses to dispatch a lookalike host masquerading as either real origin', () => {
+  expect(() => dispatchTo('https://ryanlindsey.me.evil.example/llms.txt')).toThrow(
+    /unrecognised target origin/,
+  );
+  expect(() =>
+    dispatchTo('https://mcp.ryanlindsey.me.evil.example/.well-known/mcp/server-card.json'),
+  ).toThrow(/unrecognised target origin/);
 });

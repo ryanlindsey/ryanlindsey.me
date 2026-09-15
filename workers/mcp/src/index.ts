@@ -146,6 +146,18 @@ const MCP_ORIGIN = 'https://mcp.ryanlindsey.me';
  * global constraint that a builder takes its origin as an argument rather than
  * reading `request.url`); `service-doc` points at the site's own /llms.txt,
  * since this Worker publishes no service document of its own.
+ *
+ * `service-doc`'s target is SITE-absolute, not `MCP_ORIGIN`-absolute -- task
+ * 6's brief literally says "MCP_ORIGIN-absolute targets" for this whole
+ * header, and this one line does not fit that sentence. Deliberate anyway,
+ * and not a drift from it: there is no document at this origin to be
+ * MCP_ORIGIN-absolute ABOUT, and pointing a `service-doc` relation at
+ * something this origin does not serve would be the exact 404 problem this
+ * whole header exists to avoid. `src/lib/mcp/discovery.ts`'s own
+ * `buildMcpDiscovery` already sets this same precedent (its `documentation`
+ * field is this identical literal, on THIS origin's `/.well-known/mcp.json`
+ * response), so this is the second instance of an existing pattern, not a
+ * new one.
  */
 function discoveryLinkHeader(): string {
   return [
