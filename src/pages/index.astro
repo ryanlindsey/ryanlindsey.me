@@ -192,4 +192,45 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
       </div>
     </section>
   )}
+
+  <script>
+    import { WEBMCP_TOOLS, callMcp } from '../lib/discovery/webmcp';
+
+    // WebMCP (https://webmachinelearning.github.io/webmcp/), an early-preview
+    // browser API for registering tools an in-page agent can call directly,
+    // without speaking the MCP wire protocol itself. `navigator.modelContext`
+    // is undefined in almost every browser today, and that absence is the
+    // ordinary case, not a fault -- so this reads it into a local rather than
+    // branching on `'modelContext' in navigator`, which leaves no bare access
+    // on a value that might be undefined and nothing here that throws on load
+    // for the near-universal visitor without the flag.
+    //
+    // The ambient type is declared here rather than in a .d.ts, because this
+    // is the only file that touches it -- the same rule chat.astro's own
+    // `<script>` already follows for `window.turnstile`.
+    declare global {
+      interface Navigator {
+        modelContext?: {
+          provideContext(context: { tools: RegisteredWebMcpTool[] }): void;
+        };
+      }
+    }
+
+    interface RegisteredWebMcpTool {
+      name: string;
+      description: string;
+      inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[] };
+      execute: (args: Record<string, unknown>) => Promise<unknown>;
+    }
+
+    const modelContext = navigator.modelContext;
+    if (modelContext) {
+      modelContext.provideContext({
+        tools: WEBMCP_TOOLS.map((tool) => ({
+          ...tool,
+          execute: (args: Record<string, unknown>) => callMcp(tool.name, args),
+        })),
+      });
+    }
+  </script>
 </Shell>

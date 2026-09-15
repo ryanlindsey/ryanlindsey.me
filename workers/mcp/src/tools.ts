@@ -216,335 +216,402 @@ const PRIVATE_ACCESS_TEXT =
   'issue a scoped, expiring token if it fits. Public tools cover the portfolio in full.';
 
 /**
+ * One public tool, registered through `defineTool` and nothing else (03 §3)
+ * -- the same discipline workers/mcp/src/gated.ts's `GatedTool` follows for
+ * the private tier, and for the same reason that file's own header gives: a
+ * tool's name typed a second time, in a list nothing checks against the
+ * registration itself, is exactly the kind of copy that goes stale silently.
+ *
+ * Restructured from a flat sequence of `defineTool(...)` calls (issue #172):
+ * `PUBLIC_TOOL_NAMES` below is DERIVED from this array so
+ * tests/discovery-webmcp.test.ts -- the WebMCP homepage page, which has no
+ * other way to reach this server's real tool list -- can assert its own
+ * names against what this Worker actually registers, rather than against a
+ * second hand-maintained copy that could rename a tool here and not there.
+ */
+interface PublicTool {
+  name: string;
+  title: string;
+  description: string;
+  register: (server: McpServer, tc: ToolContext, tool: PublicTool) => void;
+}
+
+/**
+ * The three fields every `defineTool` call takes from the table, spelled
+ * once -- mirrors gated.ts's `specOf`, and for the same reason: `defineTool`
+ * should be given what the table declares and nothing else, and spreading a
+ * `PublicTool` would hand it this module's `register` function too.
+ */
+function specOf(tool: PublicTool): Pick<PublicTool, 'name' | 'title' | 'description'> {
+  return { name: tool.name, title: tool.title, description: tool.description };
+}
+
+const PUBLIC_TOOLS: readonly PublicTool[] = [
+  {
+    name: 'get_resume',
+    title: 'Résumé',
+    description:
+      "Ryan Lindsey's résumé: JSON Resume data, the published markdown document, or a short prose summary.",
+    register: (server, tc, tool) =>
+      defineTool<z.infer<typeof RESUME_FORMAT>>(
+        server,
+        tc,
+        {
+          ...specOf(tool),
+          cost: 'cheap',
+          inputSchema: RESUME_FORMAT,
+          // NO `outputSchema`, and this is a decision rather than an omission.
+          //
+          // 04's step 3 asks for `structuredContent` on `format=json`, and
+          // `defineTool` emits that only for a tool that declares an
+          // `outputSchema`. Declaring one binds ALL THREE formats: the SDK
+          // requires structured content on every non-error result of a tool that
+          // advertises a schema, and validates it against that schema
+          // (`validateToolOutput`, @modelcontextprotocol/server 2.0.0,
+          // dist/mcp-DXXb3Vv3.mjs:1439). Two of this tool's formats answer with a
+          // string, so a `z.ZodObject` schema rejects them -- measured, with
+          // `z.looseObject({})`, the loosest object schema there is:
+          //   "Output validation error: Invalid structured content for tool
+          //    get_resume: Invalid input: expected object, received string"
+          //
+          // NOT an SDK limitation, and worth being exact about: the SDK accepts
+          // any standard schema and handles a non-object root deliberately
+          // (`isNonObjectJsonSchemaRoot`). It is `defineTool`'s own
+          // `outputSchema?: z.ZodObject<z.ZodRawShape>` that narrows to objects.
+          // The reason not to widen it is the behaviour on the other side: a
+          // non-object root makes the SDK wrap structured content as
+          // `{ result: <value> }` for 2025-era clients -- which is exactly the
+          // envelope around JSON Resume that 02 §1 forbids -- and it would also
+          // duplicate every markdown document into the response twice, once as
+          // text and once as structured content. So the JSON format's object goes
+          // out as the `content` text, valid JSON a client parses in one step, and
+          // this tool advertises no output schema at all.
+        },
+        async ({ format }, { env }) => {
+          const documents = documentsEnv(env);
+
+          if (format === 'markdown') {
+            const markdown = await fetchDocument(documents, RESUME_SOURCE);
+            if (markdown === null) throw new ToolError(RESUME_UNAVAILABLE);
+            // Frontmatter is the export format's own envelope, not part of the
+            // document a reader was served.
+            return parseFrontmatter(markdown).body;
+          }
+
+          const resume = await fetchResumeJson(documents);
+          if (resume === null) throw new ToolError(RESUME_UNAVAILABLE);
+          // `json` returns it UNRESHAPED (02 §1). `summary` is derived from the
+          // same object rather than from a second fetch of the markdown.
+          return format === 'summary' ? summaryOf(resume, env.SITE_ORIGIN) : resume;
+        },
+      ),
+  },
+  {
+    name: 'list_case_studies',
+    title: 'List case studies',
+    description: 'Published case studies with their metadata and citation URLs.',
+    register: (server, tc, tool) =>
+      defineTool(
+        server,
+        tc,
+        { ...specOf(tool), cost: 'cheap' },
+        async (_args, tc) => await listDocuments(tc, 'case-study'),
+      ),
+  },
+  {
+    name: 'get_case_study',
+    title: 'Get a case study',
+    description: 'The full markdown of one published case study, by slug.',
+    register: (server, tc, tool) =>
+      defineTool(
+        server,
+        tc,
+        {
+          ...specOf(tool),
+          cost: 'cheap',
+          inputSchema: z.object({
+            slug: z.string().min(1).describe('The slug from list_case_studies.'),
+          }),
+        },
+        async ({ slug }: { slug: string }, tc) => {
+          const documents = documentsEnv(tc.env);
+          const index = await fetchDocumentIndex(documents);
+          const source = index.find((s) => s.type === 'case-study' && s.slug === slug);
+          if (!source) {
+            const published = index.filter((s) => s.type === 'case-study').map((s) => s.slug);
+            // Naming what IS available turns a dead end into a next step.
+            throw new ToolError(
+              `Case study "${slug}" not found. Published slugs: ${published.join(', ') || '(none yet)'}`,
+            );
+          }
+          const markdown = await fetchDocument(documents, source);
+          if (markdown === null) {
+            throw new ToolError(`Case study "${slug}" is indexed but did not fetch.`);
+          }
+          return {
+            slug,
+            url: pageUrlFor(source, tc.env.SITE_ORIGIN),
+            markdown: parseFrontmatter(markdown).body,
+          };
+        },
+      ),
+  },
+  {
+    name: 'list_writing',
+    title: 'List writing',
+    description: 'Published posts with their descriptions and citation URLs.',
+    register: (server, tc, tool) =>
+      defineTool(
+        server,
+        tc,
+        { ...specOf(tool), cost: 'cheap' },
+        async (_args, tc) => await listDocuments(tc, 'post'),
+      ),
+  },
+  {
+    name: 'get_post',
+    title: 'Get a post',
+    description: 'The full markdown of one published post, by slug.',
+    register: (server, tc, tool) =>
+      defineTool(
+        server,
+        tc,
+        {
+          ...specOf(tool),
+          cost: 'cheap',
+          inputSchema: z.object({
+            slug: z.string().min(1).describe('The slug from list_writing.'),
+          }),
+        },
+        async ({ slug }: { slug: string }, tc) => {
+          const documents = documentsEnv(tc.env);
+          const index = await fetchDocumentIndex(documents);
+          const source = index.find((s) => s.type === 'post' && s.slug === slug);
+
+          if (!source) {
+            // A client that found a slug in /llms.txt or a search citation does not
+            // necessarily know which collection it belongs to. Answering "not found"
+            // when the document exists under the other tool would be true and
+            // useless, so check before saying it.
+            const asCaseStudy = index.find((s) => s.type === 'case-study' && s.slug === slug);
+            if (asCaseStudy) {
+              throw new ToolError(
+                `"${slug}" is a case study — call get_case_study with that slug.`,
+              );
+            }
+            const published = index.filter((s) => s.type === 'post').map((s) => s.slug);
+            throw new ToolError(
+              `Post "${slug}" not found. Published slugs: ${published.join(', ') || '(none yet)'}`,
+            );
+          }
+
+          const markdown = await fetchDocument(documents, source);
+          if (markdown === null)
+            throw new ToolError(`Post "${slug}" is indexed but did not fetch.`);
+          return {
+            slug,
+            url: pageUrlFor(source, tc.env.SITE_ORIGIN),
+            markdown: parseFrontmatter(markdown).body,
+          };
+        },
+      ),
+  },
+  {
+    name: 'search_writing',
+    title: 'Search the writing',
+    // The `exact` flag is named in the description because a caller cannot
+    // act on a field it does not know to read, and the whole point of
+    // surfacing it is that a degraded excerpt is not quoted as a passage.
+    description:
+      'Semantic search across the published posts, case studies and résumé. Each result is a passage, the URL it is published at, and an "exact" flag saying whether the excerpt is the passage that matched.',
+    register: (server, tc, tool) =>
+      defineTool<z.infer<typeof SEARCH_INPUT>>(
+        server,
+        tc,
+        {
+          ...specOf(tool),
+          // The only `inference` tool: it spends a Workers AI embedding call per
+          // query, so it draws from the tighter of the two allowances in `LIMITS`
+          // (src/lib/mcp/limits.ts) rather than the document reads' one.
+          cost: 'inference',
+          inputSchema: SEARCH_INPUT,
+        },
+        async ({ query, limit }, tc): Promise<Citation[]> => {
+          const vector = await queryVector(tc.env, query);
+
+          const found = await tc.env.VECTORIZE.query(vector, {
+            topK: limit,
+            // Asked for AND read: every match's `tier` is re-checked in the loop
+            // below. Free at this level ("no additional overhead" for indexed
+            // properties), and `tier` and `type` are the only two properties any
+            // vector in this index carries (src/lib/corpus.ts's `metadataFor`).
+            returnMetadata: 'indexed',
+            // STRUCTURAL INTENT, not decoration, and day 5 replaces it -- read
+            // 09 §3 before deleting or widening this line. Everything in
+            // `ryanlindsey-me-corpus` today is `tier: 'public'` (src/lib/corpus.ts's
+            // `CORPUS_TIER`), so the filter changes no result on this branch.
+            //
+            // DAY 5 ANSWERED THIS, and not the way the paragraph above expected --
+            // read the answer before acting on the instruction.
+            //
+            // The instruction was: replace this filter with a SEPARATE index, so a
+            // missing filter cannot return a private passage at all. Day 5 did not
+            // create one, deliberately. Nothing it built embeds a gated document:
+            // the fit engine grounds on the PUBLIC corpus because a citation has to
+            // resolve to a URL a reader can open (03 §4), and every private-tier
+            // tool is a keyed R2 read (src/lib/tier/private-docs.ts). A second
+            // Vectorize index would therefore have been empty -- a claim about a
+            // partition rather than a partition, and this repo has been bitten
+            // often enough by green runs against fakes to name that failure.
+            //
+            // The partition day 5 SHIPPED is stronger where it counts and testable
+            // today: two R2 buckets, and a public document layer (`DocumentsEnv`)
+            // whose type does not declare `R2_PRIVATE` at all, so a public tool
+            // cannot name the binding, filter or no filter.
+            // tests/tier-private-docs.test.ts asserts that at the type level.
+            //
+            // SO THE INSTRUCTION TRANSFERS RATHER THAN EXPIRES: the day something
+            // embeds a non-public document, this filter stops being sufficient and
+            // the separate index has to be built in the same change.
+            filter: { tier: CORPUS_TIER },
+          });
+
+          // Nothing matched: answer with the empty list before spending an
+          // /llms.txt fetch and a KV read that could not change it.
+          if (found.matches.length === 0) return [];
+
+          const documents = documentsEnv(tc.env);
+          const [manifest, index] = await Promise.all([
+            // The chunk counts the embedding job recorded. They are what makes a
+            // rebuilt excerpt checkable at all -- see `excerptFor`.
+            readCorpusManifest(tc.env),
+            fetchDocumentIndex(documents),
+          ]);
+
+          // One fetch per cited DOCUMENT, not per match: several chunks of the
+          // same post routinely come back in one result set.
+          const fetched = new Map<string, string | null>();
+          const citations: Citation[] = [];
+
+          for (const match of found.matches) {
+            // The `filter` above should already have made this impossible, which
+            // is precisely why it is checked rather than assumed. Vectorize's
+            // documented behaviour for a filtered query against a property that is
+            // not indexed is to return partial or EMPTY results with NO ERROR
+            // (workers/mcp/wrangler.jsonc's note on the metadata indexes), so a
+            // filter that stops doing its job does not announce itself -- and the
+            // direction it fails in is the one that matters here, because day 5
+            // puts a non-public tier behind this same call. The metadata is
+            // already on the wire, so the second opinion costs one comparison.
+            //
+            // Fails CLOSED: a match whose tier cannot be confirmed `public` is
+            // dropped rather than cited. Every vector this corpus writes carries
+            // `{ tier, type }` and both are indexed, so a match reaching this
+            // branch means something is wrong with the index rather than with the
+            // document -- and the safe answer to "I cannot tell whose this is" on
+            // a public tool is not to serve it.
+            if (match.metadata?.tier !== CORPUS_TIER) {
+              console.warn(
+                `mcp/search: ${match.id} did not come back as tier=${CORPUS_TIER}; dropping the match`,
+              );
+              continue;
+            }
+
+            const parsed = parseChunkId(match.id);
+            if (parsed === null) {
+              console.warn(`mcp/search: unrecognised vector id ${JSON.stringify(match.id)}`);
+              continue;
+            }
+
+            // The index is the live list of PUBLISHED documents, so this is also
+            // the check that a citation can never name something the site no
+            // longer serves. A vector for an unpublished document should have been
+            // deleted by the refresh; if one survives, it is dropped here rather
+            // than cited.
+            const source = index.find((s) => s.type === parsed.type && s.slug === parsed.slug);
+            if (source === undefined) {
+              console.warn(
+                `mcp/search: ${match.id} is not a published document; dropping the match`,
+              );
+              continue;
+            }
+
+            const key = documentKey(source);
+            if (!fetched.has(key)) fetched.set(key, await fetchDocument(documents, source));
+            const markdown = fetched.get(key) ?? null;
+            // Listed but unfetchable is a broken deploy, not an answerable result:
+            // drop the match rather than cite a document with no excerpt, the same
+            // call `listDocuments` makes for the same case.
+            if (markdown === null) continue;
+
+            const citation = citationFor({
+              type: parsed.type,
+              slug: parsed.slug,
+              chunk: parsed.chunk,
+              score: match.score,
+              url: pageUrlFor(source, tc.env.SITE_ORIGIN),
+              markdown,
+              expectedChunks: manifest[key]?.chunks ?? UNKNOWN_CHUNK_COUNT,
+            });
+
+            // The caller is told through `citation.exact`; this is for us. A
+            // degraded citation means the index and the chunker have drifted
+            // apart, and the fix is a re-embed rather than anything in this file,
+            // so the vector id has to reach the logs to be actionable.
+            if (!citation.exact) {
+              console.warn(
+                `mcp/search: ${match.id} did not line up with the manifest; citing the document lead`,
+              );
+            }
+
+            citations.push(citation);
+          }
+
+          return citations;
+        },
+      ),
+  },
+  {
+    name: 'request_private_access',
+    title: 'Request private access',
+    description: 'Explains the private access tier and how to request a scoped token.',
+    register: (server, tc, tool) =>
+      defineTool(
+        server,
+        tc,
+        { ...specOf(tool), cost: 'cheap' },
+        // No arguments and no lookup: the reviewed copy above is the whole
+        // answer. 06 §3 treats a call here as a high-intent event worth a
+        // notification, but the queue that would carry one is day 6's and is not
+        // bound on this Worker (day 5 finding 7) -- this tool call's audit row is
+        // the day-4 record of the event, and that gap is a recorded decision, not
+        // an omission.
+        async (_args, _tc) => PRIVATE_ACCESS_TEXT,
+      ),
+  },
+];
+
+/**
+ * Every public tool's name, DERIVED from `PUBLIC_TOOLS` rather than retyped
+ * -- the same reasoning gated.ts's `GATED_TOOL_NAMES` gives for the private
+ * tier's own list. Added for issue #172: tests/discovery-webmcp.test.ts
+ * checks the browser-facing WebMCP page's tool names against this export
+ * rather than against a hand-typed copy, which is the whole point of the
+ * fix -- a hand-typed copy is exactly what could rename a tool here and not
+ * there and stay green.
+ */
+export const PUBLIC_TOOL_NAMES: readonly string[] = PUBLIC_TOOLS.map((tool) => tool.name);
+
+/**
  * Every tool this server exposes beyond the one `createServer` registers
  * itself, through `defineTool` and nothing else (03 §3).
  *
- * One function rather than one per tool: adding a tool is a `defineTool(...)`
- * call appended here, and there is no second place to remember. Registering
- * one any other way skips the audit trail and the limiter, which is why
- * `defineTool` is the only registration path in this Worker.
+ * Iterates `PUBLIC_TOOLS` rather than calling `defineTool` inline seven times
+ * (issue #172): adding a tool is still one entry appended to that array, and
+ * there is still no second place to remember -- the loop below is the only
+ * thing this function does now, and `PUBLIC_TOOL_NAMES` above is what the
+ * restructure was for.
  */
 export function registerTools(server: McpServer, tc: ToolContext): void {
-  defineTool<z.infer<typeof RESUME_FORMAT>>(
-    server,
-    tc,
-    {
-      name: 'get_resume',
-      title: 'Résumé',
-      description:
-        "Ryan Lindsey's résumé: JSON Resume data, the published markdown document, or a short prose summary.",
-      cost: 'cheap',
-      inputSchema: RESUME_FORMAT,
-      // NO `outputSchema`, and this is a decision rather than an omission.
-      //
-      // 04's step 3 asks for `structuredContent` on `format=json`, and
-      // `defineTool` emits that only for a tool that declares an
-      // `outputSchema`. Declaring one binds ALL THREE formats: the SDK
-      // requires structured content on every non-error result of a tool that
-      // advertises a schema, and validates it against that schema
-      // (`validateToolOutput`, @modelcontextprotocol/server 2.0.0,
-      // dist/mcp-DXXb3Vv3.mjs:1439). Two of this tool's formats answer with a
-      // string, so a `z.ZodObject` schema rejects them -- measured, with
-      // `z.looseObject({})`, the loosest object schema there is:
-      //   "Output validation error: Invalid structured content for tool
-      //    get_resume: Invalid input: expected object, received string"
-      //
-      // NOT an SDK limitation, and worth being exact about: the SDK accepts
-      // any standard schema and handles a non-object root deliberately
-      // (`isNonObjectJsonSchemaRoot`). It is `defineTool`'s own
-      // `outputSchema?: z.ZodObject<z.ZodRawShape>` that narrows to objects.
-      // The reason not to widen it is the behaviour on the other side: a
-      // non-object root makes the SDK wrap structured content as
-      // `{ result: <value> }` for 2025-era clients -- which is exactly the
-      // envelope around JSON Resume that 02 §1 forbids -- and it would also
-      // duplicate every markdown document into the response twice, once as
-      // text and once as structured content. So the JSON format's object goes
-      // out as the `content` text, valid JSON a client parses in one step, and
-      // this tool advertises no output schema at all.
-    },
-    async ({ format }, { env }) => {
-      const documents = documentsEnv(env);
-
-      if (format === 'markdown') {
-        const markdown = await fetchDocument(documents, RESUME_SOURCE);
-        if (markdown === null) throw new ToolError(RESUME_UNAVAILABLE);
-        // Frontmatter is the export format's own envelope, not part of the
-        // document a reader was served.
-        return parseFrontmatter(markdown).body;
-      }
-
-      const resume = await fetchResumeJson(documents);
-      if (resume === null) throw new ToolError(RESUME_UNAVAILABLE);
-      // `json` returns it UNRESHAPED (02 §1). `summary` is derived from the
-      // same object rather than from a second fetch of the markdown.
-      return format === 'summary' ? summaryOf(resume, env.SITE_ORIGIN) : resume;
-    },
-  );
-
-  defineTool(
-    server,
-    tc,
-    {
-      name: 'list_case_studies',
-      title: 'List case studies',
-      description: 'Published case studies with their metadata and citation URLs.',
-      cost: 'cheap',
-    },
-    async (_args, tc) => await listDocuments(tc, 'case-study'),
-  );
-
-  defineTool(
-    server,
-    tc,
-    {
-      name: 'get_case_study',
-      title: 'Get a case study',
-      description: 'The full markdown of one published case study, by slug.',
-      cost: 'cheap',
-      inputSchema: z.object({
-        slug: z.string().min(1).describe('The slug from list_case_studies.'),
-      }),
-    },
-    async ({ slug }: { slug: string }, tc) => {
-      const documents = documentsEnv(tc.env);
-      const index = await fetchDocumentIndex(documents);
-      const source = index.find((s) => s.type === 'case-study' && s.slug === slug);
-      if (!source) {
-        const published = index.filter((s) => s.type === 'case-study').map((s) => s.slug);
-        // Naming what IS available turns a dead end into a next step.
-        throw new ToolError(
-          `Case study "${slug}" not found. Published slugs: ${published.join(', ') || '(none yet)'}`,
-        );
-      }
-      const markdown = await fetchDocument(documents, source);
-      if (markdown === null) {
-        throw new ToolError(`Case study "${slug}" is indexed but did not fetch.`);
-      }
-      return {
-        slug,
-        url: pageUrlFor(source, tc.env.SITE_ORIGIN),
-        markdown: parseFrontmatter(markdown).body,
-      };
-    },
-  );
-
-  defineTool(
-    server,
-    tc,
-    {
-      name: 'list_writing',
-      title: 'List writing',
-      description: 'Published posts with their descriptions and citation URLs.',
-      cost: 'cheap',
-    },
-    async (_args, tc) => await listDocuments(tc, 'post'),
-  );
-
-  defineTool(
-    server,
-    tc,
-    {
-      name: 'get_post',
-      title: 'Get a post',
-      description: 'The full markdown of one published post, by slug.',
-      cost: 'cheap',
-      inputSchema: z.object({ slug: z.string().min(1).describe('The slug from list_writing.') }),
-    },
-    async ({ slug }: { slug: string }, tc) => {
-      const documents = documentsEnv(tc.env);
-      const index = await fetchDocumentIndex(documents);
-      const source = index.find((s) => s.type === 'post' && s.slug === slug);
-
-      if (!source) {
-        // A client that found a slug in /llms.txt or a search citation does not
-        // necessarily know which collection it belongs to. Answering "not found"
-        // when the document exists under the other tool would be true and
-        // useless, so check before saying it.
-        const asCaseStudy = index.find((s) => s.type === 'case-study' && s.slug === slug);
-        if (asCaseStudy) {
-          throw new ToolError(`"${slug}" is a case study — call get_case_study with that slug.`);
-        }
-        const published = index.filter((s) => s.type === 'post').map((s) => s.slug);
-        throw new ToolError(
-          `Post "${slug}" not found. Published slugs: ${published.join(', ') || '(none yet)'}`,
-        );
-      }
-
-      const markdown = await fetchDocument(documents, source);
-      if (markdown === null) throw new ToolError(`Post "${slug}" is indexed but did not fetch.`);
-      return {
-        slug,
-        url: pageUrlFor(source, tc.env.SITE_ORIGIN),
-        markdown: parseFrontmatter(markdown).body,
-      };
-    },
-  );
-
-  defineTool<z.infer<typeof SEARCH_INPUT>>(
-    server,
-    tc,
-    {
-      name: 'search_writing',
-      title: 'Search the writing',
-      // The `exact` flag is named in the description because a caller cannot
-      // act on a field it does not know to read, and the whole point of
-      // surfacing it is that a degraded excerpt is not quoted as a passage.
-      description:
-        'Semantic search across the published posts, case studies and résumé. Each result is a passage, the URL it is published at, and an "exact" flag saying whether the excerpt is the passage that matched.',
-      // The only `inference` tool: it spends a Workers AI embedding call per
-      // query, so it draws from the tighter of the two allowances in `LIMITS`
-      // (src/lib/mcp/limits.ts) rather than the document reads' one.
-      cost: 'inference',
-      inputSchema: SEARCH_INPUT,
-    },
-    async ({ query, limit }, tc): Promise<Citation[]> => {
-      const vector = await queryVector(tc.env, query);
-
-      const found = await tc.env.VECTORIZE.query(vector, {
-        topK: limit,
-        // Asked for AND read: every match's `tier` is re-checked in the loop
-        // below. Free at this level ("no additional overhead" for indexed
-        // properties), and `tier` and `type` are the only two properties any
-        // vector in this index carries (src/lib/corpus.ts's `metadataFor`).
-        returnMetadata: 'indexed',
-        // STRUCTURAL INTENT, not decoration, and day 5 replaces it -- read
-        // 09 §3 before deleting or widening this line. Everything in
-        // `ryanlindsey-me-corpus` today is `tier: 'public'` (src/lib/corpus.ts's
-        // `CORPUS_TIER`), so the filter changes no result on this branch.
-        //
-        // DAY 5 ANSWERED THIS, and not the way the paragraph above expected --
-        // read the answer before acting on the instruction.
-        //
-        // The instruction was: replace this filter with a SEPARATE index, so a
-        // missing filter cannot return a private passage at all. Day 5 did not
-        // create one, deliberately. Nothing it built embeds a gated document:
-        // the fit engine grounds on the PUBLIC corpus because a citation has to
-        // resolve to a URL a reader can open (03 §4), and every private-tier
-        // tool is a keyed R2 read (src/lib/tier/private-docs.ts). A second
-        // Vectorize index would therefore have been empty -- a claim about a
-        // partition rather than a partition, and this repo has been bitten
-        // often enough by green runs against fakes to name that failure.
-        //
-        // The partition day 5 SHIPPED is stronger where it counts and testable
-        // today: two R2 buckets, and a public document layer (`DocumentsEnv`)
-        // whose type does not declare `R2_PRIVATE` at all, so a public tool
-        // cannot name the binding, filter or no filter.
-        // tests/tier-private-docs.test.ts asserts that at the type level.
-        //
-        // SO THE INSTRUCTION TRANSFERS RATHER THAN EXPIRES: the day something
-        // embeds a non-public document, this filter stops being sufficient and
-        // the separate index has to be built in the same change.
-        filter: { tier: CORPUS_TIER },
-      });
-
-      // Nothing matched: answer with the empty list before spending an
-      // /llms.txt fetch and a KV read that could not change it.
-      if (found.matches.length === 0) return [];
-
-      const documents = documentsEnv(tc.env);
-      const [manifest, index] = await Promise.all([
-        // The chunk counts the embedding job recorded. They are what makes a
-        // rebuilt excerpt checkable at all -- see `excerptFor`.
-        readCorpusManifest(tc.env),
-        fetchDocumentIndex(documents),
-      ]);
-
-      // One fetch per cited DOCUMENT, not per match: several chunks of the
-      // same post routinely come back in one result set.
-      const fetched = new Map<string, string | null>();
-      const citations: Citation[] = [];
-
-      for (const match of found.matches) {
-        // The `filter` above should already have made this impossible, which
-        // is precisely why it is checked rather than assumed. Vectorize's
-        // documented behaviour for a filtered query against a property that is
-        // not indexed is to return partial or EMPTY results with NO ERROR
-        // (workers/mcp/wrangler.jsonc's note on the metadata indexes), so a
-        // filter that stops doing its job does not announce itself -- and the
-        // direction it fails in is the one that matters here, because day 5
-        // puts a non-public tier behind this same call. The metadata is
-        // already on the wire, so the second opinion costs one comparison.
-        //
-        // Fails CLOSED: a match whose tier cannot be confirmed `public` is
-        // dropped rather than cited. Every vector this corpus writes carries
-        // `{ tier, type }` and both are indexed, so a match reaching this
-        // branch means something is wrong with the index rather than with the
-        // document -- and the safe answer to "I cannot tell whose this is" on
-        // a public tool is not to serve it.
-        if (match.metadata?.tier !== CORPUS_TIER) {
-          console.warn(
-            `mcp/search: ${match.id} did not come back as tier=${CORPUS_TIER}; dropping the match`,
-          );
-          continue;
-        }
-
-        const parsed = parseChunkId(match.id);
-        if (parsed === null) {
-          console.warn(`mcp/search: unrecognised vector id ${JSON.stringify(match.id)}`);
-          continue;
-        }
-
-        // The index is the live list of PUBLISHED documents, so this is also
-        // the check that a citation can never name something the site no
-        // longer serves. A vector for an unpublished document should have been
-        // deleted by the refresh; if one survives, it is dropped here rather
-        // than cited.
-        const source = index.find((s) => s.type === parsed.type && s.slug === parsed.slug);
-        if (source === undefined) {
-          console.warn(`mcp/search: ${match.id} is not a published document; dropping the match`);
-          continue;
-        }
-
-        const key = documentKey(source);
-        if (!fetched.has(key)) fetched.set(key, await fetchDocument(documents, source));
-        const markdown = fetched.get(key) ?? null;
-        // Listed but unfetchable is a broken deploy, not an answerable result:
-        // drop the match rather than cite a document with no excerpt, the same
-        // call `listDocuments` makes for the same case.
-        if (markdown === null) continue;
-
-        const citation = citationFor({
-          type: parsed.type,
-          slug: parsed.slug,
-          chunk: parsed.chunk,
-          score: match.score,
-          url: pageUrlFor(source, tc.env.SITE_ORIGIN),
-          markdown,
-          expectedChunks: manifest[key]?.chunks ?? UNKNOWN_CHUNK_COUNT,
-        });
-
-        // The caller is told through `citation.exact`; this is for us. A
-        // degraded citation means the index and the chunker have drifted
-        // apart, and the fix is a re-embed rather than anything in this file,
-        // so the vector id has to reach the logs to be actionable.
-        if (!citation.exact) {
-          console.warn(
-            `mcp/search: ${match.id} did not line up with the manifest; citing the document lead`,
-          );
-        }
-
-        citations.push(citation);
-      }
-
-      return citations;
-    },
-  );
-
-  defineTool(
-    server,
-    tc,
-    {
-      name: 'request_private_access',
-      title: 'Request private access',
-      description: 'Explains the private access tier and how to request a scoped token.',
-      cost: 'cheap',
-    },
-    // No arguments and no lookup: the reviewed copy above is the whole
-    // answer. 06 §3 treats a call here as a high-intent event worth a
-    // notification, but the queue that would carry one is day 6's and is not
-    // bound on this Worker (day 5 finding 7) -- this tool call's audit row is
-    // the day-4 record of the event, and that gap is a recorded decision, not
-    // an omission.
-    async (_args, _tc) => PRIVATE_ACCESS_TEXT,
-  );
+  for (const tool of PUBLIC_TOOLS) tool.register(server, tc, tool);
 }
