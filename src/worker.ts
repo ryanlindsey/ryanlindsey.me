@@ -4,7 +4,6 @@ import { handleEventBatch } from './lib/agent-intel/consume';
 import { highIntentFor } from './lib/agent-intel/intent';
 import { recordAgentEvent, type Surface } from './lib/agent-intel/record';
 import { NOT_FOUND_PROBE } from './lib/not-found-probe';
-import { regenerateResumePdf } from './lib/resume-pdf';
 import { enforceRetention } from './lib/retention';
 import { listCampaigns } from './lib/tier/campaigns';
 
@@ -21,8 +20,11 @@ import { listCampaigns } from './lib/tier/campaigns';
  * `output: 'static'` and no such route, the adapter passes `main: undefined`
  * to its Vite plugin and the build is assets-only, which would leave
  * `scheduled()` below working under `astro dev` and silently absent from the
- * deployed Worker. src/pages/resume.pdf.ts is the route that keeps that from
- * happening; it is on-demand by nature rather than a contrivance.
+ * deployed Worker. src/pages/resume.pdf.ts was the first route to keep that
+ * from happening and this comment named it alone until #186; /chat, /fit, /ops
+ * and /404 have opted out since, so the condition now rests on five routes
+ * rather than one. Every one of them is on-demand by nature rather than a
+ * contrivance, which is why none of them is a load-bearing thing to protect.
  *
  * Task 8's `Accept:` negotiation is the other handler here. Task 15's corpus
  * embedding job is NOT, though it briefly was: it needs the `ai` binding, and an
@@ -566,25 +568,26 @@ export default {
   },
 
   /**
-   * The daily jobs (see `triggers.crons` in wrangler.jsonc), dispatched on which
+   * The daily job (see `triggers.crons` in wrangler.jsonc), dispatched on which
    * trigger fired.
    *
-   * 05:17 UTC is the résumé-PDF refresh (Task 5). It is hash-gated, and that is
-   * the whole point of running it on a schedule at all: `regenerateResumePdf`
-   * does not touch a browser unless the résumé source hash has moved. The steady
-   * state of this cron is one KV read, so cost scales with content changing
-   * rather than with days elapsed.
+   * 05:47 UTC is the retention sweep (day 6, 06 §2). It is the only one left.
    *
-   * 05:47 UTC is the retention sweep (day 6, 06 §2). A SECOND SLOT rather than a
-   * second call on the same trigger, for the reason workers/mcp/wrangler.jsonc
-   * already records about its own 05:32: separated slots make a cron failure
-   * attributable on sight rather than by reading which handler threw.
+   * THE SWITCH SURVIVES A SINGLE CASE ON PURPOSE. It used to dispatch two, and
+   * 05:17's résumé-PDF refresh went with the runtime renderer in #186: the PDF
+   * is a pure function of the commit, so a cron asking "has the source moved
+   * since yesterday?" was answering a question git already answers, and
+   * .github/workflows/resume-pdf.yml now renders on the push that moves it.
+   * A second job is likely enough -- and a bare `if` that silently ran the
+   * sweep on any trigger at all is exactly the failure the `default` arm below
+   * exists to prevent -- that collapsing this to one branch would be a change
+   * to make twice.
    *
    * `controller.cron` is the trigger's own expression, exactly as written in
-   * wrangler.jsonc -- so these two strings and that array are one fact spelled in
-   * two files, and the `default` arm is what makes a mismatch loud instead of
+   * wrangler.jsonc -- so that string and that array are one fact spelled in two
+   * files, and the `default` arm is what makes a mismatch loud instead of
    * silent. Without it, editing a cron expression in config would leave this
-   * handler matching nothing and both jobs would simply stop, with a green deploy
+   * handler matching nothing and the job would simply stop, with a green deploy
    * and no error anywhere.
    *
    * The publishing corpus's embedding refresh (Task 15) ran here too until the
@@ -602,9 +605,6 @@ export default {
    */
   scheduled: (controller, env, ctx) => {
     switch (controller.cron) {
-      case '17 5 * * *':
-        ctx.waitUntil(regenerateResumePdf(env, { force: false }));
-        return;
       case '47 5 * * *':
         ctx.waitUntil(
           enforceRetention(env.DB, new Date(controller.scheduledTime)).then((deleted) => {

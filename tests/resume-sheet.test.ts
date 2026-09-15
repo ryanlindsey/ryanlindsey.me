@@ -344,8 +344,10 @@ test('the sheet is absent from the sitemap', async () => {
 test('the sheet announces its own readiness the way the renderer waits for it', async () => {
   const html = await sheet();
 
-  // `RESUME_READY_SELECTOR` in src/lib/resume-pdf.ts is `[data-resume-ready]`,
-  // and this is the second page to write it. Both strings are asserted in the
+  // `READY_ATTRIBUTE` in scripts/resume-sheet.mjs is `data-resume-ready` --
+  // it was `RESUME_READY_SELECTOR` in src/lib/resume-pdf.ts until #186 moved
+  // authority to the renderer that waits on it -- and this is the second page
+  // to write it. Both strings are asserted in the
   // SERVED markup rather than in the template: an inline script is what puts
   // them there, and a bundled one would move both into an external file while
   // the page still looked correct in source.

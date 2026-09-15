@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { LIMITS, GLOBAL_LIMITS, retryHint, type LimitsEnv } from '../src/lib/mcp/limits';
-import { MCP_WORKER, MOCK_AI_WORKER, MOCK_BROWSER_WORKER, SITE_WORKER } from './workers';
+import { MCP_WORKER, MOCK_AI_WORKER, SITE_WORKER } from './workers';
 
 /**
  * The rate limiter's own guarantee, tested against the object that carries it
@@ -22,10 +22,10 @@ import { MCP_WORKER, MOCK_AI_WORKER, MOCK_BROWSER_WORKER, SITE_WORKER } from './
  * binding could not be that object.
  */
 /**
- * The site Worker and its own mock-browser dependency are booted here even
- * though nothing in this file reads a document, and that is not defensive
- * padding -- it is a hard requirement of the harness the moment #28's fix
- * lands alongside this one. That change gives the MCP Worker a `SITE` service
+ * The site Worker is booted here even though nothing in this file reads a
+ * document, and that is not defensive padding -- it is a hard requirement of
+ * the harness the moment #28's fix lands alongside this one. That change gives
+ * the MCP Worker a `SITE` service
  * binding naming `ryanlindsey-me`, and workerd refuses to START a Worker whose
  * service binding names a service the harness has not defined:
  *
@@ -37,14 +37,15 @@ import { MCP_WORKER, MOCK_AI_WORKER, MOCK_BROWSER_WORKER, SITE_WORKER } from './
  * it takes every test here down at once. Listing them is correct with or
  * without that binding present -- an unused Worker in the list only costs a
  * boot -- which is what keeps this file independent of the order the two
- * fixes merge in. MOCK_BROWSER_WORKER comes along because `SITE_WORKER`'s
- * `bindingOverrides` names it.
+ * fixes merge in. MOCK_BROWSER_WORKER came along too until #186, because
+ * `SITE_WORKER`'s `bindingOverrides` named it and an override's target is
+ * bound by the same rule; that override is gone with the renderer.
  *
  * The MCP Worker stays first so it remains the primary one, though this suite
  * does not rely on that: it reaches its Worker by name below.
  */
 const server = createTestHarness({
-  workers: [MCP_WORKER, SITE_WORKER, MOCK_BROWSER_WORKER, MOCK_AI_WORKER],
+  workers: [MCP_WORKER, SITE_WORKER, MOCK_AI_WORKER],
 });
 
 beforeAll(async () => {

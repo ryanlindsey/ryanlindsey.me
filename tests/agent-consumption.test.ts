@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { buildMcpDiscovery } from '../src/lib/mcp/discovery';
-import { SITE_HARNESS_WORKERS } from './workers';
+import { SITE_HARNESS_WORKERS, seedResumePdf } from './workers';
 
 // Day 3 Task 13 (02 §3): the launch gate over every agent-publishing surface
 // Tasks 3 and 7-12 built. 02 §3's own words: "Acceptance test in CI: a
@@ -24,6 +24,9 @@ const server = createTestHarness({
 
 beforeAll(async () => {
   await server.listen();
+  // /resume.pdf reads R2 and no longer renders on a miss (#186), so a route
+  // this suite expects to answer 200 needs its object put there first.
+  await seedResumePdf(await server.getWorker<Env>().getEnv());
 });
 
 afterAll(async () => {

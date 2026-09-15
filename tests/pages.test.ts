@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import type { CollectionEntry } from 'astro:content';
-import { SITE_HARNESS_WORKERS } from './workers';
+import { SITE_HARNESS_WORKERS, seedResumePdf } from './workers';
 import { BANNED_PATTERNS } from './candidacy-patterns';
 import { elementWith } from './markup';
 import { GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
@@ -25,6 +25,9 @@ const server = createTestHarness({
 
 beforeAll(async () => {
   await server.listen();
+  // /resume.pdf reads R2 and no longer renders on a miss (#186), so a route
+  // this suite expects to answer 200 needs its object put there first.
+  await seedResumePdf(await server.getWorker<Env>().getEnv());
 });
 
 afterAll(async () => {
@@ -1530,10 +1533,12 @@ test('the resume links the place it says Ryan is based', async () => {
 });
 
 test('the resume sheet carries contact details the screen page does not', async () => {
-  // 02 §1 wants the PDF ATS-safe, and an ATS-safe résumé with no way to reach
-  // the candidate is a contradiction. /resume.pdf is headless Chrome printing
-  // /resume?print (src/lib/resume-pdf.ts), so the only place this block can
-  // live is the page itself, hidden on screen.
+  // 02 §1 wants the résumé ATS-safe, and an ATS-safe résumé with no way to
+  // reach anyone is a contradiction. This block was added when /resume.pdf was
+  // headless Chrome printing /resume, which made the page itself the only place
+  // it could live; #186 moved the published sheet to /resume.print, and the
+  // block stays hidden on screen here because a browser print of /resume should
+  // carry the details too.
   //
   // Print-only was the ruling on 2026-09-13 rather than showing it on both:
   // design 1k's masthead stays as drawn, and the phone number stays off an

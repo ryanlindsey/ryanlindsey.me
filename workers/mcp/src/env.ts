@@ -62,7 +62,8 @@ export interface McpEnv {
   CORPUS_REFRESH?: string;
   /**
    * Test-only seam, the same shape and the same reasoning as `CORPUS_REFRESH`
-   * above and `RESUME_PDF_RENDERER` before it: `'on'` (the deployed default,
+   * above, and as `RESUME_PDF_RENDERER` before both (deleted in #186 with the
+   * renderer it selected): `'on'` (the deployed default,
    * which comes from the var being ABSENT rather than from a default branch)
    * or `'stub'`. No deployed environment sets it -- wrangler.jsonc does not
    * declare it -- and an unrecognised value throws rather than guessing.

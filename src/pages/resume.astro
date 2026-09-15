@@ -427,20 +427,26 @@ const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading tex
 
   <script>
     // `data-print-mode` USED TO BE SET HERE and was removed in fix round 2: it
-    // was written on `/resume?print` and read by nothing. Task 5 ended up
-    // driving the PDF with `page.emulateMediaType('print')` instead (see
-    // src/lib/resume-pdf.ts's `browserRenderer`), which makes the real
+    // was written on `/resume?print` and read by nothing. Task 5 drove the PDF
+    // with `emulateMediaType('print')` instead, which makes the real
     // `@media print` rules in global.css and tokens.css apply -- so the
-    // attribute was advertising a styling hook that did not exist. `?print` is
-    // still the URL Browser Run navigates to (`RESUME_PRINT_PATH`); it just
-    // does not need this page's help to mean anything.
+    // attribute was advertising a styling hook that did not exist. `?print`
+    // named no renderer after that, and since #186 there is no renderer of this
+    // page at all: the sheet is built from /resume.print, and this page is only
+    // ever printed by a person using their browser's own print command.
 
-    // Day 3 Task 5: the readiness signal Browser Run waits on before calling
-    // page.pdf(). document.fonts.ready is the only deterministic "this page is
-    // actually painted in its real typefaces" event -- networkidle0 and
-    // waitForFonts are both heuristics that can fire while the fallback face
-    // is still on screen, which is the documented top cause of a PDF that
-    // renders but looks wrong.
+    // The readiness signal a renderer waits on before printing.
+    // document.fonts.ready is the only deterministic "this page is actually
+    // painted in its real typefaces" event -- networkidle0 and waitForFonts are
+    // both heuristics that can fire while the fallback face is still on screen,
+    // which is the documented top cause of a PDF that renders but looks wrong.
+    //
+    // NOTHING AUTOMATED READS IT ON THIS PAGE ANY MORE. It is kept because
+    // src/pages/resume.print.astro sets the same attribute for the same reason
+    // and scripts/resume-sheet.mjs waits on it there (`READY_ATTRIBUTE`), so
+    // this page and the sheet state one contract in one spelling. Removing it
+    // here would leave that contract written once, on the page whose own
+    // comment explains it by pointing at this one.
     //
     // Set with setAttribute rather than `dataset.resumeReady`, per the day-2
     // ruling: a data-* contract has to stay greppable at every write site, and

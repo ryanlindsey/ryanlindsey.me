@@ -3,9 +3,9 @@
  * Renders the résumé sheet to a PDF and records its golden text extraction
  * (issue #183, epic #180).
  *
- * WHY A SCRIPT AND NOT THE WORKER. src/lib/resume-pdf.ts renders at runtime
- * from a Browser Run binding, and the epic's argument for moving off it is that
- * the PDF is a pure function of the commit: every input is repo content, so
+ * WHY A SCRIPT AND NOT THE WORKER. src/lib/resume-pdf.ts rendered at runtime
+ * from a Browser Run binding until #186 deleted that path, and the epic's
+ * argument for moving off it is that the PDF is a pure function of the commit: every input is repo content, so
  * runtime rendering buys nothing and charges three things. It put the artifact
  * where no test can see it, which is how a contact-free PDF shipped and stayed
  * shipped. It introduced a deploy race that froze the live file. And it bills
@@ -420,9 +420,11 @@ async function render(cdp, url, footer) {
 
   await cdp.send('Page.enable', {}, sessionId);
   await cdp.send('Runtime.enable', {}, sessionId);
-  // Same as browserRenderer's emulateMediaType('print'): the ready attribute is
-  // set inside document.fonts.ready, and which faces are "used" -- so which the
-  // promise waits on -- depends on the media the page is laid out for.
+  // Print media BEFORE navigation, and the ordering is the point: the ready
+  // attribute is set inside document.fonts.ready, and which faces count as
+  // "used" -- so which the promise waits on -- depends on the media the page is
+  // laid out for. The runtime renderer this replaced called
+  // `emulateMediaType('print')` for the same reason.
   await cdp.send('Emulation.setEmulatedMedia', { media: 'print' }, sessionId);
 
   const loaded = cdp.once('Page.loadEventFired', sessionId);
@@ -435,11 +437,16 @@ async function render(cdp, url, footer) {
    * NO `marginTop`/`marginBottom`/`marginLeft`/`marginRight`, and that is the
    * point of this call. src/styles/resume-sheet.css's @page rule carries the
    * asymmetric 0.56in / 0.66in / 0.72in box that the approved three-page render
-   * was measured from, and its own comment predicts this collision: the runtime
-   * renderer passes `preferCSSPageSize: true` AND a uniform 0.6in margin
-   * object, which describes a different page box, and whichever loses moves the
-   * layout silently. The margin object is the one that goes. The deeper bottom
-   * margin is also what makes room for the running foot.
+   * was measured from, and it is the only page box in play.
+   *
+   * IT WAS NOT ALWAYS THE ONLY ONE. The runtime renderer passed
+   * `preferCSSPageSize: true` AND a uniform 0.6in margin object, which
+   * describes a different box, and whichever lost would have moved the layout
+   * with nothing saying so. That renderer went in #186, so the collision this
+   * comment was written to avoid can no longer happen -- but omitting the
+   * margins is still what keeps the @page rule authoritative, and passing one
+   * here would reintroduce the same ambiguity against the same stylesheet. The
+   * deeper bottom margin is also what makes room for the running foot.
    */
   const { data } = await cdp.send(
     'Page.printToPDF',

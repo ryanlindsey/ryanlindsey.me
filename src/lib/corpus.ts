@@ -496,17 +496,21 @@ export async function documentHash(key: string, markdown: string): Promise<strin
 /**
  * One document's manifest entry.
  *
- * This is `ResumePdfManifest`'s shape (src/lib/resume-pdf.ts), reused rather
- * than reinvented -- the two jobs have the same problem, "did the source move
- * since the last run", and should not have two answers to it. Field for field:
+ * A HASH, A KEY, AN ETAG, A TIMESTAMP AND A SIZE, and the shape is not this
+ * module's invention: the résumé PDF job used the same one, because the two
+ * jobs had the same problem -- "did the source move since the last run" -- and
+ * should not have had two answers to it. That job is gone as of #186, git
+ * having turned out to answer the question for free once the work happens on a
+ * commit, but the shape stays right for this one, which genuinely does run on a
+ * schedule against content that moves independently of it. Field for field:
  *
- * | field     | résumé PDF                | corpus                                    |
- * | --------- | ------------------------- | ----------------------------------------- |
- * | `hash`    | résumé source hash        | document markdown hash                    |
- * | `key`     | R2 key the bytes live at  | `<type>:<slug>`, the vector-id prefix     |
- * | `etag`    | R2's `httpEtag`           | Vectorize's `mutationId` for the upsert   |
- * | `builtAt` | ISO 8601                  | ISO 8601                                  |
- * | `size`    | bytes written             | bytes of source markdown                  |
+ * | field     | what it holds                                          |
+ * | --------- | ------------------------------------------------------ |
+ * | `hash`    | the document's markdown hash                           |
+ * | `key`     | `<type>:<slug>`, the vector-id prefix                   |
+ * | `etag`    | Vectorize's `mutationId` for the upsert                 |
+ * | `builtAt` | ISO 8601                                               |
+ * | `size`    | bytes of source markdown                               |
  *
  * `etag` is the one field that had to be re-pointed rather than reused
  * verbatim: a vector has no entity tag, because nothing serves it over HTTP.
@@ -607,8 +611,9 @@ export function surplusChunkIds(
 // --- The job ------------------------------------------------------------
 
 /**
- * Only the bindings this module reads, narrower than `Env`, same as
- * `ResumePdfEnv`.
+ * Only the bindings this module reads, narrower than `Env`. The house
+ * convention: a module says what it needs, so a caller can see at a glance what
+ * it touches. `ResumePdfEnv` was the precedent cited here until #186 deleted it.
  */
 export interface CorpusEnv {
   /**
@@ -664,9 +669,9 @@ export interface CorpusEnv {
    */
   SITE_ORIGIN: string;
   /**
-   * Test-only seam, the same shape and the same reasoning as
-   * `ResumePdfEnv.RESUME_PDF_RENDERER`: `'on'` (the deployed default, which
-   * comes from the var being ABSENT rather than from a default branch) or
+   * Test-only seam, the shape every seam in this repo uses (and which
+   * `RESUME_PDF_RENDERER` carried until #186): `'on'` (the deployed default,
+   * which comes from the var being ABSENT rather than from a default branch) or
    * `'off'`. No deployed environment sets it -- wrangler.jsonc does not declare
    * it -- and an unrecognised value throws rather than guessing.
    *
@@ -854,15 +859,19 @@ export interface CorpusRefreshResult {
  *
  * Steady state is two document reads and one KV read: `planCorpusRefresh` finds
  * every hash unmoved and nothing is embedded, so a daily cron over unchanged
- * content bills no neurons. That is the same shape `regenerateResumePdf` uses
- * to keep browser-hours near zero, for the same reason.
+ * content bills no neurons. The résumé-PDF job used the same shape to keep
+ * browser-hours near zero, for the same reason, until #186 moved that render
+ * onto the commit that causes it and deleted the cron. This job cannot follow
+ * it: its inputs are the site's PUBLISHED documents, which move on a deploy
+ * rather than in the tree, so "has the source moved" is a question a commit
+ * cannot answer here and the hash still has to be asked at runtime.
  *
- * There is deliberately no render lock of the kind resume-pdf.ts takes. That
- * lock exists to bound a burst of expensive browser sessions started from the
- * REQUEST path; this job has exactly one caller, the daily cron, and its writes
- * are id-stable upserts of identical content -- two concurrent runs would
- * converge on the same index state. If a request-path caller is ever added,
- * that reasoning stops holding and the lock should come with it.
+ * There is deliberately no lock of the kind that job took. That lock existed to
+ * bound a burst of expensive browser sessions started from the REQUEST path;
+ * this job has exactly one caller, the daily cron, and its writes are id-stable
+ * upserts of identical content -- two concurrent runs would converge on the
+ * same index state. If a request-path caller is ever added, that reasoning stops
+ * holding and a lock should come with it.
  */
 export async function refreshCorpus(
   env: CorpusEnv,
@@ -948,7 +957,8 @@ export async function refreshCorpus(
       chunks: chunks.length,
     };
     // COMMITTED PER DOCUMENT, not once at the end (fix round 2). The manifest
-    // flip is still the commit -- same as resume-pdf.ts's, and still written
+    // flip is still the commit -- the rule the résumé-PDF job was written
+    // around too, before #186 retired it -- and still written
     // only after this document's vectors are in flight, so a half-finished run
     // leaves vectors no manifest entry claims (re-upserted identically next
     // run) and never an entry pointing at vectors that were never sent. What
