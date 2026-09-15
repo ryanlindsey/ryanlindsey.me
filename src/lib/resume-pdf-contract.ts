@@ -2,14 +2,18 @@
  * Where the résumé PDF lives, and the version that decides when it moves.
  *
  * WHY THIS IS NOT IN src/lib/resume-pdf.ts, where it used to be. That module
- * imports `@cloudflare/puppeteer` and the résumé YAML through Vite's `?raw`,
- * so it resolves only inside a bundle. scripts/resume-publish.mjs is a plain
- * node process, and issue #185 requires it to import the key rather than
- * recompute it, so that the workflow and the Worker cannot disagree about
- * where the object lives. MEASURED 2026-09-15 on node 24.18: importing
- * src/lib/resume-pdf.ts from node fails with `Unknown file extension ".yaml"`,
- * because node's resolver drops the `?raw` query and then meets a file
- * extension it has no loader for.
+ * imports the résumé YAML through Vite's `?raw`, so it resolves only inside a
+ * bundle. scripts/resume-publish.mjs is a plain node process, and issue #185
+ * requires it to import the key rather than recompute it, so that the workflow
+ * and the Worker cannot disagree about where the object lives. MEASURED
+ * 2026-09-15 on node 24.18: importing src/lib/resume-pdf.ts from node fails
+ * with `Unknown file extension ".yaml"`, because node's resolver drops the
+ * `?raw` query and then meets a file extension it has no loader for.
+ *
+ * It also imported `@cloudflare/puppeteer` when that measurement was taken,
+ * which was the other half of the reason and is no longer true: #186 deleted
+ * the runtime renderer and the dependency with it. The `?raw` import alone
+ * still makes the split necessary, so nothing here moves back.
  *
  * So the addressing moved here, where nothing is imported at all, and
  * src/lib/resume-pdf.ts re-exports it. Both readers run the same code. The
@@ -57,13 +61,20 @@
 // margin box evaluates to 0 in Chrome.
 //
 // Identical résumé data therefore renders a different sheet, which is what this
-// constant is for. Note that no runtime input moved: src/lib/resume-pdf.ts
-// renders `/resume?print` and nothing here imports the stamper or the sheet's
-// stylesheet, so today the bump changes no deployed byte. It is made anyway,
-// for the reason version 3's note gives about the Armature entry -- the golden
-// moved, and the gate added in #184 requires the constant to move with it, so
-// that once 05 publishes from the golden's own render the hash cannot point at
-// bytes nobody can reproduce.
+// constant is for. When the bump was made it moved no runtime input:
+// src/lib/resume-pdf.ts still rendered `/resume?print` and nothing here
+// imported the stamper or the sheet's stylesheet, so it changed no deployed
+// byte. It was made anyway, for the reason version 3's note gives about the
+// Armature entry -- the golden moved, and the gate added in #184 requires the
+// constant to move with it, so that once 05 publishes from the golden's own
+// render the hash cannot point at bytes nobody can reproduce.
+//
+// Since #186 that caveat is retired rather than merely stale: there is no
+// second renderer left to disagree with the golden. The only writer is
+// .github/workflows/resume-pdf.yml, publishing what scripts/resume-sheet.mjs
+// rendered and scripts/resume-gate.mjs checked, so a bump here now moves the
+// key that workflow publishes to and the key /resume.pdf reads from together.
+// A bump with no matching golden fails the `contract` check in the gate.
 export const RESUME_PDF_CONTRACT_VERSION = 4;
 
 const encoder = new TextEncoder();
@@ -92,12 +103,32 @@ export function resumePdfKey(hash: string): string {
 }
 
 /**
- * The response metadata the stored object carries, in one place because two
- * writers set it: `regenerateResumePdf` passes it to `R2.put` as `httpMetadata`,
- * and scripts/resume-publish.mjs turns it into wrangler flags. It lived as
- * literals in both until #185, which is a duplicate nothing would have caught:
- * a sheet served as an attachment rather than inline, or as the wrong media
- * type, renders as a download prompt and no test in this repo sees the headers.
+ * The stable name, written with the same bytes as the content-addressed key.
+ * An alias rather than a redirect because R2 has no such thing, and because a
+ * reader that wants "the current sheet" should not have to learn a hash first.
+ *
+ * IT IS ALSO WHAT /resume.pdf FALLS BACK TO, which is why it moved here from
+ * scripts/resume-publish.mjs in #186. Until then the script was its only
+ * reader and owning the constant was reasonable; now the Worker reads it too,
+ * and a Worker cannot import a `.mjs` script's export. Both readers take it
+ * from here for the reason this module's header gives about the key itself:
+ * two spellings agree right up until the day one of them is edited, and the
+ * failure would be a route falling back to a key nobody writes.
+ */
+export const RESUME_ALIAS_KEY = 'resume/latest.pdf';
+
+/**
+ * The response metadata the stored object carries. It is in one place because
+ * it was set in two: `regenerateResumePdf` passed it to `R2.put` and
+ * scripts/resume-publish.mjs turned it into wrangler flags, as literals in
+ * both until #185 -- a duplicate nothing would have caught, because a sheet
+ * served as an attachment rather than inline, or as the wrong media type,
+ * renders as a download prompt and no test in this repo sees the headers.
+ *
+ * #186 deleted the first of those writers, so the publish script is now the
+ * only one that stamps an object. The constant stays shared rather than
+ * folding back into the script, because /resume.pdf and tests/resume-pdf.test.ts
+ * both assert these exact values on the response the stamp produces.
  *
  * `contentDisposition` names the file a visitor saves, which is why it is a
  * person's name and not the content-addressed key.

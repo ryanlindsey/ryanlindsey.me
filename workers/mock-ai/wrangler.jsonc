@@ -3,19 +3,21 @@
 
   // TEST-ONLY. Never deployed: no account_id, no routes, no workers.dev
   // subdomain, and no deploy script references it. `workers_dev: false` is the
-  // mechanism rather than the convention, exactly as in workers/mock-browser --
-  // the absence of routes alone would not stop a stray
+  // mechanism rather than the convention -- the absence of routes alone would
+  // not stop a stray
   // `wrangler deploy --config workers/mock-ai/wrangler.jsonc`.
   //
-  // It exists for a narrower reason than mock-browser, and a sharper one.
-  // Workers AI has NO local emulator, and wrangler treats an `ai` binding whose
+  // It exists for a sharp reason, sharper than the one workers/mock-browser had
+  // before #186 retired it: that mock stood in front of a binding which DID
+  // have a local emulator, only an expensive one to start. Workers AI has NO
+  // local emulator at all, and wrangler treats an `ai` binding whose
   // `remote` is undefined as remote. So the moment the root wrangler.jsonc
   // gained its `ai` binding, every harness that boots the site tried to open a
   // REAL remote proxy session against the account, and 8 of 14 suites failed
   // with "More than one account available but unable to select one in
   // non-interactive mode" -- this login can see both Ryan Lindsey and
-  // Pixelsonly Racing, and mock-browser deliberately carries no account_id to
-  // disambiguate with.
+  // Pixelsonly Racing, and a test-only Worker deliberately carries no
+  // account_id to disambiguate with.
   //
   // Pinning an account would have been the wrong repair. It fixes the error
   // message and keeps the hazard: `npm test` would then need network and live

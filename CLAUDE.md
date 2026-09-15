@@ -40,7 +40,7 @@ CI's `checks` workflow is the gate that matters on a pull request. A red Cloudfl
 
 ### Two Workers, and why the split is not cosmetic
 
-`ryanlindsey-me` (root `wrangler.jsonc`) serves the site: static assets, the on-demand routes, the queue consumer, and two daily crons at 05:17 UTC for the resume PDF refresh and 05:47 UTC for the retention sweep.
+`ryanlindsey-me` (root `wrangler.jsonc`) serves the site: static assets, the on-demand routes, the queue consumer, and one daily cron at 05:47 UTC for the retention sweep. A second cron at 05:17 UTC refreshed the résumé PDF until issue 06 (#186) moved that render into GitHub Actions.
 
 `ryanlindsey-me-mcp` (`workers/mcp/wrangler.jsonc`) serves the MCP protocol, the chat endpoint, the fit engine, the LLM judge, the rate limiter Durable Object, and a 05:32 UTC cron that refreshes the Vectorize corpus.
 
@@ -70,9 +70,13 @@ Gated tools are registered only for a request whose grant carries the matching s
 
 The `x-release-please-version` marker on one line of `workers/mcp/src/server.ts` is what keeps the version the MCP server advertises in step with `package.json`. Moving the version off that line, or letting a formatter split the line, strands it silently.
 
-Two writers share the `resume/<hash>.pdf` key in `ryanlindsey-me-assets`, and this is temporary. `.github/workflows/resume-pdf.yml` publishes the gated three-page sheet there, and `regenerateResumePdf` in `src/lib/resume-pdf.ts` still writes the same key from the Worker, on the 05:17 cron and on any stale or cold-miss request to `/resume.pdf`, rendering `/resume?print` instead and stamping no metadata. Measured on 2026-09-15, before the workflow had ever run: that key already held a nine-page, 215 KB render from Browser Rendering carrying no Author and no Subject. So the Worker can overwrite what the workflow published, because CI writes R2 and does not write the KV manifest the Worker gates on. Widening the token to reach KV is the one thing the credential's scope rules out, so the workflow probes `resume/latest.pdf` as well as the hashed key, and a dispatch with `force` is the repair.
+`.github/workflows/resume-pdf.yml` is the only writer of the résumé PDF, and `/resume.pdf` is the only reader. The Worker rendered the sheet itself until issue 06 (#186): a Browser Rendering call behind a KV manifest, a KV lock and a daily 05:17 cron, about 700 lines whose whole job was deciding whether the résumé source had moved since the last render. The PDF is a pure function of the commit, so git answers that question and the render happens on the push that causes it.
 
-`resume/latest.pdf` is not affected by any of that. The single `R2_ASSETS.put` in this repository writes the hashed key and never the alias, so the alias belongs to the workflow alone and keeps holding the gated sheet whatever happens beside it. Issue 06 retires the runtime path and ends the sharing.
+The route reads two keys and reports which one answered in `x-resume-pdf-state`. `exact` is `resume/<hash>.pdf`, the sheet built from this commit's own source. `fallback` is `resume/latest.pdf`, the alias the workflow writes with the same bytes, which covers a deploy that lands before the publish job finishes. `missing` is neither, and answers 503 rather than 404, because the document is unpublished rather than absent. There is no render behind any of them.
+
+Two things follow. A résumé change is live only once the workflow has run on `main`, so a red or skipped `resume-pdf` run means the sheet the site serves is one publish behind, and a dispatch with `force` republishes both keys. And `RESUME_PDF_CONTRACT_VERSION` in `src/lib/resume-pdf-contract.ts` now moves the key the workflow publishes to and the key the route reads from together, so bumping it without a matching golden fails the `contract` check in `scripts/resume-gate.mjs`.
+
+Measured on 2026-09-15, before the workflow had ever run: the hashed key already held a nine-page, 215 KB render from Browser Rendering carrying no Author and no Subject, and `resume/latest.pdf` did not exist. That is why `scripts/resume-publish.mjs` probes both keys rather than the hashed one alone, and the probe is kept for the plainer reason that the two uploads are separate calls and the second can fail on its own.
 
 ### Content
 
@@ -90,7 +94,7 @@ Neither record names its own path, and not by choice. The draft defines a `well-
 
 Vitest plus `createTestHarness` from wrangler, booting real Workers inside workerd. `tests/workers.ts` holds the shared worker lists and the reasoning behind each override; read it before adding a suite. The site Worker boots from the adapter's build output rather than from the source config, so the tests exercise the artifact that ships.
 
-No test in this repo may reach Workers AI, Vectorize, Browser Rendering, `api.cloudflare.com` or a real secret. The mechanism is a set of override variables that no deployed config sets, where an unrecognized value throws and the only accepted value is the one `tests/workers.ts` passes: `RESUME_PDF_RENDERER`, `RLME_TURNSTILE_MODE`, `RLME_NOTIFY_MODE`, `RLME_ANALYTICS_MODE`, `CORPUS_REFRESH`, `MCP_SEARCH_EMBEDDER`, `RLME_TOKEN_KEY_SOURCE`, `FIT_ENGINE`, `CHAT_ENGINE` and `JUDGE_ENGINE`. Bindings with no local emulator resolve to the test-only Workers in `workers/mock-ai`, `workers/mock-browser` and `workers/mock-ae`.
+No test in this repo may reach Workers AI, Vectorize, Browser Rendering, `api.cloudflare.com` or a real secret. The mechanism is a set of override variables that no deployed config sets, where an unrecognized value throws and the only accepted value is the one `tests/workers.ts` passes: `RLME_TURNSTILE_MODE`, `RLME_NOTIFY_MODE`, `RLME_ANALYTICS_MODE`, `CORPUS_REFRESH`, `MCP_SEARCH_EMBEDDER`, `RLME_TOKEN_KEY_SOURCE`, `FIT_ENGINE`, `CHAT_ENGINE` and `JUDGE_ENGINE`. Bindings with no local emulator resolve to the test-only Workers in `workers/mock-ai` and `workers/mock-ae`. `RESUME_PDF_RENDERER` and `workers/mock-browser` were a tenth variable and a third mock until issue 06 (#186) deleted the renderer they stood in front of; the `BROWSER` binding is still declared, and nothing calls it.
 
 Adding a feature that spends money or calls a remote service means adding a variable of the same shape, off by default in the harness and never declared in a deployed config.
 

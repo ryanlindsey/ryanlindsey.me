@@ -16,8 +16,8 @@ export interface TurnstileEnv {
   RLME_TURNSTILE_SECRET_KEY: SecretsStoreSecret;
   /**
    * Test-only seam, the same shape as every other one in this repo
-   * (RESUME_PDF_RENDERER, MCP_SEARCH_EMBEDDER, RLME_TOKEN_KEY_SOURCE,
-   * FIT_ENGINE): no deployed config declares it, an unrecognised value
+   * (MCP_SEARCH_EMBEDDER, RLME_TOKEN_KEY_SOURCE, FIT_ENGINE, and
+   * RESUME_PDF_RENDERER until #186 deleted it): no deployed config declares it, an unrecognised value
    * throws, and `'stub'` skips both the Secrets Store read and the network
    * call. It exists because the harness has neither a populated local
    * secrets store nor outbound network access to challenges.cloudflare.com.

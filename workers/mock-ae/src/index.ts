@@ -5,21 +5,22 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
  * this directory for why it exists and how it is wired.
  *
  * It does NOT emulate Analytics Engine's storage or its query API -- that is a
- * hosted SQL service this repo has no local equivalent for, the same reason
- * mock-browser does not speak CDP. It answers the one contract
- * `src/lib/agent-intel/record.ts`'s `recordAgentEvent` uses:
- * `AnalyticsEngineDataset.writeDataPoint()`. Unlike mock-ai and mock-browser,
- * that contract is a plain method call rather than an HTTP request, so this
- * Worker is reached two different ways for two different purposes:
+ * hosted SQL service this repo has no local equivalent for, and the house rule
+ * for every mock here is to answer the one contract the code under test
+ * actually uses and nothing more. Here that contract is
+ * `src/lib/agent-intel/record.ts`'s `recordAgentEvent` calling
+ * `AnalyticsEngineDataset.writeDataPoint()`. Unlike mock-ai, that is a plain
+ * method call rather than an HTTP request, so this Worker is reached two
+ * different ways for two different purposes:
  *
  *   1. THE WORKER UNDER TEST calls `env.AE.writeDataPoint(point)` through the
  *      `AE` binding, which `bindingOverrides: { AE: 'mock-ae' }` points here.
  *      Cloudflare's service-binding RPC turns that into a call to
  *      `writeDataPoint` below.
  *   2. THE TEST calls `points()`/`reset()` directly on this SAME named worker
- *      (`server.getWorker('mock-ae').getExport()`, exactly as
- *      tests/resume-pdf.test.ts already calls `lastRenderUrl()`/`reset()` on
- *      mock-browser) to read back what path 1 wrote.
+ *      (`server.getWorker('mock-ae').getExport()`) to read back what path 1
+ *      wrote. workers/mock-browser was reached the same way until #186 removed
+ *      it, and this is the only mock left that needs the technique.
  *
  * Both paths reach the same running instance of this Worker, so the
  * module-scope array below is shared between them without any transport of

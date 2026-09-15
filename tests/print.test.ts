@@ -112,7 +112,7 @@ describe('print rules', () => {
     // ink on a white content area. The SHEET did not: `color-scheme: dark` was
     // still on :root from the no-JS block, Chrome paints the page canvas --
     // the margins, which body's own background box never covers -- from that
-    // rather than from body's background-color, and browserRenderer passes
+    // rather than from body's background-color, and the renderer passed
     // printBackground: true. Every one of the seven sheets came out framed in
     // a 0.6in black border. Re-printed after the fix, the frame is gone.
     // Overriding the palette is not enough on its own; the property that
@@ -146,11 +146,19 @@ describe('print rules', () => {
     // which is correct for an article on paper: a printed link has lost its
     // destination and the URL is the only way to recover it.
     //
-    // It is wrong in exactly one place. 02 §1 requires /resume.pdf to be
+    // It is wrong in exactly one place. 02 §1 requires the résumé to be
     // ATS-safe, and the location line is a field a parser reads as an address.
     // Appending a Wikipedia URL to "Laguna Niguel, CA" is the shape of thing
     // that makes a parsed address junk, so that one anchor opts out and the
-    // link stays live and clickable in the PDF.
+    // link stays live and clickable.
+    //
+    // WHAT THIS BLOCK GOVERNS HAS NARROWED, and the assertion has not. It was
+    // written when /resume.pdf was headless Chrome printing /resume. #181 gave
+    // the sheet its own route and its own stylesheet, gated by
+    // scripts/resume-gate.mjs since #184, and #186 deleted the renderer that
+    // still pointed here -- so these rules stopped reaching the published PDF
+    // by two changes, not one. What this file pins now is a person printing
+    // /resume from a browser, which is worth pinning for its own sake.
     const suppressed = selectorsCarrying(printBlock, 'content: none');
     expect(suppressed).toContain('[data-based-in] a::after');
 

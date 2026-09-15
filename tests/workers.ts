@@ -6,19 +6,22 @@
 /**
  * A host that resolves nowhere, standing in for the site's own origin.
  *
- * SITE_ORIGIN is what the Browser Run job navigates to, and it is a var rather
- * than something derived from `request.url` because
- * `--infer-origin-from-routes` defaults to true: under `wrangler dev` and in
- * production, the custom-domain route in wrangler.jsonc makes `request.url`
- * inside the Worker read as https://ryanlindsey.me/... A render URL derived
- * from it would make local dev silently render production.
+ * It is named for the route that first needed it: SITE_ORIGIN was what the
+ * Browser Run job navigated to, a var rather than something derived from
+ * `request.url` because `--infer-origin-from-routes` defaults to true -- under
+ * `wrangler dev` and in production the custom-domain route in wrangler.jsonc
+ * makes `request.url` inside the Worker read as https://ryanlindsey.me/..., and
+ * a render URL derived from it would have made local dev render production.
+ * `createTestHarness` sets `inferOriginFromRoutes: false`, so this harness never
+ * could reproduce that hazard; the sentinel was what let tests/resume-pdf.test.ts
+ * catch a swap to `request.url` anyway, because the loopback host is not this
+ * host either.
  *
- * NOT here, though: `createTestHarness` sets `inferOriginFromRoutes: false`
- * (wrangler-dist/cli.js), so under this harness `request.url` is the loopback
- * address. So these tests cannot reproduce the production hazard -- what
- * overriding SITE_ORIGIN to a sentinel buys is that the assertion in
- * tests/resume-pdf.test.ts still catches a swap to `request.url`, because the
- * loopback host is not this sentinel either.
+ * #186 deleted that renderer, and the site Worker now reads SITE_ORIGIN nowhere
+ * at all. This value still matters for the MCP Worker below, which reads it on
+ * every citation URL it builds -- and it stays UNROUTABLE on purpose there, so
+ * that a document read escaping the `SITE` service binding onto the public
+ * internet fails rather than quietly succeeding (tests/mcp.smoke.test.ts).
  */
 export const TEST_SITE_ORIGIN = 'http://resume-pdf.test';
 
@@ -41,12 +44,18 @@ export const TEST_SITE_ORIGIN = 'http://resume-pdf.test';
  * second build of the same sources. `npm test` is `astro build && vitest run`,
  * so it always exists by the time a suite starts.
  *
- * The BROWSER override and the 'stub' renderer are applied here, not only in
- * the PDF suite, so that NO test in this repo can reach a real browser binding.
- * Miniflare's Browser Run plugin is real and credential-free, but its first run
+ * THIS WORKER NOW HAS NO BINDING OVERRIDES, and the one it had is worth a note
+ * because its absence looks like an omission. `BROWSER` was overridden to a
+ * mock Worker so that NO test in this repo could reach a real browser binding:
+ * miniflare's Browser Run plugin is real and credential-free, but its first run
  * downloads 150-200 MB of Chrome-for-Testing, which has no place on a required
- * CI path -- and the way that would happen is some future test fetching
+ * CI path -- and the way that would have happened is some future test fetching
  * /resume.pdf without thinking about it.
+ *
+ * #186 removed the renderer, so /resume.pdf is now an R2 read and there is no
+ * code path left that can call the binding. The binding itself stays declared
+ * (see wrangler.jsonc), but a mock in front of a binding nothing calls is a
+ * moving part that protects nothing, so workers/mock-browser went with it.
  *
  * The AI override that used to sit here has gone WITH the binding, to
  * MCP_WORKER below. ./wrangler.jsonc no longer declares `ai` at all: an
@@ -59,12 +68,12 @@ export const SITE_WORKER = {
   configPath: './dist/server/wrangler.json',
   vars: {
     SITE_ORIGIN: TEST_SITE_ORIGIN,
-    RESUME_PDF_RENDERER: 'stub',
     /**
      * Day 5 Task 12's siteverify seam (src/lib/turnstile.ts's
-     * `verifyTurnstile`). Same shape as `RESUME_PDF_RENDERER` above: no
-     * deployed config declares it, an unrecognised value throws, and 'stub'
-     * is the only accepted value here.
+     * `verifyTurnstile`). No deployed config declares it, an unrecognised value
+     * throws, and 'stub' is the only accepted value here -- the shape every
+     * seam in this repo follows, and which `RESUME_PDF_RENDERER` carried until
+     * #186 deleted the renderer it stood in front of.
      *
      * It exists because the harness has neither a populated local secrets
      * store (so `RLME_TURNSTILE_SECRET_KEY.get()` would throw, same failure
@@ -141,7 +150,6 @@ export const SITE_WORKER = {
      */
     RLME_ANALYTICS_MODE: 'stub',
   },
-  bindingOverrides: { BROWSER: 'mock-browser' },
 };
 
 /**
@@ -290,9 +298,6 @@ export const MCP_WORKER = {
   bindingOverrides: { AI: 'mock-ai' },
 };
 
-/** The Browser Run stand-in the override above resolves. Test-only, never deployed. */
-export const MOCK_BROWSER_WORKER = { configPath: './workers/mock-browser/wrangler.jsonc' };
-
 /** The Workers AI stand-in the override above resolves. Test-only, never deployed. */
 export const MOCK_AI_WORKER = { configPath: './workers/mock-ai/wrangler.jsonc' };
 
@@ -309,15 +314,18 @@ export const MOCK_AI_WORKER = { configPath: './workers/mock-ai/wrangler.jsonc' }
  */
 
 /**
- * All four, in the order every suite wants them: the site first, so it is the
+ * All three, in the order every suite wants them: the site first, so it is the
  * primary Worker that relative `server.fetch()` URLs address and the one
  * `server.getWorker()` returns unnamed.
+ *
+ * It was four until #186 retired `MOCK_BROWSER_WORKER` along with the renderer
+ * that made it necessary.
  */
-export const SITE_HARNESS_WORKERS = [SITE_WORKER, MCP_WORKER, MOCK_BROWSER_WORKER, MOCK_AI_WORKER];
+export const SITE_HARNESS_WORKERS = [SITE_WORKER, MCP_WORKER, MOCK_AI_WORKER];
 
 /**
- * The same four Workers with the MCP Worker FIRST, for a suite whose subject is
- * the MCP Worker and which therefore wants it as the primary one.
+ * The same three Workers with the MCP Worker FIRST, for a suite whose subject
+ * is the MCP Worker and which therefore wants it as the primary one.
  *
  * The list used to be `[MCP_WORKER, MOCK_AI_WORKER]` in tests/mcp.smoke.test.ts,
  * and the site's absence there was not an oversight -- nothing in that suite
@@ -334,7 +342,40 @@ export const SITE_HARNESS_WORKERS = [SITE_WORKER, MCP_WORKER, MOCK_BROWSER_WORKE
  * loop either: the MCP Worker only ever asks the site for `/llms.txt`,
  * `/resume.json` and `/{writing,work}/*.md`, never `/mcp`.
  *
- * MOCK_BROWSER_WORKER comes along because SITE_WORKER's `bindingOverrides` names
- * it, by the same rule.
+ * MOCK_BROWSER_WORKER used to come along too, because SITE_WORKER's
+ * `bindingOverrides` named it and that same rule applies to an override's
+ * target. #186 removed the override, so the list is one Worker shorter.
  */
-export const MCP_HARNESS_WORKERS = [MCP_WORKER, SITE_WORKER, MOCK_BROWSER_WORKER, MOCK_AI_WORKER];
+export const MCP_HARNESS_WORKERS = [MCP_WORKER, SITE_WORKER, MOCK_AI_WORKER];
+
+/**
+ * Puts a stand-in résumé PDF where /resume.pdf will find it.
+ *
+ * NEEDED BY EVERY SUITE THAT EXPECTS THAT ROUTE TO ANSWER 200, and before #186
+ * none of them did: the route rendered on a cold miss, so fetching it produced
+ * bytes whether or not anything had seeded R2, and four assertions across three
+ * suites were relying on that without saying so. The route only reads now, so
+ * an unseeded bucket is a 503 -- correctly, because an unseeded bucket is
+ * exactly what a deployment with no published sheet has.
+ *
+ * It writes the CONTENT-ADDRESSED key, so what those suites exercise is the
+ * `exact` path. tests/resume-pdf.test.ts owns the other two states; this is
+ * here so that a suite whose subject is routing or negotiation does not have to
+ * know which key answered.
+ *
+ * DYNAMIC IMPORTS, in a module that otherwise has none. Everything above this
+ * line is plain data, so nearly every suite in the repo imports this file and
+ * pays for whatever it pulls in. A static import of ../src/lib/resume-pdf
+ * would put the résumé YAML and its `?raw` transform in that path for all of
+ * them, to serve the three that call this. Deferring to call time is the whole
+ * reason, and it is not a pattern to copy into a suite that needs the module
+ * anyway -- tests/resume-pdf.test.ts imports it statically and should.
+ */
+export async function seedResumePdf(env: { R2_ASSETS: R2Bucket }): Promise<void> {
+  const { resumeSourceHash } = await import('../src/lib/resume-pdf');
+  const { RESUME_PDF_HTTP_METADATA, resumePdfKey } = await import('../src/lib/resume-pdf-contract');
+  const body = new TextEncoder().encode('%PDF-1.7 seeded');
+  await env.R2_ASSETS.put(resumePdfKey(await resumeSourceHash()), body, {
+    httpMetadata: { ...RESUME_PDF_HTTP_METADATA },
+  });
+}

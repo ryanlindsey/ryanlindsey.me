@@ -28,8 +28,9 @@ const EXPECTED_INSTRUCTIONS = [
 
 // The MCP Worker first (so it stays the primary one that relative
 // `server.fetch()` URLs address), plus the Workers AI stand-in its `ai` binding
-// is overridden to, plus -- since issue #28 -- the SITE and its own mock-browser
-// override. mock-ai is not optional here even though nothing in this file
+// is overridden to, plus -- since issue #28 -- the SITE. It brought a
+// mock-browser override along with it until #186. mock-ai is not optional here
+// even though nothing in this file
 // touches AI: the binding moved to this Worker with the corpus job, Workers AI
 // has no local emulator, and an un-overridden `ai` binding makes booting this
 // Worker open a real remote proxy session that fails without credentials. The

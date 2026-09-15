@@ -81,9 +81,9 @@ export class KeySourceError extends Error {}
 /**
  * The signing key, and the one seam in this file.
  *
- * Same shape as `CORPUS_REFRESH` (src/lib/corpus.ts), `MCP_SEARCH_EMBEDDER`
- * (workers/mcp/src/env.ts) and `RESUME_PDF_RENDERER` before them, for the same
- * reason and with the same three safety properties:
+ * Same shape as `CORPUS_REFRESH` (src/lib/corpus.ts) and `MCP_SEARCH_EMBEDDER`
+ * (workers/mcp/src/env.ts), and as `RESUME_PDF_RENDERER` before both of them,
+ * for the same reason and with the same three safety properties:
  *
  *   1. The DEPLOYED behaviour comes from the var being ABSENT, not from a
  *      default branch -- neither wrangler.jsonc declares it, and

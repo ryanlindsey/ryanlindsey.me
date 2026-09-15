@@ -395,9 +395,11 @@ const fields: Field[] = [
       also strictly more fragile than one that does not.
 
       `data-resume-ready` on <html>, NOT the reference sheet's `data-ready`:
-      the live contract is `RESUME_READY_SELECTOR` in src/lib/resume-pdf.ts,
-      which is `[data-resume-ready]`, and src/pages/resume.astro already writes
-      it. Set with setAttribute rather than `dataset.resumeReady`, per the
+      the live contract is `READY_ATTRIBUTE` in scripts/resume-sheet.mjs, which
+      is the renderer that actually waits on it, and src/pages/resume.astro
+      writes the same attribute. It was `RESUME_READY_SELECTOR` in
+      src/lib/resume-pdf.ts until #186 deleted the runtime renderer; the
+      attribute did not change, only which file is authoritative about it. Set with setAttribute rather than `dataset.resumeReady`, per the
       day-2 ruling src/pages/resume.astro records: a data-* contract has to
       stay greppable at every write site, and `dataset.resumeReady` does not
       contain the string the selector uses.

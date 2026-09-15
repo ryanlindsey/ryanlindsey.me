@@ -15,10 +15,11 @@
  * exists is cheap -- rather than paying for a full render on every push to main
  * to discover the sheet did not change. The epic says "one request"; it is two,
  * because publishDecision below probes both keys, and the reason it has to is
- * recorded there. There is deliberately no
- * `paths:` filter on the workflow: a filter listing the YAML and the route is
- * exactly how a stylesheet change silently fails to republish, and the hash
- * gate here is the correctness mechanism instead.
+ * recorded there.
+ *
+ * There is deliberately no `paths:` filter on the workflow: a filter listing the
+ * YAML and the route is exactly how a stylesheet change silently fails to
+ * republish, and the hash gate here is the correctness mechanism instead.
  *
  * WHAT THE HASH COVERS, AND WHAT IT DOES NOT. The résumé YAML and
  * RESUME_PDF_CONTRACT_VERSION, and nothing else -- not the route, not the
@@ -28,11 +29,12 @@
  * scripts/resume-gate.mjs, which fails any pull request that moves the golden
  * without moving the constant. The two are one mechanism in two files.
  *
- * TWO WRITERS SHARE THIS KEY SPACE UNTIL 06. src/lib/resume-pdf.ts writes the
- * same `resume/<hash>.pdf` from the Worker, on a daily cron and on stale or
- * cold-miss requests to /resume.pdf, from a different route and without the
- * metadata stamp. publishDecision() below carries what that costs and how this
- * script survives it; `force` is the way out when it does not.
+ * THIS IS NOW THE ONLY WRITER OF EITHER KEY. It was not when it was written:
+ * src/lib/resume-pdf.ts wrote the same `resume/<hash>.pdf` from the Worker, on
+ * a daily cron and on stale or cold-miss requests to /resume.pdf, from a
+ * different route and without the metadata stamp. #186 deleted that path, so
+ * nothing can overwrite what this publishes any more. publishDecision() below
+ * keeps the probe that sharing required, for a reason that outlived it.
  *
  * WHY THE S3 API RATHER THAN WRANGLER, and this is the correction of a mistake
  * rather than a preference (issue #205). The first version of this script
@@ -72,6 +74,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import {
+  RESUME_ALIAS_KEY,
   RESUME_PDF_HTTP_METADATA,
   resumePdfKey,
   resumeSourceHash,
@@ -83,11 +86,12 @@ const root = new URL('../', import.meta.url);
 export const RESUME_ASSETS_BUCKET = 'ryanlindsey-me-assets';
 
 /**
- * The stable name, written with the same bytes as the content-addressed key.
- * An alias rather than a redirect because R2 has no such thing, and because a
- * reader that wants "the current sheet" should not have to learn a hash first.
+ * Re-exported, not declared: the constant moved to src/lib/resume-pdf-contract.ts
+ * in #186, when /resume.pdf started falling back to it and a second reader
+ * appeared. tests/resume-publish.test.ts imports it from here, which is where a
+ * reader of this script expects to find it.
  */
-export const RESUME_ALIAS_KEY = 'resume/latest.pdf';
+export { RESUME_ALIAS_KEY };
 
 /** What scripts/resume-sheet.mjs writes. Gitignored: the PDF belongs in R2. */
 const PDF = new URL('tests/fixtures/resume-sheet.pdf', root);
@@ -311,48 +315,48 @@ export async function publishPlan(source) {
 }
 
 /**
- * BOTH KEYS ARE PROBED, AND THE REASON IS THAT THIS WORKFLOW IS NOT THE ONLY
- * WRITER YET.
+ * BOTH KEYS ARE PROBED, AND THE REASON HAS CHANGED WITHOUT THE CODE CHANGING.
  *
- * `regenerateResumePdf` in src/lib/resume-pdf.ts still writes
- * `resume/<hash>.pdf` into this same bucket, from the 05:17 cron and from every
- * stale or cold-miss request to /resume.pdf, and it computes the same contract
- * version 4 hash as this script.
+ * It was written because this workflow was not the only writer.
+ * `regenerateResumePdf` in src/lib/resume-pdf.ts wrote `resume/<hash>.pdf` into
+ * this same bucket, from the 05:17 cron and from every stale or cold-miss
+ * request to /resume.pdf, computing the same contract version 4 hash as this
+ * script. #186 deleted that path; this is now the only writer of either key.
  *
- * MEASURED against the live bucket on 2026-09-15, before this ever ran in CI:
- * `resume/6457fef2...cfe3.pdf` was ALREADY THERE and `resume/latest.pdf` was
- * not. The object at that key reads `Pages: 9`, 215,154 bytes, no Author and no
- * Subject, `Producer: Skia/PDF m128` from a Linux HeadlessChrome -- the Browser
- * Rendering runtime, not this repo's renderer. #184 bumped the contract to 4
- * earlier the same day, which moved the Worker's hash and had it re-render
- * `/resume?print` under the new key hours before this workflow existed.
+ * THE MEASUREMENT THAT PUT THE SECOND PROBE HERE IS KEPT, because it is the
+ * record of a bug this shape prevents and not a description of today's bucket.
+ * Measured against the live bucket on 2026-09-15, before this had ever run in
+ * CI: `resume/6457fef2...cfe3.pdf` was ALREADY THERE and `resume/latest.pdf`
+ * was not. The object at that key read `Pages: 9`, 215,154 bytes, no Author and
+ * no Subject, `Producer: Skia/PDF m128` from a Linux HeadlessChrome -- the
+ * Browser Rendering runtime, not this repo's renderer. #184 had bumped the
+ * contract to 4 earlier the same day, which moved the Worker's hash and had it
+ * re-render `/resume?print` under the new key hours before this workflow
+ * existed.
  *
- * So an earlier draft of this script, which probed the content-addressed key
- * alone, would have answered "unchanged" against a bucket that had never held
- * the alias. The first run would have gone green having published nothing, and
- * the 9-page sheet would have stayed live with no way to recover short of
- * editing the résumé. That is not a hypothetical this comment is guarding
- * against; it is what the bucket held when the probe was written.
+ * An earlier draft of this script probed the content-addressed key alone, and
+ * would have answered "unchanged" against a bucket that had never held the
+ * alias: the first run would have gone green having published nothing, and the
+ * 9-page sheet would have stayed live with no way to recover short of editing
+ * the résumé.
  *
- * So the alias is probed too, and a missing alias is enough to publish. Two
- * requests rather than one on the no-op path.
+ * SO THE SECOND PROBE STAYS, and the justification for it is now the plainer
+ * one it always also had: the two keys are written by two separate
+ * `put-object` calls, and the second can fail on its own. A run that uploads the hashed
+ * key and then fails leaves a bucket this function must not call finished --
+ * which matters more since #186, because /resume.pdf's fallback reads the
+ * alias and a missing alias is the difference between a stale sheet and a 503.
+ * Two requests rather than one on the no-op path is the price.
  *
- * WHAT THIS STILL DOES NOT FIX, said out loud rather than left to be
- * discovered: the runtime path can overwrite a key this workflow has just
- * published, because CI writes R2 and does not write the KV manifest the
- * Worker gates on. On the next content change both writers target the new
- * hashed key, and whichever lands second wins. Nothing here can prevent that
- * without a KV credential, and widening the token is the one thing #185 rules
- * out. A dispatch with `force` is the repair.
- *
- * WHAT IS SAFE MEANWHILE, and it is the reason 05 is worth landing before 06:
- * nothing in src/lib/resume-pdf.ts writes RESUME_ALIAS_KEY. `regenerateResumePdf`
- * writes `resumePdfKey(currentHash)` and nothing else, so the alias is this
- * workflow's alone. Once written it holds the gated three-page sheet and stays
- * holding it, whatever the runtime path does to the hashed key beside it. The
- * interim state is therefore not a regression: /resume.pdf goes on serving what
- * it serves today, and the artifact 06 will read from is already in place and
- * correct when 06 arrives.
+ * WHAT IS NO LONGER TRUE, recorded because the interim state it describes is
+ * what 05 shipped into: the runtime path could overwrite a key this workflow
+ * had just published, because CI writes R2 and does not write the KV manifest
+ * the Worker gated on, and on a content change both writers targeted the new
+ * hashed key with whichever landed second winning. That could not be fixed
+ * here -- a KV credential is what it would have taken, and widening the token
+ * is the one thing #185 rules out -- so `force` was the repair and the alias,
+ * which the runtime path never wrote, was the thing that stayed correct. #186
+ * ended the sharing instead.
  */
 export function publishDecision({ hashedPresent, aliasPresent, force }) {
   if (force) {

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
-import { SITE_HARNESS_WORKERS } from './workers';
+import { SITE_HARNESS_WORKERS, seedResumePdf } from './workers';
 
 // Day 3 Task 8 (02 §3): `Accept: text/markdown` content negotiation, on top
 // of Task 7's `.md`-suffix routes. See src/worker.ts's `fetch`/
@@ -20,6 +20,9 @@ const server = createTestHarness({
 
 beforeAll(async () => {
   await server.listen();
+  // /resume.pdf reads R2 and no longer renders on a miss (#186), so a route
+  // this suite expects to answer 200 needs its object put there first.
+  await seedResumePdf(await server.getWorker<Env>().getEnv());
 });
 
 afterAll(async () => {

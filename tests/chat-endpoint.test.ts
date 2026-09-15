@@ -40,8 +40,9 @@ const server = createTestHarness({
   // DERIVED from `MCP_HARNESS_WORKERS` (./workers.ts) rather than hand-listed
   // (task-13a-findings-final.md item 8): the earlier version named
   // `SITE_WORKER`, `MOCK_BROWSER_WORKER` and `MOCK_AI_WORKER` explicitly,
-  // which meant a fifth worker added to the shared array in the future would
-  // silently never reach this suite. Filtering `MCP_WORKER` back out and
+  // which meant a worker added to the shared array in the future would silently
+  // never reach this suite. (`MOCK_BROWSER_WORKER` has since been removed by
+  // #186 -- which is the same lesson from the other direction.) Filtering `MCP_WORKER` back out and
   // re-adding it with the `AE` override merged in keeps every OTHER worker
   // in that array reachable automatically, whatever it grows to.
   workers: [

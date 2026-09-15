@@ -541,9 +541,9 @@ describe('corpusRefreshEnabled', () => {
   });
 
   test('refuses to guess at a value it does not know', () => {
-    // Same house rule as RESUME_PDF_RENDERER: a typo that silently disabled the
-    // refresh forever would be indistinguishable from a corpus with nothing to
-    // do.
+    // The house rule for every seam var in this repo, and the reason it is a
+    // rule: a typo that silently disabled the refresh forever would be
+    // indistinguishable from a corpus with nothing to do.
     expect(() => corpusRefreshEnabled(envWith('false'))).toThrow(/CORPUS_REFRESH/);
     expect(() => corpusRefreshEnabled(envWith(''))).toThrow(/CORPUS_REFRESH/);
   });

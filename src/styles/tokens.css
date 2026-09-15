@@ -104,8 +104,9 @@
  * of the seven sheets. Adding `color-scheme: light` below removed it; the
  * before and after were both printed and compared. The sentence above about
  * Chrome printing backgrounds off by default is what hid this for so long --
- * browserRenderer passes `printBackground: true`, so backgrounds do reach
- * paper on the path that matters.
+ * every renderer that has printed this page passes `printBackground: true`
+ * (the Worker's did until #186; scripts/resume-sheet.mjs does now), so
+ * backgrounds do reach paper on the path that matters.
  *
  * The layout side of print (hiding site chrome, single-column flow, URL
  * expansion) lives in global.css's own `@media print` block.

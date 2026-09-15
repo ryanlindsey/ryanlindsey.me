@@ -32,17 +32,18 @@ const dir = mkdtempSync(join(tmpdir(), 'site-types-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 /**
- * Every binding the site Worker is granted, and why the two surprising ones
+ * Every binding the site Worker is granted, and why the three surprising ones
  * are here.
  *
- * `R2_PRIVATE` and `RLME_TOKEN_SIGNING_KEY` are DECLARED AND UNUSED --
- * see the comments beside each in wrangler.jsonc. The signing key's presence
+ * `R2_PRIVATE`, `RLME_TOKEN_SIGNING_KEY` and `BROWSER` are DECLARED AND UNUSED
+ * -- see the comments beside each in wrangler.jsonc. The signing key's presence
  * is a locked decision of the day-5 plan (the token is verified in exactly one
  * place, the MCP Worker); the bucket predates day 5 and is bound on both
- * Workers and read by neither. Listing them here rather than excluding them is
- * the point: the pin should show what this Worker actually holds, so that
- * removing either is a deliberate edit to this array rather than a silent
- * config change nobody notices.
+ * Workers and read by neither; `BROWSER` lost its only reader in #186 and is
+ * kept by a locked decision of epic #180. Listing them here rather than
+ * excluding them is the point: the pin should show what this Worker actually
+ * holds, so that removing any of them is a deliberate edit to this array rather
+ * than a silent config change nobody notices.
  */
 const SITE_BINDING_NAMES = [
   'KV_CONFIG',
@@ -65,11 +66,12 @@ const SITE_BINDING_NAMES = [
   // src/lib/ops/analytics.ts and nowhere else.
   //
   // Its test-only companion `RLME_ANALYTICS_MODE` is deliberately NOT here, and
-  // neither are `RESUME_PDF_RENDERER`, `RLME_TURNSTILE_MODE` or
-  // `RLME_NOTIFY_MODE`: this list is compared against `wrangler types --config
-  // wrangler.jsonc`, so it can only contain bindings THAT FILE declares. A seam
-  // appearing here would mean the seam had leaked into deployed config, which
-  // is one of the things this pin exists to catch.
+  // neither are `RLME_TURNSTILE_MODE` or `RLME_NOTIFY_MODE`: this list is
+  // compared against `wrangler types --config wrangler.jsonc`, so it can only
+  // contain bindings THAT FILE declares. A seam appearing here would mean the
+  // seam had leaked into deployed config, which is one of the things this pin
+  // exists to catch. `RESUME_PDF_RENDERER` was named here as a fourth example
+  // until #186 deleted it along with the renderer it selected.
   'RLME_ANALYTICS_TOKEN',
   'BROWSER',
   'ASSETS',
@@ -113,16 +115,29 @@ test('the site Worker is granted exactly the bindings wrangler.jsonc declares', 
   expect(declared).toEqual([...SITE_BINDING_NAMES].sort());
 });
 
-test('the two declared-and-unused private-tier bindings carry a comment saying so', async () => {
+test('the three declared-and-unused bindings carry a comment saying so', async () => {
   // The plan's locked decision is *"the binding it already declares stays
   // declared and unused, with a comment saying so"*, and the comment was the
   // half that went missing. A grep-shaped test, because the property being
   // pinned is that a reader of the config learns this -- there is no runtime
   // behaviour to assert, and the previous state of the world was a config
   // that looked exactly like one where the site verified tokens itself.
+  //
+  // `BROWSER` joined the list in #186, which deleted the runtime renderer that
+  // was its only reader. Epic #180 locked the decision to keep the binding, and
+  // it is the case this test protects most directly: a config granting browser
+  // access reads as a Worker that renders, and this one has not since #186.
+  //
+  // THREE, NOT "EVERY", AND THE GAP IS DELIBERATE RATHER THAN OVERLOOKED. This
+  // greps for `"binding": "<NAME>"`, so it can only reach `bindings`, never
+  // `vars`. `SITE_ORIGIN` is in SITE_BINDING_NAMES above and has been declared
+  // and unread on this Worker since #186 too, and this check cannot see it --
+  // wrangler.jsonc carries the explanation beside the var instead. Widening the
+  // grep to `vars` would close that, and is the right change the day a second
+  // unread var appears.
   const { readFile } = await import('node:fs/promises');
   const config = await readFile('wrangler.jsonc', 'utf8');
-  for (const binding of ['R2_PRIVATE', 'RLME_TOKEN_SIGNING_KEY']) {
+  for (const binding of ['R2_PRIVATE', 'RLME_TOKEN_SIGNING_KEY', 'BROWSER']) {
     const at = config.indexOf(`"binding": "${binding}"`);
     expect(at, `${binding} is not declared in wrangler.jsonc`).toBeGreaterThan(-1);
     // The comment sits above the declaration; take the block before it and

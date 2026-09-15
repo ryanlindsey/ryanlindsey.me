@@ -17,8 +17,9 @@
  * is a TypeError here before it is ever a 501. That is the intended shape, and
  * it is why this file does not try to parse a model name or return a vector.
  * Code that needs its embedding path exercised should inject a fake at the call
- * site, the way `RESUME_PDF_RENDERER: 'stub'` does for the PDF path, rather
- * than asking this Worker to impersonate Workers AI.
+ * site -- the way every seam var in this repo does, and the way
+ * `RESUME_PDF_RENDERER: 'stub'` did for the résumé PDF until #186 deleted the
+ * renderer -- rather than asking this Worker to impersonate Workers AI.
  */
 export default {
   async fetch(request: Request): Promise<Response> {

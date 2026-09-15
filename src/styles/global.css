@@ -805,15 +805,28 @@
   }
 
   /*
+   * WHO THESE RULES SERVE, since epic 180's issue 06: a person printing
+   * /resume from their
+   * browser, and nobody else. They were written for the PDF, back when
+   * /resume.pdf was headless Chrome printing this page. That renderer is gone
+   * and the published sheet is built from /resume.print with its own stylesheet
+   * (src/styles/resume-sheet.css), so nothing downstream of this block is
+   * gated by scripts/resume-gate.mjs and nothing here can change the PDF.
+   *
+   * They are kept as they are, deliberately. A résumé page that prints badly
+   * from a browser is still a bad résumé page, and every reason below is a
+   * reason about paper rather than about the PDF pipeline.
+   *
    * /resume is a two-column page twice over since the 2026-09 redesign (design
    * 1k, the résumé issue -- cited by name, per the note on the footer link
    * rule above): a masthead beside its format buttons, a body beside the
-   * section rail, and an employer block inside that. 02 §1 requires the PDF to
-   * be ATS-safe -- single column, real text, no layout tables -- and to a
-   * parser reading positioned text a grid is a layout table.
+   * section rail, and an employer block inside that. Single column on paper,
+   * because a grid is a layout table to anything reading positioned text --
+   * the ATS-safety requirement in 02 §1 that the sheet now satisfies on its
+   * own, and which is no less true of a page someone prints themselves.
    *
    * Written down rather than left to the breakpoint. Every one of those grids
-   * is gated at `lg` (64rem) and the sheet lays out at about 700px, so the
+   * is gated at `lg` (64rem) and a letter sheet lays out at about 700px, so the
    * columns are already off on paper; that is arithmetic nobody wrote down,
    * and it would stop being true the day one of them loses its `lg:` prefix.
    */
@@ -826,11 +839,12 @@
   /*
    * The name prints at the size it printed at before the redesign. On screen
    * it is text-display (4.5rem); on letter with 0.6in margins that is 72px of
-   * headline across 7.3in of usable width, which pushes the summary off the
-   * top of an ATS preview to no benefit -- nobody scans a résumé PDF from
+   * headline across 7.3in of usable width, which pushes the summary off the top
+   * of the first sheet to no benefit -- nobody reads a printed résumé from
    * across a room. text-title is what /resume.pdf carried from launch until
-   * 2026-09-13 and what this keeps. Taken from the scale rather than typed as
-   * 2.75rem so it follows the step if the step is ever retuned again.
+   * 2026-09-13, and what this keeps for the browser print that inherited the
+   * case. Taken from the scale rather than typed as 2.75rem so it follows the
+   * step if the step is ever retuned again.
    */
   [data-resume-masthead] h1 {
     font-size: var(--text-title);
@@ -849,8 +863,9 @@
    * pre-redesign résumé had the same shape (a short intro, then a `<section>`
    * holding the whole of Experience) and so had the same hole; the redesign's
    * taller masthead only made it easier to see. Fixed here rather than filed,
-   * because a résumé whose first sheet is two thirds empty is the artifact
-   * this page exists to produce.
+   * because a first sheet that is two thirds empty is a bad print whoever asked
+   * for it. It was the PDF that measurement was taken from; since issue 06 the
+   * same fix serves the browser print.
    *
    * Scoped to the résumé's own body, not to the rule itself: avoiding a break
    * inside a section is right for the short ones on /ops and /ai-policy, and
@@ -872,12 +887,14 @@
   /*
    * The one anchor on the site that opts out of the rule directly above.
    *
-   * 02 §1 requires /resume.pdf to be ATS-safe, and the résumé's location line
-   * is a field a parser reads as an address. The rule above would render it
+   * 02 §1 requires the résumé to be ATS-safe, and its location line is a field
+   * a parser reads as an address. The rule above would render it
    * "Laguna Niguel, CA (https://en.wikipedia.org/wiki/Laguna_Niguel,_California)",
    * which is not an address any more. The link itself stays: a PDF keeps live
    * anchors, so the destination is not lost the way it is on paper, which is
-   * the case the rule above was written for.
+   * the case the rule above was written for. The published sheet enforces this
+   * independently now (src/styles/resume-sheet.css, gated since issue 04); this
+   * copy governs a browser print of /resume.
    *
    * MUST STAY BELOW IT. Both selectors are (0,1,2) -- one attribute selector,
    * the element `a`, and the pseudo-element -- so nothing but source order
