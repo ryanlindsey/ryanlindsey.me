@@ -94,8 +94,16 @@ const FOOT_FONT = new URL(
  * puts Chrome in either /Applications or ~/Applications depending on whether it
  * was installed for all users, and this machine has the second (measured
  * 2026-09-15, Chrome 152).
+ *
+ * Named for what these ARE -- paths to a browser binary -- rather than for the
+ * part they play in the search below. tests/tier-invisibility.test.ts scans
+ * `scripts` for the vocabulary the private tier keeps off public surfaces, and
+ * the obvious word for "the one being considered" is on that list.
+ * src/lib/corpus.ts holds the one registered exception to it, earned because
+ * there the word is the clearest one available; here `executable` is clearer
+ * than the word it replaces, so this file earns nothing and needs nothing.
  */
-function chromeCandidates() {
+function chromePaths() {
   return [
     process.env.CHROME_PATH,
     process.env.PUPPETEER_EXECUTABLE_PATH,
@@ -110,15 +118,15 @@ function chromeCandidates() {
 }
 
 async function findChrome() {
-  for (const candidate of chromeCandidates()) {
+  for (const executable of chromePaths()) {
     try {
-      if ((await stat(candidate)).isFile()) return candidate;
+      if ((await stat(executable)).isFile()) return executable;
     } catch {
-      // Not there. The next candidate is the whole recovery.
+      // Not there. Moving to the next path is the whole recovery.
     }
   }
   throw new Error(
-    `no Chrome found. Tried:\n  ${chromeCandidates().join('\n  ')}\n` +
+    `no Chrome found. Tried:\n  ${chromePaths().join('\n  ')}\n` +
       'Set CHROME_PATH to the binary to use.',
   );
 }
