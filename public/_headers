@@ -70,6 +70,25 @@
 /resume/
   X-Markdown-Variant: /resume.md
 
+# Issue #171 (epic #165, "agent readiness"): the home page's own markdown
+# twin, src/pages/index.md.ts, and its X-Markdown-Variant header -- same
+# reasoning as /resume.md above and /resume/ immediately above, and the same
+# exclusivity trick. Astro's static build discards a prerendered endpoint's
+# own Content-Type header, so without the first rule the served type would
+# fall back to whatever Cloudflare's default `.md` mime mapping is today.
+#
+# Two separate rules, not one, and on purpose: `/` is an exact path, so it
+# cannot also match `/index.md`, and neither rule can be comma-joined onto
+# the other (see the file-header note). `/` does overlap the broad `/*` rule
+# below, but that rule sets X-For-AI-Agents and X-MCP-Server, and this one
+# sets a header neither of those names, so there is nothing for it to be
+# comma-joined onto there either.
+/index.md
+  Content-Type: text/markdown; charset=utf-8
+
+/
+  X-Markdown-Variant: /index.md
+
 # Day 3 Task 9 (research appendix B2.6): the industry split observed live
 # across Anthropic, OpenAI, Cloudflare, Vercel and Perplexity is that the
 # llms.txt LAYER gets browser-friendly `text/plain` while `.md` PAGES get

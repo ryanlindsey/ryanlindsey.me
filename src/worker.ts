@@ -66,13 +66,13 @@ const NEGOTIABLE_METHODS = new Set(['GET', 'HEAD']);
  * `null` when the path is not one of the content routes with a markdown
  * variant.
  *
- * Content routes: `/resume`, `/writing/<slug>`, `/work/<slug>` -- exactly
- * the set src/pages/resume.md.ts, src/pages/writing/[...slug].md.ts and
- * src/pages/work/[...slug].md.ts prerender (drafts included: negotiation
- * mirrors the detail routes, and only the aggregation surfaces filter
- * drafts). The aggregation pages themselves (`/writing`, `/work`) have no
- * variant and are excluded by the regex requiring a non-empty slug after
- * the section.
+ * Content routes: `/`, `/resume`, `/writing/<slug>`, `/work/<slug>` --
+ * exactly the set src/pages/index.md.ts, src/pages/resume.md.ts,
+ * src/pages/writing/[...slug].md.ts and src/pages/work/[...slug].md.ts
+ * prerender (drafts included on the detail routes: negotiation mirrors
+ * those routes, and only the aggregation surfaces filter drafts). The
+ * aggregation pages themselves (`/writing`, `/work`) have no variant and
+ * are excluded by the regex requiring a non-empty slug after the section.
  *
  * A path that already carries its own extension (`/resume.pdf`,
  * `/writing/foo.md`, `/resume.json`, ...) is asking for one specific
@@ -90,6 +90,7 @@ const NEGOTIABLE_METHODS = new Set(['GET', 'HEAD']);
 function markdownAssetPathFor(pathname: string): string | null {
   const trimmed = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
   if (/\.[^/]+$/.test(trimmed)) return null;
+  if (trimmed === '/') return '/index.md';
   if (trimmed === '/resume') return '/resume.md';
   const match = /^\/(writing|work)\/(.+)$/.exec(trimmed);
   return match ? `/${match[1]}/${match[2]}.md` : null;

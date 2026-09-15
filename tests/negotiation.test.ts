@@ -251,3 +251,32 @@ test('an already-suffixed request (/writing/<slug>.md or /work/<slug>.md) ignore
     expect(response.headers.get('vary'), `${path} is not a negotiated route`).toBeNull();
   }
 });
+
+test('the homepage serves markdown when markdown is preferred', async () => {
+  const response = await server.fetch('/', { headers: { Accept: 'text/markdown' } });
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toBe('text/markdown; charset=utf-8');
+  expect(response.headers.get('vary')?.toLowerCase()).toContain('accept');
+});
+
+test('the homepage still serves HTML to a browser', async () => {
+  const response = await server.fetch('/', {
+    headers: { Accept: 'text/html,application/xhtml+xml,*/*;q=0.8' },
+  });
+  expect(response.headers.get('content-type')).toContain('text/html');
+});
+
+// A bare wildcard is curl's default and a browser's fallback. Markdown must be
+// genuinely preferred, not merely acceptable -- the rule prefersMarkdown()
+// already implements for every other route.
+test('a wildcard Accept still gets HTML', async () => {
+  const response = await server.fetch('/', { headers: { Accept: '*/*' } });
+  expect(response.headers.get('content-type')).toContain('text/html');
+});
+
+test('the homepage advertises its markdown twin', async () => {
+  const response = await server.fetch('/');
+  expect(response.headers.get('x-markdown-variant')).toBe('/index.md');
+  const body = await response.text();
+  expect(body).toContain('<link rel="alternate" type="text/markdown" href="/index.md"');
+});

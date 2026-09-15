@@ -1821,26 +1821,37 @@ test('/resume advertises its own .md variant, in both the link tag and the heade
   ).toBeNull();
 });
 
-test('every page carries rel="describedby" -> /llms.txt, including the ones with no .md twin', async () => {
+test('every page carries rel="describedby" -> /llms.txt, including the aggregation pages with no .md twin', async () => {
   // FIX ROUND 2: `describedby` used to sit INSIDE Base.astro's `markdownHref
   // &&` block, which made "is this page described by /llms.txt?" accidentally
   // conditional on "does this page have a markdown twin?" -- so the home page
-  // and both index pages, the three pages with no twin, advertised no llms.txt
-  // at all. Base.astro's own comment states the principle it was violating:
-  // this site has one root-level, unscoped /llms.txt, so EVERY page is covered
-  // by it, exactly like the two sitewide feed links directly above it.
+  // and both index pages, the three pages with no twin AT THE TIME, advertised
+  // no llms.txt at all. Base.astro's own comment states the principle it was
+  // violating: this site has one root-level, unscoped /llms.txt, so EVERY page
+  // is covered by it, exactly like the two sitewide feed links directly above
+  // it. That principle is what this loop still checks, for all three paths.
   //
-  // The three paths below are chosen for exactly that reason: they are the
-  // pages with no markdown variant, i.e. the ones the old placement dropped
-  // the tag from. /resume and the detail pages are covered by the tests above.
+  // Issue #171 (epic #165) is why "AT THE TIME" above is no longer true for
+  // `/`: the home page gained its own markdown twin (src/pages/index.md.ts),
+  // so it is no longer one of "the ones with no .md twin" this test's name
+  // used to describe. Splitting the assertion below in two, rather than just
+  // dropping `/` from the loop, is what keeps this test proving the same
+  // thing FIX ROUND 2 fixed -- describedby is independent of markdownHref --
+  // instead of silently losing coverage of `/` for that half of the claim.
   for (const path of ['/', '/writing', '/work']) {
     const page = await html(path);
     const head = page.slice(0, page.indexOf('</head>'));
     expect(head, `${path} should carry rel="describedby" pointing at /llms.txt`).toContain(
       '<link rel="describedby" href="/llms.txt">',
     );
-    // ...and must NOT have gained a markdown alternate along the way: the two
-    // tags are independent facts, and hoisting one must not hoist the other.
+  }
+  // The aggregation surfaces (`/writing`, `/work`) still have no markdown
+  // variant of their own and must not have gained one along the way: the two
+  // tags are independent facts, and hoisting one must not hoist the other.
+  // `/` is deliberately excluded from this half now -- see above.
+  for (const path of ['/writing', '/work']) {
+    const page = await html(path);
+    const head = page.slice(0, page.indexOf('</head>'));
     expect(head, `${path} has no .md twin and must not claim one`).not.toContain(
       'type="text/markdown"',
     );

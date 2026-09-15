@@ -106,12 +106,27 @@
       // would multiply invocations by a factor of ten and tell us nothing an
       // agent did, since an agent fetching a markdown file requests no CSS.
       //
-      // `/` IS ALSO NOT HERE, and it was in a draft of this list. The home page
-      // is the busiest path on the site and the least informative one to count:
-      // a request for it is not an agent signal, it is everybody. Adding it
-      // would have put an invocation in front of the front page to improve a
-      // "requests served" figure that /ops already labels as partial. The
-      // labelling is the honest fix; the invocation was not.
+      // `/` WAS NOT HERE FOR AGENT-SIGNAL COUNTING (day 6, 06 §3), and that
+      // reasoning still holds on its own terms: the home page is the busiest
+      // path on the site and the least informative one to count as an agent
+      // signal -- a request for it is not an agent signal, it is everybody.
+      // Adding it for THAT reason alone would have put an invocation in
+      // front of the front page to improve a "requests served" figure that
+      // /ops already labels as partial. The labelling was the honest fix;
+      // the invocation was not, and nothing below changes that argument.
+      //
+      // Issue #171 (epic #165) added it anyway, for an unrelated reason: the
+      // homepage is a static asset exactly like /resume, /writing/* and
+      // /work/* above, so `Accept: text/markdown` negotiation
+      // (markdownAssetPathFor in src/worker.ts, which maps `/` to
+      // /index.md) is dead code for `/` without this entry -- the same
+      // empirically-confirmed rule the file-header comment states for every
+      // other route in this list. Removing this line does not fail loudly:
+      // it makes the homepage's markdown twin silently unreachable while
+      // every test that calls `markdownAssetPathFor('/')` directly keeps
+      // passing, because that function has no idea whether the Worker it
+      // runs in was ever reached.
+      "/",
       "/llms.txt",
       "/llms-full.txt",
       "/resume.json",
