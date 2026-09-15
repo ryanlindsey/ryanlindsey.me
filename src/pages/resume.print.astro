@@ -184,19 +184,35 @@ const fields: Field[] = [
           {group.roles.map((role) => (
             <div class="role">
               {/*
-                  EVERY ROLE PRINTS ITS OWN RANGE, including the single-role
-                  companies whose range is identical to the company tenure
-                  above it. src/pages/resume.astro rules the other way and
-                  suppresses it, on the screen design's terms (design 1k
-                  leaves that row bare); this sheet is a different design and
-                  the reference that produced the approved three-page PDF
-                  prints both. Considered and left as the reference has it
-                  rather than harmonised with the screen page.
+                  A COMPANY WITH ONE TITLE PRINTS ITS RANGE ONCE. The tenure
+                  beside the company name, four lines up, is BY CONSTRUCTION
+                  that role's own range when the group holds a single role --
+                  `tenureOf` in src/lib/resume.ts derives the span from the
+                  roles themselves -- so a dates span here would print the
+                  identical string twice, three lines apart. RED Digital
+                  Cinema, Innocean Worldwide, Y&R Brands / Wunderman and
+                  Freelance are the four groups this covers today.
+
+                  The `<h4>` then ends at `<span class="fill"></span>`, which
+                  is the shape the reference sheet draws for those four and
+                  the same ruling src/pages/resume.astro records for the
+                  screen. THE FIRST IMPLEMENTATION PASS RULED THE OPPOSITE WAY
+                  and this comment argued for it, on the grounds that the
+                  reference printed both and that a print sheet was free to
+                  differ from the screen page. The reference does not: the
+                  copy that pass worked from was abridged to one work entry
+                  and the entry it kept was the four-role Weedmaps block, so
+                  the single-role shape was simply missing from the evidence.
+                  Kept as a correction rather than deleted, because "the sheet
+                  deliberately differs from /resume here" is exactly the
+                  belief a future reader would otherwise re-derive.
                 */}
               <h4 class="row">
                 <span class="title">{role.position}</span>
                 <span class="fill" />
-                <span class="dates">{formatDateRange(role.startDate, role.endDate)}</span>
+                {group.roles.length > 1 && (
+                  <span class="dates">{formatDateRange(role.startDate, role.endDate)}</span>
+                )}
               </h4>
               {role.highlights.length > 0 && (
                 <ul>

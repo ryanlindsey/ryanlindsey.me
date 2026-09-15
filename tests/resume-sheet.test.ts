@@ -28,7 +28,7 @@ import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { SITE_HARNESS_WORKERS } from './workers';
 import { stripComments } from './markup';
-import type { Resume } from '../src/lib/resume';
+import { formatDateRange, groupWorkByCompany, type Resume } from '../src/lib/resume';
 
 // See ./workers.ts for why the site Worker is booted from the build output and
 // why the MCP Worker is always listed with it.
@@ -218,6 +218,96 @@ test('every highlight in the résumé record prints on the sheet', async () => {
     missing.map((highlight) => highlight.slice(0, 60)),
     'these highlights never reached the sheet',
   ).toEqual([]);
+});
+
+/**
+ * THE SHAPE THE FIRST IMPLEMENTATION PASS GOT WRONG, which is why it is pinned
+ * here rather than left to a reader's eye on the rendered PDF.
+ *
+ * A company where one title was held prints its range ONCE: the tenure beside
+ * the company name is by construction that role's own range (`tenureOf` in
+ * src/lib/resume.ts derives the span from the roles), so a range on the role
+ * row as well would print the identical string twice, three lines apart. A
+ * company where several titles were held prints a range per role, because the
+ * tenure across the group is a span no single role carries.
+ *
+ * Asserted STRUCTURALLY -- does this `<h4>` carry a dates span at all -- rather
+ * than by counting a date string. Two roles at one company can legitimately
+ * share a boundary month, and a count-based assertion would turn that data
+ * coincidence into a test failure about something else entirely.
+ *
+ * The expected grouping comes from `groupWorkByCompany`, the same function the
+ * page calls. That is not circular here: the page's decision under test is
+ * `group.roles.length > 1`, and what this checks is that the decision reached
+ * the markup -- a page that dropped the condition, or applied it inverted,
+ * fails against the same grouping.
+ */
+test('a company with one title prints its date range once, a company with several prints one per role', async () => {
+  const html = await sheet();
+  const groups = groupWorkByCompany(resume.work);
+
+  // Both shapes have to exist in the real record, or this test passes by
+  // covering only one of the two cases it is about.
+  expect(
+    groups.filter((group) => group.roles.length === 1).length,
+    'the record should contain at least one single-role company',
+  ).toBeGreaterThan(0);
+  expect(
+    groups.filter((group) => group.roles.length > 1).length,
+    'the record should contain at least one multi-role company',
+  ).toBeGreaterThan(0);
+
+  // The Experience section only. Sliced to the first `</section>` after its own
+  // heading, so the Projects entries below -- which use the same `.entry` and
+  // `.dates` class names for a different job -- cannot be counted as work.
+  const start = html.indexOf('<h2>Experience</h2>');
+  expect(start, 'the sheet should carry an Experience section').toBeGreaterThan(-1);
+  const experience = html.slice(start, html.indexOf('</section>', start));
+
+  // `chunks[0]` is the heading that precedes the first entry; the rest line up
+  // with `groups` in order, which the company-name assertion below verifies
+  // rather than assumes.
+  const chunks = experience.split('<div class="entry">').slice(1);
+  expect(chunks.length, 'every work group should render one entry').toBe(groups.length);
+
+  const problems: string[] = [];
+  for (const [index, group] of groups.entries()) {
+    const chunk = chunks[index];
+    if (!chunk.includes(`<span class="org-name">${escapeHtml(group.name)}</span>`)) {
+      problems.push(`entry ${index} should be ${group.name}`);
+      continue;
+    }
+
+    // The company tenure, which every entry carries whatever its role count.
+    const tenure = formatDateRange(group.startDate, group.endDate);
+    if (!chunk.includes(`<span class="dates">${tenure}</span>`)) {
+      problems.push(`${group.name} should print its tenure ${tenure}`);
+    }
+
+    const roleRows = [...chunk.matchAll(/<h4 class="row">([\s\S]*?)<\/h4>/g)].map(
+      (match) => match[1],
+    );
+    if (roleRows.length !== group.roles.length) {
+      problems.push(
+        `${group.name} should render ${group.roles.length} role row(s), rendered ${roleRows.length}`,
+      );
+      continue;
+    }
+
+    const wantDates = group.roles.length > 1;
+    for (const [roleIndex, row] of roleRows.entries()) {
+      const hasDates = row.includes('class="dates"');
+      if (hasDates !== wantDates) {
+        problems.push(
+          wantDates
+            ? `${group.name} holds ${group.roles.length} titles, so role ${roleIndex} should print its own range`
+            : `${group.name} holds one title, so role ${roleIndex} must not repeat the tenure`,
+        );
+      }
+    }
+  }
+
+  expect(problems, `the role rows disagree with the record:\n${problems.join('\n')}`).toEqual([]);
 });
 
 test('every section of the record prints: summary, education and skills', async () => {
