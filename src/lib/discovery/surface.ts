@@ -1,0 +1,106 @@
+/**
+ * Every endpoint this site advertises to agents, in one list.
+ *
+ * ONE list rather than two, because /.well-known/api-catalog and
+ * /.well-known/ai-catalog.json describe the same surface in different
+ * vocabularies, and two hand-maintained copies would drift the first time an
+ * endpoint moved.
+ *
+ * WHAT IS DELIBERATELY ABSENT: /fit and everything beneath it. Those routes are
+ * unlisted by requirement -- absent from nav, sitemap and llms.txt -- and
+ * /fit/r/<id> carries a scoped token in the URL itself. A catalog is a
+ * published list of the paths its author finds interesting, so listing one here
+ * would un-list it exactly the way public/robots.txt's own header warns a
+ * Disallow line would. tests/discovery-catalog.test.ts asserts this against
+ * src/lib/unindexed-routes.mjs rather than trusting this comment.
+ */
+export interface AdvertisedEndpoint {
+  path: string;
+  namespace: string;
+  name: string;
+  displayName: string;
+  mediaType: string;
+  representativeQueries: string[];
+}
+
+export const ADVERTISED_SURFACE = [
+  {
+    path: '/mcp',
+    namespace: 'mcp',
+    name: 'corpus',
+    displayName: 'Model Context Protocol endpoint',
+    mediaType: 'application/json',
+    representativeQueries: [
+      'What has Ryan Lindsey written about agent-native sites?',
+      'Show me the case studies in this portfolio',
+    ],
+  },
+  {
+    path: '/chat',
+    namespace: 'mcp',
+    name: 'chat',
+    displayName: 'Grounded chat endpoint',
+    mediaType: 'text/event-stream',
+    representativeQueries: [
+      'Ask a question about this portfolio and get a cited answer',
+      'What did this project actually change?',
+    ],
+  },
+  {
+    path: '/llms.txt',
+    namespace: 'content',
+    name: 'index',
+    displayName: 'Curated index for agents',
+    mediaType: 'text/plain',
+    representativeQueries: ['What is on this site?', 'Where do I start reading this corpus?'],
+  },
+  {
+    path: '/llms-full.txt',
+    namespace: 'content',
+    name: 'full',
+    displayName: 'Full corpus as one document',
+    mediaType: 'text/plain',
+    representativeQueries: [
+      'Give me everything published on this site in one file',
+      'Load the whole corpus for grounding',
+    ],
+  },
+  {
+    path: '/resume.json',
+    namespace: 'profile',
+    name: 'resume-json',
+    displayName: 'Resume as JSON Resume',
+    mediaType: 'application/json',
+    representativeQueries: [
+      "What is Ryan Lindsey's work history?",
+      'Parse this resume as structured data',
+    ],
+  },
+  {
+    path: '/resume.md',
+    namespace: 'profile',
+    name: 'resume-markdown',
+    displayName: 'Resume as markdown',
+    mediaType: 'text/markdown',
+    representativeQueries: ['Read the resume as a document', 'Summarize this background'],
+  },
+  {
+    path: '/rss.xml',
+    namespace: 'feed',
+    name: 'rss',
+    displayName: 'Writing feed (RSS)',
+    mediaType: 'application/rss+xml',
+    representativeQueries: [
+      'Subscribe to new writing from this site',
+      'What was published recently?',
+    ],
+  },
+  {
+    path: '/feed.json',
+    namespace: 'feed',
+    name: 'json-feed',
+    displayName: 'Writing feed (JSON Feed)',
+    mediaType: 'application/feed+json',
+    representativeQueries: ['Poll this site for new posts as JSON', 'What was published recently?'],
+  },
+] as const satisfies readonly AdvertisedEndpoint[];

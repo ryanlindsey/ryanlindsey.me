@@ -158,6 +158,29 @@
 /auth.md
   Content-Type: text/markdown; charset=utf-8
 
+# Issue #168 (epic #165, "agent readiness"): the API catalog (RFC 9727) and
+# the ARD manifest, both built from src/lib/discovery/surface.ts's one list.
+#
+# /.well-known/api-catalog is EXTENSIONLESS, same situation as
+# /.well-known/oauth-protected-resource above -- Cloudflare's mime lookup has
+# nothing to guess a type from at all, so this rule is the only thing
+# standing between the document and whatever fallback content type an
+# extensionless static asset gets. application/linkset+json is RFC 9264's
+# registered type for a linkset document and RFC 9727 requires it for an API
+# catalog; no charset, because RFC 9264 registers the type without one.
+/.well-known/api-catalog
+  Content-Type: application/linkset+json
+
+# /.well-known/ai-catalog.json additionally carries Access-Control-Allow-
+# Origin, required by the ARD specification so a browser-resident agent on
+# another origin can read the manifest with `fetch()` rather than failing the
+# browser's own CORS check. No other rule in this file sets either header for
+# this exact path, so there is nothing here for Cloudflare to comma-join --
+# see the file-header note if that stops being true.
+/.well-known/ai-catalog.json
+  Content-Type: application/json; charset=utf-8
+  Access-Control-Allow-Origin: *
+
 # Day 4 Task 14 (08 v1 item 2): the two discovery headers, verbatim, on
 # every response this origin serves FROM A STATIC ASSET. `/*` is the broadest
 # pattern in this file and sets no header any rule above also sets, so there is
