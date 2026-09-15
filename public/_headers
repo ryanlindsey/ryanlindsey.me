@@ -181,6 +181,31 @@
   Content-Type: application/json; charset=utf-8
   Access-Control-Allow-Origin: *
 
+# Issue #169 (epic #165, "agent readiness"): the agent skills discovery index
+# (src/lib/discovery/skills.ts, served by src/pages/.well-known/agent-skills/
+# index.json.ts) and the SKILL.md behind each entry
+# (src/pages/.well-known/agent-skills/[skill]/SKILL.md.ts).
+#
+# /.well-known/agent-skills/index.json is EXTENSIONLESS-STYLE in the sense
+# that matters here even though it ends in `.json`: same reasoning as every
+# other rule in this file -- Astro's static build discards a prerendered
+# endpoint's own Content-Type, so without this the served type falls back to
+# Cloudflare's mime-table entry for `.json`, which omits the charset.
+#
+# The wildcard rule below and this exact one cannot both match one path
+# (`/.well-known/agent-skills/index.json` is not beneath
+# `/.well-known/agent-skills/*/SKILL.md`, and the second pattern's literal
+# `SKILL.md` segment cannot match a path ending `index.json`), so there is
+# nothing here for Cloudflare to comma-join -- see the file-header note for
+# why that would matter if it were otherwise. tests/discovery-skills.test.ts's
+# served-response assertions are the check that would catch a rewrite of
+# either pattern into one that overlapped the other.
+/.well-known/agent-skills/index.json
+  Content-Type: application/json; charset=utf-8
+
+/.well-known/agent-skills/*/SKILL.md
+  Content-Type: text/markdown; charset=utf-8
+
 # Day 4 Task 14 (08 v1 item 2): the two discovery headers, verbatim, on
 # every response this origin serves FROM A STATIC ASSET. `/*` is the broadest
 # pattern in this file and sets no header any rule above also sets, so there is
