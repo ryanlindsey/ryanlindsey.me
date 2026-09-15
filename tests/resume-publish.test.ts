@@ -67,12 +67,19 @@ describe('publishPlan', () => {
 });
 
 /*
- * TWO WRITERS, ONE KEY SPACE, UNTIL 06. src/lib/resume-pdf.ts still writes
- * `resume/<hash>.pdf` to this same bucket, from the 05:17 cron and from every
- * stale or cold-miss request to /resume.pdf. So the content-addressed key can
- * already be there when this workflow first runs, and probing it alone would
- * answer "unchanged" on a bucket that has never held `resume/latest.pdf`. The
- * alias is probed for exactly that reason.
+ * WHY BOTH KEYS ARE PROBED, AND WHY THAT OUTLIVED ITS FIRST REASON.
+ *
+ * It was written because two writers shared one key space:
+ * src/lib/resume-pdf.ts also wrote `resume/<hash>.pdf` to this bucket, from the
+ * 05:17 cron and from every stale or cold-miss request to /resume.pdf, so the
+ * content-addressed key could already be there when this workflow first ran and
+ * probing it alone would answer "unchanged" on a bucket that had never held
+ * `resume/latest.pdf`. #186 deleted that writer.
+ *
+ * The cases below still matter, because the two keys are uploaded by two
+ * separate calls and the second can fail by itself. Since #186 a missing alias
+ * is also what /resume.pdf falls back to, so the state this guards against is
+ * the difference between serving a sheet one publish behind and serving a 503.
  */
 describe('publishDecision', () => {
   test('publishes nothing when both keys are already there', () => {

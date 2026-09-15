@@ -10,10 +10,13 @@ name: resume-pdf
 # discover the sheet has not changed costs two requests and about twenty
 # seconds, because everything expensive below is gated on that answer.
 #
-# Two rather than one because the Worker still writes the content-addressed key
-# at runtime until issue 06 lands, so that key alone does not answer whether
-# this workflow has ever published. publishDecision() in
-# scripts/resume-publish.mjs carries the full reasoning.
+# Two rather than one. The original reason was that the Worker also wrote the
+# content-addressed key at runtime, so that key alone did not answer whether
+# this workflow had ever published; issue 06 (#186) deleted that path and this
+# is now the only writer of either key. The second probe stays because the two
+# uploads are separate calls and the second can fail on its own, which since
+# #186 is the difference between /resume.pdf serving a stale sheet and serving
+# a 503. publishDecision() in scripts/resume-publish.mjs carries the reasoning.
 #
 # THIS IS THE ONLY WORKFLOW IN THE REPOSITORY THAT HOLDS A CLOUDFLARE
 # CREDENTIAL, and CLAUDE.md records why it is scoped the way it is. Since #205
