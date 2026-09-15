@@ -37,7 +37,24 @@ import resumeSource from '../content/resume/ryan-lindsey.yaml?raw';
 // this. Bumped anyway, because the two are independent: reverting the Armature
 // entry later would restore the old hash while the page still renders the new
 // sheet, and the manifest would then point at bytes nobody can reproduce.
-export const RESUME_PDF_CONTRACT_VERSION = 3;
+// 4 since 2026-09-15 (issue #184): the running foot moved out of Chrome's
+// footer template and into the page. That template's document does not load
+// webfonts at all, so every glyph of the foot had been drawing in a host system
+// serif rather than the sheet's mono face -- visible in the text layer as
+// `R YA N` in the foot against `R Y A N` in the docline above it, because a
+// proportional face kerns the RY pair and IBM Plex Mono has none to apply. Only
+// `n / total` is still drawn there, because `counter(page)` outside an `@page`
+// margin box evaluates to 0 in Chrome.
+//
+// Identical résumé data therefore renders a different sheet, which is what this
+// constant is for. Note that no runtime input moved: src/lib/resume-pdf.ts
+// renders `/resume?print` and nothing here imports the stamper or the sheet's
+// stylesheet, so today the bump changes no deployed byte. It is made anyway,
+// for the reason version 3's note gives about the Armature entry -- the golden
+// moved, and the gate added in #184 requires the constant to move with it, so
+// that once 05 publishes from the golden's own render the hash cannot point at
+// bytes nobody can reproduce.
+export const RESUME_PDF_CONTRACT_VERSION = 4;
 
 /** KV key holding the manifest. The manifest write is the commit point. */
 export const RESUME_PDF_MANIFEST_KEY = 'resume-pdf:manifest';

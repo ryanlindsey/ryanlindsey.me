@@ -197,6 +197,13 @@ async function expectations() {
   const { email, phone, url, profiles = [] } = resume.basics;
 
   return {
+    /* The running foot, which draws once per sheet. Squashed rather than
+     * compared literally, because it is letter-spaced and extracts one
+     * character at a time -- see checkFoot(). */
+    foot: {
+      credit: `${resume.basics.name} · ${resume.basics.label}`,
+      site: displayForm(url),
+    },
     /* What must appear in the text layer. The sheet prints URLs in display
      * form, so these are compared after the same trimming -- see displayForm(). */
     fields: [
@@ -316,6 +323,40 @@ function checkLinks(expected, found) {
     : { ok: false, detail: `no link annotation for: ${missing.join(', ')}` };
 }
 
+/**
+ * THE RUNNING FOOT, WHICH THE GOLDEN CANNOT FULLY COVER.
+ *
+ * Two things draw down there and only one of them is reproducible. The credit
+ * and the site are page content in the embedded mono face, so they sit in the
+ * golden and `extraction` already compares them byte for byte. `n / total`
+ * comes from Chrome's footer template, which renders in a host system serif
+ * (see footerTemplate() in scripts/resume-sheet.mjs), so goldenText() drops its
+ * line and this is the check that keeps it honest: presence, per page, which is
+ * the strongest claim that survives not knowing the font.
+ *
+ * Squashed to bare characters before comparing. The foot is letter-spaced, so
+ * it extracts as `R Y A N  L I N D S E Y`, and a literal comparison would be
+ * asserting the tracking rather than the words.
+ */
+function checkFoot(expected, pages) {
+  const squash = (value) => value.replace(/[\s]/g, '').toUpperCase();
+  const credit = squash(expected.credit);
+  const site = squash(expected.site);
+  const missing = [];
+
+  pages.forEach((page, index) => {
+    const flat = squash(page);
+    const sheet = index + 1;
+    if (!flat.includes(credit)) missing.push(`page ${sheet} credit`);
+    if (!flat.includes(site)) missing.push(`page ${sheet} site`);
+    if (!flat.includes(`${sheet}/${pages.length}`)) missing.push(`page ${sheet} number`);
+  });
+
+  return missing.length === 0
+    ? { ok: true, detail: `credit, site and n/total on ${pages.length} of ${pages.length} sheets` }
+    : { ok: false, detail: `absent from the foot: ${missing.join(', ')}` };
+}
+
 function checkTagged(info) {
   return info.Tagged === 'yes'
     ? { ok: true, detail: 'pdfinfo reports Tagged: yes' }
@@ -397,6 +438,7 @@ async function main() {
     ['fonts', checkFonts(readFonts(path))],
     ['pages', checkPages(totalPages, pages)],
     ['links', checkLinks(expected.links, links)],
+    ['foot', checkFoot(expected.foot, pages)],
     ['tagged', checkTagged(readInfo(path))],
     ['contract', checkContract()],
   ];

@@ -71,18 +71,6 @@ const READY_ATTRIBUTE = 'data-resume-ready';
 const PDF_OUTPUT = new URL('tests/fixtures/resume-sheet.pdf', root);
 const GOLDEN_OUTPUT = new URL('tests/fixtures/resume-sheet.txt', root);
 
-/**
- * The face the running foot draws in, read from node_modules rather than
- * committed as a base64 blob so the foot and the sheet cannot drift onto
- * different versions of the same font: a Fontsource bump moves both at once.
- * 400 is the weight `.docline` uses at the head of the sheet, which the foot
- * is the counterpart to.
- */
-const FOOT_FONT = new URL(
-  'node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2',
-  root,
-);
-
 /* -------------------------------------------------------------------------- *
  * Chrome
  * -------------------------------------------------------------------------- */
@@ -359,69 +347,60 @@ async function serveDist() {
  * -------------------------------------------------------------------------- */
 
 /**
- * Chrome renders the header and footer in a SEPARATE DOCUMENT from the page. It
- * has no access to the page's stylesheet, so the mono face has to be inlined
- * here as a data URL or the foot silently falls back to a system serif.
+ * Chrome's footer template, carrying the page number and nothing else.
  *
- * Measured 2026-09-15, as a controlled pair rather than an observation: this
- * render lists six faces and tests/fixtures/resume-sheet-sample.pdf, the same
- * page printed by #182 with no foot at all, lists the same five minus
- * `Times-Roman`. So the sixth entry is the foot document's, it appears whatever
- * the template asks for, and it is invisible on the page -- every glyph in the
- * foot draws in the embedded mono.
+ * IT USED TO CARRY THE WHOLE FOOT, AND THE COMMENT EXPLAINING HOW WAS WRONG.
+ * The mono face was inlined here as a base64 data URL so the foot could not
+ * drift onto a different version of the font the sheet uses, and an earlier
+ * version of this comment recorded that the one `Times-Roman` in the font list
+ * came from this document "regardless of what the template asks for" and was
+ * "invisible on the page". The first half was right and the second was not.
  *
- * The issue predicted that entry and warned 04's font assertion would have to
- * allow it rather than fail on it. Measurement softens that: `pdffonts` reports
- * the `Times-Roman` entry as `CID TrueType`, embedded and subset, exactly like
- * the other five. So "every face embeds as CID TrueType" holds uniformly and 04
- * needs no carve-out; what it must not assert is a count of five, or a font
- * list with no `Times-Roman` in it.
+ * MEASURED 2026-09-15, in isolation against Chrome 152: this document does not
+ * load `@font-face` at all, data URL or otherwise, and the declared `monospace`
+ * fallback does not take either. Everything drawn here renders in the default
+ * serif, which IS that `Times-Roman` -- not an artifact beside the foot, but the
+ * foot itself. Because a system serif resolves differently on macOS and on a
+ * Linux runner, the extraction golden could never be reproducible while any
+ * real text lived here: the advances differ, and pdf.js reconstructs a
+ * different set of spaces from them. The gate added in #184 caught it on its
+ * first CI run, with `R YA N` here against `R Y A N` in the `.docline` above.
  *
- * Every value comes from the résumé record. No page on this site spells the
- * name into a document by hand, and a foot that did would be the same class of
- * defect as the keyword list #182 refused to hand-author.
+ * So the foot moved into the page (src/pages/resume.print.astro), where it
+ * draws in the embedded face. Only the page number stays, because
+ * `counter(page)` outside an `@page` margin box evaluates to 0 in Chrome and
+ * `@page` margin boxes are not implemented at all. One field in a host font is
+ * the price of numbering the sheets, and goldenText() drops its line for that
+ * reason rather than pretending it is stable.
+ *
+ * The padding repeats @page's 0.66in side margin from
+ * src/styles/resume-sheet.css, and the size and tracking match `.foot` there so
+ * the number sits where the reserved `.foot-page` column leaves room for it.
+ * Those numbers are coupled across the two files and nothing will say so if
+ * they drift.
  */
-function footerTemplate(resume, fontBase64) {
-  const { name, label, url } = resume.basics;
-  const site = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+function footerTemplate() {
   return `<style>
-  @font-face {
-    font-family: 'SheetMono';
-    src: url(data:font/woff2;base64,${fontBase64}) format('woff2');
-    font-weight: 400;
-    font-style: normal;
-  }
-  /*
-   * Chrome gives the foot document its own tiny default type and its own zero
-   * margins, and lays it out across the full paper width rather than inside the
-   * page box. So the size is set here explicitly, and the horizontal padding
-   * repeats the 0.66in side margin from @page in src/styles/resume-sheet.css so
-   * the foot lines up with the text column above it. Those two numbers are
-   * coupled; changing one without the other puts the foot out of alignment and
-   * nothing will say so.
-   */
   .foot {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
     width: 100%;
     box-sizing: border-box;
-    padding: 0 0.66in;
-    font-family: 'SheetMono', monospace;
+    text-align: right;
+    /*
+     * The bottom padding lifts the number off the paper edge to sit one
+     * line under the in-page foot rather than stranded in the margin. Tuned
+     * against the render: 29pt puts its baseline at about 45pt, and the
+     * in-page foot in src/styles/resume-sheet.css draws at 52.5pt. No
+     * backticks in this comment -- it lives inside a template literal.
+     */
+    padding: 0 0.66in 29pt;
     font-size: 6.8pt;
     line-height: 1;
     letter-spacing: 0.16em;
-    text-transform: uppercase;
-    /* #333333 is the print palette's mid value, the one .docline draws in. */
     color: #333333;
     -webkit-print-color-adjust: exact;
   }
 </style>
-<div class="foot">
-  <span>${escapeHtml(name)} · ${escapeHtml(label)}</span>
-  <span>${escapeHtml(site)}</span>
-  <span><span class="pageNumber"></span> / <span class="totalPages"></span></span>
-</div>`;
+<div class="foot"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`;
 }
 
 function escapeHtml(value) {
@@ -548,6 +527,23 @@ async function waitForReady(cdp, sessionId) {
  * the repository can see this artifact. Whoever writes 04 should assert on
  * values and on the untracked body text, never on a tracked string.
  */
+/**
+ * The one line of the sheet that is dropped before the golden is written.
+ *
+ * `n / total` is drawn by Chrome's footer template, and that document renders
+ * in a host system serif no matter what it is asked for -- see footerTemplate()
+ * for the measurement. A system font resolves differently on macOS and on a
+ * Linux runner, the glyph advances differ, and pdf.js reconstructs a different
+ * set of spaces from them, so this line cannot be compared byte for byte across
+ * machines. It was the whole of the first CI failure of the #184 gate.
+ *
+ * Only this line. The rest of the foot moved into the page and draws in the
+ * embedded face, so it stays in the golden and is still asserted. The number is
+ * checked for presence by scripts/resume-gate.mjs instead of by comparison,
+ * which is the strongest claim that survives the font it is drawn in.
+ */
+const PAGE_NUMBER_LINE = /^\d+\s*\/\s*\d+$/;
+
 async function goldenText(bytes) {
   // getDocumentProxy is handed a copy: pdf.js transfers the buffer it is given
   // and leaves the original detached, and these same bytes are written to disk
@@ -555,7 +551,14 @@ async function goldenText(bytes) {
   const document_ = await getDocumentProxy(new Uint8Array(bytes));
   const { totalPages, text } = await extractText(document_, { mergePages: false });
 
-  const pages = text.map((page) => page.replace(/[ \t]+$/gm, '').trim());
+  const pages = text.map((page) =>
+    page
+      .replace(/[ \t]+$/gm, '')
+      .split('\n')
+      .filter((line) => !PAGE_NUMBER_LINE.test(line.trim()))
+      .join('\n')
+      .trim(),
+  );
   const bullets = pages.join('\n').match(/•/g)?.length ?? 0;
 
   const lines = [
@@ -566,6 +569,10 @@ async function goldenText(bytes) {
     'section per page. Regenerate with `npm run resume:pdf`. This file is',
     'committed and the PDF beside it is not: the PDF belongs in R2, and this is',
     'what review reads.',
+    '',
+    'The `n / total` line is dropped: Chrome draws it in a host system font,',
+    'so it is the one thing here that is not reproducible across machines. Its',
+    'presence is asserted by scripts/resume-gate.mjs instead.',
     '',
     'A diff here is a change to what the sheet SAYS. A sheet that still renders',
     'but has lost its contact block, or whose bullet markers no longer survive',
@@ -603,18 +610,14 @@ async function main() {
     await readFile(new URL('src/content/resume/ryan-lindsey.yaml', root), 'utf8'),
   );
 
-  const [chrome, site, footFont] = await Promise.all([
-    findChrome(),
-    serveDist(),
-    readFile(FOOT_FONT).then((buffer) => buffer.toString('base64')),
-  ]);
+  const [chrome, site] = await Promise.all([findChrome(), serveDist()]);
 
   const browser = await launchChrome(chrome);
   let bytes;
   try {
     const cdp = await Cdp.connect(browser.endpoint);
     try {
-      bytes = await render(cdp, `${site.origin}${PRINT_PATH}`, footerTemplate(resume, footFont));
+      bytes = await render(cdp, `${site.origin}${PRINT_PATH}`, footerTemplate());
     } finally {
       cdp.close();
     }
