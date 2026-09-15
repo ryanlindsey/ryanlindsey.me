@@ -56,6 +56,16 @@ afterAll(async () => {
 const SHEET_PATH = '/resume.print/';
 
 /**
+ * The same route without the trailing slash. Which spelling answers is a
+ * measurement rather than a convention here: `/resume.print` looks like a file
+ * with a `.print` extension to Cloudflare's asset server, and `wrangler.jsonc`'s
+ * `run_worker_first` lists `/resume` and `/resume/` as exact paths while naming
+ * neither of these. A later change types this route as a constant, and it
+ * should read the measured answer rather than guess one.
+ */
+const SHEET_PATH_BARE = '/resume.print';
+
+/**
  * The résumé record, cast to the schema's OUTPUT type.
  *
  * THE CAST IS A LIE IN ONE DIRECTION AND THE READS BELOW ALLOW FOR IT. Every
@@ -96,7 +106,7 @@ const projects = resume.projects ?? [];
  * closed.
  *
  * This is not hypothetical tidiness. The résumé contains `>80%`, a literal
- * apostrophe in "Anthropic's" and a quoted campaign name, which reach the page
+ * apostrophe in "Anthropic's" and a quoted award title, which reach the page
  * as `&gt;`, `&#39;` and `&quot;`. A suite that did not handle them would have
  * been weakened to a prefix match, which is the assertion that stops catching
  * a truncated bullet.
@@ -128,6 +138,36 @@ async function sheet(): Promise<string> {
   expect(response.status, `${SHEET_PATH} should be 200`).toBe(200);
   return stripComments(await response.text());
 }
+
+/**
+ * MEASURED, NOT ASSUMED: `/resume.print` answers 307 to `/resume.print/`, and
+ * the redirect lands on the sheet.
+ *
+ * Every other test in this file fetches the trailing-slash form and would go on
+ * passing if the bare one 404ed, so nothing here knew which spellings were live
+ * until this test. That matters to more than tidiness: a later change types this
+ * route as a constant, and a constant written from the page's filename rather
+ * than from a measurement is one that names a URL nobody checked.
+ *
+ * `redirect: 'manual'` so the redirect itself is the subject. Following it
+ * silently would assert only that some chain ends in a 200, which is the
+ * assertion that cannot tell a redirect from a duplicate page -- two live URLs
+ * for one document, which is what the canonical tag exists to prevent and what
+ * tests/seo.test.ts records as an open defect for /chat and /ops.
+ */
+test('the sheet answers at both spellings of its route, one redirecting to the other', async () => {
+  const bare = await server.fetch(SHEET_PATH_BARE, { redirect: 'manual' });
+  expect(bare.status, `${SHEET_PATH_BARE} should redirect rather than 404`).toBe(307);
+  expect(bare.headers.get('location'), `${SHEET_PATH_BARE} should point at the slashed form`).toBe(
+    SHEET_PATH,
+  );
+
+  const slashed = await server.fetch(SHEET_PATH);
+  expect(slashed.status, `${SHEET_PATH} should be 200`).toBe(200);
+  expect(slashed.headers.get('content-type'), `${SHEET_PATH} should serve HTML`).toContain(
+    'text/html',
+  );
+});
 
 test('every contact value in the résumé record reaches the sheet', async () => {
   const html = await sheet();

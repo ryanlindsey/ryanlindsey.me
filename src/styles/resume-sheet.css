@@ -7,11 +7,36 @@
  * it keeps all of that, while this sheet exists so a renderer has a document
  * whose every measurement was made on paper (issue #181).
  *
- * Ported from .superpowers/plans/issue-181-reference-sheet.html, the file that
- * rendered the approved three-page PDF: 3 pages, 91 KB, every face a real CID
- * TrueType, 34 of 34 bullet markers surviving extraction, 7 link annotations.
- * The numbers below are that file's measured values rather than a fresh pass
- * at the same design, so changing one means re-measuring the sheet.
+ * PORTED FROM THE REFERENCE SHEET IN ISSUE #181, WHICH IS THE DURABLE
+ * AUTHORITY. A working copy sits at
+ * .superpowers/plans/issue-181-reference-sheet.html and an earlier version of
+ * this paragraph cited it as "the file that rendered the approved PDF". It is
+ * neither findable nor that file. `.gitignore` excludes `.superpowers`, so
+ * `git ls-files` does not know the path and a future reader cannot open it
+ * (src/lib/ops/analytics.ts records a gitignored source the same way and for
+ * the same reason), and the copy there says in its own header that its body is
+ * abridged to one work entry with `[highlight]` placeholders -- it could not
+ * produce the numbers below if it were run.
+ *
+ * THE NUMBERS DESCRIBE THE APPROVED REFERENCE RENDER: 3 pages, 91 KB, every
+ * face a real CID TrueType, 34 of 34 bullet markers surviving extraction, 7
+ * link annotations, measured before that abridgement. The values below are
+ * that render's rather than a fresh pass at the same design, so changing one
+ * means re-measuring against it.
+ *
+ * NOTHING IN THIS CHANGE HAS BEEN MEASURED AT THREE PAGES, and the sentence
+ * above is not a claim that it has. No PDF is rendered here: `RESUME_PRINT_PATH`
+ * in src/lib/resume-pdf.ts still points at /resume, and moving it is a later
+ * change's job. Until that change measures the result, "three pages" is a
+ * property of the reference and not a verified property of this file.
+ *
+ * THE ONE FILE IN THIS REPOSITORY BESIDES tokens.css THAT DECLARES A COLOUR,
+ * and the exception is reasoned rather than an oversight. This document loads
+ * no tokens.css and no Tailwind, so no `--rl-*` custom property is in scope for
+ * it to consume, and the eleven hex literals below are ported measured values
+ * rather than a second theme anybody edits. tests/tokens.test.ts and
+ * tests/print.test.ts carry the other half of this note, beside the invariant
+ * they state.
  */
 
 /*
@@ -130,6 +155,12 @@ h4 {
 .role {
   break-inside: auto;
 }
+/*
+ * `.keep` is used by no element in the reference body or in this template. It
+ * is ported as written, because this file is the approved sheet rather than a
+ * tidied version of it, and a rule nothing selects costs a line of CSS. Noted
+ * here so the next reader does not have to grep for a caller to find out.
+ */
 .keep {
   break-inside: avoid;
 }
@@ -139,6 +170,19 @@ li {
   widows: 2;
 }
 
+/*
+ * The only `@page` rule in this repository, and it will collide the moment the
+ * PDF job points at this route. src/lib/resume-pdf.ts's `browserRenderer`
+ * passes `preferCSSPageSize: true` AND an explicit `margin` object of 0.6in on
+ * every side, which describes a different page box from the asymmetric one
+ * below. Whichever loses, the layout moves silently and nothing says so.
+ *
+ * THE MARGIN OBJECT IS THE ONE TO DROP, not this rule: these three values are
+ * part of the approved render and the 0.6in is a uniform default from when the
+ * job printed /resume, a page with no `@page` of its own. Nothing in
+ * resume-pdf.ts is touched by this change -- it is the later change moving the
+ * render target that has to remove it.
+ */
 @page {
   size: letter;
   margin: 0.56in 0.66in 0.72in;

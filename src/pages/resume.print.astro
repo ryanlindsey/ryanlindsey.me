@@ -14,6 +14,12 @@ import { buildPerson, stringifyJsonLd } from '../lib/structured-data';
  * carries `noindex, nofollow`, stays out of the sitemap
  * (src/lib/unindexed-routes.mjs) and is linked from nowhere.
  *
+ * THE SERVED SPELLING IS `/resume.print/`, WITH THE SLASH. Measured through the
+ * harness, 2026-09-15: this file emits `dist/client/resume.print/index.html`,
+ * the slashed form answers 200, and the bare `/resume.print` answers 307 to it.
+ * Worth knowing before pointing a renderer at the bare form and paying for a
+ * redirect on every run. tests/resume-sheet.test.ts pins both.
+ *
  * IT USES NEITHER Base.astro NOR Shell.astro, deliberately. Those pull in
  * global.css, tokens.css, the theme script and the site chrome, and avoiding
  * all four is the entire reason this file exists -- src/styles/resume-sheet.css
@@ -22,10 +28,17 @@ import { buildPerson, stringifyJsonLd } from '../lib/structured-data';
  * than inherited; that is the trade, and it is cheaper than teaching the site's
  * layout to render nothing.
  *
- * Ported from .superpowers/plans/issue-181-reference-sheet.html, the file that
- * rendered the approved PDF. The class names and element shapes below are what
- * that stylesheet selects on, so they are reproduced exactly; only the content
- * moved, from hardcoded markup to the collection.
+ * PORTED FROM THE REFERENCE SHEET IN ISSUE #181, which is where the approved
+ * markup and the render measured from it live. There is a working copy at
+ * .superpowers/plans/issue-181-reference-sheet.html, and an earlier version of
+ * this line cited it instead -- but `.gitignore` excludes `.superpowers`, so
+ * that path is unknown to `git ls-files` and unopenable by a future reader, and
+ * the copy is abridged besides. Cite the issue.
+ *
+ * The class names and element shapes below are what src/styles/resume-sheet.css
+ * selects on, so they are reproduced exactly; only the content moved, from
+ * hardcoded markup to the collection. That stylesheet's header carries what has
+ * and has not been measured.
  */
 const resume = await getResume();
 
@@ -97,6 +110,12 @@ interface Field {
  * with no edit here, which is the failure mode this block is shaped against:
  * the contact information going stale on the one artifact whose whole job is
  * telling someone how to make contact.
+ *
+ * APPEARING IS NOT THE SAME AS FITTING, though. `.fields .k` is
+ * `flex: 0 0 58pt`, which at 7.5pt mono with 0.1em tracking holds about as much
+ * as "LINKEDIN" -- a longer `profile.network` wraps its label and grows a sheet
+ * whose whole property is being three pages. So a new profile needs the sheet
+ * re-measured, not merely looked at.
  */
 const fields: Field[] = [
   { key: 'Based', value: `${resume.basics.location.city}, ${resume.basics.location.region}` },
@@ -189,9 +208,7 @@ const fields: Field[] = [
                   that role's own range when the group holds a single role --
                   `tenureOf` in src/lib/resume.ts derives the span from the
                   roles themselves -- so a dates span here would print the
-                  identical string twice, three lines apart. RED Digital
-                  Cinema, Innocean Worldwide, Y&R Brands / Wunderman and
-                  Freelance are the four groups this covers today.
+                  identical string twice, three lines apart.
 
                   The `<h4>` then ends at `<span class="fill"></span>`, which
                   is the shape the reference sheet draws for those four and
