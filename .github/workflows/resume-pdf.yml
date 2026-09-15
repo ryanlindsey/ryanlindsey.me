@@ -16,7 +16,9 @@ name: resume-pdf
 # scripts/resume-publish.mjs carries the full reasoning.
 #
 # THIS IS THE ONLY WORKFLOW IN THE REPOSITORY THAT HOLDS A CLOUDFLARE
-# CREDENTIAL, and CLAUDE.md records why the credential is scoped the way it is.
+# CREDENTIAL, and CLAUDE.md records why it is scoped the way it is. Since #205
+# that credential is an S3 pair restricted to `ryanlindsey-me-assets`, which is
+# what keeps CI unable to reach `ryanlindsey-me-private`.
 
 on:
   push:
@@ -66,18 +68,25 @@ jobs:
       # ONE REQUEST, AND IT DECIDES THE REST OF THE JOB. Reads the résumé YAML,
       # hashes it with the same code the Worker uses, and asks R2 for that key.
       #
-      # THE TOKEN IS SET ON THE TWO STEPS THAT TALK TO R2, NOT ON THE JOB.
-      # `npm run build` below is `astro build`, and CLAUDE.md records that an
-      # `ai` binding in the site's config would make it open a remote proxy
+      # THE CREDENTIALS ARE SET ON THE TWO STEPS THAT TALK TO R2, NOT ON THE
+      # JOB. `npm run build` below is `astro build`, and CLAUDE.md records that
+      # an `ai` binding in the site's config would make it open a remote proxy
       # session that credential-free CI cannot authenticate. That reasoning is
-      # about a binding this Worker does not have, but a build running with a
-      # Cloudflare token in its environment is a different build from the one
-      # checks.yml runs, and there is no reason to find out how different. The
-      # account id is public and lives in scripts/resume-publish.mjs.
+      # about a binding this Worker does not have, but a build running with
+      # storage credentials in its environment is a different build from the one
+      # checks.yml runs, and there is no reason to find out how different.
+      #
+      # AN S3 PAIR RATHER THAN A BEARER TOKEN, and that is a correction (#205).
+      # `CLOUDFLARE_API_TOKEN: secrets.RLME_R2_STORAGE` sat here and every run
+      # failed: an R2 API token is an S3 credential, not a Cloudflare API token,
+      # so `wrangler r2 object` could not authenticate with it. The script's
+      # header carries the measurement. The account id stays public and lives in
+      # scripts/resume-publish.mjs, where it is now the endpoint's hostname.
       - name: Plan
         id: plan
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.RLME_R2_STORAGE }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.RLME_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RLME_R2_SECRET_ACCESS_KEY }}
           RESUME_PUBLISH_FORCE: ${{ inputs.force }}
         run: node scripts/resume-publish.mjs plan
 
@@ -121,5 +130,6 @@ jobs:
       - name: Publish to R2
         if: steps.plan.outputs.publish == 'true'
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.RLME_R2_STORAGE }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.RLME_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RLME_R2_SECRET_ACCESS_KEY }}
         run: node scripts/resume-publish.mjs publish
