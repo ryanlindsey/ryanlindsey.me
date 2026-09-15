@@ -133,6 +133,13 @@
 /.well-known/mcp.json
   Content-Type: application/json; charset=utf-8
 
+# The MCP Server Card (SEP-1649), same reasoning as the rule above it: Astro's
+# static build discards a prerendered endpoint's own Content-Type, so without
+# this the served type falls back to Cloudflare's mime-table entry for `.json`,
+# which omits the charset.
+/.well-known/mcp/server-card.json
+  Content-Type: application/json; charset=utf-8
+
 # Day 4 Task 14 (08 v1 item 2): the two discovery headers, verbatim, on
 # every response this origin serves FROM A STATIC ASSET. `/*` is the broadest
 # pattern in this file and sets no header any rule above also sets, so there is
