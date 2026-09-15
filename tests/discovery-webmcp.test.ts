@@ -1,21 +1,16 @@
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
-import { WEBMCP_TOOLS } from '../src/lib/discovery/webmcp';
+import { callMcp, WEBMCP_TOOLS } from '../src/lib/discovery/webmcp';
 import { GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
+import { PUBLIC_TOOL_NAMES } from '../workers/mcp/src/tools';
 import { SITE_HARNESS_WORKERS } from './workers';
-
-// The MCP server's own public tool names (workers/mcp/src/tools.ts), copied
-// rather than imported: importing that module would pull in the MCP Worker's
-// tool-registration graph, and the point of this suite is to catch drift
-// between the page and the server with an independent list, the same
-// reasoning tests/mcp.smoke.test.ts's EXPECTED_INSTRUCTIONS follows.
-const PUBLIC_TOOLS = ['search_writing', 'get_resume', 'list_case_studies'];
 
 // Same harness setup as tests/pages.test.ts, and for the same reason: the
 // site Worker is booted from the adapter's build output so this suite
 // exercises the artifact that ships, and the MCP Worker comes with it both
 // because the site's `MCP` service binding names it and because this file
-// compares WEBMCP_TOOLS against workers/mcp/src/gated.ts's own registry.
+// compares WEBMCP_TOOLS against workers/mcp/src/gated.ts's and
+// workers/mcp/src/tools.ts's own registries.
 const server = createTestHarness({
   workers: SITE_HARNESS_WORKERS,
 });
@@ -28,9 +23,17 @@ afterAll(async () => {
   await server.close();
 });
 
+// PUBLIC_TOOL_NAMES is DERIVED from workers/mcp/src/tools.ts's own
+// registration table (controller review, task 7 fix round) rather than a
+// second, hand-typed list here: a hand-typed copy checks WEBMCP_TOOLS against
+// itself in every way that matters, since renaming a tool in tools.ts and
+// forgetting to update a literal here would leave both this test and the page
+// green while the page advertised a name the server no longer implements --
+// exactly the drift this issue exists to catch. GATED_TOOL_NAMES below is the
+// same discipline for the private tier's own list.
 test('every registered tool names a real public MCP tool', () => {
   for (const tool of WEBMCP_TOOLS) {
-    expect(PUBLIC_TOOLS, tool.name).toContain(tool.name);
+    expect(PUBLIC_TOOL_NAMES, tool.name).toContain(tool.name);
   }
 });
 
@@ -66,4 +69,49 @@ test('the homepage ships the module and every other page does not', async () => 
   expect(await home.text()).toContain('modelContext');
   const other = await server.fetch('/ops');
   expect(await other.text()).not.toContain('modelContext');
+});
+
+/**
+ * `callMcp` itself, not through `navigator.modelContext` -- workerd has none,
+ * per the module's own header -- but by pointing the global `fetch` it calls
+ * at this same harness for the duration of one call. Controller review, task
+ * 7 fix round (Finding 1): `defineTool` (workers/mcp/src/define.ts) answers
+ * BOTH a limiter refusal and a thrown, non-`ToolError` failure as an ordinary
+ * `result` with `isError: true`, not a transport-level `error`, so a
+ * `callMcp` that only threw on `body.error` would resolve with a refusal as
+ * if it were real tool output.
+ *
+ * `search_writing` is used here rather than the rate limiter it was the
+ * motivating example for, because it throws inside its OWN handler under this
+ * harness regardless of the limiter -- `env.VECTORIZE` has no local
+ * simulation (tests/workers.ts's MCP_WORKER note) -- which lands on
+ * `defineTool`'s `fail` path deterministically, every run, with no need to
+ * race eleven calls against the inference bucket's 60-second window.
+ */
+test('callMcp rejects an isError result instead of resolving with it', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+    server.fetch(input as never, init as never)) as unknown as typeof fetch;
+  try {
+    await expect(callMcp('search_writing', { query: 'agent-native sites' })).rejects.toThrow(
+      'search_writing failed. The error was logged.',
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+/** The happy path, same mechanism, so the fix above is not shown against a call that always fails. */
+test('callMcp resolves with the real content on an ordinary call', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+    server.fetch(input as never, init as never)) as unknown as typeof fetch;
+  try {
+    const content = (await callMcp('list_case_studies', {})) as { type: string; text: string }[];
+    expect(content[0]?.type).toBe('text');
+    // Real content from the harness's own published case studies, not a stub.
+    expect(JSON.parse(content[0]!.text)).toBeInstanceOf(Array);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

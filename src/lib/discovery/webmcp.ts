@@ -63,6 +63,25 @@ export const WEBMCP_TOOLS: readonly WebMcpTool[] = [
  * `Content-Type: text/event-stream` unconditionally on this path even though
  * the request accepts JSON too -- so this unwraps that frame exactly the way
  * tests/mcp-tools.test.ts's `rpc` and src/lib/fit/client.ts's `rpc` already do.
+ * The `?? '{}'` fallback is the same one src/lib/fit/client.ts's `rpc` uses,
+ * for the same reason: a `data:` line that never arrives should fail as
+ * "the server answered nothing usable" rather than as a bare `JSON.parse('')`
+ * `SyntaxError` with no context.
+ *
+ * `defineTool` (workers/mcp/src/define.ts) answers BOTH a limiter refusal and
+ * a thrown `ToolError` as an ordinary JSON-RPC `result` with `isError: true`
+ * -- not a transport-level `error` -- so a caller that only checked
+ * `body.error` would hand a refusal back to `execute`'s caller as if it were
+ * real tool output. `search_writing` is the one `cost: 'inference'` tool and
+ * sits in the tightest limiter bucket, so this is the realistic failure: a
+ * rate-limited call answers with a sentence like "Rate limit reached for
+ * search_writing. Try again in Xs." through the exact same shape as a real
+ * result. This rejects instead, carrying that sentence as the error message --
+ * the same read of `result.content[0].text` src/lib/fit/client.ts's
+ * `callAnalyzeFit` already does for its own `isError` branch -- so the
+ * `Promise` `execute` returns is rejected precisely when the tool refused,
+ * and a WebMCP host reading the rejection reason sees the refusal's own
+ * sentence rather than a result that merely looks like an answer.
  */
 export async function callMcp(name: string, args: Record<string, unknown>) {
   const response = await fetch('/mcp', {
@@ -81,12 +100,15 @@ export async function callMcp(name: string, args: Record<string, unknown>) {
   const text = await response.text();
   const payload =
     text.startsWith('event:') || text.startsWith('data:')
-      ? (text.split('\n').find((line) => line.startsWith('data:')) ?? '').slice(5).trim()
+      ? (text.split('\n').find((line) => line.startsWith('data:')) ?? '{}').slice(5).trim()
       : text;
   const body = JSON.parse(payload) as {
-    result?: { content?: unknown };
+    result?: { content?: { type: string; text?: string }[]; isError?: boolean };
     error?: { message?: string };
   };
   if (body.error) throw new Error(body.error.message ?? `${name} failed`);
+  if (body.result?.isError) {
+    throw new Error(body.result.content?.[0]?.text ?? `${name} refused the request`);
+  }
   return body.result?.content;
 }
