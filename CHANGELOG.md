@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.21.0...ryanlindsey-me-v1.22.0) (2026-09-15)
+
+
+### Features
+
+* **resume:** drop the credit line from the running foot ([#208](https://github.com/ryanlindsey/ryanlindsey.me/issues/208)) ([31fb42c](https://github.com/ryanlindsey/ryanlindsey.me/commit/31fb42c6b1ed08c58943f6e5f8f6a1457eb2b593))
+
 ## [1.21.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.20.1...ryanlindsey-me-v1.21.0) (2026-09-15)
 
 
