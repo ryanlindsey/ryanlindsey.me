@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.20.0...ryanlindsey-me-v1.20.1) (2026-09-15)
+
+
+### Documentation
+
+* **discovery:** record the DNS-AID entrypoint records and why they omit the path ([#196](https://github.com/ryanlindsey/ryanlindsey.me/issues/196)) ([a775e81](https://github.com/ryanlindsey/ryanlindsey.me/commit/a775e81e1c8d8bd1fee18e88a5bc048f0b4bf6d0))
+
 ## [1.20.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.19.1...ryanlindsey-me-v1.20.0) (2026-09-15)
 
 
