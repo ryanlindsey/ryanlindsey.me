@@ -1,6 +1,7 @@
 import { createMcpHandler } from 'agents/mcp/server';
 import { corpusRefreshEnabled, refreshCorpus, type CorpusEnv } from '../../../src/lib/corpus';
 import { buildMcpDiscovery, buildMcpRobotsTxt } from '../../../src/lib/mcp/discovery';
+import { buildMcpServerCard } from '../../../src/lib/discovery/server-card';
 import { handleChat } from './chat';
 import { resolveGrant } from '../../../src/lib/tier/grant';
 import { type McpEnv } from './env';
@@ -154,6 +155,17 @@ export default {
 
     if (pathname === '/.well-known/mcp.json') {
       return new Response(JSON.stringify(buildMcpDiscovery(MCP_ORIGIN), null, 2), {
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      });
+    }
+
+    // Issue #166 (epic #165, "agent readiness"): the MCP Server Card
+    // (SEP-1649), this origin's own copy -- same reasoning as the
+    // `/.well-known/mcp.json` branch immediately above, and it has to sit
+    // here for the same reason: HANDLER_OPTIONS answers exactly `route:
+    // '/mcp'` and 404s everything else it sees.
+    if (pathname === '/.well-known/mcp/server-card.json') {
+      return new Response(JSON.stringify(buildMcpServerCard(MCP_ORIGIN), null, 2), {
         headers: { 'Content-Type': 'application/json; charset=utf-8' },
       });
     }
