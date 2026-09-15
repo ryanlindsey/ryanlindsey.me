@@ -5,14 +5,17 @@
  * TWO VERBS, AND THE SPLIT IS THE POINT.
  *
  *   plan     compute the hash, ask R2 whether that object is already there,
- *            and say whether anything needs building. Costs one request.
+ *            and say whether anything needs building. Costs two requests,
+ *            one per key.
  *   publish  upload the sheet scripts/resume-sheet.mjs has just rendered.
  *
  * .github/workflows/resume-pdf.yml runs `plan` before it installs a browser or
  * builds the site, and gates every later step on its answer. That is what makes
- * the epic's claim true -- "running the job to discover the object already
- * exists costs one request" -- rather than paying for a full render on every
- * push to main to discover the sheet did not change. There is deliberately no
+ * the epic's claim true -- that running the job to discover the object already
+ * exists is cheap -- rather than paying for a full render on every push to main
+ * to discover the sheet did not change. The epic says "one request"; it is two,
+ * because publishDecision below probes both keys, and the reason it has to is
+ * recorded there. There is deliberately no
  * `paths:` filter on the workflow: a filter listing the YAML and the route is
  * exactly how a stylesheet change silently fails to republish, and the hash
  * gate here is the correctness mechanism instead.
@@ -44,11 +47,16 @@
  * answered `10000 Authentication error` for BOTH accounts on `r2/buckets` --
  * which merely LISTS buckets, a coarser permission than reading one object. A
  * credential that cannot list was never going to read, which is why widening
- * the bucket scope changed nothing across five failed runs and three tokens.
+ * the bucket scope changed nothing across four failed runs and three tokens.
  *
- * An R2 API token is not a Cloudflare API token. It is an S3 credential pair
- * for `<account>.r2.cloudflarestorage.com`; `wrangler r2 object` speaks Bearer
- * to api.cloudflare.com. So this talks S3, which is what the credential is.
+ * WHAT THE MEASUREMENT PROVES, stated no wider than that: the value stored in
+ * the secret was not a valid Cloudflare API token. Cloudflare's R2 token screen
+ * hands out several values at once -- an Access Key ID and a Secret Access Key
+ * for S3, and a bearer token value -- so this does not establish that no value
+ * on that screen would have worked with wrangler, only that the one CI held did
+ * not. The S3 pair is the form chosen regardless, because it is the only one
+ * that can be restricted to a single bucket, which is the property the section
+ * below is about.
  *
  * THE CHOICE THIS ENCODES. The other repair was a Custom Cloudflare API token
  * carrying the `Workers R2 Storage` permission groups, which wrangler would
@@ -91,11 +99,10 @@ const RESUME_YAML = new URL('src/content/resume/ryan-lindsey.yaml', root);
  * ./wrangler.jsonc and workers/mcp/wrangler.jsonc, committed in this public
  * repo, and is recorded as public in 10 §2.6.
  *
- * Root wrangler.jsonc already carries it and this script runs from the repo
- * root, so wrangler would find it there. Set anyway, and belt-and-braces is the
- * honest description: `r2 object` is not a Worker command, nothing here passes
- * `--config`, and a bucket-scoped token cannot list accounts to recover from
- * wrangler ever deciding not to read that file for these subcommands.
+ * It used to be passed to wrangler as CLOUDFLARE_ACCOUNT_ID, with a note about
+ * wrangler possibly not reading the config for `r2 object` subcommands. Nothing
+ * sets that variable now and wrangler is never invoked; the id addresses R2 by
+ * being the endpoint's hostname instead.
  */
 const ACCOUNT_ID = '1b764d090899bf1ee61a8d1e87c10710';
 
@@ -111,7 +118,7 @@ const ACCOUNT_ID = '1b764d090899bf1ee61a8d1e87c10710';
 export const RESUME_S3_ENDPOINT = `https://${ACCOUNT_ID}.r2.cloudflarestorage.com`;
 
 /* -------------------------------------------------------------------------- *
- * wrangler
+ * R2, over the S3 API
  * -------------------------------------------------------------------------- */
 
 /**
@@ -133,8 +140,15 @@ export const RESUME_S3_ENDPOINT = `https://${ACCOUNT_ID}.r2.cloudflarestorage.co
  * marked as such because everything else in this file is the other kind. AWS
  * CLI v2.23 began sending `x-amz-checksum-*` headers by default and several
  * S3-compatible services rejected them; `when_required` restores the older
- * behaviour. This repository has NOT observed R2 rejecting them. If they ever
- * look suspicious, removing them is a safe thing to try.
+ * behaviour. This repository has NOT observed R2 rejecting them.
+ *
+ * THE COST IS REAL AND WORTH NAMING: under `when_required` the CLI sends no
+ * checksum and no Content-MD5, so the upload carries no integrity check of its
+ * own beyond TLS. Removing these two is therefore the SAFER default and keeping
+ * them is the compatibility hedge, which is the opposite of how a precaution
+ * usually reads. They are kept because a rejected upload fails the run loudly
+ * while a corrupted one would not, and because the sheet is re-uploaded from
+ * source on any hash change.
  */
 function aws(arguments_, options = {}) {
   try {
@@ -158,10 +172,17 @@ function aws(arguments_, options = {}) {
     // it is on ubuntu-latest, and is the one dependency this script does not
     // install for itself.
     if (error.code === 'ENOENT') {
-      throw new Error(
+      const missing = new Error(
         'the AWS CLI is not on PATH. It ships with the GitHub ubuntu-latest runner image; ' +
           'install it to run this script anywhere else.',
       );
+      // The tag is what `objectExists` reads to rethrow this BEFORE probeOutcome
+      // sees it. Without it the message still arrives, wearing a `could not read
+      // R2:` prefix that sends the next reader to the bucket and the
+      // credentials. The flag is the difference between a true message and a
+      // true message behind a false heading.
+      missing.notAProbeResult = true;
+      throw missing;
     }
     throw error;
   }
@@ -205,6 +226,13 @@ export function objectPutArguments(key, file) {
  * whether it existed -- 215 KB to learn a boolean -- and its comment blamed R2
  * for offering no `head` subcommand. That was a property of the API being
  * spoken, not of R2.
+ *
+ * A MISSING BUCKET IS INDISTINGUISHABLE FROM A MISSING OBJECT here, because a
+ * HEAD response carries no body and so no `NoSuchBucket` code to read: both
+ * arrive as a bare 404 and both read as absence. Benign in this design -- the
+ * run goes on to render and then `put-object` fails loudly with the real code,
+ * since a PUT response does have a body -- but it costs a full render first,
+ * and the bucket name is a constant so it can only be wrong by an edit here.
  */
 export function objectHeadArguments(key) {
   return [
@@ -245,7 +273,9 @@ export function objectHeadArguments(key) {
  */
 export function probeOutcome(error) {
   const stderr = String(error.stderr ?? '').replace(/\x1b\[[0-9;]*m/g, '');
-  if (/An error occurred \(404\)[\s\S]*HeadObject operation/i.test(stderr)) return 'absent';
+  if (/An error occurred \(404\) when calling the HeadObject operation/i.test(stderr)) {
+    return 'absent';
+  }
   throw new Error(`could not read R2: ${stderr.trim() || error.message || 'no output'}`);
 }
 
@@ -258,6 +288,9 @@ function objectExists(key) {
     aws(objectHeadArguments(key), { captureStderr: true });
     return true;
   } catch (error) {
+    // Anything that is not R2 answering is not an answer about R2. See the
+    // ENOENT branch in aws() for the one case this currently covers.
+    if (error.notAProbeResult) throw error;
     probeOutcome(error);
     return false;
   }

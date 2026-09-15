@@ -65,7 +65,7 @@ jobs:
 
       - run: npm ci
 
-      # ONE REQUEST, AND IT DECIDES THE REST OF THE JOB. Reads the résumé YAML,
+      # TWO REQUESTS, AND THEY DECIDE THE REST OF THE JOB. Reads the résumé YAML,
       # hashes it with the same code the Worker uses, and asks R2 for that key.
       #
       # THE CREDENTIALS ARE SET ON THE TWO STEPS THAT TALK TO R2, NOT ON THE

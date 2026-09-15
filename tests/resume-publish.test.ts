@@ -107,13 +107,17 @@ describe('publishDecision', () => {
 describe('the S3 endpoint', () => {
   /*
    * WHY S3 AND NOT THE CLOUDFLARE REST API (issue #205). `wrangler r2 object`
-   * speaks to api.cloudflare.com with a Bearer token, and an R2 API token is
-   * not one of those -- it is an S3 credential pair. Measured 2026-09-15 in the
-   * runner, against the stored secret: `/user/tokens/verify` answered
+   * speaks to api.cloudflare.com with a Bearer token. Measured 2026-09-15 in
+   * the runner, against the stored secret: `/user/tokens/verify` answered
    * `1000 Invalid API Token` and R2 answered `10000 Authentication error` for
    * BOTH accounts, including on `r2/buckets`, which merely lists. A credential
    * that cannot list buckets was never going to read an object, which is why
-   * widening the bucket scope changed nothing across five failed runs.
+   * widening the bucket scope changed nothing across four failed runs.
+   *
+   * That proves the stored value was not a valid Cloudflare API token, and no
+   * more than that -- the R2 token screen issues several values at once. S3 is
+   * the form chosen because it is the only one restricted to a single bucket,
+   * which is what keeps CI unable to reach `ryanlindsey-me-private`.
    *
    * The account id is PUBLIC (10 §2.6) and already committed in both
    * wrangler.jsonc files; in the S3 form it is the endpoint's hostname.
@@ -121,16 +125,35 @@ describe('the S3 endpoint', () => {
   test('addresses R2 by account id, over https', () => {
     expect(RESUME_S3_ENDPOINT).toMatch(/^https:\/\/[0-9a-f]{32}\.r2\.cloudflarestorage\.com$/);
   });
+
+  /*
+   * THE SHAPE IS NOT ENOUGH. A typo'd account id passes the regex above and
+   * fails only in CI, as a 403 that looks exactly like the credential problem
+   * this whole change exists to fix -- so the id is compared against the one
+   * committed in wrangler.jsonc, which is the same fact spelled in two files.
+   *
+   * Read with a regex rather than by parsing: wrangler.jsonc is JSONC, and
+   * `JSON.parse` chokes on the comments that are most of that file.
+   */
+  test('the account id in the endpoint is the one wrangler.jsonc declares', async () => {
+    const config = await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
+    const declared = /"account_id"\s*:\s*"([0-9a-f]{32})"/.exec(config)?.[1];
+
+    expect(declared, 'no account_id in wrangler.jsonc').toBeTruthy();
+    expect(RESUME_S3_ENDPOINT).toBe(`https://${declared}.r2.cloudflarestorage.com`);
+  });
 });
 
 describe('objectPutArguments', () => {
   /*
    * ONE COPY OF THESE VALUES, in src/lib/resume-pdf-contract.ts, read by the
-   * flags here and by the `httpMetadata` the Worker passed to R2.put before
-   * #186 deleted that path. An earlier draft of this test compared literals to
-   * literals, which would have gone on passing while the two copies drifted
-   * apart. A PDF served with the wrong content type, or as an attachment rather
-   * than inline, is a regression no other test in this repo would see.
+   * flags here and by the `httpMetadata` the Worker passes to R2.put. There are
+   * still two readers: #186 retires the second, and has not merged.
+   *
+   * An earlier draft of this test compared literals to literals, which would
+   * have gone on passing while the two copies drifted apart. A PDF served with
+   * the wrong content type, or as an attachment rather than inline, is a
+   * regression no other test in this repo would see.
    */
   test('carries the response metadata from the shared contract', () => {
     const arguments_ = objectPutArguments('resume/abc.pdf', 'tests/fixtures/resume-sheet.pdf');
@@ -192,11 +215,17 @@ describe('probeOutcome', () => {
    * THE AWS CLI'S MISS, which replaced wrangler's. `head-object` on a key that
    * is not there exits non-zero with
    * `An error occurred (404) when calling the HeadObject operation: Not Found`.
-   * Matched on the parenthesised status rather than on `Not Found`, because
-   * that phrase is generic enough to appear in messages that are not a miss.
+   * Matched on the status AND the operation, not on `Not Found`, which is
+   * generic enough to appear in messages that are not this.
+   *
+   * The ESC codes are here so the ANSI strip in probeOutcome keeps its
+   * coverage. The AWS CLI does not colour this message; wrangler did, the strip
+   * is inherited from that version, and a fixture of plain text would let the
+   * strip rot silently until some future CLI started colouring again.
    */
-  test('reads the AWS not-found status as absent', () => {
-    const stderr = 'An error occurred (404) when calling the HeadObject operation: Not Found';
+  test('reads the AWS not-found status as absent, through ANSI colour', () => {
+    const stderr =
+      '\u001b[31mAn error occurred (404) when calling the HeadObject operation: Not Found\u001b[0m';
 
     expect(probeOutcome({ stderr })).toBe('absent');
   });
@@ -208,24 +237,35 @@ describe('probeOutcome', () => {
    * failure this epic exists to fix. Anything that is not the measured miss has
    * to throw.
    *
-   * All four shapes below are auth failures rather than misses, and the last
-   * two are the ones this change makes newly reachable: SigV4 signing did not
-   * exist on the wrangler path, so a clock skew or a mistyped secret could not
-   * produce these before.
+   * ONLY NUMERIC CODES APPEAR HERE, and that is a property of HEAD rather than
+   * an omission. A HEAD response carries no body, so botocore has no XML
+   * `<Code>` to read and synthesises the error from the HTTP status; named S3
+   * codes like `SignatureDoesNotMatch` cannot reach this function through
+   * `head-object` at all. 401 is what R2 answered when a reviewer ran this
+   * against the real endpoint with invalid credentials on 2026-09-15.
+   *
+   * Each case asserts the ORIGINATING TEXT survives into the thrown message,
+   * not just the constant prefix. An earlier draft matched `/could not read R2/`
+   * alone, which a probeOutcome that discarded stderr entirely would have
+   * passed -- and the whole job of that message is to say what R2 actually said.
    */
   test.each([
+    ['401', 'An error occurred (401) when calling the HeadObject operation: Unauthorized'],
     ['403', 'An error occurred (403) when calling the HeadObject operation: Forbidden'],
-    ['AccessDenied', 'An error occurred (AccessDenied) when calling the HeadObject operation'],
-    [
-      'InvalidAccessKeyId',
-      'An error occurred (InvalidAccessKeyId) when calling the HeadObject operation',
-    ],
-    [
-      'SignatureDoesNotMatch',
-      'An error occurred (SignatureDoesNotMatch) when calling the HeadObject operation',
-    ],
-  ])('refuses to read %s as an answer', (_label, stderr) => {
+  ])('refuses to read %s as an answer, and repeats what R2 said', (status, stderr) => {
     expect(() => probeOutcome({ stderr })).toThrow(/could not read R2/);
+    expect(() => probeOutcome({ stderr })).toThrow(new RegExp(`\\(${status}\\)`));
+    expect(() => probeOutcome({ stderr })).toThrow(/HeadObject/);
+  });
+
+  test('refuses to read a missing credential as an answer', () => {
+    // What an unset or empty AWS_ACCESS_KEY_ID produces. Worth its own case
+    // because it is the shape a misconfigured repo secret takes, and reading it
+    // as absence would publish on every run instead of never.
+    const stderr =
+      'Unable to locate credentials. You can configure credentials by running "aws configure".';
+
+    expect(() => probeOutcome({ stderr })).toThrow(/Unable to locate credentials/);
   });
 
   test('refuses to read an empty stderr as an answer', () => {
@@ -233,9 +273,10 @@ describe('probeOutcome', () => {
   });
 
   /*
-   * A 404 that names a DIFFERENT operation is still a miss, because head-object
-   * is the only call that reaches this function. Pinned so that a future caller
-   * cannot quietly widen what counts as absence.
+   * A 404 that names a DIFFERENT operation is not this object's absence.
+   * head-object is the only call that reaches this function, and pinning the
+   * operation keeps a future second caller from inheriting an answer that was
+   * only ever measured for this one.
    */
   test('does not treat a 404 on some other operation as this object being absent', () => {
     const stderr = 'An error occurred (404) when calling the ListBuckets operation: Not Found';
