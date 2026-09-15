@@ -242,6 +242,22 @@
 # would mean src/worker.ts growing header logic that duplicates this file, which
 # is the thing that file-header note exists to warn about. Recorded here so it is
 # not rediscovered a third time.
+#
+# Issue #170 (epic #165, "agent readiness"): `Link` joins the two headers above
+# on this SAME `/*` rule rather than arriving as a second `/*` rule of its own.
+# This is ONE RULE setting ONE HEADER whose value happens to be comma-separated
+# -- that comma-separated list is RFC 8288's own `Link` field-value syntax, not
+# two _headers rules being joined the way the file-header note above warns
+# about. A second `/*` rule that also set `Link` would still parse and still
+# mean something, which is the worst kind of wrong: do not "fix" this into one.
+# The four targets are the discovery documents issues #166-#169 shipped
+# (the MCP Server Card, the RFC 9727 API catalog, the agent skills index, and
+# /llms.txt); `rel` values are the ones IANA's Link Relations registry defines
+# for each (service-desc, api-catalog, describedby, service-doc).
+# tests/discovery-link-headers.test.ts pins the parsed relations, fetches every
+# target for a live 200, and counts the `</` occurrences to catch a reversion to
+# two joined rules.
 /*
   X-For-AI-Agents: You're welcome here. Start at /llms.txt
   X-MCP-Server: https://ryanlindsey.me/mcp
+  Link: </.well-known/mcp/server-card.json>; rel="service-desc", </.well-known/api-catalog>; rel="api-catalog", </.well-known/agent-skills/index.json>; rel="describedby", </llms.txt>; rel="service-doc"

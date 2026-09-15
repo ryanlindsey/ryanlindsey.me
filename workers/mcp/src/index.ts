@@ -131,6 +131,41 @@ const HANDLER_OPTIONS = {
  */
 const MCP_ORIGIN = 'https://mcp.ryanlindsey.me';
 
+/**
+ * Issue #170 (epic #165, "agent readiness"): this origin's own `Link` header,
+ * set in code because `public/_headers` -- the site's mechanism for the same
+ * header -- does not apply here at all; it decorates only responses the SITE
+ * Worker's asset server serves, and none of this Worker's responses come from
+ * one.
+ *
+ * Two relations, not the site's four: this origin serves no API catalog and
+ * no agent skills index -- `api-catalog` and `describedby` would each name a
+ * document this origin returns 404 for, the exact failure mode the epic's
+ * global constraints call worse than no header at all. `service-desc` points
+ * at THIS origin's own server-card branch below (MCP_ORIGIN-absolute, per the
+ * global constraint that a builder takes its origin as an argument rather than
+ * reading `request.url`); `service-doc` points at the site's own /llms.txt,
+ * since this Worker publishes no service document of its own.
+ *
+ * `service-doc`'s target is SITE-absolute, not `MCP_ORIGIN`-absolute -- task
+ * 6's brief literally says "MCP_ORIGIN-absolute targets" for this whole
+ * header, and this one line does not fit that sentence. Deliberate anyway,
+ * and not a drift from it: there is no document at this origin to be
+ * MCP_ORIGIN-absolute ABOUT, and pointing a `service-doc` relation at
+ * something this origin does not serve would be the exact 404 problem this
+ * whole header exists to avoid. `src/lib/mcp/discovery.ts`'s own
+ * `buildMcpDiscovery` already sets this same precedent (its `documentation`
+ * field is this identical literal, on THIS origin's `/.well-known/mcp.json`
+ * response), so this is the second instance of an existing pattern, not a
+ * new one.
+ */
+function discoveryLinkHeader(): string {
+  return [
+    `<${MCP_ORIGIN}/.well-known/mcp/server-card.json>; rel="service-desc"`,
+    `<https://ryanlindsey.me/llms.txt>; rel="service-doc"`,
+  ].join(', ');
+}
+
 export default {
   /**
    * The server itself is built in ./server.ts, one instance per HTTP request:
@@ -156,7 +191,10 @@ export default {
 
     if (pathname === '/.well-known/mcp.json') {
       return new Response(JSON.stringify(buildMcpDiscovery(MCP_ORIGIN), null, 2), {
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          Link: discoveryLinkHeader(),
+        },
       });
     }
 
@@ -167,7 +205,10 @@ export default {
     // '/mcp'` and 404s everything else it sees.
     if (pathname === '/.well-known/mcp/server-card.json') {
       return new Response(JSON.stringify(buildMcpServerCard(MCP_ORIGIN), null, 2), {
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          Link: discoveryLinkHeader(),
+        },
       });
     }
 
@@ -185,7 +226,10 @@ export default {
     // of static markdown it does not otherwise serve.
     if (pathname === '/.well-known/oauth-protected-resource') {
       return new Response(JSON.stringify(buildProtectedResource(`${MCP_ORIGIN}/mcp`), null, 2), {
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          Link: discoveryLinkHeader(),
+        },
       });
     }
 
