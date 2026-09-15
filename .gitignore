@@ -20,3 +20,13 @@ evals/cases/**/*.local.json
 
 # design-sync build output (regenerate with node .design-sync/build-styles.mjs)
 ds-bundle/
+
+# The rendered sheet (issue #183). `npm run resume:pdf` writes it next to the
+# golden extraction it produces, because 04's structural checks -- pdfinfo,
+# pdffonts, qpdf --check -- need both in one place. The PDF itself is a build
+# artifact that belongs in R2 (issue #185), not in this history; the golden
+# beside it IS committed, because a text diff is what review reads.
+#
+# tests/fixtures/resume-sheet-sample.pdf is NOT this file and stays committed:
+# it is #182's frozen render, which the metadata stamper asserts against.
+tests/fixtures/resume-sheet.pdf

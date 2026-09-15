@@ -1,0 +1,161 @@
+Résumé sheet · golden text extraction
+=====================================
+
+The text layer of tests/fixtures/resume-sheet.pdf as unpdf reads it, one
+section per page. Regenerate with `npm run resume:pdf`. This file is
+committed and the PDF beside it is not: the PDF belongs in R2, and this is
+what review reads.
+
+A diff here is a change to what the sheet SAYS. A sheet that still renders
+but has lost its contact block, or whose bullet markers no longer survive
+extraction into the text layer an ATS reads, shows up as a diff in these
+lines and nowhere else.
+
+Pages: 3
+Bullet markers: 34
+
+--- page 1 of 3 ---
+
+R É S U M É · R Y A N L I N D S E Y R E V 0 . 4 . 0 · 2 0 2 6 - 0 9 - 1 3
+Ryan Lindsey
+S E N I O R E N G I N E E R I N G M A N A G E R
+BASED Laguna Niguel, CA
+EMAIL hello@ryanlindsey.me
+PHONE (714) 330-6251
+WEB ryanlindsey.me
+GITHUB github.com/ryanlindsey
+LINKEDIN linkedin.com/in/ryanclindsey
+Agentic engineering is making engineers dramatically faster. I build the instruments that let the organization around
+them keep pace. Nineteen years in software, a decade of it leading engineering teams: I own incident management
+for an entire engineering organization, I build the agentic tooling that other managers choose to adopt, and I still ship
+the code. The habit underneath all of it is to measure a process before improving it, because the constraint is rarely
+where everyone assumes it is.
+E X P E R I E N C E
+Weedmaps IRVINE, CA MAR 2016 — PRESENT
+Senior Engineering Manager FEB 2021 — PRESENT
+• Own incident management for the entire engineering organization: the process itself, the communication strategy,
+service integrations, data reporting, and training. Data Engineering and InfoSec run their own incident processes on the
+same tooling. Accountable for the area's OKRs and report on them to the executive team monthly.
+• Measured the inherited process before changing it, and found response and resolution times were already at or better
+than industry standard, a reading corroborated independently by a vendor in the space. The real weakness was time to
+detect, so that became the focus: a service-level observability initiative run with DevOps and SRE now surfaces issues
+before customers report them, across both web and native applications.
+• Risky changes are reviewed in advance by a change advisory board and ship with documented rollback plans. Post-
+incident review is blameless and every analysis carries linked action items. Incident commanders investigate alerts
+using agents and connected MCP servers over live telemetry, which has raised root-cause-analysis quality while
+sharply reducing the time it takes to produce one.
+• Designed and built a delivery-forecasting toolchain for engineering managers, beginning as a set of Claude Skills and
+migrating to an internal MCP server as adoption outgrew that packaging. Adopted by >80% of engineering managers
+and absorbed into the org-wide roadmapping and reporting process.
+• Publish agentic tooling as Claude Skills in a shared repository open to every engineering manager, running on scheduled
+cloud routines, including a daily digest covering incident-response concerns.
+• Took on an advertising technology platform to raise its engineering rigor: documented its critical paths, built a test
+coverage strategy integrated with CI and improved it over time, moved it to blue/green deployments for zero downtime
+with DevOps, and added bot mitigation and payload verification with InfoSec to protect metric integrity against junk
+traffic.
+• Delivered an off-marketplace e-commerce platform for cannabis retailers, still in production and contributing to platform
+GMV, built to meet marketplace regulatory requirements across the United States and Canada.
+Engineering Manager SEP 2017 — FEB 2021
+• Managed 12 to 19 engineers, from junior through staff level, across several cross-functional product delivery teams on a
+consumer platform serving more than 8 million monthly active users. Reports spanned backend, front-end, iOS, and
+Android.
+• Decoupled deployment from feature release, so the product and go-to-market teams could control launch timing
+independently of engineering deploys. This removed a standing coupling between shipping software and announcing it.
+R YA N L I N D S E Y · S E N I O R E N G I N E E R I N G M A N A G E R R YA N L I N D S E Y. M E 1 / 3
+
+--- page 2 of 3 ---
+
+• Introduced global edge caching across the primary web applications on both client and server, through a Fastly CDN
+integration and an API caching strategy keyed on surrogate keys, so caches invalidate by content association rather
+than by URL.
+• Tripled overall test coverage and reduced escape defects by making code quality standards something the teams
+practiced rather than something they were handed.
+• Led image processing pipeline work spanning millions of unique assets, improving engineering efficiency, vendor costs,
+application performance, and improved inter-service communication for business-critical APIs with a publish-subscribe
+message queue pattern.
+• Sat several hundred interviews and grew the engineering team by dozens across multiple growth cycles. Promoted a
+dozen or more, a few onto the management track and the majority further along the technical one.
+• Founded and ran a public monthly engineering meetup that passed 250 members inside a year, coached other
+engineering managers on one-to-one practice and situational management, and built a repeatable onboarding process
+for new engineers.
+Manager, Front End Engineering MAY 2016 — SEP 2017
+• The company's first engineering manager below the executive level. Before this team existed, every engineer reported to
+the same VP or CTO.
+• Chartered to develop front-end developers into front-end engineers, which is where the department's technical rigor and
+its cultural shift started.
+• Began the front-end re-architecture. Shipping a single roadmap feature meant changing three separate code bases to
+reach every user and device, a legacy of the pre-responsive mobile subdomain era. The work cut time to market and
+became the foundation for the company's later front-end architecture, including a shared UI library built with Design.
+• Defined and delivered the front-end staffing roadmap, and rebuilt the front-end technical exercise with the talent team.
+Sr. Front End Engineer MAR 2016 — MAY 2016
+• Built and maintained features across the company's web applications, mentored other engineers, reviewed code, and
+provided technical input to Product. Moved into engineering management within three months.
+RED Digital Cinema IRVINE, CA OCT 2011 — FEB 2016
+Sr. Front End Developer
+• Architected and implemented user-interface features for the company's e-commerce, marketing, and customer support
+websites, serving a global customer base.
+• Drove the adoption of a new UI component library and design language across those applications, working closely with
+the design and marketing departments.
+Innocean Worldwide HUNTINGTON BEACH, CA FEB 2011 — OCT 2011
+Sr. Front End Developer
+• Led development of interactive experiences for Hyundai USA, including hyundaiusa.com, a set of microsites, Facebook
+games, and a custom YouTube channel built entirely in HTML5, CSS3, and JavaScript.
+• Worked with the creative team from the conceptual phase onward, providing technical advisement, research, and
+prototyping. Also built and maintained the agency's own website.
+Y&R Brands / Wunderman IRVINE, CA JUN 2007 — FEB 2011
+Front End Developer
+• Delivered award-winning interactive experiences for Land Rover, Southwest Airlines, Toshiba, and Hilton, and provided
+technical assessment during the conceptual phase of new work.
+• Recognized with Lester Wunderman awards for the Southwest Airlines "A new form of free media" campaign (2009) and
+the Toshiba "Gamer Preparedness" (2009) and "Boring vs Normal" (2008) campaigns, and with a 38th Annual
+Creativity Award for Toshiba "Fusion Finish" (2008).
+R YA N L I N D S E Y · S E N I O R E N G I N E E R I N G M A N A G E R R YA N L I N D S E Y. M E 2 / 3
+
+--- page 3 of 3 ---
+
+Freelance ORANGE COUNTY, CA JAN 2001 — JUN 2007
+Web design & development
+• Ran every part of the business: client relationships, project management, design, and development. Built marketing sites,
+online communities, and custom content management systems for local businesses, independent films, and bands.
+P R O J E C T S
+Pixelsonly Racing FOUNDER PIXELSONLY.RACING
+A sim racing coaching platform that turns raw telemetry into driver development goals, with a personal AI race engineer
+for every driver, plus a products line for the sim racing community.
+• Built and run solo on Cloudflare Workers, D1, R2, Durable Objects, Queues and Workflows, with Anthropic's Claude
+routed through AI Gateway. Workflows because CPU time excludes time awaiting I/O, which is what makes a minutes-
+long model call affordable inside a request-shaped runtime.
+• Per-driver isolation by object addressing rather than query filtering: the Durable Object instance name is the verified
+token slug, so each driver's working memory is a physically separate SQLite instance and no shared table exists for a
+bug to leak across. Asserted per tool inside workerd against real storage, not against a mock.
+• Two eval harnesses, property-based rather than string-matching, one of which reports its own replay gate as unmet
+because the bar was written before any numbers existed. A run that measures nothing is a failure, not a pass.
+• Cost tracked per unit of work from a spend ledger, with per-driver budgets and delivery observability gated into the
+roadmap before the driver count grows rather than after.
+Armature AUTHOR GITHUB.COM/RYANLINDSEY/ARMATURE
+A Claude Code plugin that gives an agent a GitHub Projects board to work from: it picks the next actionable item across
+every repository the board covers, claims it, works it on a branch, and opens a pull request it is not permitted to merge.
+• Open source under MIT, and the public iteration of a private set of Claude Skills that had been running for months. The
+conversion is most of the engineering: a private tool can hardcode one board and one set of repositories, and a
+published one meets organizations, boards it has never seen, and repositories that sit on more than one of them.
+• Cross-repository by construction, because a platform split along sensible lines needs changes in several codebases to
+deliver one feature. A bare issue number is refused, since issue 278 names a different issue in every repository that has
+had 278 issues, and repositories instead claim short aliases in their own committed config, read over GraphQL rather
+than from a central registry.
+• An item is claimed on the board before a line of code is written, so an interrupted run leaves a visible fact behind rather
+than losing its state to a session transcript. Armature never merges, with no flag and no configuration option: an agent
+that both writes the code and decides the code is acceptable has removed the only checkpoint that was doing any
+work.
+• Runs daily against production work and builds itself. Its own board governs its development, and every pull request in the
+repository was merged by a human, because the tool that opened them cannot.
+E D U C A T I O N
+The Art Institute of California · B.S., Interactive Media (HCI) · 2003 — 2007
+Golden West College · A.A., Business Administration · 2001 — 2003
+S K I L L S
+ENGINEERING LEADERSHIP Incident management, Change management, Observability practice, Team growth and
+promotion, Coaching engineering managers, Org process design, Performance management
+AGENTIC ENGINEERING MCP servers, Claude Skills, Agent design, Evals and golden fixtures, Human-in-the-loop
+disclosure controls, AI Gateway
+PLATFORM AND DELIVERY CI/CD, Blue/green deployment, CDN and edge caching, Bot defense and mitigation, API
+design, High availability, Serverless, Infrastructure as code, Containerization
+LANGUAGES AND RUNTIMES TypeScript, JavaScript, ESNext, Ruby, Node.js, Python, *nix shell
+R YA N L I N D S E Y · S E N I O R E N G I N E E R I N G M A N A G E R R YA N L I N D S E Y. M E 3 / 3
