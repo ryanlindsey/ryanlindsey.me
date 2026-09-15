@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.22.0...ryanlindsey-me-v1.22.1) (2026-09-15)
+
+
+### Documentation
+
+* **readme:** rewrite the README for the agent reader ([#211](https://github.com/ryanlindsey/ryanlindsey.me/issues/211)) ([a9a3875](https://github.com/ryanlindsey/ryanlindsey.me/commit/a9a3875f182198035e5d25db1e89ba6de5fa7225)), closes [#210](https://github.com/ryanlindsey/ryanlindsey.me/issues/210)
+
 ## [1.22.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.21.0...ryanlindsey-me-v1.22.0) (2026-09-15)
 
 
