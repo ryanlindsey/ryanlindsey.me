@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.23.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.22.1...ryanlindsey-me-v1.23.0) (2026-09-16)
+
+
+### Features
+
+* **tier:** resolve campaigns per grant and finish the fit routes' redesign ([#227](https://github.com/ryanlindsey/ryanlindsey.me/issues/227)) ([4037498](https://github.com/ryanlindsey/ryanlindsey.me/commit/403749853e4d374c313bb58e27d9fc83777c421d))
+* **tier:** revoke every live token for an audience in one command ([#229](https://github.com/ryanlindsey/ryanlindsey.me/issues/229)) ([e2f3b85](https://github.com/ryanlindsey/ryanlindsey.me/commit/e2f3b85e3c3c5db09fa6e8fb6e3fe79c4f907b97)), closes [#219](https://github.com/ryanlindsey/ryanlindsey.me/issues/219)
+* **tier:** sign tokens in the mint script and verify them against the deployed Worker ([#230](https://github.com/ryanlindsey/ryanlindsey.me/issues/230)) ([7d560d9](https://github.com/ryanlindsey/ryanlindsey.me/commit/7d560d9041678314401044aa47f4a4dc0736827b))
+
+
+### Bug Fixes
+
+* **site:** gate the referrer-adaptive hero on campaign status ([#236](https://github.com/ryanlindsey/ryanlindsey.me/issues/236)) ([332e140](https://github.com/ryanlindsey/ryanlindsey.me/commit/332e140b3a461a0012545693df2ea4132c4e314d))
+* **site:** render the campaign hero on a conditional request and drop the variant's validator ([#238](https://github.com/ryanlindsey/ryanlindsey.me/issues/238)) ([adfc3e8](https://github.com/ryanlindsey/ryanlindsey.me/commit/adfc3e8f0f597a1c8d9e267acbce1618e79047d0))
+
+
+### Performance
+
+* **campaigns:** read the hero band from a cached index instead of a KV list ([#237](https://github.com/ryanlindsey/ryanlindsey.me/issues/237)) ([4037519](https://github.com/ryanlindsey/ryanlindsey.me/commit/40375191de1a1757a4619d7921f19eabd4a3c224))
+
+
+### Documentation
+
+* **site:** correct what the hero's comments claim about KV and where they sit ([#235](https://github.com/ryanlindsey/ryanlindsey.me/issues/235)) ([f2d234b](https://github.com/ryanlindsey/ryanlindsey.me/commit/f2d234b805ca466428fbc417d645df0580cb0bd5)), closes [#225](https://github.com/ryanlindsey/ryanlindsey.me/issues/225)
+* **tier:** add a skill for minting and revoking scoped tokens ([#231](https://github.com/ryanlindsey/ryanlindsey.me/issues/231)) ([3fe7df5](https://github.com/ryanlindsey/ryanlindsey.me/commit/3fe7df51710933981a38a64f864123c019cbd7c8))
+
 ## [1.22.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.22.0...ryanlindsey-me-v1.22.1) (2026-09-15)
 
 
