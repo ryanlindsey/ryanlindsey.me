@@ -420,11 +420,19 @@ function escapeHtml(value: string): string {
  * WHAT IT COSTS INSTEAD, because the saving is not free. Staleness, bounded by
  * the cron interval plus the read's `cacheTtl` -- about ten minutes worst case
  * from an authored change to this band reflecting it, five minutes for the
- * next cron run plus five for the stalest cached read. And a dependency on
- * `scheduled()` firing at all: the NOT YET PROVEN note in that handler's
- * docblock below is no longer a caveat on background sweeps alone, because if
- * it never fires the index is never written, `readHeroIndex` sees a missing
- * key forever, and this band renders for nobody.
+ * next cron run plus five for the stalest cached read -- and bounded at ten
+ * minutes only while the cron is running. And a dependency on `scheduled()`
+ * firing at all: the NOT YET PROVEN note in that handler's docblock below is
+ * no longer a caveat on background sweeps alone, because if it never fires the
+ * index is never written, `readHeroIndex` sees a missing key forever, and this
+ * band renders for nobody. A cron that fires and then STOPS fails the other
+ * way: the index key carries no `expirationTtl`, so the last one written
+ * serves indefinitely and a campaign flipped to `retired` keeps rendering its
+ * line here forever -- the pre-#232 failure returning through a dead cron
+ * rather than through a missing gate. ./lib/tier/hero-index's module header
+ * carries the full account of both directions; it is not restated here,
+ * because two copies of one mechanism have to be kept in step sentence by
+ * sentence and this is the copy that would drift.
  *
  * `no-store` ON THE VARIANT ONLY. An intermediary holding the untransformed
  * response and handing it to a referred visitor shows them the default page,
