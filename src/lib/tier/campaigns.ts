@@ -51,6 +51,15 @@ function str(value: unknown): string | null {
  * campaign that does not exist changes no surface -- which is the safe answer
  * in both directions.
  *
+ * `status` NO LONGER SELECTS ANYTHING. `activeCampaign()` was its only reader
+ * and it was deleted when the preload moved to the grant, so the field is now
+ * a label for the operator. The strict parse is kept anyway: an entry is typed
+ * by hand into KV, a typo in the label is the likeliest mistake in the file,
+ * and rejecting the entry makes it visible rather than letting the campaign
+ * run with a status nobody can read. What it costs is that such a typo now
+ * takes out the preload and the narrative document too, which is the trade
+ * being made deliberately rather than inherited.
+ *
  * The stored keys are snake_case, matching 00 §5's own notation, because an
  * operator authors these by hand in the private repo and the doc is what they
  * will copy from.
@@ -149,23 +158,6 @@ async function walkCampaigns(
  */
 export async function listCampaigns(env: CampaignEnv): Promise<CampaignConfig[]> {
   return (await walkCampaigns(env)).found;
-}
-
-/**
- * The one `active` campaign, or `null`.
- *
- * 00 §5 permits any number of `staged` campaigns simultaneously and makes
- * only ACTIVATION sequential, so "the active one" is well defined. Two active
- * entries would be an authoring mistake; the first is returned and the
- * collision is logged rather than thrown, because a preload picking the wrong
- * one is a smaller failure than a page that will not render.
- */
-export async function activeCampaign(env: CampaignEnv): Promise<CampaignConfig | null> {
-  const active = (await listCampaigns(env)).filter((campaign) => campaign.status === 'active');
-  if (active.length > 1) {
-    console.warn(`campaigns: ${active.length} entries are active; using ${active[0].id}`);
-  }
-  return active[0] ?? null;
 }
 
 /**

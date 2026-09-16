@@ -4,6 +4,7 @@ import { buildMcpDiscovery, buildMcpRobotsTxt } from '../../../src/lib/mcp/disco
 import { buildMcpServerCard } from '../../../src/lib/discovery/server-card';
 import { buildProtectedResource } from '../../../src/lib/discovery/protected-resource';
 import { handleChat } from './chat';
+import { handleGrantContext } from './grant-context';
 import { resolveGrant } from '../../../src/lib/tier/grant';
 import { type McpEnv } from './env';
 import { createServer } from './server';
@@ -175,7 +176,7 @@ export default {
    * closed-over `request` for exactly the case where they differ -- a legacy
    * fallback instance the handler constructs for a request of its own.
    */
-  fetch(request, env, ctx) {
+  async fetch(request, env, ctx) {
     // Day 4 Task 14 (roadmap "/.well-known + discovery"; 03 §5): routed
     // BEFORE the MCP handler, deliberately. HANDLER_OPTIONS above answers
     // exactly `route: '/mcp'` and 404s everything else it sees, so these two
@@ -245,6 +246,23 @@ export default {
     // exist in a config `astro build` instantiates (see both wrangler.jsonc
     // files for the CI failure that settled it).
     if (pathname === '/chat') return handleChat(request, env, ctx);
+
+    // `POST /grant` (04 §2): what one bearer unlocks, answered here for the
+    // same reason `/chat` is -- HANDLER_OPTIONS answers exactly `/mcp` and
+    // 404s everything else it sees.
+    //
+    // A refusal returns `null` rather than a Response (see grant-context.ts's
+    // own doc for why), and falls through to the `createMcpHandler` call at
+    // the end of this function -- which answers the genuine unrouted 404 for
+    // any path that is not `/mcp`, `/grant` included. That fallthrough is
+    // cheap: agents@0.23.0's `serve` checks `requestUrl.pathname !== route`
+    // before it does anything else, so a refused `/grant` never reaches the
+    // async factory below and never calls `resolveGrant` a second time.
+    if (pathname === '/grant') {
+      const granted = await handleGrantContext(request, env);
+      if (granted !== null) return granted;
+      // fall through: the MCP handler below IS the unrouted 404
+    }
 
     return createMcpHandler(
       // ASYNC, and the factory's contract permits it: `McpServerFactory` is

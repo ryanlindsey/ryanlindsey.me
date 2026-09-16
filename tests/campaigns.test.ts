@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest';
 import {
-  activeCampaign,
   CAMPAIGN_PREFIX,
   listCampaigns,
   parseCampaign,
@@ -115,16 +114,6 @@ test('listCampaigns reads only the campaign prefix and drops unparseable entries
   });
   const found = await listCampaigns(env);
   expect(found.map((c) => c.id)).toEqual(['one']);
-});
-
-test('activeCampaign returns the active one, and null when none is', async () => {
-  const staged = toStored(fixture({ id: 'one', tokenAudience: 'one' }));
-  const active = toStored(fixture({ id: 'two', tokenAudience: 'two', status: 'active' }));
-  expect(await activeCampaign(kv({ [`${CAMPAIGN_PREFIX}one`]: staged }))).toBeNull();
-  const found = await activeCampaign(
-    kv({ [`${CAMPAIGN_PREFIX}one`]: staged, [`${CAMPAIGN_PREFIX}two`]: active }),
-  );
-  expect(found!.id).toBe('two');
 });
 
 test('readCampaignForAudience matches on token_audience, not on id', async () => {

@@ -1,5 +1,10 @@
 import { handle } from '@astrojs/cloudflare/handler';
-import { classifyRequest, referrerClassFor, signalsFrom } from './lib/agent-intel/classify';
+import {
+  campaignForReferrer,
+  classifyRequest,
+  referrerClassFor,
+  signalsFrom,
+} from './lib/agent-intel/classify';
 import { handleEventBatch } from './lib/agent-intel/consume';
 import { highIntentFor } from './lib/agent-intel/intent';
 import { recordAgentEvent, type Surface } from './lib/agent-intel/record';
@@ -321,6 +326,78 @@ async function queueResumePdfIntent(request: Request, env: Env, ctx: ExecutionCo
   if (event !== null) ctx.waitUntil(env.EVENTS.send(event));
 }
 
+/**
+ * The campaign band, inserted after the NOW strip on the home page (04 §3).
+ *
+ * HTMLRewriter RATHER THAN AN ON-DEMAND ROUTE, and the reason is the home
+ * page's prerendering. Making `/` on demand to vary one line would mean
+ * `Vary: Referer` on the site's most-visited page, and a referrer is
+ * high-cardinality enough that the cache hit rate collapses. This way the
+ * static asset is served untouched on every request that does not match, and
+ * only the rare one that does pays for a transform.
+ *
+ * NO KV READ WITHOUT A CROSS-ORIGIN REFERRER, which is what keeps this off the
+ * critical path for nearly all traffic: a direct visit and a same-origin
+ * navigation both return before `listCampaigns` is called. If a referred
+ * visitor's added latency ever shows up, `walkCampaigns` is where a `cacheTtl`
+ * would go -- see its own comment for the propagation-latency trade that
+ * decision carries.
+ *
+ * `no-store` ON THE VARIANT ONLY. An intermediary holding the untransformed
+ * response and handing it to a referred visitor shows them the default page,
+ * which is the safe direction. The reverse -- one visitor's campaign band
+ * served from cache to everyone -- is what this header exists to prevent.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+async function withCampaignHero(request: Request, response: Response, env: Env): Promise<Response> {
+  if (new URL(request.url).pathname !== '/') return response;
+  if (!(response.headers.get('content-type') ?? '').includes('text/html')) return response;
+
+  const referer = request.headers.get('referer');
+  if (referer === null || referer === '') return response;
+  // Same-origin navigations are the common case and never a campaign arrival.
+  try {
+    if (new URL(referer).hostname === new URL(request.url).hostname) return response;
+  } catch {
+    return response;
+  }
+
+  const campaign = campaignForReferrer(referer, await listCampaigns(env));
+  if (campaign === null || campaign.heroLine === '') return response;
+
+  // ESCAPED. `hero_line` is typed by hand into KV, and `{ html: true }` inserts
+  // raw markup -- so a stray `<` in an entry would be injection on this site's
+  // own home page. Operator-authored is not the same as trusted markup.
+  const band =
+    `<section data-campaign-hero class="border-b border-rule bg-accent-ground/10">` +
+    `<div class="mx-auto max-w-[1440px] px-5 py-4 lg:px-10">` +
+    `<p class="text-small text-ink">${escapeHtml(campaign.heroLine)}</p>` +
+    `</div></section>`;
+
+  const transformed = new HTMLRewriter()
+    .on('[data-now-strip]', {
+      element(element) {
+        element.after(band, { html: true });
+      },
+    })
+    .transform(response);
+
+  const headers = new Headers(transformed.headers);
+  headers.set('Cache-Control', 'no-store');
+  return new Response(transformed.body, {
+    status: transformed.status,
+    statusText: transformed.statusText,
+    headers,
+  });
+}
+
 function siteNotFound(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const probe = new Request(new URL(NOT_FOUND_PROBE, request.url), {
     method: request.method === 'HEAD' ? 'HEAD' : 'GET',
@@ -434,7 +511,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (new URL(request.url).pathname.startsWith('/fit')) {
     let response: Response;
     try {
-      response = await handle(request, env, ctx);
+      response = await withCampaignHero(request, await handle(request, env, ctx), env);
     } catch (error) {
       // A REJECTED promise, not a 500 `Response` -- a different shape from
       // the one `REFUSAL_STATUSES` below flattens, and the one that used to
@@ -500,7 +577,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if (negotiated) return negotiated;
   }
 
-  const response = await handle(request, env, ctx);
+  const response = await withCampaignHero(request, await handle(request, env, ctx), env);
   return markdownPath ? withVaryAccept(response) : response;
 }
 

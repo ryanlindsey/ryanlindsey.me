@@ -18,6 +18,7 @@ export interface McpClientEnv {
 }
 
 const MCP_URL = 'https://mcp.ryanlindsey.me/mcp';
+const GRANT_URL = 'https://mcp.ryanlindsey.me/grant';
 
 let nextId = 1;
 
@@ -56,27 +57,59 @@ async function rpc(
 }
 
 /**
- * The tool names this token's grant actually has.
+ * What this token unlocks, from the Worker that decides it.
  *
- * THIS IS `/fit`'s ACCESS CHECK. Not a convenience: gated tools are registered
- * per grant (workers/mcp/src/server.ts), so the presence of `analyze_fit` in
- * this listing IS the statement "this token carries the fit scope, is
- * unexpired, is registered and is not revoked" -- evaluated by the code that
- * owns that question, on this request, with no cache in between.
+ * THIS IS `/fit`'s ACCESS CHECK, and it is the same check it always was:
+ * `analyze_fit`'s presence in `tools` states that the token carries the fit
+ * scope, is unexpired, is registered and is not revoked, evaluated by the code
+ * that owns that question with no cache in between.
  *
- * An empty set on any failure. The page reads that as 404, which is the right
- * answer for every reason it could be empty.
+ * It now carries the audience, the expiry and the campaign preload as well,
+ * which is what the page needs to preload the right target description and to
+ * tell the holder when the link dies. The site still never parses the token:
+ * an `aud` read here without verifying the signature would be a second, weaker
+ * copy of the boundary, and a forged one would preload another campaign's text.
+ *
+ * `null` on any failure, which the page reads as 404 -- the right answer for
+ * every reason it could fail.
  */
-export async function grantedToolNames(env: McpClientEnv, token: string): Promise<Set<string>> {
+export interface GrantContext {
+  tools: Set<string>;
+  audience: string;
+  expiresAt: number;
+  preload: string;
+}
+
+export async function grantContext(env: McpClientEnv, token: string): Promise<GrantContext | null> {
   try {
-    const body = await rpc(env, token, 'tools/list', {});
-    const tools = (body.result as { tools?: { name?: unknown }[] } | undefined)?.tools ?? [];
-    return new Set(
-      tools.map((tool) => tool.name).filter((name): name is string => typeof name === 'string'),
-    );
+    const response = await env.MCP.fetch(GRANT_URL, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        // So `/ops` and the audit trail can tell a browser run from an agent's.
+        'user-agent': 'ryanlindsey-me-fit/1',
+      },
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as {
+      tools?: unknown;
+      audience?: unknown;
+      expiresAt?: unknown;
+      preload?: unknown;
+    };
+    const tools = Array.isArray(body.tools)
+      ? body.tools.filter((name): name is string => typeof name === 'string')
+      : [];
+    if (typeof body.audience !== 'string' || body.audience === '') return null;
+    return {
+      tools: new Set(tools),
+      audience: body.audience,
+      expiresAt: typeof body.expiresAt === 'number' ? body.expiresAt : 0,
+      preload: typeof body.preload === 'string' ? body.preload : '',
+    };
   } catch (error) {
-    console.error('fit: could not list the granted tools', error);
-    return new Set();
+    console.error('fit: could not read the grant context', error);
+    return null;
   }
 }
 

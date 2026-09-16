@@ -89,12 +89,12 @@ afterAll(async () => {
   await server.close();
 });
 
-async function grant(scopes: Scope[] = ['fit']): Promise<string> {
+async function grant(scopes: Scope[] = ['fit'], audience = 'fixture-audience'): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const claims = {
     v: 1 as const,
     jti: newJti(),
-    aud: 'fixture-audience',
+    aud: audience,
     scopes,
     iat: now,
     exp: now + 3600,
@@ -135,6 +135,69 @@ test('/fit with a granted token renders the form', async () => {
   expect(html).toContain('name="target_description"');
   expect(html).toContain('cf-turnstile');
   expect(html).toContain('0x4AAAAAAElhnY8ov3OYHN8m');
+});
+
+test('the form preloads the campaign the TOKEN belongs to, not a global one', async () => {
+  // THE REGRESSION THIS FILE EXISTS TO HOLD. Two campaigns, both `active`, and
+  // each token must see only its own. The `activeCampaign()` this replaced
+  // returned whichever entry KV listed first, for every caller -- so a holder
+  // of one campaign's link found another campaign's text in the form, and only
+  // one campaign could safely be active at a time.
+  const mcp = server.getWorker<{ KV_CONFIG: KVNamespace }>('ryanlindsey-me-mcp');
+  const kv = (await mcp.getEnv()).KV_CONFIG;
+  await kv.put(
+    'campaign:alpha',
+    JSON.stringify({
+      id: 'alpha',
+      company: 'Alpha',
+      status: 'active',
+      jd_text: 'ALPHA-TARGET-TEXT',
+      referrer_domains: [],
+      hero_line: 'A generic line.',
+      token_audience: 'alpha-audience',
+      gated_narrative_doc: 'narratives/alpha.md',
+    }),
+  );
+  await kv.put(
+    'campaign:beta',
+    JSON.stringify({
+      id: 'beta',
+      company: 'Beta',
+      status: 'active',
+      jd_text: 'BETA-TARGET-TEXT',
+      referrer_domains: [],
+      hero_line: 'A generic line.',
+      token_audience: 'beta-audience',
+      gated_narrative_doc: 'narratives/beta.md',
+    }),
+  );
+
+  const alpha = await (
+    await server.fetch(`/fit?t=${await grant(['fit'], 'alpha-audience')}`)
+  ).text();
+  const beta = await (await server.fetch(`/fit?t=${await grant(['fit'], 'beta-audience')}`)).text();
+
+  expect(alpha).toContain('ALPHA-TARGET-TEXT');
+  expect(alpha).not.toContain('BETA-TARGET-TEXT');
+  expect(beta).toContain('BETA-TARGET-TEXT');
+  expect(beta).not.toContain('ALPHA-TARGET-TEXT');
+});
+
+test('the form page carries a rail stating when the link expires', async () => {
+  // The rail is what lets the description field have the column to itself, and
+  // the expiry is the one fact a reader needs before forwarding the link on.
+  const html = await (await server.fetch(`/fit?t=${await grant()}`)).text();
+  expect(html).toContain('data-fit-rail');
+  // The grant helper mints an hour out, so today's date is the expiry date.
+  expect(html).toContain(new Date(Date.now() + 3600_000).toISOString().slice(0, 10));
+});
+
+test('the form page uses the redesign type scale, not the pre-redesign one', async () => {
+  // /fit and /fit/r/<id> were the last two routes on the old steps. This is the
+  // assertion that keeps a future edit from reaching for `text-display` again.
+  const html = await (await server.fetch(`/fit?t=${await grant()}`)).text();
+  expect(html).toContain('text-title');
+  expect(html).not.toContain('text-display');
 });
 
 test('/fit carries its own noindex and a no-referrer policy', async () => {
@@ -590,8 +653,14 @@ test('the report page states its provenance, dropped citations included', async 
     .run();
   const html = await (await server.fetch('/fit/r/fixture-provenance-id')).text();
   expect(html).toContain('anthropic/claude-opus-5');
-  expect(html).toMatch(/4 citations checked/i);
-  expect(html).toMatch(/3 dropped as unresolvable/i);
+  // TASK 7 (#223) moved the provenance sentence into a `<dl>` above the
+  // report, so "N citations checked" is no longer contiguous text -- the
+  // label and the number are separate dt/dd elements. The property this
+  // test pins is unchanged (the numbers must reach the page); it now asserts
+  // each number against its own dt rather than a sentence that no longer
+  // exists, which is what "asserts the numbers are present, not where" means.
+  expect(html).toMatch(/Citations checked<\/dt>\s*<dd[^>]*>\s*4\s*<\/dd>/i);
+  expect(html).toMatch(/Dropped as unresolvable<\/dt>\s*<dd[^>]*>\s*3\s*<\/dd>/i);
 });
 
 test('a stored report that no longer matches the schema renders a notice, not a crash', async () => {
@@ -744,8 +813,34 @@ test('the permalink page copy does not call the published work "the corpus"', as
     .run();
   const html = await (await server.fetch('/fit/r/fixture-vocabulary-id')).text();
   expect(html).toContain('No supporting evidence in the published work.');
-  expect(html).toContain('checked against the published work');
+  // TASK 7 (#223): "checked against the published work" was the sentence
+  // fragment the nonzero dropped count put on the page; the provenance
+  // rebuild replaced that sentence with a `<dl>`, so the load-bearing check
+  // moves to the dt/dd pair the same count now renders as (see the comment
+  // on the provenance test above). Still load-bearing for the same reason:
+  // without it this passes against a page that dropped the counts, and the
+  // corpus guard along with them, entirely.
+  expect(html).toMatch(/Dropped as unresolvable<\/dt>\s*<dd[^>]*>\s*3\s*<\/dd>/i);
   expect(html).not.toMatch(/\bcorpus\b/i);
+});
+
+test('provenance is stated before the report, not after it', async () => {
+  // 03 §4 makes the honesty contract a promise to the READER, and the dropped
+  // count is the number that says whether the analyser was caught inventing a
+  // source. A promise a reader has to scroll past the whole argument to check
+  // is weaker than one stated before it.
+  await storeReport('fixture-provenance-order-id');
+  const html = await (await server.fetch('/fit/r/fixture-provenance-order-id')).text();
+  expect(html).toContain('data-fit-provenance');
+  expect(html.indexOf('data-fit-provenance')).toBeLessThan(
+    html.indexOf('Requirement by requirement'),
+  );
+});
+
+test('each requirement shows its strength as its own column', async () => {
+  await storeReport('fixture-strength-id');
+  const html = await (await server.fetch('/fit/r/fixture-strength-id')).text();
+  expect(html).toContain('data-strength="strong"');
 });
 
 test('a forged ?error= renders nothing on the form', async () => {

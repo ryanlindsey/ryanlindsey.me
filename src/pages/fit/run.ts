@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { callAnalyzeFit, grantedToolNames, newReportId } from '../../lib/fit/client';
+import { callAnalyzeFit, grantContext, newReportId } from '../../lib/fit/client';
 import type { FitErrorCode } from '../../lib/fit/errors';
 import { verifyTurnstile } from '../../lib/turnstile';
 
@@ -85,8 +85,8 @@ export const POST: APIRoute = async ({ request }) => {
   // itself to a caller without a grant, and that has to hold for the POST as
   // well as the GET or the page's guarantee is one route wide.
   if (token === '') return notFound();
-  const tools = await grantedToolNames(env, token);
-  if (!tools.has('analyze_fit')) return notFound();
+  const context = await grantContext(env, token);
+  if (context === null || !context.tools.has('analyze_fit')) return notFound();
 
   const turnstile = await verifyTurnstile(
     env,
