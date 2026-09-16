@@ -401,15 +401,26 @@ function escapeHtml(value: string): string {
  * which is the safe direction. The reverse -- one visitor's campaign band
  * served from cache to everyone -- is what this header exists to prevent.
  *
- * TWO KNOWN GAPS, both filed rather than fixed here, because #225 was a plan
- * correction and this file's behavior is deliberately unchanged by it:
+ * THE `status` GAP CLOSED 2026-09-16 (#232). This docblock used to list two
+ * known gaps, filed rather than fixed by #225, which was a plan correction
+ * that deliberately left this file's behavior alone. The first was that this
+ * function gated on no `status` at all, so a `retired` campaign kept
+ * rendering its hero line to anyone arriving from its referrer domains,
+ * forever -- measured 2026-09-15 in the harness with a `status: 'retired'`
+ * entry and a matching `Referer` (04 §3, 00 §5 and 09 §3 now say the band is
+ * the one reader `status` has). #232 is the change that makes that true, and
+ * the filter runs BEFORE the match below rather than after it, which matters
+ * because `campaignForReferrer` is first-match-wins over the list it is
+ * handed: a post-match gate loses an active campaign that shares a referrer
+ * domain with a retired one KV happens to list first, since the retired entry
+ * is what the match returns and the gate then bails on the whole response
+ * instead of trying the next entry. Verified empirically rather than
+ * reasoned through: `tests/campaign-hero.test.ts`'s ordering-trap test was run
+ * against a deliberate post-match gate first, and it failed there, before the
+ * filter-before-match version below was written.
  *
- * - It gates on no `status`, so a `retired` campaign keeps rendering its hero
- *   line to anyone arriving from its referrer domains, forever. 04 §3 now
- *   says the band is the one reader `status` has, and #232 makes it true. The
- *   filter has to run BEFORE the match, not after it: `campaignForReferrer`
- *   is first-match-wins, so a post-match gate loses an active campaign that
- *   shares a referrer domain with a retired one KV happens to list first.
+ * ONE KNOWN GAP remains, filed rather than fixed here:
+ *
  * - The content-type guard below returns early on a `304`, which carries no
  *   `Content-Type` (RFC 9110 section 15.4.5 does not list it among the fields
  *   a `304` sends), so a returning visitor revalidating with `If-None-Match`
@@ -436,7 +447,20 @@ async function withCampaignHero(request: Request, response: Response, env: Env):
     return response;
   }
 
-  const campaign = campaignForReferrer(referer, await listCampaigns(env));
+  // Filter to `active` BEFORE matching, not after: `campaignForReferrer` is
+  // first-match-wins over the list it is handed (its own docblock), so a
+  // post-match gate -- `if (campaign.status !== 'active') return response` --
+  // loses an active campaign that shares a referrer domain with a retired one
+  // KV happens to list first. The retired entry is what the match would
+  // return, the gate then bails on the WHOLE response, and the active
+  // campaign's band never renders even though it exists. Filtering first
+  // removes the retired entry from the list, so the match can only ever
+  // land on an active one. Demonstrated empirically, not just reasoned: with a
+  // deliberate post-match gate in place, `tests/campaign-hero.test.ts`'s
+  // ordering-trap test failed (measured 2026-09-16); with the filter moved
+  // here, it passes.
+  const campaigns = (await listCampaigns(env)).filter((c) => c.status === 'active');
+  const campaign = campaignForReferrer(referer, campaigns);
   if (campaign === null || campaign.heroLine === '') return response;
 
   // ESCAPED. `hero_line` is typed by hand into KV, and `{ html: true }` inserts

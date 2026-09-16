@@ -51,12 +51,17 @@ function str(value: unknown): string | null {
  * campaign that does not exist changes no surface -- which is the safe answer
  * in both directions.
  *
- * `status` NO LONGER SELECTS ANYTHING -- FOR NOW. `activeCampaign()` was its
- * only reader and it was deleted when the preload moved to the grant, so the
- * field is a label for the operator today. It does not stay one: 04 §3 was
- * corrected on 2026-09-16 to say the referrer-adaptive hero gates on it, which
- * makes it this field's one and only reader, and #232 carries that code. Until
- * then a `retired` campaign still renders its hero line (#225).
+ * `status` SELECTS AGAIN, as of #232 (2026-09-16). `activeCampaign()` was its
+ * original reader and was deleted when the preload moved to the grant, which
+ * left the field a label for the operator with no code behind it -- true from
+ * whenever that deletion landed until this paragraph was corrected. 04 §3,
+ * 00 §5 and 09 §3 were corrected on 2026-09-16 to say the referrer-adaptive
+ * hero gates on it instead, and #232 is the change that makes that true:
+ * `withCampaignHero` in src/worker.ts filters `listCampaigns`'s result to
+ * `status === 'active'` before matching a referrer against it, so `status`
+ * has exactly one reader again and the "keep a `retired` typo from serving"
+ * reasoning two paragraphs up now describes real behavior rather than a gap
+ * #225 had filed and left open.
  *
  * The strict parse is kept regardless of which of those is true: an entry is
  * typed by hand into KV, a typo in the label is the likeliest mistake in the
