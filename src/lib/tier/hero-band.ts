@@ -1,10 +1,11 @@
 // The campaign hero transform (04 §3), moved out of src/worker.ts in #234.
 //
 // A MODULE RATHER THAN A FUNCTION IN src/worker.ts, and the reason is
-// testability rather than layering. Task 2 of #234 teaches `withCampaignHero`
-// to answer a `304`, and no request this repository's test harness can build
-// reaches it with one: every harness request goes through `handle()`, which
-// always answers a fresh representation rather than a conditional one.
+// testability rather than layering. #234's second task taught
+// `withCampaignHero` to answer a `304`, and no request this repository's test
+// harness can build reaches it with one: every harness request goes through
+// `handle()`, which always answers a fresh representation rather than a
+// conditional one.
 // Exporting the transform from its own module is what makes that branch
 // reachable from a unit test that builds the `Response` by hand, without
 // putting a test seam in production code. `src/lib/tier/hero-index.ts` is the
@@ -18,13 +19,13 @@ import { readHeroIndex, type HeroIndexEnv } from './hero-index';
  * What `withCampaignHero` needs from its caller's `Env`. `KV_CACHE` is
  * `readHeroIndex`'s own requirement, inherited rather than repeated here.
  *
- * `ASSETS` IS DECLARED EVEN THOUGH NOTHING IN THIS FILE CALLS IT YET, and that
- * is deliberate rather than speculative. Task 2 adds a re-fetch that resolves
- * a `304` into a full representation, through the same binding
- * `serveMarkdownAsset` in src/worker.ts already reads, and this interface is
- * the one that task's code consumes. The site Worker's own `Env` (generated
- * into worker-configuration.d.ts) already carries both members structurally,
- * so `src/worker.ts`'s call sites need no cast.
+ * `ASSETS` WAS DECLARED A TASK BEFORE ANYTHING IN THIS FILE CALLED IT, which
+ * was deliberate rather than speculative: #234's second task added the
+ * re-fetch that resolves a `304` into a full representation, through the same
+ * binding `serveMarkdownAsset` in src/worker.ts already reads, and this
+ * interface is the one that code consumes. The site Worker's own `Env`
+ * (generated into worker-configuration.d.ts) already carries both members
+ * structurally, so `src/worker.ts`'s call sites need no cast.
  */
 export interface HeroBandEnv extends Pick<HeroIndexEnv, 'KV_CACHE'> {
   ASSETS: Fetcher;
@@ -161,20 +162,72 @@ function escapeHtml(value: string): string {
  * deliberate post-match gate first, and it failed there, before the
  * filter-before-match version was written.
  *
- * ONE KNOWN GAP remains, filed rather than fixed here:
+ * THE `304` GAP CLOSED 2026-09-16 (#234). This docblock used to list it as the
+ * one remaining gap, filed rather than fixed: the content-type guard below
+ * returned early on a `304`, which carries no `Content-Type` (RFC 9110
+ * section 15.4.5 does not list it among the fields a `304` sends), so a
+ * returning visitor revalidating with `If-None-Match` never saw the band at
+ * all. The guard now carves the `304` out, and a matched hero line resolves it
+ * into a full representation with one headerless re-fetch through `ASSETS`
+ * before the transform runs.
  *
- * - The content-type guard below returns early on a `304`, which carries no
- *   `Content-Type` (RFC 9110 section 15.4.5 does not list it among the fields
- *   a `304` sends), so a returning visitor revalidating with `If-None-Match`
- *   never sees the band at all (#234). Reasoned from the spec rather than
- *   measured, which is the weaker half of this note: #234 measures it.
- *   `serveMarkdownAsset` earlier in this file records the same CLASS of bail
- *   as its own "fix round 2" -- a guard written for a `200` falling over on a
- *   `304` -- though not the same predicate, since that one tested
- *   `!assetResponse.ok` on a response it fetched from `env.ASSETS` directly
- *   while this tests the content type of whatever `handle()` returned. Close
- *   enough that the warning was already in this file, and it was reproduced
- *   anyway.
+ * WHAT #234 GOT WRONG, recorded rather than quietly overwritten because a
+ * correction is what tells the next reader which arguments have already been
+ * tried. The issue reasoned that the `304` reached the guard. MEASURED
+ * 2026-09-16, against the built artifact the harness boots, it does not:
+ * `env.ASSETS.fetch('/', { headers: { 'If-None-Match': <matching etag> } })`
+ * returns `304`, while the same conditional request through this Worker's
+ * front door returns `200`, with the band, every time. `handle()` never
+ * produces a `304` for `/`. The reason is `matchStaticAsset` in
+ * node_modules/@astrojs/cloudflare/dist/utils/cf-helpers.js, whose whole body
+ * is `return env.ASSETS.fetch(requestUrl.replace(/\.html$/, ''))` -- a bare
+ * URL string, discarding every request header including `If-None-Match`.
+ * `fallbackToAssets` in the same file does the same. So the bail this function
+ * had was unreachable through `handle()`, and the gap as filed described a
+ * response no request could hand this function.
+ *
+ * IT IS FIXED ANYWAY, which is a decision rather than an oversight. The
+ * guard's correctness rested entirely on an adapter internal that no test in
+ * this repository controls and that can change in a patch release with no
+ * signal here. And `serveMarkdownAsset` in src/worker.ts reaches the same
+ * binding by a path that DOES forward the conditional -- it passes
+ * `headers: request.headers` deliberately, so that conditional requests work
+ * at all -- so the two halves of this Worker currently disagree about whether
+ * a `304` can arrive, and one of them is one adapter release away from being
+ * right. That function's comment already recorded the same CLASS of bail as
+ * its own "fix round 2", a guard written for a `200` falling over on a `304`;
+ * not the same predicate, since that one tested `!assetResponse.ok` on a
+ * response it had fetched itself while this tested the content type of
+ * whatever `handle()` returned, but close enough that the warning was in this
+ * codebase already and was reproduced anyway. tests/hero-band.test.ts is what
+ * reaches the branch: a `Response` built by hand and handed to this exported
+ * function, with no test seam in this file.
+ *
+ * THE RE-FETCH LOSES NO HEADER DECORATION, which is the other thing that had
+ * to be true before resolving a `304` this way was safe. public/_headers's
+ * `/*` rule carries a note, measured against production 2026-09-07, that
+ * Cloudflare's asset server applies these rules to any response whose body
+ * came from a static asset, "including one src/worker.ts fetched itself
+ * through the `ASSETS` binding after running first". So the page this function
+ * fetches back arrives carrying the same `Link`, `X-For-AI-Agents`,
+ * `X-MCP-Server` and `X-Markdown-Variant` as the one `handle()`'s own fetch
+ * would have produced, and the variant built from it is decorated identically.
+ *
+ * THE VALIDATOR IS DROPPED RATHER THAN SUFFIXED, and that is worth writing
+ * down because suffixing is the more obvious move. A validator only means
+ * anything for a STORED representation, and this variant is `no-store`, so
+ * nothing may store it. A suffixed `ETag` would also be one this origin can
+ * never honor on a later conditional request, because the adapter discards
+ * `If-None-Match` before the binding ever sees it (the measurement above), so
+ * it would advertise a revalidation this Worker cannot perform. Dropping is
+ * the only option that cannot mislead a cache that ignores `no-store`: it
+ * leaves such a cache nothing to revalidate against, where an echoed validator
+ * has it revalidate the band-carrying variant and be handed the untransformed
+ * page under the same `ETag` -- one URL serving two bodies under one
+ * validator, which is the defect rather than a symptom of it. `Last-Modified`
+ * is deleted alongside it even though the asset server sends none on this
+ * route (measured 2026-09-16), because the argument is about validators rather
+ * than about one header name.
  */
 export async function withCampaignHero(
   request: Request,
@@ -182,7 +235,16 @@ export async function withCampaignHero(
   env: HeroBandEnv,
 ): Promise<Response> {
   if (new URL(request.url).pathname !== '/') return response;
-  if (!(response.headers.get('content-type') ?? '').includes('text/html')) return response;
+  // A `304` IS LET PAST THIS GUARD, and everything else that is not HTML is
+  // still refused by it. A `304` carries no `Content-Type` at all, so a test on
+  // the content type alone swallowed exactly the response a revalidating
+  // visitor gets (#234). The guard stays early and stays cheap either way: a
+  // response this function cannot transform still costs no KV read.
+  if (
+    response.status !== 304 &&
+    !(response.headers.get('content-type') ?? '').includes('text/html')
+  )
+    return response;
 
   const referer = request.headers.get('referer');
   if (referer === null || referer === '') return response;
@@ -202,6 +264,32 @@ export async function withCampaignHero(
   const heroLine = heroLineForReferrer(referer, await readHeroIndex(env));
   if (heroLine === null || heroLine === '') return response;
 
+  // AFTER THE MATCH, NEVER BEFORE IT. A `304` for an arrival that matches no
+  // campaign domain has to cost nothing, so the re-fetch that turns one into a
+  // body sits below `heroLineForReferrer` rather than beside the guard that
+  // now lets the `304` through.
+  //
+  // `request.url` UNCHANGED rather than a rebuilt `'/'`, so a query string
+  // reaches the binding exactly as `handle()` would have sent it. HEADERLESS,
+  // which is the whole point: the conditional headers are what produced the
+  // `304`, and this fetch has to produce the representation instead.
+  //
+  // `source.ok` IS LOAD-BEARING and not belt-and-braces. An asset server's own
+  // `500` or `404` carries an HTML error page, so the content-type test alone
+  // would transform that error page into the band-carrying variant and serve
+  // it as a `200`. `serveMarkdownAsset` in src/worker.ts states the same rule
+  // for the same binding: any other status is passed through rather than
+  // converted, because the job is to keep one URL's representations from being
+  // confused for each other. A failed re-fetch therefore returns the original
+  // `304`, which is the same direction everything else in this feature fails
+  // in -- no band, never a broken page.
+  let source = response;
+  if (response.status === 304) {
+    source = await env.ASSETS.fetch(request.url);
+    if (!source.ok || !(source.headers.get('content-type') ?? '').includes('text/html'))
+      return response;
+  }
+
   // ESCAPED. `hero_line` is typed by hand into KV, and `{ html: true }` inserts
   // raw markup -- so a stray `<` in an entry would be injection on this site's
   // own home page. Operator-authored is not the same as trusted markup.
@@ -217,10 +305,15 @@ export async function withCampaignHero(
         element.after(band, { html: true });
       },
     })
-    .transform(response);
+    .transform(source);
 
   const headers = new Headers(transformed.headers);
   headers.set('Cache-Control', 'no-store');
+  // The validators go with it. See this function's docblock for why they are
+  // dropped rather than suffixed, and why `Last-Modified` is deleted even
+  // though the asset server does not send one on this route today.
+  headers.delete('ETag');
+  headers.delete('Last-Modified');
   return new Response(transformed.body, {
     status: transformed.status,
     statusText: transformed.statusText,
