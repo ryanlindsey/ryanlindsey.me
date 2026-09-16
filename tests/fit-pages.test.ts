@@ -183,6 +183,23 @@ test('the form preloads the campaign the TOKEN belongs to, not a global one', as
   expect(beta).not.toContain('ALPHA-TARGET-TEXT');
 });
 
+test('the form page carries a rail stating when the link expires', async () => {
+  // The rail is what lets the description field have the column to itself, and
+  // the expiry is the one fact a reader needs before forwarding the link on.
+  const html = await (await server.fetch(`/fit?t=${await grant()}`)).text();
+  expect(html).toContain('data-fit-rail');
+  // The grant helper mints an hour out, so today's date is the expiry date.
+  expect(html).toContain(new Date(Date.now() + 3600_000).toISOString().slice(0, 10));
+});
+
+test('the form page uses the redesign type scale, not the pre-redesign one', async () => {
+  // /fit and /fit/r/<id> were the last two routes on the old steps. This is the
+  // assertion that keeps a future edit from reaching for `text-display` again.
+  const html = await (await server.fetch(`/fit?t=${await grant()}`)).text();
+  expect(html).toContain('text-title');
+  expect(html).not.toContain('text-display');
+});
+
 test('/fit carries its own noindex and a no-referrer policy', async () => {
   // Both survive day 7 removing the SITEWIDE noindex from Base.astro: the
   // meta tag is set by an explicit prop, and the headers are on the response.
