@@ -179,7 +179,7 @@ function escapeHtml(value: string): string {
  * returns `304`, while the same conditional request through this Worker's
  * front door returns `200`, with the band, every time. `handle()` never
  * produces a `304` for `/`. The reason is `matchStaticAsset` in
- * node_modules/@astrojs/cloudflare/dist/utils/cf-helpers.js, whose whole body
+ * node_modules/@astrojs/cloudflare/dist/utils/cf-helpers.js, whose only fetch
  * is `return env.ASSETS.fetch(requestUrl.replace(/\.html$/, ''))` -- a bare
  * URL string, discarding every request header including `If-None-Match`.
  * `fallbackToAssets` in the same file does the same. So the bail this function

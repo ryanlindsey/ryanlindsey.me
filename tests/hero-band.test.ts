@@ -26,11 +26,15 @@ import { HERO_INDEX_KEY, type HeroIndexEntry } from '../src/lib/tier/hero-index'
  * transform throws before any assertion in this file is reached.
  *
  * IT IMPLEMENTS EXACTLY THE SUBSET `withCampaignHero` USES, an attribute
- * selector plus `element.after(html, { html: true })`, and it THROWS on
- * anything else rather than quietly returning the document unchanged. That
- * matters: a stand-in that no-ops on an unrecognized selector would keep this
- * suite green while the band stopped rendering in production. What the real
- * rewriter does with the real page is pinned over HTTP by
+ * selector plus `element.after(html, { html: true })`, and it must never go
+ * quietly green on a selector it does not understand. Two different mechanisms
+ * hold that, and they are worth telling apart rather than claiming as one: a
+ * selector FORM this stand-in does not parse -- anything but `[attribute]` --
+ * throws outright, while a selector naming an attribute the fixture does not
+ * carry finds no match and returns the document unchanged. The no-op case is
+ * still caught, but by the assertions rather than by the stand-in: cases 1 and
+ * 3 assert the band is in the body, so a transform that inserted nothing fails
+ * them. What the real rewriter does with the real page is pinned over HTTP by
  * tests/campaign-hero.test.ts; what this file pins is which branch runs, how
  * many times each binding is called, and which headers come back.
  */
@@ -288,4 +292,33 @@ test('the plain paths bail before the index is read', async () => {
     expect(kvGets, name).toEqual([]);
     expect(assetFetches, name).toEqual([]);
   }
+});
+
+// Case 7. PINS WHERE THE RE-FETCH SITS, which is the one constraint the five
+// cases above cannot see. A cross-origin referrer is what a search result and a
+// social link both produce, so an arrival that matches NO campaign domain is
+// the common case rather than the exotic one, and it must not pay an asset
+// fetch to discover that. The two assertions are a pair and neither works
+// alone: no `ASSETS` call proves the re-fetch did not run, and `kvGets` holding
+// exactly the index key proves the bail happened AFTER the lookup rather than
+// at one of the cheap guards that would have made the first assertion true for
+// the wrong reason.
+//
+// BREAKS if the re-fetch block is hoisted to sit under the content-type guard,
+// still gated on `status === 304`. Every other case survives that move -- case
+// 1 still fetches once, case 3 is a `200` and never enters the branch, case 5
+// still returns its source, and cases 4 and 6 never see a `304` at all -- which
+// is exactly why this one exists. The default throwing asset stub is what makes
+// the failure loud.
+test('a 304 that matches no campaign domain costs no re-fetch', async () => {
+  const { env, kvGets, assetFetches } = stubEnv(INDEX);
+  const source = new Response(null, { status: 304, headers: { etag: '"abc"' } });
+  const response = await withCampaignHero(
+    homeRequest('https://unmatched-referrer.example/some/page'),
+    source,
+    env,
+  );
+  expect(response).toBe(source);
+  expect(assetFetches).toEqual([]);
+  expect(kvGets).toEqual([HERO_INDEX_KEY]);
 });
