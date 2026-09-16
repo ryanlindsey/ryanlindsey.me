@@ -51,14 +51,19 @@ function str(value: unknown): string | null {
  * campaign that does not exist changes no surface -- which is the safe answer
  * in both directions.
  *
- * `status` NO LONGER SELECTS ANYTHING. `activeCampaign()` was its only reader
- * and it was deleted when the preload moved to the grant, so the field is now
- * a label for the operator. The strict parse is kept anyway: an entry is typed
- * by hand into KV, a typo in the label is the likeliest mistake in the file,
- * and rejecting the entry makes it visible rather than letting the campaign
- * run with a status nobody can read. What it costs is that such a typo now
- * takes out the preload and the narrative document too, which is the trade
- * being made deliberately rather than inherited.
+ * `status` NO LONGER SELECTS ANYTHING -- FOR NOW. `activeCampaign()` was its
+ * only reader and it was deleted when the preload moved to the grant, so the
+ * field is a label for the operator today. It does not stay one: 04 §3 was
+ * corrected on 2026-09-16 to say the referrer-adaptive hero gates on it, which
+ * makes it this field's one and only reader, and #232 carries that code. Until
+ * then a `retired` campaign still renders its hero line (#225).
+ *
+ * The strict parse is kept regardless of which of those is true: an entry is
+ * typed by hand into KV, a typo in the label is the likeliest mistake in the
+ * file, and rejecting the entry makes it visible rather than letting the
+ * campaign run with a status nobody can read. What it costs is that such a
+ * typo now takes out the preload and the narrative document too, which is the
+ * trade being made deliberately rather than inherited.
  *
  * The stored keys are snake_case, matching 00 §5's own notation, because an
  * operator authors these by hand in the private repo and the doc is what they
@@ -172,12 +177,26 @@ export async function listCampaigns(env: CampaignEnv): Promise<CampaignConfig[]>
  * parsed, only earlier ones (plus the match itself) pay the get+parse cost.
  * At least one KV `list` call -- the walk's first page -- still happens on
  * every call regardless of where the match falls, and that residual is left
- * alone here: a `cacheTtl` trades configuration-propagation latency for a
- * saving nobody has measured a need for, and an audience->id index would
- * require the private authoring repo to write a second key per campaign, a
- * change this repo cannot make or verify. Whether to cache the `list` call
- * is left to day 6's `/ops` read patterns, which will know the actual call
- * volume this needs to justify.
+ * alone here. An audience->id index would require the private authoring repo
+ * to write a second key per campaign, a change this repo cannot make or
+ * verify. Whether to build one is left to day 6's `/ops` read patterns, which
+ * will know the actual call volume it needs to justify.
+ *
+ * CORRECTED 2026-09-16 (#225): this paragraph used to offer a `cacheTtl` as
+ * the cheaper alternative to that index, "trading configuration-propagation
+ * latency for a saving nobody has measured a need for". That trade is not on
+ * offer for the call being described. `list()` takes `prefix`, `limit` and
+ * `cursor` and nothing else; `cacheTtl` is a parameter of `get()` and
+ * `getWithMetadata()` (checked against Cloudflare's KV binding
+ * documentation). A `list` cannot be cached that way at all, which is why the
+ * index is the only real option and why #233, which takes the same residual
+ * off the home page's hot path, has to build one rather than switch anything
+ * on. Note that the index wanted HERE and the one #233 wants are not the same
+ * object: this call needs audience->id, a key per campaign; the hero needs
+ * referrer-domain->hero-line, one key for all of them. #233 owns the question
+ * of whether one structure can serve both. `withCampaignHero` in
+ * src/worker.ts repeated the `cacheTtl` assumption from here and is corrected
+ * in the same change.
  *
  * Early exit also means an unparseable entry AFTER the match never runs
  * through `parseCampaign` and so never logs `walkCampaigns`'s
