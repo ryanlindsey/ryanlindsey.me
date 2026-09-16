@@ -327,26 +327,16 @@ async function queueResumePdfIntent(request: Request, env: Env, ctx: ExecutionCo
 }
 
 /**
- * The campaign band, inserted after the NOW strip on the home page (04 §3).
+ * HTML-escapes an operator-typed string for insertion with `{ html: true }`.
  *
- * HTMLRewriter RATHER THAN AN ON-DEMAND ROUTE, and the reason is the home
- * page's prerendering. Making `/` on demand to vary one line would mean
- * `Vary: Referer` on the site's most-visited page, and a referrer is
- * high-cardinality enough that the cache hit rate collapses. This way the
- * static asset is served untouched on every request that does not match, and
- * only the rare one that does pays for a transform.
- *
- * NO KV READ WITHOUT A CROSS-ORIGIN REFERRER, which is what keeps this off the
- * critical path for nearly all traffic: a direct visit and a same-origin
- * navigation both return before `listCampaigns` is called. If a referred
- * visitor's added latency ever shows up, `walkCampaigns` is where a `cacheTtl`
- * would go -- see its own comment for the propagation-latency trade that
- * decision carries.
- *
- * `no-store` ON THE VARIANT ONLY. An intermediary holding the untransformed
- * response and handing it to a referred visitor shows them the default page,
- * which is the safe direction. The reverse -- one visitor's campaign band
- * served from cache to everyone -- is what this header exists to prevent.
+ * Kept as its own function rather than inlined so the escaping is one thing
+ * with one name. Until 2026-09-16 the whole of `withCampaignHero`'s docblock
+ * sat here instead, above this seven-line helper, which is where the spec at
+ * #224 placed it; #225 moved it down onto the function it describes. Inlining
+ * or deleting this helper would have taken that block's prerendering and
+ * `no-store` reasoning with it -- NOT the escaping reasoning, which is the
+ * inline `// ESCAPED.` comment inside `withCampaignHero`'s body and would have
+ * survived. Getting that backwards is easy, so it is written down.
  */
 function escapeHtml(value: string): string {
   return value
@@ -356,6 +346,83 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/**
+ * The campaign band, inserted after the NOW strip on the home page (04 §3).
+ *
+ * HTMLRewriter RATHER THAN AN ON-DEMAND ROUTE, and the reason is the home
+ * page's prerendering. Making `/` on demand to vary one line would mean
+ * `Vary: Referer` on the site's most-visited page, and a referrer is
+ * high-cardinality enough that the cache hit rate collapses. This way the
+ * static asset is served untouched on every request that does not match, and
+ * only the one that does pays for a transform.
+ *
+ * THE KV READ IS ON THE HOT PATH, and this comment used to deny it (corrected
+ * 2026-09-16 by #225; #233 removes it). It read: "NO KV READ WITHOUT A
+ * CROSS-ORIGIN REFERRER, which is what keeps this off the critical path for
+ * nearly all traffic". The guard is real -- a direct visit and a same-origin
+ * navigation both return above, before `listCampaigns` is called -- but a
+ * cross-origin referrer is exactly what a search result and a social link
+ * both produce, so what the guard admits is a large share of home page
+ * arrivals rather than a rarity. `walkCampaigns` always issues at least one
+ * KV `list`, and a `list` cannot be given a `cacheTtl` the way a `get()` can
+ * (below), so there is no knob that turns it into a local read -- every one of
+ * those requests pays a round trip to KV in front of a page that is otherwise
+ * a static asset, and with `KV_CONFIG` empty (measured 2026-09-08) it pays it
+ * to discover there is nothing to render. Stated that way deliberately: #225
+ * put it as "a `list` is never edge cached", which is a claim about KV's
+ * internals that Cloudflare's documentation does not make, and this comment
+ * should not assert more than the API reference supports.
+ *
+ * `CAMPAIGN_DOMAINS_OFF` below refuses a related trade for the analytics path,
+ * and the two are worth reading together rather than as one argument. It
+ * declines a KV read on EVERY request site-wide to label "the small minority
+ * that carry a referrer at all"; this is a read on home page arrivals that
+ * carry a cross-origin one. Different denominators, which is why both
+ * sentences can be true at once -- and why that constant's wording is not
+ * evidence for or against the traffic shape described here. The cost is
+ * accepted for now rather than endorsed.
+ *
+ * AND THE ESCAPE HATCH IS NOT A `cacheTtl`. The wording above pointed at
+ * `walkCampaigns` as "where a `cacheTtl` would go". It cannot go there:
+ * Workers KV's `list()` takes `prefix`, `limit` and `cursor` and nothing
+ * else, and `cacheTtl` is a parameter of `get()` and `getWithMetadata()`
+ * (checked against Cloudflare's KV binding documentation, 2026-09-16 --
+ * `readCampaignForAudience` made the same assumption and is corrected too).
+ * What would work is a single cacheable `get()` of one key holding the
+ * referrer-domain-to-hero-line map, which is what #233 carries. That is a
+ * different shape from the audience->id index `readCampaignForAudience`
+ * contemplates for its own residual `list`: one aggregate key for the whole
+ * corpus here, one key per campaign there. #233 has to decide whether one
+ * structure serves both, and either way something outside this repo has to
+ * write it.
+ *
+ * `no-store` ON THE VARIANT ONLY. An intermediary holding the untransformed
+ * response and handing it to a referred visitor shows them the default page,
+ * which is the safe direction. The reverse -- one visitor's campaign band
+ * served from cache to everyone -- is what this header exists to prevent.
+ *
+ * TWO KNOWN GAPS, both filed rather than fixed here, because #225 was a plan
+ * correction and this file's behavior is deliberately unchanged by it:
+ *
+ * - It gates on no `status`, so a `retired` campaign keeps rendering its hero
+ *   line to anyone arriving from its referrer domains, forever. 04 §3 now
+ *   says the band is the one reader `status` has, and #232 makes it true. The
+ *   filter has to run BEFORE the match, not after it: `campaignForReferrer`
+ *   is first-match-wins, so a post-match gate loses an active campaign that
+ *   shares a referrer domain with a retired one KV happens to list first.
+ * - The content-type guard below returns early on a `304`, which carries no
+ *   `Content-Type` (RFC 9110 section 15.4.5 does not list it among the fields
+ *   a `304` sends), so a returning visitor revalidating with `If-None-Match`
+ *   never sees the band at all (#234). Reasoned from the spec rather than
+ *   measured, which is the weaker half of this note: #234 measures it.
+ *   `serveMarkdownAsset` earlier in this file records the same CLASS of bail
+ *   as its own "fix round 2" -- a guard written for a `200` falling over on a
+ *   `304` -- though not the same predicate, since that one tested
+ *   `!assetResponse.ok` on a response it fetched from `env.ASSETS` directly
+ *   while this tests the content type of whatever `handle()` returned. Close
+ *   enough that the warning was already in this file, and it was reproduced
+ *   anyway.
+ */
 async function withCampaignHero(request: Request, response: Response, env: Env): Promise<Response> {
   if (new URL(request.url).pathname !== '/') return response;
   if (!(response.headers.get('content-type') ?? '').includes('text/html')) return response;
