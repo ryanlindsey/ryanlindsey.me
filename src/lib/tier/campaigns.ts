@@ -59,9 +59,10 @@ function str(value: unknown): string | null {
  * hero gates on it instead, and #232 is the change that makes that true. That
  * reader moved one step away from the request in #233: `buildHeroIndex`
  * (./hero-index) keeps only `status === 'active'` entries when it derives the
- * key the hero band reads, rather than `withCampaignHero` in
- * src/lib/tier/hero-band.ts filtering `listCampaigns`'s result at request
- * time. `status` still has
+ * key the hero band reads, rather than `withCampaignHero` filtering
+ * `listCampaigns`'s result at request time. That function was in src/worker.ts
+ * when #233 took the filter off it, and #234 has since moved it to
+ * src/lib/tier/hero-band.ts. `status` still has
  * exactly one reader; it is now the derivation. What the paragraph immediately
  * above now describes for real is its `active` half -- "which would render
  * campaign content for a value nobody meant" -- because that equality check is

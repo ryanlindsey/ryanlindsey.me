@@ -118,9 +118,10 @@ test('listCampaigns reads only the campaign prefix and drops unparseable entries
 
 test('listCampaigns is a census: every status comes back, not just `active`', async () => {
   // #232 put the `active`-only filter at a caller rather than inside
-  // listCampaigns itself -- at `withCampaignHero`'s call site in
-  // src/lib/tier/hero-band.ts then, and since #233 in `buildHeroIndex`, which
-  // filters what
+  // listCampaigns itself -- at `withCampaignHero`'s call site, which was in
+  // src/worker.ts at the time and has since moved to
+  // src/lib/tier/hero-band.ts (#234) -- and since #233 in `buildHeroIndex`,
+  // which filters what
   // `refreshHeroIndex` hands it. Deliberately not pushed down, because
   // queueResumePdfIntent calls listCampaigns too and has to keep seeing every
   // campaign regardless of status (`09 §3` R6: the permanent rehearsal

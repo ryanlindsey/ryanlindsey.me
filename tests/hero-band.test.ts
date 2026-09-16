@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { withCampaignHero, type HeroBandEnv } from '../src/lib/tier/hero-band';
 import { HERO_INDEX_KEY, type HeroIndexEntry } from '../src/lib/tier/hero-index';
 
@@ -52,7 +52,17 @@ function insertAfter(html: string, selector: string, handlers: StubElementHandle
       `the stand-in rewriter understands only an attribute selector, not ${selector}`,
     );
   }
-  const match = new RegExp(`<(\\w+)([^>]*\\b${attribute}\\b[^>]*)>([\\s\\S]*?)</\\1>`).exec(html);
+  // THE ATTRIBUTE BOUNDARIES ARE HAND-ROLLED RATHER THAN `\b`, and the reason
+  // is that `\b` made the docblock's claim above false for the three selectors
+  // most likely to arrive from a typo or a rename. `\bdata-now\b` matches
+  // inside `data-now-strip`, because `-` is a word boundary, so `[data-now]`,
+  // `[data]` and `[now]` all found the fixture's element where workerd's
+  // rewriter matches none of them -- a stand-in quietly agreeing with a
+  // selector production would reject. Whitespace before and a real attribute
+  // terminator after is what actually delimits an attribute name in a tag.
+  const match = new RegExp(
+    `<(\\w+)([^>]*(?:^|\\s)${attribute}(?=[\\s=>/]|$)[^>]*)>([\\s\\S]*?)</\\1>`,
+  ).exec(html);
   if (match === null) return html;
   let inserted = '';
   handlers.element({
@@ -142,15 +152,28 @@ function homeRequest(referer?: string): Request {
  *
  * `asset` defaults to a throw so an unexpected re-fetch fails loudly rather
  * than being absorbed by a test that was not looking for it.
+ *
+ * THE INIT IS RECORDED, NOT JUST THE URL, and that is the whole reason this
+ * helper is shaped the way it is. The re-fetch's `init` is where the
+ * feature lives or dies: forwarding the conditional headers would have the
+ * binding answer `304` again, `!source.ok` would fire, and #234's defect
+ * would be back with every test still green. An earlier version of this stub
+ * took only `(input: string)` and dropped the second argument on the floor,
+ * so `headers: request.headers` could have been added to the production call
+ * without a single case noticing.
  */
 function stubEnv(
   index: HeroIndexEntry[],
   asset: () => Response = () => {
     throw new Error('ASSETS.fetch was called by a test that expected no re-fetch');
   },
-): { env: HeroBandEnv; kvGets: string[]; assetFetches: string[] } {
+): {
+  env: HeroBandEnv;
+  kvGets: string[];
+  assetFetches: Array<{ url: string; init?: RequestInit }>;
+} {
   const kvGets: string[] = [];
-  const assetFetches: string[] = [];
+  const assetFetches: Array<{ url: string; init?: RequestInit }> = [];
   return {
     env: {
       KV_CACHE: {
@@ -160,8 +183,8 @@ function stubEnv(
         },
       } as unknown as KVNamespace,
       ASSETS: {
-        fetch: async (input: string) => {
-          assetFetches.push(String(input));
+        fetch: async (input: string, init?: RequestInit) => {
+          assetFetches.push({ url: String(input), init });
           return asset();
         },
       } as unknown as Fetcher,
@@ -175,9 +198,17 @@ function stubEnv(
 // `If-None-Match` still sees the band. BREAKS on the content-type bail, which
 // returns early on a `304` because a `304` carries no `Content-Type` at all --
 // before the fix this returns the `304` unchanged, with no band and no
-// `ASSETS` call. The asserted fetch URL is `request.url` verbatim, which is
-// what carries a query string through to the binding exactly as `handle()`
-// would have sent it.
+// `ASSETS` call.
+//
+// THE FETCH IS ASSERTED WHOLE, url and init together, and the `toEqual` is
+// exact rather than a spot check on each field. The url is `request.url`
+// verbatim, which is what carries a query string to the binding exactly as
+// `handle()` would have sent it. The init is `{ method: 'GET' }` and nothing
+// else, which is the assertion that BREAKS on `headers: request.headers` --
+// the one line a later reader is most likely to add helpfully, and the one
+// that would restore #234's defect in silence by having the binding answer
+// `304` again. An exact `toEqual` is what makes any added field fail here; a
+// check that only asserted the url could not see it at all.
 test('a 304 for a matching referrer renders the band from a re-fetched representation', async () => {
   const { env, assetFetches } = stubEnv(INDEX, () => htmlResponse());
   const response = await withCampaignHero(
@@ -189,7 +220,7 @@ test('a 304 for a matching referrer renders the band from a re-fetched represent
   const html = await response.text();
   expect(html).toContain('data-campaign-hero');
   expect(html).toContain(HERO_LINE);
-  expect(assetFetches).toEqual(['https://ryanlindsey.me/']);
+  expect(assetFetches).toEqual([{ url: 'https://ryanlindsey.me/', init: { method: 'GET' } }]);
 });
 
 // Case 2. PINS that one URL never serves two bodies under one validator. The
@@ -247,12 +278,16 @@ test('a response that is neither HTML nor a 304 is returned untouched', async ()
 });
 
 // Case 5. PINS the safe direction of the re-fetch. An asset server's own error
-// page is HTML, so a content-type test alone would transform a `500` into the
-// band-carrying variant and serve it as a `200` -- one URL's error
-// representation wearing the home page's band. The `text/html` on the stub is
-// deliberate for that reason: a `500` with no content type would be refused by
-// the content-type check alone and would prove nothing. BREAKS if the re-fetch
-// checks only the content type and not the status.
+// page is HTML, so a content-type test alone would let a `500` through to the
+// transform -- and because the returned response is built from the transformed
+// status, what the visitor gets is not a `200` wearing the home page's band,
+// as an earlier version of this comment said, but their valid `304` replaced
+// by a `500`. That is the harm worth naming: it takes away a cached copy the
+// client already holds and answers its revalidation with an error body. The
+// `text/html` on the stub is deliberate for the same reason the guard is: a
+// `500` with no content type would be refused by the content-type check alone
+// and would prove nothing. BREAKS if the re-fetch checks only the content type
+// and not the status.
 test('a 304 whose re-fetch does not come back as a usable page is returned untouched', async () => {
   const { env } = stubEnv(
     INDEX,
@@ -308,8 +343,10 @@ test('the plain paths bail before the index is read', async () => {
 // still gated on `status === 304`. Every other case survives that move -- case
 // 1 still fetches once, case 3 is a `200` and never enters the branch, case 5
 // still returns its source, and cases 4 and 6 never see a `304` at all -- which
-// is exactly why this one exists. The default throwing asset stub is what makes
-// the failure loud.
+// is exactly why this one exists. The failure surfaces on the `assetFetches`
+// assertion rather than on the default stub's throw, because the production
+// code now catches a rejected re-fetch (case 9); the call log is what stays
+// visible through that catch.
 test('a 304 that matches no campaign domain costs no re-fetch', async () => {
   const { env, kvGets, assetFetches } = stubEnv(INDEX);
   const source = new Response(null, { status: 304, headers: { etag: '"abc"' } });
@@ -321,4 +358,54 @@ test('a 304 that matches no campaign domain costs no re-fetch', async () => {
   expect(response).toBe(source);
   expect(assetFetches).toEqual([]);
   expect(kvGets).toEqual([HERO_INDEX_KEY]);
+});
+
+// Case 8. PINS that the method is FORWARDED rather than hardcoded, which case
+// 1's `{ method: 'GET' }` cannot tell apart on its own: the request it sends is
+// a `GET`, so a literal `'GET'` in the production call would satisfy it. A
+// `HEAD` is what distinguishes the two. Without the forward, a `HEAD /`
+// revalidation is re-fetched as a `GET` and answered with a body, which is the
+// same opposite-choices problem `serveMarkdownAsset` avoided by forwarding
+// `method: request.method` on this same binding. BREAKS if the init's method
+// is dropped or written as a constant.
+test('the re-fetch carries the request method rather than assuming GET', async () => {
+  const { env, assetFetches } = stubEnv(INDEX, () => htmlResponse());
+  const request = new Request('https://ryanlindsey.me/', {
+    method: 'HEAD',
+    headers: { referer: `https://${REFERRER_DOMAIN}/` },
+  });
+  await withCampaignHero(
+    request,
+    new Response(null, { status: 304, headers: { etag: '"abc"' } }),
+    env,
+  );
+  expect(assetFetches).toEqual([{ url: 'https://ryanlindsey.me/', init: { method: 'HEAD' } }]);
+});
+
+// Case 9. PINS that a REJECTED re-fetch cannot escape the Worker. Nothing above
+// this function catches -- not the call site in src/worker.ts, not its exported
+// `fetch` -- so without the `try` a rejection from the asset binding answers the
+// home page with the runtime's error page, on exactly the arrivals the band
+// exists for. src/lib/tier/hero-index.ts closed this same hazard one call
+// further along the path on 2026-09-16, and this branch added a second remote
+// call beside the one it had just guarded.
+//
+// `assetFetches` HAVING ONE ENTRY IS HALF THE TEST. Without it this case would
+// also pass if the function had bailed before reaching the re-fetch at all,
+// which is the same trap case 7's paired assertions avoid. The warning is
+// asserted rather than merely silenced, because a failed re-fetch is otherwise
+// indistinguishable from an arrival that matched nothing. BREAKS if the `try`
+// is removed: the rejection propagates and the test errors instead of failing.
+test('a re-fetch that rejects returns the original 304 rather than escaping', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const { env, assetFetches } = stubEnv(INDEX, () => {
+    throw new TypeError('the asset binding rejected');
+  });
+  const source = new Response(null, { status: 304, headers: { etag: '"abc"' } });
+  const response = await withCampaignHero(homeRequest(`https://${REFERRER_DOMAIN}/`), source, env);
+  expect(response).toBe(source);
+  expect(response.status).toBe(304);
+  expect(assetFetches).toHaveLength(1);
+  expect(warn).toHaveBeenCalledOnce();
+  warn.mockRestore();
 });

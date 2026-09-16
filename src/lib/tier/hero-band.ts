@@ -270,22 +270,59 @@ export async function withCampaignHero(
   // now lets the `304` through.
   //
   // `request.url` UNCHANGED rather than a rebuilt `'/'`, so a query string
-  // reaches the binding exactly as `handle()` would have sent it. HEADERLESS,
-  // which is the whole point: the conditional headers are what produced the
-  // `304`, and this fetch has to produce the representation instead.
+  // reaches the binding exactly as `handle()` would have sent it. THE METHOD
+  // TRAVELS AND THE HEADERS DO NOT, which is one decision rather than two
+  // halves of an oversight. `serveMarkdownAsset` in src/worker.ts forwards
+  // both to this same binding, and the method half is worth copying: without
+  // it a `HEAD /` reaching this branch is re-fetched as a `GET` and answered
+  // with a body. The conditional headers are the one thing that must not come
+  // along, because they are what produced the `304` and this fetch exists to
+  // produce the representation instead. tests/hero-band.test.ts asserts the
+  // exact init for that reason: `headers: request.headers` is the single line
+  // a later reader is most likely to add helpfully, and it would restore
+  // #234's defect in silence -- the re-fetch would answer `304`, `!source.ok`
+  // would fire, and the band would stop rendering for the one visitor it
+  // exists for.
   //
-  // `source.ok` IS LOAD-BEARING and not belt-and-braces. An asset server's own
-  // `500` or `404` carries an HTML error page, so the content-type test alone
-  // would transform that error page into the band-carrying variant and serve
-  // it as a `200`. `serveMarkdownAsset` in src/worker.ts states the same rule
-  // for the same binding: any other status is passed through rather than
-  // converted, because the job is to keep one URL's representations from being
-  // confused for each other. A failed re-fetch therefore returns the original
-  // `304`, which is the same direction everything else in this feature fails
-  // in -- no band, never a broken page.
+  // `source.ok` IS LOAD-BEARING, THOUGH NOT FOR THE REASON FIRST WRITTEN HERE.
+  // This comment claimed the unguarded version "would transform that error
+  // page into the band-carrying variant and serve it as a `200`", and that is
+  // wrong: the response below is built from `transformed.status`, and
+  // `transform()` preserves status, so a `500` source yields a `500` carrying
+  // a band. The real harm is one the wrong sentence hid. Without this check a
+  // valid `304` becomes a `500` or a `404` -- it takes away a cached copy the
+  // client already holds and answers its revalidation with an error body,
+  // which is strictly worse than the stale-looking page the client would
+  // otherwise have reused. `serveMarkdownAsset` states the same rule for the
+  // same binding: any other status is passed through rather than converted,
+  // because the job is to keep one URL's representations from being confused
+  // for each other.
+  //
+  // THE `try` GUARDS THE HAZARD src/lib/tier/hero-index.ts CLOSED EARLIER ON
+  // 2026-09-16, one call further along this same path. Nothing above here
+  // catches -- not the call site in src/worker.ts, not that module's exported
+  // `fetch` -- so a rejected `ASSETS.fetch` escapes the Worker and answers the
+  // home page with the runtime's own error page, on exactly the arrivals this
+  // band exists to serve. That module's `readHeroIndex` had just been given
+  // this guard when this branch added a second uncaught remote call beside it,
+  // which is how a hazard gets fixed and reintroduced in one day. A rejection
+  // now returns the original `304` for the same reason a refused status does,
+  // so the rule holds for both: this feature fails toward no band, never
+  // toward a broken page.
+  //
+  // IT WARNS, following `readHeroIndex`'s precedent, because a failed
+  // re-fetch is otherwise indistinguishable from an arrival that matched no
+  // campaign domain -- both render nothing. The cost is one line per matching
+  // arrival for as long as the binding is failing, which is the same trade
+  // that module already accepted.
   let source = response;
   if (response.status === 304) {
-    source = await env.ASSETS.fetch(request.url);
+    try {
+      source = await env.ASSETS.fetch(request.url, { method: request.method });
+    } catch {
+      console.warn('hero-band: the re-fetch failed; returning the 304 and rendering no band');
+      return response;
+    }
     if (!source.ok || !(source.headers.get('content-type') ?? '').includes('text/html'))
       return response;
   }
