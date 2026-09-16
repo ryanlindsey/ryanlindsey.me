@@ -9,8 +9,8 @@
 // which binding a key lives in is authored configuration versus derived
 // cache, not which Worker did the writing.
 //
-// WHY THIS EXISTS. `withCampaignHero` in src/worker.ts used to pay a KV
-// `list` on every home page arrival carrying a cross-origin `Referer` --
+// WHY THIS EXISTS. `withCampaignHero` in src/lib/tier/hero-band.ts used to pay
+// a KV `list` on every home page arrival carrying a cross-origin `Referer` --
 // which is what a search result and a social link both produce, not a rare
 // case -- because `listCampaigns` always issues at least one `list` and
 // Workers KV's `list()` takes only `prefix`, `limit` and `cursor`. `cacheTtl`

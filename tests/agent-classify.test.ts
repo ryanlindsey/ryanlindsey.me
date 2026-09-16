@@ -175,8 +175,9 @@ describe('heroLineForReferrer', () => {
   });
 
   test('an entry with heroLine "" reports "" rather than null -- distinct from no match', () => {
-    // The caller (`withCampaignHero` in src/worker.ts) treats both "" and
-    // `null` as "no band", but this function must not collapse them itself:
+    // The caller (`withCampaignHero` in src/lib/tier/hero-band.ts) treats both
+    // "" and `null` as "no band", but this function must not collapse them
+    // itself:
     // "" means a campaign matched and its authored line is empty, while
     // `null` means nothing matched at all. Collapsing the two here would
     // hide that distinction from any future caller that wants it.
