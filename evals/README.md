@@ -33,8 +33,8 @@ The token is printed once and cannot be recovered, so a lost one is re-minted
 rather than found. Put both halves in one invocation:
 
 ```bash
-RLME_EVAL_TOKEN="$(npm run --silent token -- mint --audience evals-harness \
-  --scopes evals,fit --days 1 --signer http://127.0.0.1:8799/__sign)" \
+RLME_EVAL_TOKEN="$(op run -- npm run --silent token -- mint --audience evals-harness \
+  --scopes evals,fit --days 1)" \
   npm run evals -- --endpoint https://mcp.ryanlindsey.me
 ```
 

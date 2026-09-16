@@ -106,7 +106,7 @@ Prompts are code. They change by pull request and this suite is what gates them.
 
 ## Owner-run scripts
 
-`scripts/token.mjs` mints, lists and revokes scoped tokens through wrangler's own login, holding no credential of its own. Minting needs a temporary `/__sign` route inside a running Worker, because a Cloudflare Secrets Store value is write-only and only a binding can read it. The script's header carries the route to paste and the instruction to delete it before committing.
+`scripts/token.mjs` mints, lists and revokes scoped tokens through wrangler's own login, and sources no credential of its own. Minting signs in process from `RLME_TOKEN_SIGNING_KEY`, which the owner injects with `op run` and the script never reads from anywhere itself, so no Worker has to be running. A Cloudflare Secrets Store value is write-only and only a binding can read it, which is why the Cloudflare copy cannot be the one that signs here. Signing locally makes the two copies of the key able to diverge, so `mint` ends by presenting the fresh token to the deployed Worker and fails loudly unless it is honored. Minting needed a temporary `/__sign` route inside a running Worker until issue 04 (#220).
 
 `scripts/private-doc.mjs` is invoked from the private planning repo, not from here. The mechanism is generic and lives in this repo; every document it deploys is authored elsewhere and never enters this repository's history.
 

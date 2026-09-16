@@ -3,10 +3,19 @@
 // where `wrangler` is already OAuth-authenticated.
 //
 // WHY THIS SHELLS OUT TO WRANGLER rather than talking to D1 over the API:
-// there is then no credential for this script to hold, read or leak. It has
-// no configuration, no token file and no environment variable of its own --
-// wrangler's own login is the only authority involved, exactly as 10 §2.3
-// specifies for every provisioning path.
+// there is then no credential for this script to hold, read or leak. It has no
+// configuration and no token file, and wrangler's own login is the only
+// authority involved in reaching the registry, exactly as 10 §2.3 specifies for
+// every provisioning path.
+//
+// UNTIL 2026-09-15 that sentence also said "no environment variable of its
+// own", and `mint` now reads one: RLME_TOKEN_SIGNING_KEY. The distinction it
+// was reaching for survives, and is worth stating precisely rather than
+// deleting. This script still SOURCES no credential: it does not know where
+// the key is kept, cannot fetch it, and holds nothing that would let it. The
+// value is injected by whatever runs the command and exists only in this
+// process's environment. What changed is that the script can now be HANDED a
+// credential, which is not the same as holding one.
 //
 // WHAT IT PRINTS. `mint` prints the token once, to stdout, and nothing else
 // ever prints it again: the registry stores claims, not the value. Redirect
@@ -32,10 +41,18 @@
 // is "Only for testing. Not secure as this will leave secret value in plain-text
 // in terminal history."
 //
-// So the key is readable ONLY by a Worker, through its binding -- which is
-// exactly the property 10 §3.4 wanted, arrived at more completely than intended.
-// The consequence is that SIGNING MUST HAPPEN INSIDE A WORKER, and this script
-// cannot do it alone.
+// So THE CLOUDFLARE COPY of the key is readable ONLY by a Worker, through its
+// binding -- which is exactly the property 10 §3.4 wanted, arrived at more
+// completely than intended.
+//
+// THAT MEASUREMENT STANDS; the conclusion drawn from it did not. Until
+// 2026-09-15 this paragraph ended "the consequence is that SIGNING MUST HAPPEN
+// INSIDE A WORKER, and this script cannot do it alone", and the `--signer`
+// mechanism below was built on it. The step it skipped is that Cloudflare's
+// copy was never the only copy -- see HOW SIGNING WORKS NOW, below. The error
+// is recorded rather than deleted for the same reason as the one above it: a
+// write-only store makes a value unreadable, not unpossessed, and that is an
+// easy inference to make twice.
 //
 // HOW THE OLD VERSION FAILED. It fed wrangler's stdout to `mintToken` as the
 // key. Today that stdout is a usage error (`--name` was removed in favour of
@@ -48,34 +65,27 @@
 // `TEST_SIGNING_KEY` through the `RLME_TOKEN_KEY_SOURCE: 'test'` seam, so the
 // seam that makes the tests possible is also what hid this.
 //
-// `--signer` IS THE SPLIT THAT RESULTS. This script still does everything it
-// can do without a credential: parse arguments, validate scopes against
-// `SCOPES`, build the claims, write the registry row, and keep the output
-// discipline below. It delegates exactly one step -- turning claims into a
-// signed token -- to a Worker reachable at `--signer`, which holds the binding.
-// Without `--signer`, `mint` REFUSES rather than guessing.
+// HOW SIGNING WORKS NOW, and why the Worker is gone from this path. The key
+// has always had two copies: Cloudflare's, in write-only Secrets Store, and the
+// one in the owner's password manager, which has to exist because a value that
+// cannot be read back cannot be re-provisioned. This script signs from the
+// second, injected as RLME_TOKEN_SIGNING_KEY by whatever runs it, and never
+// reads it from anywhere itself.
 //
-// THE SIGNER IS A TEMPORARY, LOCAL ROUTE, added for a mint and deleted before
-// committing -- the same shape as the day-6 stream-framing probe. It is not a
-// deployed surface: an endpoint whose whole job is issuing credentials deserves
-// its own threat model before it exists in production, and a mint happens a
-// handful of times a year. Paste this into `workers/mcp/src/index.ts` above the
-// `createMcpHandler` return, run `npx wrangler dev --config
-// workers/mcp/wrangler.jsonc --remote --port 8799`, mint, then delete it:
+// The cost of that is divergence -- two copies can drift apart, and the failure
+// reads as a bad token rather than a stale key, which is the misdiagnosis
+// recorded above. `mint` therefore ends by presenting the fresh token to the
+// DEPLOYED Worker and refusing to report success unless it is honored.
 //
-//   // TEMPORARY -- token signer. DELETE BEFORE COMMITTING.
-//   if (pathname === '/__sign' && request.method === 'POST') {
-//     return (async () => {
-//       const { mintToken } = await import('../../../src/lib/tier/token');
-//       const { signingKey } = await import('../../../src/lib/tier/grant');
-//       const claims = await request.json();
-//       return new Response(await mintToken(await signingKey(env), claims));
-//     })();
-//   }
+// WHAT THIS REPLACED, so it is not rebuilt by accident: a `--signer` flag
+// pointing at a temporary `/__sign` route, pasted into the MCP Worker for a
+// mint and deleted before committing. It worked, and it cost a `wrangler dev
+// --remote` session and an uncommitted edit to the Worker every time a token
+// was needed. An endpoint whose whole job is issuing credentials is also a
+// thing to not have, even briefly.
 //
 // Usage:
-//   node scripts/token.mjs mint --audience <label> --scopes fit,profile --days 30 \
-//     --signer http://127.0.0.1:8799/__sign [--note "..."]
+//   op run -- node scripts/token.mjs mint --audience <label> --scopes fit,profile --days 30 [--note "..."]
 //   node scripts/token.mjs list
 //   node scripts/token.mjs revoke --jti <jti>
 //   node scripts/token.mjs revoke --audience <label>
@@ -84,7 +94,7 @@
 // deployed one. `mint` writes to it too.
 
 import { execFileSync } from 'node:child_process';
-import { newJti, SCOPES, isScope, TOKEN_SCHEME } from '../src/lib/tier/token.ts';
+import { newJti, SCOPES, isScope, mintToken } from '../src/lib/tier/token.ts';
 
 // The Secrets Store id and the signing key's name are GONE from this file, and
 // their absence is the point: this script no longer reaches for a value it
@@ -131,41 +141,86 @@ function arg(name, fallback) {
 }
 
 /**
- * Turns claims into a signed token, via a Worker that holds the binding.
+ * The signing key, from the environment.
  *
- * VALIDATED ON THE WAY BACK, because the failure this replaces was a silent
- * one. A signer that answers with an error page, a wrangler banner or an empty
- * body would otherwise become a "token" that fails as `bad_signature` at the
- * far end -- indistinguishable from a rotated key, and the exact confusion that
- * cost this script its correctness for a week. `TOKEN_SCHEME` is the cheapest
- * thing to check that only a real mint produces.
+ * NOT READ FROM ANYWHERE. This script still holds no credential of its own and
+ * knows nothing about where the value comes from -- it is injected by whatever
+ * runs the command, which for the owner is `op run` against the copy in the
+ * password manager. That keeps the 1Password dependency out of this file, out
+ * of the test surface, and out of any agent's context: the value goes from the
+ * injector to this process and nowhere else.
+ *
+ * WHY THIS CAN SIGN AT ALL, when the version before it could not. The
+ * Cloudflare copy of this key lives in Secrets Store, which is write-only --
+ * measured, and written out in the header above. There is a second copy,
+ * because there has to be: a value that cannot be read back cannot be
+ * re-provisioned or rotated into a second environment without one. Signing
+ * from that copy is what removes the Worker from this path.
+ *
+ * WHAT IT MAKES POSSIBLE FOR THE FIRST TIME, and why `mint` verifies below:
+ * the two copies can DIVERGE. Rotate in Secrets Store and miss the other, and
+ * every token minted here fails as `bad_signature` at the Worker -- which is
+ * indistinguishable from a bad mint, and is exactly the misdiagnosis recorded
+ * in this file's header.
  */
-async function sign(signer, claims) {
-  let response;
+function signingKey() {
+  const key = process.env.RLME_TOKEN_SIGNING_KEY;
+  if (typeof key !== 'string' || key === '') {
+    throw new Error(
+      'RLME_TOKEN_SIGNING_KEY is not in the environment. Run this under your ' +
+        'password manager, for example `op run -- npm run token -- mint ...`, so ' +
+        'the value reaches this process without ever being typed, stored on disk ' +
+        'or printed.',
+    );
+  }
+  return key;
+}
+
+/**
+ * Proves the freshly minted token against the DEPLOYED Worker.
+ *
+ * The check that the old signer-based `sign()` performed on the way back was
+ * that the response looked like a token. This is strictly stronger: it asks the
+ * Worker that will actually receive this credential whether it honors it, so
+ * a diverged key, a registry row that did not land and a scope typo all fail
+ * here, loudly, at the moment they are cheap to fix.
+ *
+ * A REFUSAL IS NOT FATAL TO THE ROW. The token is already recorded by the time
+ * this runs, deliberately: a mint that verified before writing would be a
+ * credential nobody can revoke if the write then failed. A failed verification
+ * prints the jti so the operator can revoke it.
+ */
+async function verify(token) {
+  const response = await fetch('https://mcp.ryanlindsey.me/mcp', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+      authorization: `Bearer ${token}`,
+      'user-agent': 'ryanlindsey-me-token/1',
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+  });
+  const text = await response.text();
+  const payload =
+    text.startsWith('event:') || text.startsWith('data:')
+      ? (text.split('\n').find((line) => line.startsWith('data:')) ?? '{}').slice(5).trim()
+      : text;
+  let names = [];
   try {
-    response = await fetch(signer, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(claims),
-    });
-  } catch (cause) {
+    const body = JSON.parse(payload);
+    names = (body.result?.tools ?? []).map((tool) => tool.name).filter(Boolean);
+  } catch {
+    throw new Error(`the deployed Worker answered something unparseable (${response.status})`);
+  }
+  if (names.length === 0) {
     throw new Error(
-      `the signer at ${signer} could not be reached; is \`wrangler dev --remote\` running?`,
-      { cause },
+      'the deployed Worker honored no tools for this token. The likeliest cause is that ' +
+        'RLME_TOKEN_SIGNING_KEY no longer matches the Secrets Store copy the Worker reads: ' +
+        'reconcile the two before minting anything else.',
     );
   }
-  if (!response.ok) {
-    throw new Error(`the signer at ${signer} answered ${response.status}`);
-  }
-  const token = (await response.text()).trim();
-  if (!token.startsWith(`${TOKEN_SCHEME}.`)) {
-    throw new Error(
-      `the signer at ${signer} did not return a ${TOKEN_SCHEME} token; ` +
-        'it answered something else, and signing it into the registry would have ' +
-        'produced a credential that fails as bad_signature at the Worker.',
-    );
-  }
-  return token;
+  return names;
 }
 
 async function mint() {
@@ -181,15 +236,6 @@ async function mint() {
   const unknown = scopes.filter((s) => !isScope(s));
   if (unknown.length > 0) throw new Error(`unknown scopes: ${unknown.join(', ')}`);
 
-  const signer = arg('signer');
-  if (!signer) {
-    throw new Error(
-      '--signer is required: the signing key lives in Secrets Store and is readable only ' +
-        'by a Worker through its binding, so this script cannot sign on its own. See the ' +
-        'header of this file for the temporary /__sign route to run under `wrangler dev`.',
-    );
-  }
-
   const now = Math.floor(Date.now() / 1000);
   const claims = {
     v: 1,
@@ -199,7 +245,7 @@ async function mint() {
     iat: now,
     exp: now + Math.round(days * 86400),
   };
-  const token = await sign(signer, claims);
+  const token = await mintToken(signingKey(), claims);
 
   d1(
     `INSERT INTO access_tokens (jti, audience, scopes, issued_at, expires_at, revoked_at, note)
@@ -208,13 +254,27 @@ async function mint() {
              ${quote(new Date(claims.exp * 1000).toISOString())}, NULL, ${quote(note)})`,
   );
 
+  let honored;
+  try {
+    honored = await verify(token);
+  } catch (error) {
+    process.stderr.write(
+      `MINTED BUT NOT VERIFIED: ${claims.jti}. ${error.message}\n` +
+        `Revoke it with: node scripts/token.mjs revoke --jti ${claims.jti}\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   process.stderr.write(
     `minted ${claims.jti} for audience ${audience}, scopes ${scopes.join(',')}, expires ${new Date(
       claims.exp * 1000,
     ).toISOString()}\n`,
   );
+  process.stderr.write(`verified against the deployed Worker: ${honored.join(', ')}\n`);
   // The token, and only the token, on stdout -- so `> token.txt` captures
-  // exactly the thing to hand over and none of the commentary.
+  // exactly the thing to hand over and none of the commentary. Everything
+  // above is on stderr for that reason, the verification line included.
   process.stdout.write(`${token}\n`);
 }
 
