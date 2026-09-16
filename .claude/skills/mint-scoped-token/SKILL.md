@@ -5,7 +5,7 @@ description: Use when minting, listing or revoking a scoped token for an audienc
 
 # Minting a scoped token
 
-Owner-run, from a terminal where `wrangler` is already logged in. The signing key reaches `scripts/token.mjs` through the environment and from nowhere else, so every mint runs under the password manager that injects it.
+Owner-run, from the repository root, in a terminal where `wrangler` is already logged in. The root is not incidental: `--binding` resolves through the `wrangler.jsonc` in the working directory, and the script is reached by a relative path. The signing key reaches `scripts/token.mjs` through the environment and from nowhere else, so every mint runs under the password manager that injects it.
 
 ## Before minting
 
@@ -30,7 +30,9 @@ A closed set, and a token carries only what its reader needs.
 | `narrative` | `get_application_narrative`                                           |
 | `evals`     | `judge_answer`, and admission to `POST /chat` without a bot challenge |
 
-A link for a reader who will use the browser form needs `fit` alone. A token for an agent usually wants `fit,profile,documents,narrative`. `evals` belongs to the eval harness and travels with nothing else.
+A link for a reader who will use the browser form needs `fit` alone. A token for an agent usually wants `fit,profile,documents,narrative`.
+
+`evals` never travels on a reader's token. It belongs to the eval harness, whose own token is not this document's business: it carries `evals,fit`, it lasts a day rather than thirty because it is a frontier-model credential, and `evals/README.md` gives the command with the reasoning attached. Mint it from there.
 
 Pass `--scopes` on every mint. Omitting it defaults to the whole set, `evals` included, which hands an ordinary reader the harness's own scope.
 
@@ -47,7 +49,9 @@ The token prints once, on stdout, and nothing prints it again: the registry stor
 
 The command ends by presenting the fresh token to the deployed Worker at `POST /grant`, and it refuses to report success unless the token comes back honored carrying the audience just written. That round trip is the reason to trust the mint rather than a flourish on it. The signing key has two copies, the local one and the write-only Secrets Store copy the Worker reads, and a rotation that misses either makes every token minted afterward fail as `bad_signature`, which reads as a bad token rather than as a stale key.
 
-A failed verification is not a failed mint. The registry row is written before the check runs, deliberately, because a credential nobody can revoke is the worse outcome. So the command prints nothing to stdout, exits 1, and names the jti to revoke. Revoke it, reconcile the two copies of the key, then mint again.
+A failed verification is not a failed mint. The registry row is written before the check runs, deliberately, because a credential nobody can revoke is the worse outcome. The command prints nothing to stdout, exits 1, and names the jti on a `MINTED BUT NOT VERIFIED` line. Revoke that jti whatever the cause: the value never reached stdout, so nobody holds it and the row is all that is left of it.
+
+Then read the rest of that line before chasing a cause, because only one of its branches is evidence about the key. A 404 from `POST /grant` is a refusal, and the likeliest reason for one is that the two copies have drifted apart. Anything else, a Worker that could not be reached or a status that is neither a grant nor a refusal, leaves the token unverified rather than known bad, and reconciling a key that never rotated is the wrong hunt.
 
 ## What to hand over
 
@@ -59,7 +63,7 @@ A failed verification is not a failed mint. The registry row is written before t
 node scripts/token.mjs list
 ```
 
-One row per token, newest first, carrying its audience, its scopes, and either an expiry or the time it was revoked. It prints no secret material, which is why it is split from `mint` and safe to run in any session.
+One row per token, newest first: the jti, the audience, the scopes, and either an expiry or the time it was revoked. This is where a jti comes from, and the `minted` line the mint wrote to stderr carries it too. It prints no secret material, which is why it is split from `mint` and safe to run in any session.
 
 ## Ending access
 
@@ -72,4 +76,4 @@ node scripts/token.mjs revoke --audience <token_audience>
 
 `--audience` is the kill switch for a campaign, and the campaign's own `status` field is not one. Authorization reads the signature and the registry, never KV, so flipping an entry to `retired` stops nothing that is already in someone's inbox. A revocation takes effect on the next request.
 
-Read the line the command prints before believing an audience is closed. `revoked N token(s) for audience <label>` is the one that did something. `audience <label> has no tokens at all; check the label` means the label is wrong and the real tokens are still live, which on the kill switch is the failure worth catching.
+Read the line the command prints before believing an audience is closed. `revoked N token(s) for audience <label>` is the one that did something, and `all N token(s) for audience <label> were already revoked` is the benign repeat. `audience <label> has no tokens at all; check the label` is the one to stop on: it means the label is wrong and the real tokens are still live, which on the kill switch is the failure worth catching.
