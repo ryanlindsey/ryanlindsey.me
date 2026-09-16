@@ -366,11 +366,21 @@ function list() {
 /**
  * Revoke one token, or every live token for an audience.
  *
- * `--audience` IS THE KILL SWITCH FOR A CAMPAIGN, and it exists because the
- * campaign's own `status` is not one: authorization reads the signature and
- * this registry, never KV, so flipping an entry to `retired` stops nothing
- * that is already in someone's inbox. Revocation is a registry fact, and this
- * makes it one command instead of one per token.
+ * `--audience` IS THE KILL SWITCH FOR EVERYTHING TOKEN-GATED, and it reaches
+ * nothing else. Authorization reads the signature and this registry, never KV,
+ * so revocation lands on the next request and flipping a campaign's entry to
+ * `retired` neither expires a token already sitting in someone's inbox nor
+ * refuses a later mint. Revocation is a registry fact, and this makes it one
+ * command instead of one per token.
+ *
+ * Retiring a campaign therefore takes two acts (00 §5), and this is one of
+ * them. The referrer-adaptive hero band carries no token, so revocation cannot
+ * reach it: it renders for anyone arriving from the campaign's referrer
+ * domains until the KV entry says `retired`, which `withCampaignHero` in
+ * src/worker.ts has read since #232 (04 §3). An earlier version of this
+ * comment said `status` was not a kill switch at all. That was true of the
+ * code on the day it was written, when the field had no reader anywhere, and
+ * it stopped being true the moment the hero gained one.
  *
  * `revoked_at IS NULL` in the UPDATE is what keeps a second run from
  * overwriting the original revocation timestamp with today's.

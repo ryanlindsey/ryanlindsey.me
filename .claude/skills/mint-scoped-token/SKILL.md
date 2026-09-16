@@ -74,6 +74,12 @@ node scripts/token.mjs revoke --jti <jti>
 node scripts/token.mjs revoke --audience <token_audience>
 ```
 
-`--audience` is the kill switch for a campaign, and the campaign's own `status` field is not one. Authorization reads the signature and the registry, never KV, so flipping an entry to `retired` stops nothing that is already in someone's inbox. A revocation takes effect on the next request.
+`--audience` is the kill switch for everything token-gated, and it reaches nothing else. Authorization reads the signature and the registry, never KV, so a revocation takes effect on the next request, and flipping the campaign's entry to `retired` neither expires a token already sitting in someone's inbox nor refuses a later mint.
 
 Read the line the command prints before believing an audience is closed. `revoked N token(s) for audience <label>` is the one that did something, and `all N token(s) for audience <label> were already revoked` is the benign repeat. `audience <label> has no tokens at all; check the label` is the one to stop on: it means the label is wrong and the real tokens are still live, which on the kill switch is the failure worth catching.
+
+## Closing a campaign
+
+Two acts, and revocation above is only the first. The referrer-adaptive hero band carries no token, which is why revocation cannot reach it: it renders for anyone arriving from the campaign's referrer domains until the campaign's own KV entry says `retired`, the one thing that field selects (00 §5, 04 §3). Read the entry as in [Before minting](#before-minting), change `status`, and put it back.
+
+Revoke the tokens and flip the status. Doing one of them closes half a campaign.

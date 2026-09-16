@@ -3,7 +3,7 @@ import { createTestHarness } from 'wrangler';
 import { SITE_HARNESS_WORKERS } from './workers';
 
 // The referrer-adaptive hero (04 §3, 09 §1): one band under the NOW strip,
-// rendered only for a visitor arriving from a campaign's own domain.
+// rendered only for a visitor arriving from an `active` campaign's own domain.
 //
 // PRESENTATION, NOT AUTHORIZATION. A `Referer` is attacker-supplied text and
 // trivially forged, so everything this feature reveals must be harmless to a
@@ -23,7 +23,7 @@ beforeAll(async () => {
     JSON.stringify({
       id: 'hero-fixture',
       company: 'Hero Fixture',
-      status: 'staged',
+      status: 'active',
       jd_text: 'Not used by this suite.',
       referrer_domains: ['fixture-referrer.test'],
       hero_line: 'A generic line for a referred reader.',
@@ -84,7 +84,7 @@ test('markup in a campaign entry is escaped, not rendered', async () => {
     JSON.stringify({
       id: 'hero-injection',
       company: 'Injection Fixture',
-      status: 'staged',
+      status: 'active',
       jd_text: 'Not used by this suite.',
       referrer_domains: ['injection-referrer.test'],
       hero_line: '<script>alert(1)</script>',
@@ -95,4 +95,91 @@ test('markup in a campaign entry is escaped, not rendered', async () => {
   const html = await (await home('https://injection-referrer.test/')).text();
   expect(html).not.toContain('<script>alert(1)</script>');
   expect(html).toContain('&lt;script&gt;');
+});
+
+test('a retired campaign with a matching referrer renders no band, and that response stays cacheable', async () => {
+  const site = server.getWorker<{ KV_CONFIG: KVNamespace }>();
+  const kv = (await site.getEnv()).KV_CONFIG;
+  await kv.put(
+    'campaign:hero-retired',
+    JSON.stringify({
+      id: 'hero-retired',
+      company: 'Retired Fixture',
+      status: 'retired',
+      jd_text: 'Not used by this suite.',
+      referrer_domains: ['retired-referrer.test'],
+      hero_line: 'A retired line that must never render.',
+      token_audience: 'hero-retired',
+      gated_narrative_doc: 'narratives/retired.md',
+    }),
+  );
+  const response = await home('https://retired-referrer.test/');
+  const html = await response.text();
+  expect(html).not.toContain('data-campaign-hero');
+  // `no-store` belongs to the transformed variant only (see `withCampaignHero`'s
+  // docblock); a retired campaign must not render, so this response must be the
+  // untransformed, cacheable one rather than a transformed-but-empty one.
+  expect(response.headers.get('cache-control') ?? '').not.toContain('no-store');
+});
+
+test('a staged campaign with a matching referrer renders no band', async () => {
+  const site = server.getWorker<{ KV_CONFIG: KVNamespace }>();
+  const kv = (await site.getEnv()).KV_CONFIG;
+  await kv.put(
+    'campaign:hero-staged',
+    JSON.stringify({
+      id: 'hero-staged',
+      company: 'Staged Fixture',
+      status: 'staged',
+      jd_text: 'Not used by this suite.',
+      referrer_domains: ['staged-referrer.test'],
+      hero_line: 'A staged line that must never render.',
+      token_audience: 'hero-staged',
+      gated_narrative_doc: 'narratives/staged.md',
+    }),
+  );
+  const html = await (await home('https://staged-referrer.test/')).text();
+  expect(html).not.toContain('data-campaign-hero');
+});
+
+test('a retired and an active campaign sharing one referrer domain renders the active one', async () => {
+  const site = server.getWorker<{ KV_CONFIG: KVNamespace }>();
+  const kv = (await site.getEnv()).KV_CONFIG;
+  // KV `list` returns keys in lexicographic order, and `campaignForReferrer` is
+  // first-match-wins over whatever it is handed (its own docblock). Naming the
+  // retired entry's key `shared-a-retired` and the active one's `shared-b-active`
+  // puts the retired entry first in that order on purpose, so this test exercises
+  // the ordering trap described in `withCampaignHero`'s docblock rather than
+  // depending on an incidental KV write order. Renaming either key without
+  // keeping the retired one first would silently stop testing the trap.
+  await kv.put(
+    'campaign:shared-a-retired',
+    JSON.stringify({
+      id: 'shared-a-retired',
+      company: 'Shared Retired Fixture',
+      status: 'retired',
+      jd_text: 'Not used by this suite.',
+      referrer_domains: ['shared-referrer.test'],
+      hero_line: 'The retired line that must not win.',
+      token_audience: 'shared-a-retired',
+      gated_narrative_doc: 'narratives/shared-a.md',
+    }),
+  );
+  await kv.put(
+    'campaign:shared-b-active',
+    JSON.stringify({
+      id: 'shared-b-active',
+      company: 'Shared Active Fixture',
+      status: 'active',
+      jd_text: 'Not used by this suite.',
+      referrer_domains: ['shared-referrer.test'],
+      hero_line: 'The active line that must win.',
+      token_audience: 'shared-b-active',
+      gated_narrative_doc: 'narratives/shared-b.md',
+    }),
+  );
+  const html = await (await home('https://shared-referrer.test/')).text();
+  expect(html).toContain('data-campaign-hero');
+  expect(html).toContain('The active line that must win.');
+  expect(html).not.toContain('The retired line that must not win.');
 });
