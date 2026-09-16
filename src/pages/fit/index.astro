@@ -2,8 +2,7 @@
 import { env } from 'cloudflare:workers';
 import Base from '../../layouts/Base.astro';
 import Turnstile from '../../components/Turnstile.astro';
-import { grantedToolNames } from '../../lib/fit/client';
-import { activeCampaign } from '../../lib/tier/campaigns';
+import { grantContext } from '../../lib/fit/client';
 import { fitErrorCopy } from '../../lib/fit/errors';
 
 /**
@@ -33,8 +32,8 @@ const token = Astro.url.searchParams.get('t') ?? '';
  * 404, not 403. A 403 would confirm that this page exists to anyone holding
  * the URL, which is exactly what an unlisted surface must not do.
  */
-const tools = token === '' ? new Set<string>() : await grantedToolNames(env, token);
-if (!tools.has('analyze_fit')) {
+const context = token === '' ? null : await grantContext(env, token);
+if (context === null || !context.tools.has('analyze_fit')) {
   // A BARE 404, which src/worker.ts replaces with the site's own 404 page
   // before it reaches the client. That indirection is the fix for a real
   // finding: what a prober compares is not the status but the whole response,
@@ -47,13 +46,13 @@ if (!tools.has('analyze_fit')) {
 }
 
 /**
- * The preload (04 §2). Sourced from campaign config, never hard-coded -- and
- * with no campaign `active`, there simply is no preload. Day 7 authors the
- * entry that fills this in; today it is correctly empty, and the empty state
- * is the one that ships at launch (00 §5's step 2).
+ * The preload (04 §2), from THIS grant's campaign rather than from whichever
+ * entry happens to be `active`. That is what lets more than one campaign run
+ * at once: see workers/mcp/src/grant-context.ts for the defect it closes.
+ * With no campaign for this audience there is simply no preload, and the empty
+ * state is the one that ships by default.
  */
-const campaign = await activeCampaign(env);
-const preload = campaign?.jdText ?? '';
+const preload = context.preload;
 
 /**
  * The refusal to show, LOOKED UP rather than read out of the URL.

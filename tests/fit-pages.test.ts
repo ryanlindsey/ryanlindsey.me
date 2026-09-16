@@ -89,12 +89,12 @@ afterAll(async () => {
   await server.close();
 });
 
-async function grant(scopes: Scope[] = ['fit']): Promise<string> {
+async function grant(scopes: Scope[] = ['fit'], audience = 'fixture-audience'): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const claims = {
     v: 1 as const,
     jti: newJti(),
-    aud: 'fixture-audience',
+    aud: audience,
     scopes,
     iat: now,
     exp: now + 3600,
@@ -135,6 +135,52 @@ test('/fit with a granted token renders the form', async () => {
   expect(html).toContain('name="target_description"');
   expect(html).toContain('cf-turnstile');
   expect(html).toContain('0x4AAAAAAElhnY8ov3OYHN8m');
+});
+
+test('the form preloads the campaign the TOKEN belongs to, not a global one', async () => {
+  // THE REGRESSION THIS FILE EXISTS TO HOLD. Two campaigns, both `active`, and
+  // each token must see only its own. The `activeCampaign()` this replaced
+  // returned whichever entry KV listed first, for every caller -- so a holder
+  // of one campaign's link found another campaign's text in the form, and only
+  // one campaign could safely be active at a time.
+  const mcp = server.getWorker<{ KV_CONFIG: KVNamespace }>('ryanlindsey-me-mcp');
+  const kv = (await mcp.getEnv()).KV_CONFIG;
+  await kv.put(
+    'campaign:alpha',
+    JSON.stringify({
+      id: 'alpha',
+      company: 'Alpha',
+      status: 'active',
+      jd_text: 'ALPHA-TARGET-TEXT',
+      referrer_domains: [],
+      hero_line: 'A generic line.',
+      token_audience: 'alpha-audience',
+      gated_narrative_doc: 'narratives/alpha.md',
+    }),
+  );
+  await kv.put(
+    'campaign:beta',
+    JSON.stringify({
+      id: 'beta',
+      company: 'Beta',
+      status: 'active',
+      jd_text: 'BETA-TARGET-TEXT',
+      referrer_domains: [],
+      hero_line: 'A generic line.',
+      token_audience: 'beta-audience',
+      gated_narrative_doc: 'narratives/beta.md',
+    }),
+  );
+
+  const alpha = await (
+    await server.fetch(`/fit?t=${await grant(['fit'], 'alpha-audience')}`)
+  ).text();
+  const beta = await (await server.fetch(`/fit?t=${await grant(['fit'], 'beta-audience')}`)).text();
+
+  expect(alpha).toContain('ALPHA-TARGET-TEXT');
+  expect(alpha).not.toContain('BETA-TARGET-TEXT');
+  expect(beta).toContain('BETA-TARGET-TEXT');
+  expect(beta).not.toContain('ALPHA-TARGET-TEXT');
 });
 
 test('/fit carries its own noindex and a no-referrer policy', async () => {
