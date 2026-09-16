@@ -58,35 +58,126 @@ function post(token: string | null): Promise<Response> {
   });
 }
 
-// `/grantx` is a path this Worker genuinely does not route, so its 404 is the
-// one `createMcpHandler` builds itself rather than anything this repository
-// constructs -- the baseline a refused `/grant` has to be INDISTINGUISHABLE
-// FROM. Comparing against a hand-copied literal would pass even if the two
-// had already drifted apart, which is exactly how the defect this suite
-// guards against shipped in the first place (grant-context.ts's own doc).
-function unrouted(method: string): Promise<Response> {
-  return fetch(`${origin}/grantx`, { method });
+// Every path this helper is given is one the Worker genuinely does not route,
+// so the 404 that comes back is the one `createMcpHandler` builds itself rather
+// than anything this repository constructs -- the baseline a refused `/grant`
+// has to be INDISTINGUISHABLE FROM. Comparing against a hand-copied literal
+// would pass even if the two had already drifted apart, which is exactly how
+// the defect this suite guards against shipped in the first place
+// (grant-context.ts's own doc). Routing on this Worker is a list of exact
+// `===` matches with no prefix branch among them, which is what makes a path
+// adjacent to a real one (`/grantx`) as genuinely dead as an unrelated one.
+function unrouted(method: string, path: string): Promise<Response> {
+  return fetch(`${origin}${path}`, { method });
 }
 
-// Status, body text and the headers `withCors` sets are the whole observable
-// shape of a 404 from `agents`' stateless handler; anywhere those diverge is
-// the route-existence oracle this suite exists to close. Asserted field by
-// field, rather than by reference equality on two Response objects, so a
-// failure names exactly which part of the shape came apart.
-async function expectSameRefusal(response: Response, method: string): Promise<void> {
-  const baseline = await unrouted(method);
-  expect(response.status).toBe(baseline.status);
-  expect(await response.text()).toBe(await baseline.text());
-  expect(response.headers.get('content-type')).toBe(baseline.headers.get('content-type'));
-  for (const header of [
-    'access-control-allow-headers',
-    'access-control-allow-methods',
-    'access-control-allow-origin',
-    'access-control-expose-headers',
-    'access-control-max-age',
-  ]) {
-    expect(response.headers.get(header), header).toBe(baseline.headers.get(header));
+// The whole observable response, so that nothing has to be named to be
+// compared. Sorted, because header order is not part of what a prober can
+// read and two responses that differ only in it are the same response.
+//
+// `Object.fromEntries` keeps the last of any repeated name, which for
+// `set-cookie` -- the one header the iterator yields more than once rather than
+// folding into a comma list -- means several cookies collapse to one. Nothing
+// on either side of this comparison sets a cookie, and the enumeration this
+// replaced did not look at `set-cookie` either, so it is not a gap this change
+// opens. It is written down because `allowedOriginHostnames: '*'` on this
+// Worker is safe only while nothing here is ambient (tests/tier-invisibility.test.ts):
+// the day a refusal sets a cookie, add `response.headers.getSetCookie()` to
+// this snapshot and to the one in tests/fit-pages.test.ts, which has the same
+// shape and therefore the same blind spot.
+async function observable(response: Response) {
+  return {
+    status: response.status,
+    body: await response.text(),
+    headers: Object.fromEntries([...response.headers.entries()].sort()),
+  };
+}
+
+// Two unrouted paths, which have to agree with each other before either is
+// worth comparing a refusal against. This pins that the baseline is not derived
+// from the request, because a 404 carrying the path it was asked for could
+// never be matched by a refusal on `/grant`, and no work on the refusal side
+// would fix it.
+//
+// HONEST ABOUT WHAT IT GUARDS HERE, which is not what the same check guards on
+// the site. `tests/fit-pages.test.ts` uses two controls against a measured
+// near-miss: Astro's stock 404 embeds the requested path, so under it no `/fit`
+// refusal could ever have matched. This Worker's 404 body is the constant
+// `Not Found` that `agents`' `serve` builds, with no path in it and nothing in
+// this repository constructing it, so here the same check guards a hypothetical
+// rather than a near-miss. Kept anyway, at two fetches: the property is cheap
+// to state and the failure it produces is unmistakable.
+//
+// Its own test rather than a line inside `expectSameRefusal`, so that a
+// disagreement between two controls fails under a name that describes it. Run
+// from inside the refusal helper it would fail under "a bearerless POST /grant
+// matches a genuinely unrouted path", which points at the refusal when the
+// refusal is not what came apart.
+test('two unrouted paths on this Worker answer identically', async () => {
+  for (const method of ['POST', 'GET']) {
+    expect(
+      await observable(await unrouted(method, '/nope/nope')),
+      `the control must not depend on the path (${method})`,
+    ).toEqual(await observable(await unrouted(method, '/grantx')));
   }
+});
+
+// EVERY observable field, not a named few (`01 §5`). The rule this suite tests
+// is that a refusal is compared against a live unrouted path on the same
+// Worker, on every observable field, never against a fixed literal. The version
+// this replaced named eight: status, body text, and six headers -- the five
+// `access-control-*` ones `withCors` sets plus `content-type` -- each written
+// down by hand, on the claim that those are the whole shape of an `agents` 404.
+//
+// That claim was true of what the Worker sets, and an enumeration is still the
+// wrong shape of assertion, for the same reason a hand-copied literal is: A
+// LIST CANNOT NOTICE A FIELD THAT APPEARS LATER. One header added to `serve`'s
+// 404 by the next bump to `agents`, or added on the `/grant` side by a change
+// here, moves the two responses apart where no assertion is looking -- a
+// hand-maintained copy of the response's shape, one level up from the
+// hand-maintained copy of the response that grant-context.ts's own doc records.
+//
+// Measured 2026-09-16, which is what the enumeration was already missing: both
+// sides carry EIGHT headers, not the six it named. Those six plus
+// `content-encoding: gzip` and `transfer-encoding: chunked`. Both are almost
+// certainly artifacts of the harness's loopback transport rather than anything
+// the Worker or `withCors` sets, and neither was verified against a deployed
+// edge response. They are compared anyway, because they appear identically on
+// both sides: including them costs nothing, and comparing what was not chosen
+// is the point.
+//
+// Confirmed against the drift it exists to catch rather than assumed. With one
+// extra header set on a refused `/grant` and not on `/grantx` -- nine headers
+// against eight -- the enumerated version passed all three refusal cases, and
+// the suite went green, while `curl -i` on the pair told a prober the route was
+// real. This version fails all three and names the header in the diff.
+//
+// Compared as one object rather than field by field, and NOT by handing two
+// Response objects to `toEqual`: that compares internal slots, so it can pass
+// or fail for reasons that have nothing to do with what a prober can read.
+// Snapshotting first is what keeps the property the field-by-field version was
+// written for, because the diff on a plain object is what names the part that
+// came apart.
+//
+// IF THIS EVER FLAKES, the fix is not a denylist of headers to skip -- that
+// reinstates the hand-maintained list this change exists to delete. Nothing in
+// the measured set can differ between two fetches, but a `date` or a request id
+// added to the loopback response by a future workerd would let two fetches a
+// millisecond apart straddle a second boundary. Delete that one key from BOTH
+// snapshots inside `observable()`, with the date and the reason it is not a
+// difference a prober could read. For the same reason this helper would not
+// survive being pointed at a deployed edge, where `date`, `cf-ray` and `server`
+// all appear: the control has to come from the same Worker in the same harness.
+//
+// `tests/fit-pages.test.ts` does this for `/fit`, and reached it in a fix round
+// after its own enumerated version let the original defect through: a
+// difference the test does not name is a difference the test cannot see.
+async function expectSameRefusal(response: Response, method: string): Promise<void> {
+  const control = await observable(await unrouted(method, '/grantx'));
+  // Guards the one way `/grantx` stops being a valid control: a prefix branch
+  // on `/grant` added to workers/mcp/src/index.ts, which would route it.
+  expect(control.status, 'the control must be a genuine 404').toBe(404);
+  expect(await observable(response)).toEqual(control);
 }
 
 test('a bearerless POST /grant matches a genuinely unrouted path', async () => {
