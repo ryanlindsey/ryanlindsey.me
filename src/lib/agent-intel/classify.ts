@@ -1,3 +1,5 @@
+import type { CampaignConfig } from '../tier/campaigns';
+
 // Agent-traffic classification (06 §3). PURE: request signals in, a label out.
 // No bindings, no clock, no network -- which is what lets the whole rule set be
 // table-tested, and what keeps the one thing /ops publishes as its headline
@@ -164,6 +166,40 @@ export function referrerClassFor(
   if (SOCIAL_HOSTS.some((domain) => hostMatches(hostname, domain))) return 'social';
   if (SEARCH_HOSTS.some((prefix) => hostname.includes(prefix))) return 'search';
   return 'other';
+}
+
+/**
+ * The campaign a referrer belongs to, or `null`.
+ *
+ * A SIBLING OF `referrerClassFor` RATHER THAN A SECOND MATCHER. That function
+ * answers which CLASS a referrer falls into, which is what the intel path
+ * needs; the hero needs which ENTRY matched, which it cannot report. Both go
+ * through `hostMatches`, so a change to what counts as a match moves both at
+ * once -- which is the whole reason this lives here rather than next to the
+ * hero that consumes it.
+ *
+ * First match wins. Two campaigns claiming the same referrer domain is an
+ * authoring mistake, and picking one is a smaller failure than rendering two
+ * bands or refusing to render the page.
+ */
+export function campaignForReferrer(
+  referer: string | null,
+  campaigns: readonly CampaignConfig[],
+): CampaignConfig | null {
+  if (referer === null || referer === '') return null;
+  let hostname: string;
+  try {
+    hostname = new URL(referer).hostname;
+  } catch {
+    // Same reasoning as `referrerClassFor`: a `Referer` is attacker-supplied
+    // text, and an unparseable one is data rather than an error.
+    return null;
+  }
+  return (
+    campaigns.find((campaign) =>
+      campaign.referrerDomains.some((domain) => hostMatches(hostname, domain)),
+    ) ?? null
+  );
 }
 
 /**
