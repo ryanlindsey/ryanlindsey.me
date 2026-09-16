@@ -196,14 +196,13 @@ test('refreshHeroIndex writes [] rather than writing nothing when there are no c
   const returned = await refreshHeroIndex(env);
   expect(returned).toEqual([]);
 
-  // Assert the key EXISTS and holds [], not merely that a read of it returns
-  // [] -- a missing key and a key holding [] both read back as [] once
-  // readHeroIndex's own defaulting is in the loop, so this checks the write
-  // directly against the fake's store instead of round-tripping through it.
-  const calls = cache.getCalls;
+  // Assert the key EXISTS and holds [], not merely that a read of it comes
+  // back empty -- the fake's `get` returns `null` for a key never `put`, so
+  // `not.toBeNull()` is what tells "put() ran with []" apart from "put() was
+  // never called at all", which readHeroIndex alone could not distinguish.
   const stored = await cache.KV_CACHE.get(HERO_INDEX_KEY);
+  expect(stored).not.toBeNull();
   expect(stored).toEqual([]);
-  expect(calls.length).toBeGreaterThan(0); // the get() above happened
 });
 
 // --- readHeroIndex ------------------------------------------------------------
