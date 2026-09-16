@@ -19,11 +19,9 @@ import { SITE_HARNESS_WORKERS } from './workers';
 // is for. Nothing here gates on the match.
 
 const server = createTestHarness({ workers: SITE_HARNESS_WORKERS });
-let origin = '';
 
 beforeAll(async () => {
-  const { url } = await server.listen();
-  origin = url.origin;
+  await server.listen();
   const site = server.getWorker<{ KV_CONFIG: KVNamespace }>();
   const kv = (await site.getEnv()).KV_CONFIG;
   await kv.put(
@@ -45,8 +43,20 @@ afterAll(async () => {
   await server.close();
 });
 
-function home(referer?: string): Promise<Response> {
-  return fetch(`${origin}/`, referer === undefined ? {} : { headers: { referer } });
+/**
+ * `server.fetch` rather than a global `fetch` against the harness's own bound
+ * origin, which is what this helper used before the conditional-request test
+ * below needed it to carry `If-None-Match` too. `tests/negotiation.test.ts`
+ * already uses `server.fetch` for exactly its conditional cases, and it is
+ * the form that works for them in this harness; switching this helper to the
+ * same form rather than keeping two fetch mechanisms side by side in one file
+ * is what "extend the helper" means here. Every existing call site keeps
+ * working unchanged, since `extraHeaders` defaults to none.
+ */
+function home(referer?: string, extraHeaders: Record<string, string> = {}) {
+  return server.fetch('/', {
+    headers: referer === undefined ? extraHeaders : { ...extraHeaders, referer },
+  });
 }
 
 /**
@@ -75,9 +85,45 @@ test('a matching referrer renders the band under the NOW strip', async () => {
   expect(html.indexOf('data-now-strip')).toBeLessThan(html.indexOf('data-campaign-hero'));
 });
 
-test('the transformed variant is never cached', async () => {
+test('the transformed variant is never cached, and carries no ETag while the plain response does', async () => {
+  const plain = await home();
+  expect(plain.headers.get('etag'), 'the plain response should carry an ETag').not.toBeNull();
+
   const response = await home('https://fixture-referrer.test/');
   expect(response.headers.get('cache-control')).toContain('no-store');
+  // Defect 2, pinned end to end rather than only in tests/hero-band.test.ts:
+  // see `withCampaignHero`'s docblock in src/lib/tier/hero-band.ts for why the
+  // validator is dropped rather than suffixed -- a suffixed `ETag` would let a
+  // cache that ignores `no-store` revalidate this variant and be handed the
+  // untransformed page under the same validator, which is the defect rather
+  // than a symptom of it.
+  expect(response.headers.get('etag')).toBeNull();
+});
+
+test('a conditional request from a referred visitor still renders the band', async () => {
+  const plain = await home();
+  const etag = plain.headers.get('etag');
+  expect(etag, 'the plain response should carry an ETag to revalidate against').not.toBeNull();
+
+  // MEASURED 2026-09-16: this passes today because `matchStaticAsset` in
+  // @astrojs/cloudflare discards every request header -- `If-None-Match`
+  // included -- before it ever calls `env.ASSETS.fetch`, so `handle()` never
+  // answers `/` with a `304` and this request is a plain `200` all the way
+  // through (see `withCampaignHero`'s docblock in src/lib/tier/hero-band.ts
+  // for the measurement). The test is here anyway, so that if a future
+  // adapter release starts forwarding the conditional header, the home
+  // page's own end-to-end behavior is what notices -- rather than only
+  // `tests/hero-band.test.ts`, which is where the `304` branch itself is
+  // exercised, against a `Response` built by hand. Asserted on content
+  // rather than on `status`, so the case holds either way: a matched
+  // referrer renders the band whether `withCampaignHero` received a fresh
+  // representation or resolved one from a `304` itself.
+  const revalidated = await home('https://fixture-referrer.test/some/page', {
+    'if-none-match': etag ?? '',
+  });
+  const html = await revalidated.text();
+  expect(html).toContain('data-campaign-hero');
+  expect(html).toContain('A generic line for a referred reader.');
 });
 
 test('no referrer renders no band, and that response stays cacheable', async () => {
@@ -93,9 +139,19 @@ test('a referrer matching no campaign renders no band', async () => {
 });
 
 test('an unparseable referrer is data, not an error', async () => {
-  // `referrerClassFor` already holds this property for its own path; the hero
-  // shares the matcher, so it inherits it, and a test says so rather than
-  // trusting that it always will.
+  // NOT THE MATCHER'S TOLERANCE FOR JUNK, which is what this comment used to
+  // claim. `withCampaignHero`'s own same-origin `try`/`catch` in
+  // src/lib/tier/hero-band.ts parses the referrer before `heroLineForReferrer`
+  // ever sees it, so an unparseable referrer bails there and the matcher never
+  // receives a string `new URL` would reject in the first place.
+  //
+  // `tests/agent-classify.test.ts`'s `heroLineForReferrer` block is where the
+  // matcher's own tolerance for junk is pinned instead.
+  //
+  // RUN, NOT REASONED THROUGH (2026-09-16): deleting `heroLineForReferrer`'s
+  // `try`/`catch` in src/lib/agent-intel/classify.ts reddens exactly that
+  // block's `'not a url'` case and leaves every test in this file green, which
+  // is the evidence for the claim above.
   const response = await home('not a url at all');
   expect(response.status).toBe(200);
   expect(await response.text()).not.toContain('data-campaign-hero');
@@ -188,8 +244,9 @@ test('a retired and an active campaign sharing one referrer domain renders the a
   // the retired entry never reaches the index and the active one is what
   // `heroLineForReferrer` finds. A gate applied after the match instead --
   // wherever it lived -- would still return the retired entry first and bail on
-  // the whole response. `withCampaignHero`'s docblock in src/worker.ts carries
-  // the full reasoning and the note that it was checked against a deliberate
+  // the whole response. `withCampaignHero`'s docblock in
+  // src/lib/tier/hero-band.ts carries the full reasoning and the note that it
+  // was checked against a deliberate
   // post-match gate rather than reasoned through.
   await kv.put(
     'campaign:shared-a-retired',

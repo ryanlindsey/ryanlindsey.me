@@ -197,9 +197,10 @@ export function referrerClassFor(
  * refusing to render the page.
  *
  * RETURNS `''` RATHER THAN `null` FOR A MATCHED EMPTY LINE. The two read as
- * the same "no band" outcome to `withCampaignHero` in src/worker.ts today,
- * but they are not the same fact: `null` means no entry's domain matched,
- * `''` means one did and its authored line is empty. Collapsing that
+ * the same "no band" outcome to `withCampaignHero` in
+ * src/lib/tier/hero-band.ts today, but they are not the same fact: `null`
+ * means no entry's domain matched, `''` means one did and its authored line is
+ * empty. Collapsing that
  * distinction inside this function would hide it from any caller that later
  * needs to tell the two apart, for the same reason `buildHeroIndex` keeps
  * empty-line entries rather than dropping them (see `../tier/hero-index`).
