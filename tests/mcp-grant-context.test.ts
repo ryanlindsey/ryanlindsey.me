@@ -58,17 +58,52 @@ function post(token: string | null): Promise<Response> {
   });
 }
 
-test('a bearerless POST /grant is a bare 404', async () => {
-  // Same refusal as every other gated surface. A 403 would confirm the
-  // endpoint exists to anyone who probes for it.
+// `/grantx` is a path this Worker genuinely does not route, so its 404 is the
+// one `createMcpHandler` builds itself rather than anything this repository
+// constructs -- the baseline a refused `/grant` has to be INDISTINGUISHABLE
+// FROM. Comparing against a hand-copied literal would pass even if the two
+// had already drifted apart, which is exactly how the defect this suite
+// guards against shipped in the first place (grant-context.ts's own doc).
+function unrouted(method: string): Promise<Response> {
+  return fetch(`${origin}/grantx`, { method });
+}
+
+// Status, body text and the headers `withCors` sets are the whole observable
+// shape of a 404 from `agents`' stateless handler; anywhere those diverge is
+// the route-existence oracle this suite exists to close. Asserted field by
+// field, rather than by reference equality on two Response objects, so a
+// failure names exactly which part of the shape came apart.
+async function expectSameRefusal(response: Response, method: string): Promise<void> {
+  const baseline = await unrouted(method);
+  expect(response.status).toBe(baseline.status);
+  expect(await response.text()).toBe(await baseline.text());
+  expect(response.headers.get('content-type')).toBe(baseline.headers.get('content-type'));
+  for (const header of [
+    'access-control-allow-headers',
+    'access-control-allow-methods',
+    'access-control-allow-origin',
+    'access-control-expose-headers',
+    'access-control-max-age',
+  ]) {
+    expect(response.headers.get(header), header).toBe(baseline.headers.get(header));
+  }
+}
+
+test('a bearerless POST /grant matches a genuinely unrouted path', async () => {
+  // Same refusal as every other gated surface, and now BY CONSTRUCTION rather
+  // than by a literal this test could pass against even after it drifted: a
+  // response that differed observably from an unrouted path would confirm
+  // the endpoint exists to anyone who probes for it. This assertion fails
+  // against the old `new Response(null, { status: 404 })` code, which sends
+  // no `content-type` and no `access-control-*` headers at all where the
+  // genuine 404 sends five.
   const response = await post(null);
-  expect(response.status).toBe(404);
-  expect(await response.text()).toBe('');
+  await expectSameRefusal(response, 'POST');
 });
 
-test('a garbage bearer is the same 404', async () => {
+test('a garbage bearer is the same as an unrouted path', async () => {
   const response = await post('rlme1.not-a-real-token.nope');
-  expect(response.status).toBe(404);
+  await expectSameRefusal(response, 'POST');
 });
 
 test('a granted token gets its tools, audience and expiry', async () => {
@@ -126,7 +161,7 @@ test('the preload follows the grant, so two campaigns can run at once', async ()
   expect(three.preload).toBe('THREE-TARGET-TEXT');
 });
 
-test('a GET is a 404, like any other path this Worker does not serve', async () => {
+test('a GET matches a genuinely unrouted path, like any other method this Worker refuses', async () => {
   const response = await fetch(`${origin}/grant`);
-  expect(response.status).toBe(404);
+  await expectSameRefusal(response, 'GET');
 });
