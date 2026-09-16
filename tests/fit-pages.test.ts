@@ -590,8 +590,14 @@ test('the report page states its provenance, dropped citations included', async 
     .run();
   const html = await (await server.fetch('/fit/r/fixture-provenance-id')).text();
   expect(html).toContain('anthropic/claude-opus-5');
-  expect(html).toMatch(/4 citations checked/i);
-  expect(html).toMatch(/3 dropped as unresolvable/i);
+  // TASK 7 (#223) moved the provenance sentence into a `<dl>` above the
+  // report, so "N citations checked" is no longer contiguous text -- the
+  // label and the number are separate dt/dd elements. The property this
+  // test pins is unchanged (the numbers must reach the page); it now asserts
+  // each number against its own dt rather than a sentence that no longer
+  // exists, which is what "asserts the numbers are present, not where" means.
+  expect(html).toMatch(/Citations checked<\/dt>\s*<dd[^>]*>\s*4\s*<\/dd>/i);
+  expect(html).toMatch(/Dropped as unresolvable<\/dt>\s*<dd[^>]*>\s*3\s*<\/dd>/i);
 });
 
 test('a stored report that no longer matches the schema renders a notice, not a crash', async () => {
@@ -744,8 +750,34 @@ test('the permalink page copy does not call the published work "the corpus"', as
     .run();
   const html = await (await server.fetch('/fit/r/fixture-vocabulary-id')).text();
   expect(html).toContain('No supporting evidence in the published work.');
-  expect(html).toContain('checked against the published work');
+  // TASK 7 (#223): "checked against the published work" was the sentence
+  // fragment the nonzero dropped count put on the page; the provenance
+  // rebuild replaced that sentence with a `<dl>`, so the load-bearing check
+  // moves to the dt/dd pair the same count now renders as (see the comment
+  // on the provenance test above). Still load-bearing for the same reason:
+  // without it this passes against a page that dropped the counts, and the
+  // corpus guard along with them, entirely.
+  expect(html).toMatch(/Dropped as unresolvable<\/dt>\s*<dd[^>]*>\s*3\s*<\/dd>/i);
   expect(html).not.toMatch(/\bcorpus\b/i);
+});
+
+test('provenance is stated before the report, not after it', async () => {
+  // 03 §4 makes the honesty contract a promise to the READER, and the dropped
+  // count is the number that says whether the analyser was caught inventing a
+  // source. A promise a reader has to scroll past the whole argument to check
+  // is weaker than one stated before it.
+  await storeReport('fixture-provenance-order-id');
+  const html = await (await server.fetch('/fit/r/fixture-provenance-order-id')).text();
+  expect(html).toContain('data-fit-provenance');
+  expect(html.indexOf('data-fit-provenance')).toBeLessThan(
+    html.indexOf('Requirement by requirement'),
+  );
+});
+
+test('each requirement shows its strength as its own column', async () => {
+  await storeReport('fixture-strength-id');
+  const html = await (await server.fetch('/fit/r/fixture-strength-id')).text();
+  expect(html).toContain('data-strength="strong"');
 });
 
 test('a forged ?error= renders nothing on the form', async () => {
