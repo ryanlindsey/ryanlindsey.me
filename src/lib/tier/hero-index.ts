@@ -1,9 +1,13 @@
 // The derived referrer index (#233). `KV_CONFIG` holds the authored
 // `campaign:<id>` entries -- `./campaigns` -- and this Worker's cron derives
 // one aggregate key from them into `KV_CACHE`. The binding names the writer:
-// `KV_CONFIG` is written only from the private planning repo (10 §2.3), and
-// `KV_CACHE` is written only from inside this Worker, so a reader who sees
-// which binding a key lives in already knows who is allowed to write it.
+// `KV_CONFIG` is written only from the private planning repo (10 §2.3), while
+// every `KV_CACHE` key is written by code in this repository -- `hero:index`
+// by the site Worker's cron and by nothing else. Not by that Worker alone,
+// though: the namespace is bound to the MCP Worker too, which writes
+// `corpus:manifest` into it (src/lib/corpus.ts), so what a reader learns from
+// which binding a key lives in is authored configuration versus derived
+// cache, not which Worker did the writing.
 //
 // WHY THIS EXISTS. `withCampaignHero` in src/worker.ts used to pay a KV
 // `list` on every home page arrival carrying a cross-origin `Referer` --
@@ -88,10 +92,11 @@ export function buildHeroIndex(campaigns: readonly CampaignConfig[]): HeroIndexE
 }
 
 /**
- * The cron's write (registration is a later task -- see the module docblock
- * above). Derives the index from every authored campaign and writes it whole
- * to `HERO_INDEX_KEY`, returning the index so the caller can log how many
- * domains it wrote.
+ * The cron's write, registered since #233 on the site Worker's five-minute
+ * trigger (`triggers.crons` in wrangler.jsonc, dispatched by `scheduled()` in
+ * src/worker.ts). Derives the index from every authored campaign and writes it
+ * whole to `HERO_INDEX_KEY`, returning the index so the caller can log how
+ * many domains it wrote.
  *
  * WRITING `[]` IS THE POINT, not an edge case to special-case away. With
  * `KV_CONFIG` empty (measured 2026-09-08) `buildHeroIndex` returns `[]`, and

@@ -1,9 +1,17 @@
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
+import { HERO_INDEX_KEY, refreshHeroIndex, type HeroIndexEnv } from '../src/lib/tier/hero-index';
 import { SITE_HARNESS_WORKERS } from './workers';
 
 // The referrer-adaptive hero (04 §3, 09 §1): one band under the NOW strip,
 // rendered only for a visitor arriving from an `active` campaign's own domain.
+//
+// TWO STEPS SINCE #233, where the suite used to have one. The band no longer
+// reads the `campaign:` entries this file seeds into `KV_CONFIG`; it reads the
+// `hero:index` key in `KV_CACHE` that the cron derives from them, so seeding
+// and fetching are separated by `deriveIndex` below and every test that seeds
+// has to run it. What each test asserts about the rendered page is unchanged,
+// deliberately: these are the properties that had to survive the move.
 //
 // PRESENTATION, NOT AUTHORIZATION. A `Referer` is attacker-supplied text and
 // trivially forged, so everything this feature reveals must be harmless to a
@@ -31,6 +39,7 @@ beforeAll(async () => {
       gated_narrative_doc: 'narratives/hero.md',
     }),
   );
+  await deriveIndex();
 });
 afterAll(async () => {
   await server.close();
@@ -38,6 +47,22 @@ afterAll(async () => {
 
 function home(referer?: string): Promise<Response> {
   return fetch(`${origin}/`, referer === undefined ? {} : { headers: { referer } });
+}
+
+/**
+ * Runs the derivation the deployed Worker's five-minute cron runs (#233):
+ * every `active` campaign in `KV_CONFIG` becomes one `hero:index` entry in
+ * `KV_CACHE`, which is the only thing the band reads.
+ *
+ * SEEDING IS NO LONGER ENOUGH, which is the one way this suite changed shape.
+ * A `campaign:` entry written to `KV_CONFIG` reaches the home page only once
+ * this has run, so every test that seeds must derive before it fetches. The
+ * real `refreshHeroIndex` runs here rather than a hand-written index being
+ * written to the key directly: a hand-written index would let the derivation
+ * the deployed band depends on drift without a single test noticing.
+ */
+async function deriveIndex(): Promise<void> {
+  await refreshHeroIndex(await server.getWorker<HeroIndexEnv>().getEnv());
 }
 
 test('a matching referrer renders the band under the NOW strip', async () => {
@@ -92,6 +117,7 @@ test('markup in a campaign entry is escaped, not rendered', async () => {
       gated_narrative_doc: 'narratives/injection.md',
     }),
   );
+  await deriveIndex();
   const html = await (await home('https://injection-referrer.test/')).text();
   expect(html).not.toContain('<script>alert(1)</script>');
   expect(html).toContain('&lt;script&gt;');
@@ -113,6 +139,9 @@ test('a retired campaign with a matching referrer renders no band, and that resp
       gated_narrative_doc: 'narratives/retired.md',
     }),
   );
+  // Derived WITH the retired entry present, so what this asserts is that the
+  // derivation dropped it -- not that the index simply predates the seed.
+  await deriveIndex();
   const response = await home('https://retired-referrer.test/');
   const html = await response.text();
   expect(html).not.toContain('data-campaign-hero');
@@ -138,6 +167,7 @@ test('a staged campaign with a matching referrer renders no band', async () => {
       gated_narrative_doc: 'narratives/staged.md',
     }),
   );
+  await deriveIndex();
   const html = await (await home('https://staged-referrer.test/')).text();
   expect(html).not.toContain('data-campaign-hero');
 });
@@ -145,13 +175,22 @@ test('a staged campaign with a matching referrer renders no band', async () => {
 test('a retired and an active campaign sharing one referrer domain renders the active one', async () => {
   const site = server.getWorker<{ KV_CONFIG: KVNamespace }>();
   const kv = (await site.getEnv()).KV_CONFIG;
-  // KV `list` returns keys in lexicographic order, and `campaignForReferrer` is
-  // first-match-wins over whatever it is handed (its own docblock). Naming the
-  // retired entry's key `shared-a-retired` and the active one's `shared-b-active`
-  // puts the retired entry first in that order on purpose, so this test exercises
-  // the ordering trap described in `withCampaignHero`'s docblock rather than
-  // depending on an incidental KV write order. Renaming either key without
-  // keeping the retired one first would silently stop testing the trap.
+  // KV `list` returns keys in lexicographic order, and matching a referrer is
+  // first-match-wins over whatever list it is handed. Naming the retired
+  // entry's key `shared-a-retired` and the active one's `shared-b-active` puts
+  // the retired entry first in that order on purpose, so this test exercises
+  // the ordering trap rather than depending on an incidental KV write order.
+  // Renaming either key without keeping the retired one first would silently
+  // stop testing the trap.
+  //
+  // THE GATE IT EXERCISES MOVED IN #233, and the trap did not. `buildHeroIndex`
+  // now drops non-`active` campaigns while it walks that same list order, so
+  // the retired entry never reaches the index and the active one is what
+  // `heroLineForReferrer` finds. A gate applied after the match instead --
+  // wherever it lived -- would still return the retired entry first and bail on
+  // the whole response. `withCampaignHero`'s docblock in src/worker.ts carries
+  // the full reasoning and the note that it was checked against a deliberate
+  // post-match gate rather than reasoned through.
   await kv.put(
     'campaign:shared-a-retired',
     JSON.stringify({
@@ -178,8 +217,49 @@ test('a retired and an active campaign sharing one referrer domain renders the a
       gated_narrative_doc: 'narratives/shared-b.md',
     }),
   );
+  await deriveIndex();
   const html = await (await home('https://shared-referrer.test/')).text();
   expect(html).toContain('data-campaign-hero');
   expect(html).toContain('The active line that must win.');
   expect(html).not.toContain('The retired line that must not win.');
+});
+
+test('with the index present, a referrer matching nothing renders no band and that response stays cacheable', async () => {
+  // #233's first condition, and the reason it is a test of its own next to the
+  // "matching no campaign" one above: that arrival is the common case -- a
+  // search result or a social link is a cross-origin referrer -- so what it
+  // costs and what it returns are both properties worth pinning. It must reach
+  // the index (the guards above it do not bail on a cross-origin referrer) and
+  // it must come back untransformed and cacheable, because a `no-store` on the
+  // arrival that matches nothing would hand the cost of the feature to the
+  // traffic the feature is not for.
+  await deriveIndex();
+  const response = await home('https://unmatched-referrer.test/some/page');
+  const html = await response.text();
+  expect(html).not.toContain('data-campaign-hero');
+  expect(response.headers.get('cache-control') ?? '').not.toContain('no-store');
+});
+
+test('with no index written at all, a matching referrer renders no band rather than falling back to a walk', async () => {
+  // The deliberate decision in `readHeroIndex` made visible: a missing key
+  // returns `[]` and never falls back to `listCampaigns`. Nothing else can see
+  // that choice -- a fallback would render exactly the same band this suite's
+  // first test asserts, and would reintroduce the per-arrival `list` #233 exists
+  // to remove, on precisely the requests that used to pay it.
+  const env = await server.getWorker<HeroIndexEnv>().getEnv();
+  await env.KV_CACHE.delete(HERO_INDEX_KEY);
+  // `finally`, not a line after the assertions: every test here shares one
+  // harness and one namespace, and a failing expectation throws. Restoring
+  // after the assertions would put the key back only on the runs that did not
+  // need it put back, turning one red test into every later test in the file
+  // going red for a reason that is not theirs.
+  try {
+    const response = await home('https://fixture-referrer.test/some/page');
+    const html = await response.text();
+    expect(html).not.toContain('data-campaign-hero');
+    expect(html).not.toContain('A generic line for a referred reader.');
+    expect(response.headers.get('cache-control') ?? '').not.toContain('no-store');
+  } finally {
+    await refreshHeroIndex(env);
+  }
 });

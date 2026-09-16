@@ -56,12 +56,14 @@ function str(value: unknown): string | null {
  * left the field a label for the operator with no code behind it -- true from
  * whenever that deletion landed until this paragraph was corrected. 04 §3,
  * 00 §5 and 09 §3 were corrected on 2026-09-16 to say the referrer-adaptive
- * hero gates on it instead, and #232 is the change that makes that true:
- * `withCampaignHero` in src/worker.ts filters `listCampaigns`'s result to
- * `status === 'active'` before matching a referrer against it, so `status`
- * has exactly one reader again. What the paragraph immediately above now
- * describes for real is its `active` half -- "which would render campaign
- * content for a value nobody meant" -- because that equality check is
+ * hero gates on it instead, and #232 is the change that makes that true. That
+ * reader moved one step away from the request in #233: `buildHeroIndex`
+ * (./hero-index) keeps only `status === 'active'` entries when it derives the
+ * key the hero band reads, rather than `withCampaignHero` in src/worker.ts
+ * filtering `listCampaigns`'s result at request time. `status` still has
+ * exactly one reader; it is now the derivation. What the paragraph immediately
+ * above now describes for real is its `active` half -- "which would render
+ * campaign content for a value nobody meant" -- because that equality check is
  * exactly the code a bad `active` would misfire against, if FAILS CLOSED were
  * not already refusing anything outside the three-value set first. Its
  * `retired`-typo half does NOT move with this change: `readCampaignForAudience`,
@@ -202,13 +204,16 @@ export async function listCampaigns(env: CampaignEnv): Promise<CampaignConfig[]>
  * `getWithMetadata()` (checked against Cloudflare's KV binding
  * documentation). A `list` cannot be cached that way at all, which is why the
  * index is the only real option and why #233, which takes the same residual
- * off the home page's hot path, has to build one rather than switch anything
- * on. Note that the index wanted HERE and the one #233 wants are not the same
- * object: this call needs audience->id, a key per campaign; the hero needs
- * referrer-domain->hero-line, one key for all of them. #233 owns the question
- * of whether one structure can serve both. `withCampaignHero` in
- * src/worker.ts repeated the `cacheTtl` assumption from here and is corrected
- * in the same change.
+ * off the home page's hot path, had to build one rather than switch anything
+ * on. The index wanted HERE and the one #233 built are not the same object:
+ * this call needs audience->id, a key per campaign; the hero needs
+ * referrer-domain->hero-line, one key for all of them. #233 answered the
+ * question of whether one structure could serve both with a no, and built only
+ * the hero's (./hero-index) -- which it could, because that one is DERIVED
+ * from these entries by a cron on the site Worker and so needs nothing from
+ * the private authoring repo. The audience->id index still would, and is still
+ * unbuilt. `withCampaignHero` in src/worker.ts repeated the `cacheTtl`
+ * assumption from here and was corrected in the same change.
  *
  * Early exit also means an unparseable entry AFTER the match never runs
  * through `parseCampaign` and so never logs `walkCampaigns`'s

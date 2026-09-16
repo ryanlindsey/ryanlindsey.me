@@ -232,7 +232,12 @@
   // renders. tests/site-env.test.ts pins the binding list and this note.
   "browser": { "binding": "BROWSER" },
 
-  // 05:47 UTC daily, the retention sweep (day 6, 06 §2).
+  // 05:47 UTC daily, the retention sweep (day 6, 06 §2). Every five minutes,
+  // the campaign hero index refresh (#233): it derives one `hero:index` key in
+  // `KV_CACHE` from the authored campaign entries, and the interval is the
+  // staleness a newly deployed campaign pays before its band appears. The
+  // reasoning for that number, and what 288 invocations a day buy, is in
+  // src/worker.ts's `scheduled()` docblock beside the job itself.
   //
   // The 05:17 slot next to it was the résumé-PDF refresh, and #186 removed it
   // with the runtime renderer: the PDF is a pure function of the commit, so
@@ -244,11 +249,11 @@
   // its own 05:32: they make a cron failure attributable on sight rather than
   // by reading which handler threw.
   //
-  // This expression is matched STRING FOR STRING by the `switch` in
+  // These expressions are matched STRING FOR STRING by the `switch` in
   // src/worker.ts's `scheduled()`. Editing one without the other leaves the
   // handler matching nothing; the switch's `default` arm is what makes that
   // loud rather than a job that silently stopped running.
-  "triggers": { "crons": ["47 5 * * *"] },
+  "triggers": { "crons": ["47 5 * * *", "*/5 * * * *"] },
 
   // NO `ai` AND NO `vectorize` BINDING HERE, AND THAT IS A BUILD CONSTRAINT
   // RATHER THAN A STATEMENT ABOUT NEED. Both moved to workers/mcp/wrangler.jsonc
