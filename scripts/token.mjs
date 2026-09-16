@@ -78,6 +78,7 @@
 //     --signer http://127.0.0.1:8799/__sign [--note "..."]
 //   node scripts/token.mjs list
 //   node scripts/token.mjs revoke --jti <jti>
+//   node scripts/token.mjs revoke --audience <label>
 //
 // `--remote` is implied for list/revoke: the registry that matters is the
 // deployed one. `mint` writes to it too.
@@ -243,10 +244,58 @@ function list() {
   }
 }
 
+/**
+ * Revoke one token, or every live token for an audience.
+ *
+ * `--audience` IS THE KILL SWITCH FOR A CAMPAIGN, and it exists because the
+ * campaign's own `status` is not one: authorization reads the signature and
+ * this registry, never KV, so flipping an entry to `retired` stops nothing
+ * that is already in someone's inbox. Revocation is a registry fact, and this
+ * makes it one command instead of one per token.
+ *
+ * `revoked_at IS NULL` in the UPDATE is what keeps a second run from
+ * overwriting the original revocation timestamp with today's.
+ */
 function revoke() {
   const jti = arg('jti');
-  if (!jti) throw new Error('--jti is required');
+  const audience = arg('audience');
+  if (!jti && !audience) throw new Error('--jti or --audience is required');
+  if (jti && audience) throw new Error('--jti and --audience are mutually exclusive');
   const at = new Date().toISOString();
+
+  if (audience) {
+    const live = d1(
+      `SELECT jti FROM access_tokens WHERE audience = ${quote(audience)} AND revoked_at IS NULL`,
+    );
+    if (live.length === 0) {
+      // An empty result has two causes and they are not equally safe: every
+      // token for this audience is already revoked, or the label is wrong and
+      // the real tokens are still live. The prescribed message said "no live
+      // tokens" for both, which reads as reassurance in the second case --
+      // and `id` and `tokenAudience` are separate fields on a campaign entry
+      // (src/lib/tier/campaigns.ts), so reaching for the wrong one is an
+      // ordinary mistake rather than a typo. On the KILL SWITCH, the path
+      // that revoked nothing is the one that must not sound calm. Costs one
+      // COUNT, on the branch that was already the cheap one.
+      const [all] = d1(
+        `SELECT COUNT(*) AS n FROM access_tokens WHERE audience = ${quote(audience)}`,
+      );
+      process.stdout.write(
+        all.n === 0
+          ? `audience ${audience} has no tokens at all; check the label\n`
+          : `all ${all.n} token(s) for audience ${audience} were already revoked\n`,
+      );
+      return;
+    }
+    d1(
+      `UPDATE access_tokens SET revoked_at = ${quote(at)}
+         WHERE audience = ${quote(audience)} AND revoked_at IS NULL`,
+    );
+    for (const row of live) process.stdout.write(`revoked ${row.jti} at ${at}\n`);
+    process.stdout.write(`revoked ${live.length} token(s) for audience ${audience}\n`);
+    return;
+  }
+
   d1(
     `UPDATE access_tokens SET revoked_at = ${quote(at)} WHERE jti = ${quote(jti)} AND revoked_at IS NULL`,
   );
