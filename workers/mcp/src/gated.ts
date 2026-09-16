@@ -569,6 +569,34 @@ const GATED_TOOLS: readonly GatedTool[] = [
 ];
 
 /**
+ * The gated tools one grant unlocks.
+ *
+ * THE ONE PLACE `grant.scopes` IS TURNED INTO A TOOL SET. Three callers ask
+ * that question -- `registerGatedTools` to decide what to register,
+ * `gatedToolLines` to describe them in the instructions, and
+ * `grantedToolNames` for the site's grant-context endpoint -- and they were
+ * three separate filters over `GATED_TOOLS` until this one replaced them.
+ * Three copies of a membership test is how a tool comes to be registered but
+ * undescribed, or described but unregistered.
+ */
+function toolsFor(grant: Grant): readonly GatedTool[] {
+  return GATED_TOOLS.filter((tool) => grant.scopes.includes(tool.scope));
+}
+
+/**
+ * Every gated tool name this grant unlocks.
+ *
+ * What `POST /grant` answers with, and therefore what `/fit` reads its own
+ * access check out of: `analyze_fit`'s presence in this list IS the statement
+ * that the token carries the fit scope, is unexpired, is registered and is not
+ * revoked. The site never learns the scope-to-tool mapping, which is why it
+ * cannot drift from this file.
+ */
+export function grantedToolNames(grant: Grant): string[] {
+  return toolsFor(grant).map((tool) => tool.name);
+}
+
+/**
  * Every gated tool's name, DERIVED from `GATED_TOOLS` rather than retyped.
  *
  * Exported for the tests (deferred minor L963). tests/mcp-gated.test.ts kept
@@ -598,9 +626,7 @@ export function registerGatedTools(server: McpServer, tc: ToolContext): void {
   const grant = tc.grant;
   if (grant === null) return;
 
-  for (const tool of GATED_TOOLS) {
-    if (grant.scopes.includes(tool.scope)) tool.register(server, tc, tool, grant);
-  }
+  for (const tool of toolsFor(grant)) tool.register(server, tc, tool, grant);
 }
 
 /**
@@ -620,7 +646,5 @@ export function registerGatedTools(server: McpServer, tc: ToolContext): void {
  * needs: no server, no bindings, and therefore nothing to register.
  */
 export function gatedToolLines(grant: Grant): string[] {
-  return GATED_TOOLS.filter((tool) => grant.scopes.includes(tool.scope)).map(
-    (tool) => `${tool.name}: ${tool.summary}`,
-  );
+  return toolsFor(grant).map((tool) => `${tool.name}: ${tool.summary}`);
 }

@@ -4,6 +4,7 @@ import { buildMcpDiscovery, buildMcpRobotsTxt } from '../../../src/lib/mcp/disco
 import { buildMcpServerCard } from '../../../src/lib/discovery/server-card';
 import { buildProtectedResource } from '../../../src/lib/discovery/protected-resource';
 import { handleChat } from './chat';
+import { handleGrantContext } from './grant-context';
 import { resolveGrant } from '../../../src/lib/tier/grant';
 import { type McpEnv } from './env';
 import { createServer } from './server';
@@ -245,6 +246,11 @@ export default {
     // exist in a config `astro build` instantiates (see both wrangler.jsonc
     // files for the CI failure that settled it).
     if (pathname === '/chat') return handleChat(request, env, ctx);
+
+    // `POST /grant` (04 §2): what one bearer unlocks, answered here for the
+    // same reason `/chat` is -- HANDLER_OPTIONS answers exactly `/mcp` and
+    // 404s everything else it sees.
+    if (pathname === '/grant') return handleGrantContext(request, env);
 
     return createMcpHandler(
       // ASYNC, and the factory's contract permits it: `McpServerFactory` is
