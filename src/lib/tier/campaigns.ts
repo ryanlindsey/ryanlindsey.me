@@ -193,8 +193,11 @@ export async function listCampaigns(env: CampaignEnv): Promise<CampaignConfig[]>
  * every call regardless of where the match falls, and that residual is left
  * alone here. An audience->id index would require the private authoring repo
  * to write a second key per campaign, a change this repo cannot make or
- * verify. Whether to build one is left to day 6's `/ops` read patterns, which
- * will know the actual call volume it needs to justify.
+ * verify. DECIDED 2026-09-16 (#233): it stays unbuilt.
+ * `get_application_narrative` is grant-gated and runs at single-figure
+ * volume, so the residual `list` costs little on a path few callers ever
+ * reach. The decision can be reopened if day 6's `/ops` read patterns ever
+ * show volume that changes this trade; nothing has shown that yet.
  *
  * CORRECTED 2026-09-16 (#225): this paragraph used to offer a `cacheTtl` as
  * the cheaper alternative to that index, "trading configuration-propagation
@@ -209,10 +212,17 @@ export async function listCampaigns(env: CampaignEnv): Promise<CampaignConfig[]>
  * this call needs audience->id, a key per campaign; the hero needs
  * referrer-domain->hero-line, one key for all of them. #233 answered the
  * question of whether one structure could serve both with a no, and built only
- * the hero's (./hero-index) -- which it could, because that one is DERIVED
- * from these entries by a cron on the site Worker and so needs nothing from
- * the private authoring repo. The audience->id index still would, and is still
- * unbuilt. `withCampaignHero` in src/worker.ts repeated the `cacheTtl`
+ * the hero's (./hero-index, written to `hero:index` in `KV_CACHE`) -- which it
+ * could, because that one is DERIVED from these entries by a cron on the site
+ * Worker and so needs nothing from the private authoring repo. The
+ * audience->id index still would, and is still unbuilt.
+ *
+ * That private-repo dependency is not even the sharper reason. Built or not,
+ * this call still needs `jd_text` and `gated_narrative_doc` from the full
+ * campaign entry afterward, so an audience->id index would save it a `list`
+ * and not a round trip -- a materially worse trade than the hero's, whose
+ * index carries the entire payload the caller needs and removes the fetch
+ * outright. `withCampaignHero` in src/worker.ts repeated the `cacheTtl`
  * assumption from here and was corrected in the same change.
  *
  * Early exit also means an unparseable entry AFTER the match never runs
