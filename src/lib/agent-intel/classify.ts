@@ -1,4 +1,4 @@
-import type { CampaignConfig } from '../tier/campaigns';
+import type { HeroIndexEntry } from '../tier/hero-index';
 
 // Agent-traffic classification (06 §3). PURE: request signals in, a label out.
 // No bindings, no clock, no network -- which is what lets the whole rule set be
@@ -169,37 +169,56 @@ export function referrerClassFor(
 }
 
 /**
- * The campaign a referrer belongs to, or `null`.
+ * The hero line for a referrer, matched against the derived index (#233)
+ * rather than against the campaign entries directly.
  *
- * A SIBLING OF `referrerClassFor` RATHER THAN A SECOND MATCHER. That function
- * answers which CLASS a referrer falls into, which is what the intel path
- * needs; the hero needs which ENTRY matched, which it cannot report. Both go
- * through `hostMatches`, so a change to what counts as a match moves both at
- * once -- which is the whole reason this lives here rather than next to the
- * hero that consumes it.
+ * A SIBLING OF `referrerClassFor` RATHER THAN A SECOND MATCHER, and that is
+ * the whole reason it lives in this file rather than next to the hero that
+ * consumes it. `referrerClassFor` answers which CLASS a referrer falls into,
+ * which is what the intel path needs; the hero needs which entry matched,
+ * which that function cannot report. Both go through `hostMatches`, so a
+ * change to what counts as a match moves both at once.
  *
- * First match wins. Two campaigns claiming the same referrer domain is an
- * authoring mistake, and picking one is a smaller failure than rendering two
- * bands or refusing to render the page.
+ * IT REPLACED `campaignForReferrer`, deleted by #233 when its last caller
+ * moved onto the index. That function returned the whole matched
+ * `CampaignConfig`, which is not available on this path: `HeroIndexEntry`
+ * carries only `domain` and `heroLine`, because that is what one cacheable
+ * `get()` of the aggregate key can hold. Same hostname matching and same
+ * first-match-wins, a smaller payload.
+ *
+ * MUST GO THROUGH `hostMatches`, the same suffix test as its sibling. A plain
+ * object lookup keyed by hostname reads faster but silently drops subdomain
+ * matching: a visitor arriving from `jobs.example.com` matches a campaign
+ * domain of `example.com` today, and an object keyed by exact hostname would
+ * stop matching it without erroring anywhere.
+ *
+ * First match wins. Two entries claiming one domain is an authoring mistake,
+ * and picking the first is a smaller failure than rendering two bands or
+ * refusing to render the page.
+ *
+ * RETURNS `''` RATHER THAN `null` FOR A MATCHED EMPTY LINE. The two read as
+ * the same "no band" outcome to `withCampaignHero` in src/worker.ts today,
+ * but they are not the same fact: `null` means no entry's domain matched,
+ * `''` means one did and its authored line is empty. Collapsing that
+ * distinction inside this function would hide it from any caller that later
+ * needs to tell the two apart, for the same reason `buildHeroIndex` keeps
+ * empty-line entries rather than dropping them (see `../tier/hero-index`).
  */
-export function campaignForReferrer(
+export function heroLineForReferrer(
   referer: string | null,
-  campaigns: readonly CampaignConfig[],
-): CampaignConfig | null {
+  index: readonly HeroIndexEntry[],
+): string | null {
   if (referer === null || referer === '') return null;
   let hostname: string;
   try {
     hostname = new URL(referer).hostname;
   } catch {
-    // Same reasoning as `referrerClassFor`: a `Referer` is attacker-supplied
+    // Same property as `referrerClassFor`: a `Referer` is attacker-supplied
     // text, and an unparseable one is data rather than an error.
     return null;
   }
-  return (
-    campaigns.find((campaign) =>
-      campaign.referrerDomains.some((domain) => hostMatches(hostname, domain)),
-    ) ?? null
-  );
+  const match = index.find((entry) => hostMatches(hostname, entry.domain));
+  return match === undefined ? null : match.heroLine;
 }
 
 /**

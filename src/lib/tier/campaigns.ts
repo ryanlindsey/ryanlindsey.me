@@ -56,12 +56,14 @@ function str(value: unknown): string | null {
  * left the field a label for the operator with no code behind it -- true from
  * whenever that deletion landed until this paragraph was corrected. 04 §3,
  * 00 §5 and 09 §3 were corrected on 2026-09-16 to say the referrer-adaptive
- * hero gates on it instead, and #232 is the change that makes that true:
- * `withCampaignHero` in src/worker.ts filters `listCampaigns`'s result to
- * `status === 'active'` before matching a referrer against it, so `status`
- * has exactly one reader again. What the paragraph immediately above now
- * describes for real is its `active` half -- "which would render campaign
- * content for a value nobody meant" -- because that equality check is
+ * hero gates on it instead, and #232 is the change that makes that true. That
+ * reader moved one step away from the request in #233: `buildHeroIndex`
+ * (./hero-index) keeps only `status === 'active'` entries when it derives the
+ * key the hero band reads, rather than `withCampaignHero` in src/worker.ts
+ * filtering `listCampaigns`'s result at request time. `status` still has
+ * exactly one reader; it is now the derivation. What the paragraph immediately
+ * above now describes for real is its `active` half -- "which would render
+ * campaign content for a value nobody meant" -- because that equality check is
  * exactly the code a bad `active` would misfire against, if FAILS CLOSED were
  * not already refusing anything outside the three-value set first. Its
  * `retired`-typo half does NOT move with this change: `readCampaignForAudience`,
@@ -184,15 +186,27 @@ export async function listCampaigns(env: CampaignEnv): Promise<CampaignConfig[]>
  * differ, so matching on the id would silently resolve the wrong narrative
  * document for any campaign whose audience label was ever renamed.
  *
- * This runs on every `get_application_narrative` call, so it walks with an
- * early-exit `match`: entries after the one wanted are never fetched or
+ * This has TWO runtime callers, counted 2026-09-16: the
+ * `get_application_narrative` tool (workers/mcp/src/gated.ts) and
+ * `POST /grant` (workers/mcp/src/grant-context.ts). Either way it walks with
+ * an early-exit `match`: entries after the one wanted are never fetched or
  * parsed, only earlier ones (plus the match itself) pay the get+parse cost.
  * At least one KV `list` call -- the walk's first page -- still happens on
  * every call regardless of where the match falls, and that residual is left
  * alone here. An audience->id index would require the private authoring repo
  * to write a second key per campaign, a change this repo cannot make or
- * verify. Whether to build one is left to day 6's `/ops` read patterns, which
- * will know the actual call volume it needs to justify.
+ * verify. DECIDED 2026-09-16 (#233): it stays unbuilt. Both callers
+ * are grant-gated and run at single-figure volume, so the residual `list`
+ * costs little on a path few callers ever reach. `/grant` is the busier of the
+ * two -- the site asks it on every token-bearing `/fit` load and every `/fit`
+ * run (src/lib/fit/client.ts), plus once per `npm run token mint`
+ * (scripts/token.mjs) -- but reaching it at all takes a token minted by hand
+ * for one audience, which is what keeps it the same order of volume. This
+ * sentence named only the tool until the count above was made, and the
+ * conclusion survived the correction: the sharper argument below does not rest
+ * on volume at all. The decision can be reopened if day 6's `/ops` read
+ * patterns ever show volume that changes this trade; nothing has shown that
+ * yet.
  *
  * CORRECTED 2026-09-16 (#225): this paragraph used to offer a `cacheTtl` as
  * the cheaper alternative to that index, "trading configuration-propagation
@@ -202,13 +216,23 @@ export async function listCampaigns(env: CampaignEnv): Promise<CampaignConfig[]>
  * `getWithMetadata()` (checked against Cloudflare's KV binding
  * documentation). A `list` cannot be cached that way at all, which is why the
  * index is the only real option and why #233, which takes the same residual
- * off the home page's hot path, has to build one rather than switch anything
- * on. Note that the index wanted HERE and the one #233 wants are not the same
- * object: this call needs audience->id, a key per campaign; the hero needs
- * referrer-domain->hero-line, one key for all of them. #233 owns the question
- * of whether one structure can serve both. `withCampaignHero` in
- * src/worker.ts repeated the `cacheTtl` assumption from here and is corrected
- * in the same change.
+ * off the home page's hot path, had to build one rather than switch anything
+ * on. The index wanted HERE and the one #233 built are not the same object:
+ * this call needs audience->id, a key per campaign; the hero needs
+ * referrer-domain->hero-line, one key for all of them. #233 answered the
+ * question of whether one structure could serve both with a no, and built only
+ * the hero's (./hero-index, written to `hero:index` in `KV_CACHE`) -- which it
+ * could, because that one is DERIVED from these entries by a cron on the site
+ * Worker and so needs nothing from the private authoring repo. The
+ * audience->id index still would, and is still unbuilt.
+ *
+ * That private-repo dependency is not even the sharper reason. Built or not,
+ * this call still needs `jd_text` and `gated_narrative_doc` from the full
+ * campaign entry afterward, so an audience->id index would save it a `list`
+ * and not a round trip -- a materially worse trade than the hero's, whose
+ * index carries the entire payload the caller needs and removes the fetch
+ * outright. `withCampaignHero` in src/worker.ts repeated the `cacheTtl`
+ * assumption from here and was corrected in the same change.
  *
  * Early exit also means an unparseable entry AFTER the match never runs
  * through `parseCampaign` and so never logs `walkCampaigns`'s

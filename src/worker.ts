@@ -1,7 +1,7 @@
 import { handle } from '@astrojs/cloudflare/handler';
 import {
-  campaignForReferrer,
   classifyRequest,
+  heroLineForReferrer,
   referrerClassFor,
   signalsFrom,
 } from './lib/agent-intel/classify';
@@ -11,6 +11,7 @@ import { recordAgentEvent, type Surface } from './lib/agent-intel/record';
 import { NOT_FOUND_PROBE } from './lib/not-found-probe';
 import { enforceRetention } from './lib/retention';
 import { listCampaigns } from './lib/tier/campaigns';
+import { readHeroIndex, refreshHeroIndex } from './lib/tier/hero-index';
 
 /**
  * The site's Worker entry.
@@ -303,12 +304,22 @@ function queueFitRunIntent(response: Response, env: Env, ctx: ExecutionContext):
  * Queues a `resume-pdf-referred` event for a PDF download that arrived from a
  * campaign or social referrer (06 §3). Producer two of two.
  *
- * THE ONE PLACE THE SITE WORKER READS CAMPAIGN DOMAINS. The hot path
- * deliberately does not (see `CAMPAIGN_DOMAINS_OFF`): a KV read per request to
- * label the minority that carry a referrer at all is a storage round trip in
- * front of every page. Here it is affordable because `/resume.pdf` is one route
- * with single-figure volume, and it is necessary because the campaign
+ * THE ONE PLACE THE SITE WORKER READS CAMPAIGN DOMAINS ON A REQUEST. The hot
+ * path deliberately does not (see `CAMPAIGN_DOMAINS_OFF`): a KV read per
+ * request to label the minority that carry a referrer at all is a storage round
+ * trip in front of every page. Here it is affordable because `/resume.pdf` is
+ * one route with single-figure volume, and it is necessary because the campaign
  * attribution is the whole condition on this event.
+ *
+ * ON A REQUEST is the qualifier #233 added, and it is load-bearing rather than
+ * decorative. `scheduled()` below calls `refreshHeroIndex`, which is
+ * `listCampaigns` plus a derivation over `referrerDomains`, so this Worker has
+ * a second `listCampaigns` caller and a second reader of campaign domains --
+ * one that runs on a five-minute schedule with no request waiting on it. What
+ * this paragraph claims is that no other REQUEST pays for that read.
+ * `withCampaignHero`, the reader you would expect to find on the home page,
+ * reads the derived `hero:index` key in `KV_CACHE` and touches campaign
+ * configuration not at all.
  *
  * The caller runs this inside `ctx.waitUntil`, so neither the KV read nor the
  * queue send is on the download's critical path.
@@ -356,22 +367,24 @@ function escapeHtml(value: string): string {
  * static asset is served untouched on every request that does not match, and
  * only the one that does pays for a transform.
  *
- * THE KV READ IS ON THE HOT PATH, and this comment used to deny it (corrected
- * 2026-09-16 by #225; #233 removes it). It read: "NO KV READ WITHOUT A
- * CROSS-ORIGIN REFERRER, which is what keeps this off the critical path for
+ * A KV `list` WAS ON THE HOT PATH UNTIL #233, and this comment denied that
+ * before it was corrected (2026-09-16, by #225). It read: "NO KV READ WITHOUT
+ * A CROSS-ORIGIN REFERRER, which is what keeps this off the critical path for
  * nearly all traffic". The guard is real -- a direct visit and a same-origin
- * navigation both return above, before `listCampaigns` is called -- but a
+ * navigation both return above, before any storage is touched -- but a
  * cross-origin referrer is exactly what a search result and a social link
  * both produce, so what the guard admits is a large share of home page
- * arrivals rather than a rarity. `walkCampaigns` always issues at least one
- * KV `list`, and a `list` cannot be given a `cacheTtl` the way a `get()` can
- * (below), so there is no knob that turns it into a local read -- every one of
- * those requests pays a round trip to KV in front of a page that is otherwise
- * a static asset, and with `KV_CONFIG` empty (measured 2026-09-08) it pays it
- * to discover there is nothing to render. Stated that way deliberately: #225
- * put it as "a `list` is never edge cached", which is a claim about KV's
- * internals that Cloudflare's documentation does not make, and this comment
- * should not assert more than the API reference supports.
+ * arrivals rather than a rarity. That traffic shape is the whole reason the
+ * index below exists, so it is recorded here rather than left in the issue:
+ * `walkCampaigns` always issued at least one KV `list`, and a `list` cannot be
+ * given a `cacheTtl` the way a `get()` can, so there was no knob that turned
+ * it into a local read -- every one of those requests paid a round trip to KV
+ * in front of a page that is otherwise a static asset, and with `KV_CONFIG`
+ * empty (measured 2026-09-08) it paid it to discover there was nothing to
+ * render. Stated that way deliberately: #225 put it as "a `list` is never edge
+ * cached", which is a claim about KV's internals that Cloudflare's
+ * documentation does not make, and this comment should not assert more than
+ * the API reference supports.
  *
  * `CAMPAIGN_DOMAINS_OFF` below refuses a related trade for the analytics path,
  * and the two are worth reading together rather than as one argument. It
@@ -379,45 +392,76 @@ function escapeHtml(value: string): string {
  * that carry a referrer at all"; this is a read on home page arrivals that
  * carry a cross-origin one. Different denominators, which is why both
  * sentences can be true at once -- and why that constant's wording is not
- * evidence for or against the traffic shape described here. The cost is
- * accepted for now rather than endorsed.
+ * evidence for or against the traffic shape described here. What those
+ * arrivals pay now is one cacheable `get`.
  *
- * AND THE ESCAPE HATCH IS NOT A `cacheTtl`. The wording above pointed at
- * `walkCampaigns` as "where a `cacheTtl` would go". It cannot go there:
- * Workers KV's `list()` takes `prefix`, `limit` and `cursor` and nothing
- * else, and `cacheTtl` is a parameter of `get()` and `getWithMetadata()`
- * (checked against Cloudflare's KV binding documentation, 2026-09-16 --
- * `readCampaignForAudience` made the same assumption and is corrected too).
- * What would work is a single cacheable `get()` of one key holding the
- * referrer-domain-to-hero-line map, which is what #233 carries. That is a
- * different shape from the audience->id index `readCampaignForAudience`
- * contemplates for its own residual `list`: one aggregate key for the whole
- * corpus here, one key per campaign there. #233 has to decide whether one
- * structure serves both, and either way something outside this repo has to
- * write it.
+ * THE MECHANISM IS A `get`, AND IT COULD NEVER HAVE BEEN A `cacheTtl` ON THE
+ * `list`. This paragraph used to point at `walkCampaigns` as "where a
+ * `cacheTtl` would go" and then correct itself, and the correction is what
+ * survives: Workers KV's `list()` takes `prefix`, `limit` and `cursor` and
+ * nothing else, while `cacheTtl` is a parameter of `get()` and
+ * `getWithMetadata()` (checked against Cloudflare's KV binding documentation,
+ * 2026-09-16 -- `readCampaignForAudience` made the same assumption and was
+ * corrected in the same pass). What it said would work is what #233 built: a
+ * single cacheable `get()` of one aggregate key pairing every `active`
+ * campaign's referrer domains with its hero line, read by `readHeroIndex` in
+ * src/lib/tier/hero-index.ts. That key lives in `KV_CACHE` rather than
+ * `KV_CONFIG`, and which binding holds it is what names its writer:
+ * `KV_CONFIG` is authored from the private planning repo (10 §2.3), while
+ * every `KV_CACHE` key is written by code in this repository -- `hero:index`
+ * by the five-minute cron in `scheduled()` below and by nothing else. Not by
+ * this Worker alone, though: the namespace is bound to the MCP Worker too,
+ * which writes `corpus:manifest` into it, so what the binding distinguishes is
+ * authored configuration from derived cache rather than one Worker from the
+ * other. It stayed a different object from the audience->id index
+ * `readCampaignForAudience` contemplates for its own residual `list`: one
+ * aggregate key for the whole corpus here, one key per campaign there.
+ *
+ * WHAT IT COSTS INSTEAD, because the saving is not free. Staleness, bounded by
+ * the cron interval plus the read's `cacheTtl` -- about ten minutes worst case
+ * from an authored change to this band reflecting it, five minutes for the
+ * next cron run plus five for the stalest cached read -- and bounded at ten
+ * minutes only while the cron is running. And a dependency on `scheduled()`
+ * firing at all: the NOT YET PROVEN note in that handler's docblock below is
+ * no longer a caveat on background sweeps alone, because if it never fires the
+ * index is never written, `readHeroIndex` sees a missing key forever, and this
+ * band renders for nobody. A cron that fires and then STOPS fails the other
+ * way: the index key carries no `expirationTtl`, so the last one written
+ * serves indefinitely and a campaign flipped to `retired` keeps rendering its
+ * line here forever -- the pre-#232 failure returning through a dead cron
+ * rather than through a missing gate. ./lib/tier/hero-index's module header
+ * carries the full account of both directions; it is not restated here,
+ * because two copies of one mechanism have to be kept in step sentence by
+ * sentence and this is the copy that would drift.
  *
  * `no-store` ON THE VARIANT ONLY. An intermediary holding the untransformed
  * response and handing it to a referred visitor shows them the default page,
  * which is the safe direction. The reverse -- one visitor's campaign band
  * served from cache to everyone -- is what this header exists to prevent.
  *
- * THE `status` GAP CLOSED 2026-09-16 (#232). This docblock used to list two
- * known gaps, filed rather than fixed by #225, which was a plan correction
- * that deliberately left this file's behavior alone. The first was that this
- * function gated on no `status` at all, so a `retired` campaign kept
- * rendering its hero line to anyone arriving from its referrer domains,
- * forever -- measured 2026-09-15 in the harness with a `status: 'retired'`
- * entry and a matching `Referer` (04 §3, 00 §5 and 09 §3 now say the band is
- * the one reader `status` has). #232 is the change that makes that true, and
- * the filter runs BEFORE the match below rather than after it, which matters
- * because `campaignForReferrer` is first-match-wins over the list it is
- * handed: a post-match gate loses an active campaign that shares a referrer
- * domain with a retired one KV happens to list first, since the retired entry
- * is what the match returns and the gate then bails on the whole response
- * instead of trying the next entry. Verified empirically rather than
- * reasoned through: `tests/campaign-hero.test.ts`'s ordering-trap test was run
- * against a deliberate post-match gate first, and it failed there, before the
- * filter-before-match version below was written.
+ * THE `status` GAP CLOSED 2026-09-16 (#232), AND THE GATE HAS SINCE MOVED
+ * (#233). This docblock used to list two known gaps, filed rather than fixed
+ * by #225, which was a plan correction that deliberately left this file's
+ * behavior alone. The first was that this function gated on no `status` at
+ * all, so a `retired` campaign kept rendering its hero line to anyone arriving
+ * from its referrer domains, forever -- measured 2026-09-15 in the harness
+ * with a `status: 'retired'` entry and a matching `Referer` (04 §3, 00 §5 and
+ * 09 §3 now say the band is the one reader `status` has). #232 is the change
+ * that makes that true; the gate itself now lives in `buildHeroIndex`
+ * (src/lib/tier/hero-index.ts), where a non-`active` campaign's domains are
+ * dropped before they are ever written to the key this function reads. So
+ * `status` still has exactly one reader, one step further from the request.
+ *
+ * The reason it filters BEFORE matching rather than after did not stop being
+ * true when it moved, so it is kept here beside the match it constrains.
+ * Matching is first-match-wins over whatever list it is handed, so a
+ * post-match gate loses an active campaign that shares a referrer domain with
+ * a retired one KV happens to list first: the retired entry is what the match
+ * returns, and the gate then bails on the whole response instead of trying the
+ * next entry. Verified empirically rather than reasoned through:
+ * `tests/campaign-hero.test.ts`'s ordering-trap test was run against a
+ * deliberate post-match gate first, and it failed there, before the
+ * filter-before-match version was written.
  *
  * ONE KNOWN GAP remains, filed rather than fixed here:
  *
@@ -447,14 +491,14 @@ async function withCampaignHero(request: Request, response: Response, env: Env):
     return response;
   }
 
-  // Filter to `active` BEFORE matching, not after -- a post-match gate loses
-  // an active campaign that shares a referrer domain with a retired one KV
-  // lists first. See this function's docblock ("THE `status` GAP CLOSED") for
-  // the full reasoning and the empirical check against a deliberate
-  // post-match gate.
-  const campaigns = (await listCampaigns(env)).filter((c) => c.status === 'active');
-  const campaign = campaignForReferrer(referer, campaigns);
-  if (campaign === null || campaign.heroLine === '') return response;
+  // One cacheable `get` of the derived index, never a walk of the campaign
+  // entries -- including when the key is missing, which renders no band rather
+  // than falling back (see `readHeroIndex`). `null` is no domain matched and
+  // `''` is a matched entry whose authored line is empty; both mean no band
+  // here, and `heroLineForReferrer` keeps them distinct for the caller that
+  // one day needs the difference.
+  const heroLine = heroLineForReferrer(referer, await readHeroIndex(env));
+  if (heroLine === null || heroLine === '') return response;
 
   // ESCAPED. `hero_line` is typed by hand into KV, and `{ html: true }` inserts
   // raw markup -- so a stray `<` in an entry would be injection on this site's
@@ -462,7 +506,7 @@ async function withCampaignHero(request: Request, response: Response, env: Env):
   const band =
     `<section data-campaign-hero class="border-b border-rule bg-accent-ground/10">` +
     `<div class="mx-auto max-w-[1440px] px-5 py-4 lg:px-10">` +
-    `<p class="text-small text-ink">${escapeHtml(campaign.heroLine)}</p>` +
+    `<p class="text-small text-ink">${escapeHtml(heroLine)}</p>` +
     `</div></section>`;
 
   const transformed = new HTMLRewriter()
@@ -679,6 +723,12 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
  * campaign attribution is attached where it is both cheap and actually needed:
  * the high-intent path (Task 3), which already reads campaign config to decide
  * whether an event is high-intent, and which handles single-figure volumes.
+ *
+ * `withCampaignHero` does match referrer domains on the home page, and since
+ * #233 it matches them against a derived, cacheable key rather than against
+ * campaign config -- a different read from the per-request `list` this
+ * constant declines, from a different binding, on one path rather than all of
+ * them.
  */
 const CAMPAIGN_DOMAINS_OFF: readonly string[] = [];
 
@@ -733,27 +783,41 @@ export default {
   },
 
   /**
-   * The daily job (see `triggers.crons` in wrangler.jsonc), dispatched on which
-   * trigger fired.
+   * The scheduled jobs (see `triggers.crons` in wrangler.jsonc), dispatched on
+   * which trigger fired.
    *
-   * 05:47 UTC is the retention sweep (day 6, 06 §2). It is the only one left.
+   * 05:47 UTC is the retention sweep (day 6, 06 §2). The five-minute trigger
+   * refreshes the campaign hero index (#233).
    *
-   * THE SWITCH SURVIVES A SINGLE CASE ON PURPOSE. It used to dispatch two, and
-   * 05:17's résumé-PDF refresh went with the runtime renderer in #186: the PDF
-   * is a pure function of the commit, so a cron asking "has the source moved
-   * since yesterday?" was answering a question git already answers, and
-   * .github/workflows/resume-pdf.yml now renders on the push that moves it.
-   * A second job is likely enough -- and a bare `if` that silently ran the
-   * sweep on any trigger at all is exactly the failure the `default` arm below
-   * exists to prevent -- that collapsing this to one branch would be a change
-   * to make twice.
+   * THE SWITCH SURVIVED A SINGLE CASE ON PURPOSE, AND THE BET PAID. It used to
+   * dispatch two, and 05:17's résumé-PDF refresh went with the runtime renderer
+   * in #186: the PDF is a pure function of the commit, so a cron asking "has
+   * the source moved since yesterday?" was answering a question git already
+   * answers, and .github/workflows/resume-pdf.yml now renders on the push that
+   * moves it. What this paragraph predicted then was that "a second job is
+   * likely enough ... that collapsing this to one branch would be a change to
+   * make twice". #233 is that second job, and it found the branch already
+   * here. The other half of that sentence still stands on its own: a bare `if`
+   * that silently ran the sweep on any trigger at all is exactly the failure
+   * the `default` arm below exists to prevent.
    *
    * `controller.cron` is the trigger's own expression, exactly as written in
-   * wrangler.jsonc -- so that string and that array are one fact spelled in two
-   * files, and the `default` arm is what makes a mismatch loud instead of
+   * wrangler.jsonc -- so those strings and that array are one fact spelled in
+   * two files, and the `default` arm is what makes a mismatch loud instead of
    * silent. Without it, editing a cron expression in config would leave this
    * handler matching nothing and the job would simply stop, with a green deploy
-   * and no error anywhere.
+   * and no error anywhere. Two expressions now, so there are two ways to make
+   * that mistake and the same one arm catches both.
+   *
+   * FIVE MINUTES IS A CHOICE, and its two halves belong next to each other.
+   * What it buys: the interval is the staleness a newly deployed campaign pays
+   * before its band appears, on top of the read's own `cacheTtl` of 300
+   * seconds, so about ten minutes worst case. What it costs: 288 invocations a
+   * day, each one KV `list` through `listCampaigns` plus one `put`, against a
+   * corpus that is empty today (measured 2026-09-08) and is expected to hold
+   * single figures of entries. The `list` did not go away; it moved off the
+   * visitor's request onto a schedule, where it is paid a fixed 288 times a day
+   * instead of once per referred home page arrival.
    *
    * The publishing corpus's embedding refresh (Task 15) ran here too until the
    * `ai` binding it needs turned out to force a remote proxy session on every
@@ -766,7 +830,10 @@ export default {
    * exports from this entry but carry no `scheduled()` example. It should
    * survive the adapter's build by the same `ExportedHandler` rule the others
    * do, but that is inference. Task 16 confirms the deployed Worker actually
-   * lists the cron trigger.
+   * lists the cron trigger. Since #233 a visitor-facing surface rests on that
+   * inference, where before only a background sweep did: a sweep that never
+   * runs leaves rows behind, while an index that is never written means the
+   * campaign hero band renders for nobody, silently and forever.
    */
   scheduled: (controller, env, ctx) => {
     switch (controller.cron) {
@@ -777,6 +844,17 @@ export default {
             // whether the sweep ran at all -- a delete of zero rows and a delete
             // that never happened look identical from outside.
             console.log(`retention: ${JSON.stringify(deleted)}`);
+          }),
+        );
+        return;
+      case '*/5 * * * *':
+        ctx.waitUntil(
+          refreshHeroIndex(env).then((index) => {
+            // The count, for the same reason the sweep above logs its tables: a
+            // write of zero domains and a write that never happened look
+            // identical from outside, and zero is the expected reading while
+            // `KV_CONFIG` holds no campaigns.
+            console.log(`hero-index: ${index.length} domains`);
           }),
         );
         return;

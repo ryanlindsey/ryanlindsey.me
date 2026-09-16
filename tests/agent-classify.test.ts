@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { classifyRequest, signalsFrom } from '../src/lib/agent-intel/classify';
+import { classifyRequest, heroLineForReferrer, signalsFrom } from '../src/lib/agent-intel/classify';
+import type { HeroIndexEntry } from '../src/lib/tier/hero-index';
 
 const base = {
   userAgent: null,
@@ -140,5 +141,59 @@ describe('classifyRequest', () => {
       referer: 'https://example.org/',
       secFetchMode: 'cors',
     });
+  });
+});
+
+describe('heroLineForReferrer', () => {
+  const entry = (over: Partial<HeroIndexEntry> = {}): HeroIndexEntry => ({
+    domain: 'example.test',
+    heroLine: 'Hello from a campaign.',
+    ...over,
+  });
+
+  test("an exact hostname match returns that entry's hero line", () => {
+    const index = [entry({ domain: 'example.test', heroLine: 'Exact match line.' })];
+    expect(heroLineForReferrer('https://example.test/postings/1', index)).toBe('Exact match line.');
+  });
+
+  test('a subdomain of a listed domain matches -- the property a direct key lookup would lose', () => {
+    const index = [entry({ domain: 'example.test', heroLine: 'Subdomain line.' })];
+    expect(heroLineForReferrer('https://jobs.example.test/x', index)).toBe('Subdomain line.');
+  });
+
+  test('a lookalike suffix does not match', () => {
+    const index = [entry({ domain: 'example.test', heroLine: 'Should not appear.' })];
+    expect(heroLineForReferrer('https://notexample.test/x', index)).toBeNull();
+  });
+
+  test('first match wins when two entries claim the same domain', () => {
+    const index = [
+      entry({ domain: 'shared.test', heroLine: 'First.' }),
+      entry({ domain: 'shared.test', heroLine: 'Second.' }),
+    ];
+    expect(heroLineForReferrer('https://shared.test/x', index)).toBe('First.');
+  });
+
+  test('an entry with heroLine "" reports "" rather than null -- distinct from no match', () => {
+    // The caller (`withCampaignHero` in src/worker.ts) treats both "" and
+    // `null` as "no band", but this function must not collapse them itself:
+    // "" means a campaign matched and its authored line is empty, while
+    // `null` means nothing matched at all. Collapsing the two here would
+    // hide that distinction from any future caller that wants it.
+    const index = [entry({ domain: 'example.test', heroLine: '' })];
+    expect(heroLineForReferrer('https://example.test/x', index)).toBe('');
+  });
+
+  test.each([
+    [null, 'a null referrer'],
+    ['', 'an empty referrer'],
+    ['not a url', 'an unparseable referrer'],
+  ])('%s (%s) returns null', (referer, _label) => {
+    const index = [entry()];
+    expect(heroLineForReferrer(referer, index)).toBeNull();
+  });
+
+  test('an empty index returns null for any referrer', () => {
+    expect(heroLineForReferrer('https://example.test/x', [])).toBeNull();
   });
 });

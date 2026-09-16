@@ -117,13 +117,15 @@ test('listCampaigns reads only the campaign prefix and drops unparseable entries
 });
 
 test('listCampaigns is a census: every status comes back, not just `active`', async () => {
-  // #232 put the `active`-only filter at `withCampaignHero`'s call site in
-  // src/worker.ts, deliberately NOT inside listCampaigns itself, because
-  // listCampaigns has a second caller -- queueResumePdfIntent -- that has to
-  // keep seeing every campaign regardless of status (`09 §3` R6: the permanent
-  // rehearsal fixture's `referrer_domains` are matched on every request
-  // carrying a `Referer` for as long as the entry exists in KV, at any
-  // status). This test exists to pin that by intent rather than by accident:
+  // #232 put the `active`-only filter at a caller rather than inside
+  // listCampaigns itself -- at `withCampaignHero`'s call site in src/worker.ts
+  // then, and since #233 in `buildHeroIndex`, which filters what
+  // `refreshHeroIndex` hands it. Deliberately not pushed down, because
+  // queueResumePdfIntent calls listCampaigns too and has to keep seeing every
+  // campaign regardless of status (`09 §3` R6: the permanent rehearsal
+  // fixture's `referrer_domains` are matched on every request carrying a
+  // `Referer` for as long as the entry exists in KV, at any status). This test
+  // exists to pin that by intent rather than by accident:
   // every other test in this file happens to use `staged` fixtures, so a
   // filter pushed down into listCampaigns would fail them too, but only
   // incidentally -- none of them says the census property is the point. This
