@@ -19,9 +19,11 @@
 //
 // WHAT IT PRINTS. `mint` prints the token once, to stdout, and nothing else
 // ever prints it again: the registry stores claims, not the value. Redirect
-// it or copy it; there is no recovery. `list` and `revoke` print no secret
-// material at all and are safe to run in any session -- which is the point of
-// splitting them from `mint`.
+// it or copy it; there is no recovery. A mint whose verification FAILS prints
+// nothing to stdout at all and exits 1, so the value is gone and the row is
+// the only trace -- which is why that branch prints the jti and the revoke
+// command. `list` and `revoke` print no secret material at all and are safe to
+// run in any session -- which is the point of splitting them from `mint`.
 //
 // THE SIGNING KEY CANNOT BE READ BY THIS SCRIPT, and the version of this
 // comment that stood here until 2026-09-10 said the opposite. It said `mint`
@@ -75,7 +77,11 @@
 // The cost of that is divergence -- two copies can drift apart, and the failure
 // reads as a bad token rather than a stale key, which is the misdiagnosis
 // recorded above. `mint` therefore ends by presenting the fresh token to the
-// DEPLOYED Worker and refusing to report success unless it is honored.
+// DEPLOYED Worker at `POST /grant` and refusing to report success unless it
+// comes back honored, with the audience just written. `/grant` rather than
+// `tools/list` for a reason measured on 2026-09-15 and written out at
+// `verify()` below: the public tools answer every caller, so `tools/list`
+// cannot tell a refused token from a good one.
 //
 // WHAT THIS REPLACED, so it is not rebuilt by accident: a `--signer` flag
 // pointing at a temporary `/__sign` route, pasted into the MCP Worker for a
@@ -84,7 +90,9 @@
 // was needed. An endpoint whose whole job is issuing credentials is also a
 // thing to not have, even briefly.
 //
-// Usage:
+// Usage (`op run` substitutes `op://` references that are ALREADY in the
+// environment, so export RLME_TOKEN_SIGNING_KEY as one first, or point
+// `--env-file` at a file holding it; bare `op run` injects nothing):
 //   op run -- node scripts/token.mjs mint --audience <label> --scopes fit,profile --days 30 [--note "..."]
 //   node scripts/token.mjs list
 //   node scripts/token.mjs revoke --jti <jti>
@@ -101,14 +109,27 @@ import { newJti, SCOPES, isScope, mintToken } from '../src/lib/tier/token.ts';
 // cannot have. Both still live in the two wrangler.jsonc files, which is where
 // a binding is declared and the only place either belongs.
 const DB = 'ryanlindsey-me-db';
+// The deployed MCP Worker, which `mint` presents each fresh token to.
+// Public, and hardcoded for the same reason the account id below is: there
+// is no config for this script to read. workers/mcp/src/index.ts and
+// src/pages/llms.txt.ts each already carry their own copy of this origin.
+const MCP_ORIGIN = 'https://mcp.ryanlindsey.me';
 // Public (already committed in both wrangler.jsonc files); hardcoded because this login resolves two accounts and wrangler cannot pick one non-interactively.
 const ACCOUNT_ID = '1b764d090899bf1ee61a8d1e87c10710';
 
 function wrangler(args) {
+  // THE SIGNING KEY IS WITHHELD FROM THE CHILD, and that is not decoration:
+  // this spread otherwise hands RLME_TOKEN_SIGNING_KEY to `npx`, to `wrangler`,
+  // and to anything either of them spawns -- a process tree whose whole job is
+  // talking to the Cloudflare API. `signingKey()` below says the value goes
+  // from the injector to this process and nowhere else, and this line is what
+  // makes that sentence true rather than aspirational. Nothing under `npx`
+  // has any use for it: wrangler authenticates with its own OAuth login.
+  const { RLME_TOKEN_SIGNING_KEY: _withheld, ...childEnv } = process.env;
   return execFileSync('npx', ['wrangler', ...args], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'inherit'],
-    env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID },
+    env: { ...childEnv, CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID },
   });
 }
 
@@ -168,9 +189,12 @@ function signingKey() {
   if (typeof key !== 'string' || key === '') {
     throw new Error(
       'RLME_TOKEN_SIGNING_KEY is not in the environment. Run this under your ' +
-        'password manager, for example `op run -- npm run token -- mint ...`, so ' +
-        'the value reaches this process without ever being typed, stored on disk ' +
-        'or printed.',
+        'password manager so the value reaches this process without ever being ' +
+        'typed, stored on disk or printed. NOTE THAT `op run` ALONE IS NOT ENOUGH: ' +
+        'it substitutes `op://` references already present in the environment, so ' +
+        'either export RLME_TOKEN_SIGNING_KEY as an `op://vault/item/field` ' +
+        'reference first, or point `op run --env-file=<file>` at a file holding ' +
+        'one. Without that this command runs with nothing injected and fails here.',
     );
   }
   return key;
@@ -179,48 +203,80 @@ function signingKey() {
 /**
  * Proves the freshly minted token against the DEPLOYED Worker.
  *
- * The check that the old signer-based `sign()` performed on the way back was
- * that the response looked like a token. This is strictly stronger: it asks the
- * Worker that will actually receive this credential whether it honors it, so
- * a diverged key, a registry row that did not land and a scope typo all fail
- * here, loudly, at the moment they are cheap to fix.
+ * ASKS `POST /grant`, NOT `tools/list`, and that difference is the whole value
+ * of this function. Task 4's spec said `tools/list`; MEASURED against the code
+ * on 2026-09-15, that check cannot fail. `registerTools` registers the eight
+ * public tools for EVERY caller (workers/mcp/src/tools.ts), and a refused
+ * token is not rejected -- workers/mcp/src/index.ts logs `mcp/grant: refused a
+ * presented token` and serves the public tier anyway. So a diverged key would
+ * have answered with eight names, `names.length === 0` would never have fired,
+ * and `mint` would have printed a confident success line over the exact
+ * misdiagnosis this file's header warns about twice.
+ *
+ * `/grant` answers the question this function is actually asking. It returns a
+ * body only when `resolveGrant` produced a live grant, and falls through to the
+ * genuine unrouted 404 for every refusal (workers/mcp/src/grant-context.ts),
+ * so `response.ok` IS "the Worker honored this token". Its `tools` field is
+ * `grantedToolNames(grant)`, the GATED tools this token opens and nothing else,
+ * which is what makes the line printed below worth reading -- and what the
+ * spec's own expected output for this step, `analyze_fit` alone, describes.
+ * `tools/list` could not have produced that line either.
+ *
+ * THE AUDIENCE IS COMPARED TOO, which `tools/list` could not have done at all:
+ * it proves the registry row written a moment ago is the row the Worker read
+ * back, so a row that did not land fails here rather than on first use.
  *
  * A REFUSAL IS NOT FATAL TO THE ROW. The token is already recorded by the time
  * this runs, deliberately: a mint that verified before writing would be a
  * credential nobody can revoke if the write then failed. A failed verification
  * prints the jti so the operator can revoke it.
  */
-async function verify(token) {
-  const response = await fetch('https://mcp.ryanlindsey.me/mcp', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      accept: 'application/json, text/event-stream',
-      authorization: `Bearer ${token}`,
-      'user-agent': 'ryanlindsey-me-token/1',
-    },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
-  });
-  const text = await response.text();
-  const payload =
-    text.startsWith('event:') || text.startsWith('data:')
-      ? (text.split('\n').find((line) => line.startsWith('data:')) ?? '{}').slice(5).trim()
-      : text;
-  let names = [];
+async function verify(token, audience) {
+  let response;
   try {
-    const body = JSON.parse(payload);
-    names = (body.result?.tools ?? []).map((tool) => tool.name).filter(Boolean);
-  } catch {
-    throw new Error(`the deployed Worker answered something unparseable (${response.status})`);
-  }
-  if (names.length === 0) {
+    response = await fetch(`${MCP_ORIGIN}/grant`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'user-agent': 'ryanlindsey-me-token/1' },
+    });
+  } catch (cause) {
+    // UNREACHABLE IS NOT REFUSED, and the two are worth separating because only
+    // the second is evidence about the token. Node's fetch rejects with a bare
+    // "fetch failed" and puts the real reason in `cause`, so it is unwrapped
+    // here rather than dropped -- the signer-based version this replaces named
+    // its likely reason too, and losing that would be a regression.
     throw new Error(
-      'the deployed Worker honored no tools for this token. The likeliest cause is that ' +
-        'RLME_TOKEN_SIGNING_KEY no longer matches the Secrets Store copy the Worker reads: ' +
-        'reconcile the two before minting anything else.',
+      'the deployed Worker could not be reached, so this token is UNVERIFIED rather than ' +
+        `bad: ${cause?.cause?.message ?? cause?.message ?? cause}`,
     );
   }
-  return names;
+  if (response.status === 404) {
+    throw new Error(
+      'the deployed Worker REFUSED this token: `POST /grant` fell through to the 404 that ' +
+        'every refusal returns. The likeliest cause is that RLME_TOKEN_SIGNING_KEY no longer ' +
+        'matches the Secrets Store copy the Worker reads -- reconcile the two before minting ' +
+        'anything else. A registry row that did not land reads identically from out here.',
+    );
+  }
+  if (!response.ok) {
+    throw new Error(
+      `the deployed Worker answered ${response.status} on /grant, which is neither a grant ` +
+        'nor the 404 a refusal returns; this token is UNVERIFIED rather than known bad.',
+    );
+  }
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    throw new Error('the deployed Worker answered 200 on /grant with a body that is not JSON');
+  }
+  if (body.audience !== audience) {
+    throw new Error(
+      `the deployed Worker resolved this token to audience ${JSON.stringify(body.audience)}, ` +
+        `not ${JSON.stringify(audience)} -- the registry row this mint just wrote is not the ` +
+        'row it read back.',
+    );
+  }
+  return { tools: body.tools ?? [], expiresAt: body.expiresAt };
 }
 
 async function mint() {
@@ -256,10 +312,10 @@ async function mint() {
 
   let honored;
   try {
-    honored = await verify(token);
+    honored = await verify(token, audience);
   } catch (error) {
     process.stderr.write(
-      `MINTED BUT NOT VERIFIED: ${claims.jti}. ${error.message}\n` +
+      `MINTED BUT NOT VERIFIED: ${claims.jti}. ${error?.message ?? error}\n` +
         `Revoke it with: node scripts/token.mjs revoke --jti ${claims.jti}\n`,
     );
     process.exitCode = 1;
@@ -271,7 +327,10 @@ async function mint() {
       claims.exp * 1000,
     ).toISOString()}\n`,
   );
-  process.stderr.write(`verified against the deployed Worker: ${honored.join(', ')}\n`);
+  process.stderr.write(
+    `verified against the deployed Worker: ${honored.tools.join(', ') || 'no gated tools'}` +
+      `, audience ${audience}, expires ${honored.expiresAt}\n`,
+  );
   // The token, and only the token, on stdout -- so `> token.txt` captures
   // exactly the thing to hand over and none of the commentary. Everything
   // above is on stderr for that reason, the verification line included.
