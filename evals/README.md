@@ -33,8 +33,8 @@ The token is printed once and cannot be recovered, so a lost one is re-minted
 rather than found. Put both halves in one invocation:
 
 ```bash
-RLME_EVAL_TOKEN="$(npm run --silent token -- mint --audience evals-harness \
-  --scopes evals,fit --days 1 --signer http://127.0.0.1:8799/__sign)" \
+RLME_EVAL_TOKEN="$(op run -- npm run --silent token -- mint --audience evals-harness \
+  --scopes evals,fit --days 1)" \
   npm run evals -- --endpoint https://mcp.ryanlindsey.me
 ```
 
@@ -46,6 +46,8 @@ hold above.
 
 `--silent` is load-bearing: without it `npm run` prepends its own banner lines to
 **stdout**, and the command substitution folds them into the token.
+
+A mint that cannot verify itself prints nothing to stdout and exits 1, and the `VAR="$(…)" command` form does not consult that status, so the run proceeds with an empty `RLME_EVAL_TOKEN`. That is survivable rather than silent: the suites skip loudly and the run exits 2. The `MINTED BUT NOT VERIFIED` line on stderr is the thing to read when it happens, and it carries the jti to revoke.
 
 **Pacing alone adds five minutes to a full run, deliberately.** Cases are paced
 twenty-five seconds apart, and a refused call gets exactly one retry after a
@@ -82,8 +84,10 @@ The token needs the `evals` scope for `chat` and `leak` and the `fit` scope for
 `fit` — mint one carrying both. `evals` opens two things and neither is content:
 admission to `POST /chat`, which this process cannot get past a bot challenge to
 reach, and the gated `judge_answer` tool. See `scripts/token.mjs` for how a mint
-works, which is less obvious than it looks: the signing key is readable only
-inside a Worker.
+works, which is less obvious than it looks: the Cloudflare copy of the signing
+key is readable only inside a Worker, so the mint signs from a second copy that
+`op run` injects and then proves the token against the deployed Worker before
+printing it.
 
 A token minted and then lost to a non-persisting shell is a live, registered
 credential nobody holds. Revoke it rather than leaving it to expire —
