@@ -3,7 +3,7 @@ import { createTestHarness } from 'wrangler';
 import { SITE_HARNESS_WORKERS } from './workers';
 
 // The referrer-adaptive hero (04 §3, 09 §1): one band under the NOW strip,
-// rendered only for a visitor arriving from a campaign's own domain.
+// rendered only for a visitor arriving from an `active` campaign's own domain.
 //
 // PRESENTATION, NOT AUTHORIZATION. A `Referer` is attacker-supplied text and
 // trivially forged, so everything this feature reveals must be harmless to a

@@ -120,10 +120,12 @@ test('listCampaigns is a census: every status comes back, not just `active`', as
   // #232 put the `active`-only filter at `withCampaignHero`'s call site in
   // src/worker.ts, deliberately NOT inside listCampaigns itself, because
   // listCampaigns has a second caller -- queueResumePdfIntent -- that has to
-  // keep seeing every campaign regardless of status (this function's own
-  // docblock). This test exists to pin that by intent rather than by
-  // accident: every other test in this file happens to use `staged` fixtures,
-  // so a filter pushed down into listCampaigns would fail them too, but only
+  // keep seeing every campaign regardless of status (`09 §3` R6: the permanent
+  // rehearsal fixture's `referrer_domains` are matched on every request
+  // carrying a `Referer` for as long as the entry exists in KV, at any
+  // status). This test exists to pin that by intent rather than by accident:
+  // every other test in this file happens to use `staged` fixtures, so a
+  // filter pushed down into listCampaigns would fail them too, but only
   // incidentally -- none of them says the census property is the point. This
   // one does, and covers all three statuses so no single value could pass it
   // by chance either.
