@@ -31,6 +31,18 @@
 // missing key forever, and the campaign hero band never renders for anyone --
 // a visitor-facing surface now resting on the same unproven assumption a
 // retention sweep already carried.
+//
+// A DEAD CRON FAILS THE OTHER WAY TOO, and that direction is the one worth
+// stating because it is not safe. `refreshHeroIndex`'s `put` sets no
+// `expirationTtl` (deliberately: the index has no correct lifetime of its
+// own, only a correct CONTENT, and a key that expired between cron runs would
+// blank the band on a schedule). So a `scheduled()` that stops AFTER having
+// written the key once leaves the last index in place indefinitely, and a
+// campaign flipped to `retired` keeps rendering its hero line forever -- the
+// pre-#232 bug returning through a dead cron rather than through a missing
+// gate. Every staleness figure in this module and in `revoke` in
+// scripts/token.mjs is bounded by the cron interval plus `cacheTtl` only
+// while the cron is running; nothing bounds it if the cron stops.
 
 import { listCampaigns, type CampaignConfig, type CampaignEnv } from './campaigns';
 
@@ -39,10 +51,20 @@ export const HERO_INDEX_KEY = 'hero:index';
 
 /**
  * Passed to `get()` as `cacheTtl`. Workers KV's floor for this parameter is
- * 60 seconds; 300 is chosen so that, alongside the cron's five-minute
+ * 30 seconds; 300 is chosen so that, alongside the cron's five-minute
  * interval, worst-case staleness from a campaign deploy to the band
  * reflecting it is about ten minutes (five for the next cron run plus five
  * for the stalest cached read).
+ *
+ * THE FLOOR SAID 60 UNTIL 2026-09-16, which had read the default as the
+ * minimum. Cloudflare's /kv/api/read-key-value-pairs/ says "The `cacheTtl`
+ * parameter must be an integer greater than or equal to `30`. `60` is the
+ * default." -- two separate numbers, and a changelog entry dated 2026-01-30
+ * records the minimum being reduced from 60 to 30 for both `get()` and
+ * `getWithMetadata()`. Nothing behaves differently, since 300 is valid under
+ * either floor, but the error is the same class this branch spent #225
+ * correcting elsewhere in it: a comment asserting more than the reference it
+ * names supports, which misleads whoever later tunes this interval down.
  */
 export const HERO_INDEX_CACHE_TTL_SECONDS = 300;
 
@@ -120,14 +142,38 @@ function isHeroIndexEntry(value: unknown): value is HeroIndexEntry {
 /**
  * The hot path's read: one `get()`, cached at the edge for
  * `HERO_INDEX_CACHE_TTL_SECONDS` (300 seconds; KV's floor for this parameter
- * is 60). Combined with the cron's five-minute interval, worst-case
- * staleness from a campaign deploy to this read reflecting it is about ten
- * minutes.
+ * is 30, checked 2026-09-16 -- see that constant). Combined with the cron's
+ * five-minute interval, worst-case staleness from a campaign deploy to this
+ * read reflecting it is about ten minutes, and only while the cron is
+ * running: see this module's header for what an index that stops being
+ * refreshed does instead.
  *
  * VALIDATED BEFORE TRUSTED, the same way every reader in `./campaigns` fails
  * closed on an uncertain shape: a value that is not an array becomes `[]`,
  * and any element missing a `string` `domain` or a `string` `heroLine` is
  * dropped rather than passed through malformed.
+ *
+ * THE `try` IS PART OF THAT AND WAS MISSING UNTIL 2026-09-16, which made the
+ * paragraph above false for the one shape it did not cover. `get(...,
+ * { type: 'json' })` throws `SyntaxError` on a value that is not valid JSON,
+ * and nothing above this call catches -- not `withCampaignHero`, not `fetch`
+ * in src/worker.ts -- so the throw escaped the Worker and answered the home
+ * page with an exception on exactly the arrivals this module exists to serve.
+ * `walkCampaigns` in `./campaigns` already guards the same hazard on the
+ * campaign entries and names it in a comment, so the claim of parity here was
+ * written before the code that earns it. Nothing in this repository can write
+ * a malformed value -- `refreshHeroIndex` writes `JSON.stringify` and is the
+ * only writer -- which leaves a hand-run `wrangler kv key put` as the only way
+ * to reach it, and that is the scenario failing closed exists for rather than
+ * a reason to skip the guard.
+ *
+ * IT WARNS, following `walkCampaigns`'s precedent, because every other cause
+ * of an empty index is indistinguishable from outside: a key never written, a
+ * cron that never fired and a malformed value all render no band. The log line
+ * is the only thing that tells the third from the first two. It costs one
+ * warning per matching arrival for as long as the bad value sits there, which
+ * is accepted for the same reason the guard is cheap: nothing but a hand-run
+ * write puts it there in the first place.
  *
  * A MISSING KEY RETURNS `[]` RATHER THAN FALLING BACK TO `listCampaigns`.
  * Falling back would reintroduce exactly the `list` cost this module exists
@@ -141,10 +187,16 @@ function isHeroIndexEntry(value: unknown): value is HeroIndexEntry {
 export async function readHeroIndex(
   env: Pick<HeroIndexEnv, 'KV_CACHE'>,
 ): Promise<HeroIndexEntry[]> {
-  const value = await env.KV_CACHE.get(HERO_INDEX_KEY, {
-    type: 'json',
-    cacheTtl: HERO_INDEX_CACHE_TTL_SECONDS,
-  });
+  let value: unknown;
+  try {
+    value = await env.KV_CACHE.get(HERO_INDEX_KEY, {
+      type: 'json',
+      cacheTtl: HERO_INDEX_CACHE_TTL_SECONDS,
+    });
+  } catch {
+    console.warn(`hero-index: ${HERO_INDEX_KEY} did not parse; rendering no band`);
+    return [];
+  }
   if (!Array.isArray(value)) return [];
   return value.filter(isHeroIndexEntry);
 }

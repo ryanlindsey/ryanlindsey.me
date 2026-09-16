@@ -186,18 +186,27 @@ export async function listCampaigns(env: CampaignEnv): Promise<CampaignConfig[]>
  * differ, so matching on the id would silently resolve the wrong narrative
  * document for any campaign whose audience label was ever renamed.
  *
- * This runs on every `get_application_narrative` call, so it walks with an
- * early-exit `match`: entries after the one wanted are never fetched or
+ * This has TWO runtime callers, counted 2026-09-16: the
+ * `get_application_narrative` tool (workers/mcp/src/gated.ts) and
+ * `POST /grant` (workers/mcp/src/grant-context.ts). Either way it walks with
+ * an early-exit `match`: entries after the one wanted are never fetched or
  * parsed, only earlier ones (plus the match itself) pay the get+parse cost.
  * At least one KV `list` call -- the walk's first page -- still happens on
  * every call regardless of where the match falls, and that residual is left
  * alone here. An audience->id index would require the private authoring repo
  * to write a second key per campaign, a change this repo cannot make or
- * verify. DECIDED 2026-09-16 (#233): it stays unbuilt.
- * `get_application_narrative` is grant-gated and runs at single-figure
- * volume, so the residual `list` costs little on a path few callers ever
- * reach. The decision can be reopened if day 6's `/ops` read patterns ever
- * show volume that changes this trade; nothing has shown that yet.
+ * verify. DECIDED 2026-09-16 (#233): it stays unbuilt. Both callers
+ * are grant-gated and run at single-figure volume, so the residual `list`
+ * costs little on a path few callers ever reach. `/grant` is the busier of the
+ * two -- the site asks it on every token-bearing `/fit` load and every `/fit`
+ * run (src/lib/fit/client.ts), plus once per `npm run token mint`
+ * (scripts/token.mjs) -- but reaching it at all takes a token minted by hand
+ * for one audience, which is what keeps it the same order of volume. This
+ * sentence named only the tool until the count above was made, and the
+ * conclusion survived the correction: the sharper argument below does not rest
+ * on volume at all. The decision can be reopened if day 6's `/ops` read
+ * patterns ever show volume that changes this trade; nothing has shown that
+ * yet.
  *
  * CORRECTED 2026-09-16 (#225): this paragraph used to offer a `cacheTtl` as
  * the cheaper alternative to that index, "trading configuration-propagation

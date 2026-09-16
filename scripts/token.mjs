@@ -380,7 +380,15 @@ function list() {
  * #232 (04 §3). Not instantly, since #233: the band matches against an index
  * a cron derives every five minutes and reads with a five-minute `cacheTtl`,
  * so a retirement takes about ten minutes to reach it rather than landing on
- * the next request. An earlier version of this comment said `status` was not a
+ * the next request -- and about ten minutes only while that cron is running.
+ * The index key carries no `expirationTtl`, so a `scheduled()` that stops
+ * after having written it once leaves the last index serving forever and the
+ * retirement never lands at all (src/lib/tier/hero-index.ts's header). Worth
+ * knowing HERE, of the two places it is written down, because this is where
+ * someone decides whether a retirement has taken effect: revocation is a
+ * registry fact and is immediate, while the band's half of the retirement
+ * depends on a cron whose firing is still NOT YET PROVEN in src/worker.ts.
+ * An earlier version of this comment said `status` was not a
  * kill switch at all. That was true of the code on the day it was written,
  * when the field had no reader anywhere, and it stopped being true the moment
  * the hero gained one.

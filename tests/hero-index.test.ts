@@ -217,6 +217,20 @@ test('readHeroIndex: a value that is not an array returns []', async () => {
   expect(await readHeroIndex(cache)).toEqual([]);
 });
 
+test('readHeroIndex: a value that is not valid JSON returns [] rather than throwing', async () => {
+  // `get(..., { type: 'json' })` THROWS `SyntaxError` on a value that is not
+  // valid JSON, and nothing above `readHeroIndex` catches -- so before the
+  // guard this pins, the home page answered an exception for every arrival
+  // carrying a cross-origin `Referer`. Written through `put` rather than
+  // through `fakeKvCache`'s entries map because that map `JSON.stringify`s
+  // what it is given, which can only ever produce parseable values; `put`
+  // stores the raw string, which is what the real binding does and what makes
+  // the fake's `get` throw here exactly as KV's would.
+  const cache = fakeKvCache();
+  await cache.KV_CACHE.put(HERO_INDEX_KEY, '{ not json');
+  expect(await readHeroIndex(cache)).toEqual([]);
+});
+
 test('readHeroIndex: an array with one good entry and one malformed element returns only the good entry', async () => {
   const cache = fakeKvCache({
     [HERO_INDEX_KEY]: [
