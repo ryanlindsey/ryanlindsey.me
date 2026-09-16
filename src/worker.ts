@@ -447,18 +447,11 @@ async function withCampaignHero(request: Request, response: Response, env: Env):
     return response;
   }
 
-  // Filter to `active` BEFORE matching, not after: `campaignForReferrer` is
-  // first-match-wins over the list it is handed (its own docblock), so a
-  // post-match gate -- `if (campaign.status !== 'active') return response` --
-  // loses an active campaign that shares a referrer domain with a retired one
-  // KV happens to list first. The retired entry is what the match would
-  // return, the gate then bails on the WHOLE response, and the active
-  // campaign's band never renders even though it exists. Filtering first
-  // removes the retired entry from the list, so the match can only ever
-  // land on an active one. Demonstrated empirically, not just reasoned: with a
-  // deliberate post-match gate in place, `tests/campaign-hero.test.ts`'s
-  // ordering-trap test failed (measured 2026-09-16); with the filter moved
-  // here, it passes.
+  // Filter to `active` BEFORE matching, not after -- a post-match gate loses
+  // an active campaign that shares a referrer domain with a retired one KV
+  // lists first. See this function's docblock ("THE `status` GAP CLOSED") for
+  // the full reasoning and the empirical check against a deliberate
+  // post-match gate.
   const campaigns = (await listCampaigns(env)).filter((c) => c.status === 'active');
   const campaign = campaignForReferrer(referer, campaigns);
   if (campaign === null || campaign.heroLine === '') return response;

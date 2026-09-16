@@ -59,16 +59,23 @@ function str(value: unknown): string | null {
  * hero gates on it instead, and #232 is the change that makes that true:
  * `withCampaignHero` in src/worker.ts filters `listCampaigns`'s result to
  * `status === 'active'` before matching a referrer against it, so `status`
- * has exactly one reader again and the "keep a `retired` typo from serving"
- * reasoning two paragraphs up now describes real behavior rather than a gap
- * #225 had filed and left open.
+ * has exactly one reader again. What the paragraph immediately above now
+ * describes for real is its `active` half -- "which would render campaign
+ * content for a value nobody meant" -- because that equality check is
+ * exactly the code a bad `active` would misfire against, if FAILS CLOSED were
+ * not already refusing anything outside the three-value set first. Its
+ * `retired`-typo half does NOT move with this change: `readCampaignForAudience`,
+ * which resolves the preload and the gated narrative document, matches on
+ * `token_audience` alone and reads `status` nowhere, so a `retired` campaign
+ * keeps being served there exactly as it did before #232 -- that harm still
+ * lives only on the surfaces that read nothing of this field.
  *
- * The strict parse is kept regardless of which of those is true: an entry is
- * typed by hand into KV, a typo in the label is the likeliest mistake in the
- * file, and rejecting the entry makes it visible rather than letting the
- * campaign run with a status nobody can read. What it costs is that such a
- * typo now takes out the preload and the narrative document too, which is the
- * trade being made deliberately rather than inherited.
+ * The strict parse is kept even so: an entry is typed by hand into KV, a typo
+ * in the label is the likeliest mistake in the file, and rejecting the entry
+ * makes it visible rather than letting the campaign run with a status nobody
+ * can read. What it costs is that such a typo now takes out the preload and
+ * the narrative document too, which is the trade being made deliberately
+ * rather than inherited.
  *
  * The stored keys are snake_case, matching 00 §5's own notation, because an
  * operator authors these by hand in the private repo and the doc is what they

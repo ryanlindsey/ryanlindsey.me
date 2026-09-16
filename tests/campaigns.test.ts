@@ -116,6 +116,32 @@ test('listCampaigns reads only the campaign prefix and drops unparseable entries
   expect(found.map((c) => c.id)).toEqual(['one']);
 });
 
+test('listCampaigns is a census: every status comes back, not just `active`', async () => {
+  // #232 put the `active`-only filter at `withCampaignHero`'s call site in
+  // src/worker.ts, deliberately NOT inside listCampaigns itself, because
+  // listCampaigns has a second caller -- queueResumePdfIntent -- that has to
+  // keep seeing every campaign regardless of status (this function's own
+  // docblock). This test exists to pin that by intent rather than by
+  // accident: every other test in this file happens to use `staged` fixtures,
+  // so a filter pushed down into listCampaigns would fail them too, but only
+  // incidentally -- none of them says the census property is the point. This
+  // one does, and covers all three statuses so no single value could pass it
+  // by chance either.
+  const env = kv({
+    [`${CAMPAIGN_PREFIX}a-staged`]: toStored(
+      fixture({ id: 'a-staged', tokenAudience: 'a-staged', status: 'staged' }),
+    ),
+    [`${CAMPAIGN_PREFIX}b-active`]: toStored(
+      fixture({ id: 'b-active', tokenAudience: 'b-active', status: 'active' }),
+    ),
+    [`${CAMPAIGN_PREFIX}c-retired`]: toStored(
+      fixture({ id: 'c-retired', tokenAudience: 'c-retired', status: 'retired' }),
+    ),
+  });
+  const found = await listCampaigns(env);
+  expect(found.map((c) => c.id).sort()).toEqual(['a-staged', 'b-active', 'c-retired']);
+});
+
 test('readCampaignForAudience matches on token_audience, not on id', async () => {
   // They are separate fields in 00 §5 and they are allowed to differ. Matching
   // on the id would resolve the wrong narrative document for any campaign
