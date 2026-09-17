@@ -98,9 +98,17 @@ export const SEARCH_CACHE_TTL_SECONDS = 86_400;
  * built from the query alone: nothing in the key names the index, the instance
  * configuration or the retrieval options, so a query searched before the
  * deploy keeps serving its old answer for up to `SEARCH_CACHE_TTL_SECONDS`
- * and looks exactly like a change that did not ship. Observed directly on
- * #148: `/search?q=turnstile` served pre-reranking results after the instance
- * flag had flipped.
+ * and looks exactly like a change that did not ship.
+ *
+ * #148 REPORTED HAVING SEEN THAT, AND ITS EVIDENCE DOES NOT SHOW IT. That
+ * issue read `/search?q=turnstile` still serving pre-reranking results after
+ * the instance flag flipped as the cache holding a stale answer. It cannot
+ * have been: the handler was sending `reranking: { enabled: false }` at the
+ * time, and that request value wins, so a completely cold query would have
+ * answered the same way. What it actually demonstrated is the override this
+ * change exists to remove. The bump below is still right -- v1 entries really
+ * do hold pre-reranking answers once this deploys -- but it rests on the key
+ * being the query alone rather than on that observation.
  *
  * v1 -> v2 (#249): reranking turned on for the call in
  * workers/mcp/src/search.ts. Same `SearchResult` fields, different results in
@@ -108,9 +116,12 @@ export const SEARCH_CACHE_TTL_SECONDS = 86_400;
  * v1 cached sit between 0.40 and 0.56.
  *
  * WHAT THIS CANNOT COVER is the instance moving underneath a deploy that
- * changes no file here. `reranking` is instance configuration as well as a
- * request option, and `wrangler ai-search update` leaves nothing in this
- * repository to bump. That lag is the one above, bounded by the TTL, and the
+ * changes no file here: `reranking_model`, `embedding_model`, the crawl's
+ * chunking, or simply the index's contents after a sync. Each changes what a
+ * query answers and `wrangler ai-search update` leaves nothing in this
+ * repository to bump. Not `reranking` itself, which is the one that used to
+ * belong on this list and no longer does: #249 pins it in the request, and the
+ * request value wins. That lag is the one above, bounded by the TTL, and the
  * epic's alternative was a cache keyed on a version the instance does not
  * publish.
  */

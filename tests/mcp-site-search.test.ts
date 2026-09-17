@@ -157,8 +157,16 @@ describe('the pure half: normalization and the cache key', () => {
     // verification that issue asks for would read as a failure. Observed
     // directly on #148: `/search?q=turnstile` served pre-reranking results
     // after the instance flag flipped.
+    //
+    // PINNED TO A LITERAL, and going red on the next legitimate bump is the
+    // point rather than a defect: this repo pins `SEARCH_CACHE_TTL_SECONDS`
+    // the same way. Whoever bumps it updates this line and reads the comment
+    // above while doing so. The key prefix derives from the constant, so only
+    // this one line carries the number.
     expect(SEARCH_CACHE_VERSION).toBe(2);
-    expect(await searchCacheKey('turnstile')).toMatch(/^search:v2:/);
+    expect(await searchCacheKey('turnstile')).toMatch(
+      new RegExp(`^search:v${SEARCH_CACHE_VERSION}:`),
+    );
   });
 });
 
@@ -530,51 +538,89 @@ describe('GET /search', () => {
     expect(await handlerSource()).not.toContain('verifyTurnstile');
   });
 
-  test('reranking is asked for, and the retrieval type stays unasked', async () => {
+  test('reranking is asked for, with nothing else pinned inside it', async () => {
     // STRUCTURAL, because the live branch cannot execute here: under
     // `SEARCH_ENGINE: 'stub'` nothing in this suite reaches the binding, so an
-    // edit that turned reranking back off, or that re-added
-    // `retrieval_type: 'hybrid'` against an instance whose `index_method` has
-    // keyword indexing off, would ship green either way.
+    // edit that turned reranking back off would ship green.
     //
-    // THE ASSERTION ON RERANKING INVERTED IN #249, AND THE REASON IS WORTH
-    // KEEPING. It read `reranking: { enabled: false }` from #146 until #148
-    // measured the instance: without reranking `durable objects` returns
-    // nothing while sitting in prose on five pages, and `hyperdrive` returns
-    // five results while appearing on none. The request value wins over the
-    // instance setting, so the instance flag #148 turned on did not reach this
-    // page until this line changed. What the assertion guards is now the
-    // opposite of what it guarded, and both directions are a silent shipping
-    // failure rather than a loud one.
-    const source = await handlerSource();
-    expect(source).toContain('reranking: { enabled: true }');
-    expect(source).not.toContain('retrieval_type');
+    // THIS ASSERTION INVERTED IN #249, AND THE REASON IS WORTH KEEPING. It read
+    // `reranking: { enabled: false }` from #146 until #148 measured the
+    // instance: without reranking `durable objects` returns nothing while
+    // sitting in prose on five pages, and `hyperdrive` returns five results
+    // while appearing on none. The request value wins over the instance
+    // setting, so the flag #148 turned on did not reach this page until that
+    // line changed. What this guards is now the opposite of what it guarded,
+    // and both directions ship green rather than loud.
+    //
+    // THE WHOLE OBJECT, NOT `toContain('reranking')`, and the difference is the
+    // review finding that caught it. `AiSearchOptions` gives the per-request
+    // `reranking` a `model` and a `match_threshold` besides `enabled`, so a
+    // pinned model is written `{ enabled: true, model: '...' }` INSIDE this
+    // object. A guard reading for the instance's spelling, `reranking_model`,
+    // never sees it. Matching the literal exactly is what rejects both.
+    expect(await retrieveCallSource()).toMatch(/reranking:\s*\{\s*enabled:\s*true\s*\}/);
   });
 
   test('query rewriting stays off, which reranking being on does not change', async () => {
     // The other model-backed option, and #148 moved nothing about it. It is
     // the wrong thing to do to somebody who typed a literal term, and the
-    // literal term is exactly what reranking is now here to get right.
-    expect(await handlerSource()).toContain('query_rewrite: { enabled: false }');
+    // literal term is exactly what reranking is now here to get right. Same
+    // whole-object match, for the same reason: `query_rewrite` also takes a
+    // `model`.
+    expect(await retrieveCallSource()).toMatch(/query_rewrite:\s*\{\s*enabled:\s*false\s*\}/);
   });
 
-  test('no reranking model is pinned, so the instance owns which one runs', async () => {
-    // The same argument the omitted `retrieval_type` rests on. `reranking_model`
-    // is empty on the instance and the default applies; naming one here would
-    // keep answering with one model while the instance moved to another and
-    // nothing would say so.
-    expect(await handlerSource()).not.toContain('reranking_model');
+  test('the retrieval type stays unasked, so the instance decides it', async () => {
+    // #145 measured hybrid unusable on this account, and the live instance is
+    // `{ vector: true, keyword: false }`. Error 7070 rejects a `retrieval_type`
+    // the instance's `index_method` does not support, so re-adding
+    // `'hybrid'` here would refuse every search; pinning `'vector'` would keep
+    // answering pure-vector searches from a hybrid index the day the beta
+    // defect is fixed.
+    //
+    // NARROWED TO THE CALL, which is what makes this negative honest. The
+    // prose around this call discusses `retrieval_type` at length, and a
+    // file-wide scan would be satisfied or broken by a comment.
+    expect(await retrieveCallSource()).not.toContain('retrieval_type');
   });
 });
 
 /**
- * The live branch under `SEARCH_ENGINE: 'stub'` is unexecuted in every suite,
- * so the three assertions that guard it read the source instead. Narrowed to
- * the body of `retrieve` on purpose: a match anywhere in the file would let a
- * comment mentioning `retrieval_type` satisfy the negative assertion above.
+ * The handler's whole source, with whole-line comments stripped, for the one
+ * assertion that is genuinely about the whole file: that `verifyTurnstile`
+ * appears nowhere in it.
+ *
+ * THE STRIPPER IS NOT THE NARROWING, and its own docblock used to imply it
+ * was. It said this was "narrowed to the body of `retrieve`", which it never
+ * did -- it reads the file and drops lines that start with `//`, `*` or `/**`.
+ * That held only as long as no comment in the file mentioned a guarded token
+ * on a line shaped some other way, which #249's rewritten comments do not
+ * respect: they name `retrieval_type`, `reranking_model` and `reranking.model`
+ * in prose. `retrieveCallSource` below is the real narrowing, and the option
+ * assertions use it.
  */
 async function handlerSource(): Promise<string> {
   const { readFile } = await import('node:fs/promises');
   const source = await readFile('workers/mcp/src/search.ts', 'utf8');
   return source.replace(/^\s*(\/\/.*|\*.*|\/\*\*?)$/gm, '');
+}
+
+/**
+ * Just the `env.AI_SEARCH.search({ ... })` call, so an assertion about what
+ * this Worker ASKS THE INDEX FOR cannot be satisfied or broken by a sentence
+ * written about it. Sliced rather than stripped: the comment above that call
+ * runs to well over a hundred lines and discusses every option by name.
+ *
+ * Throws rather than returning `''` on a miss, because an empty string would
+ * pass every negative assertion in this file and fail every positive one for a
+ * reason that has nothing to do with what is being tested.
+ */
+async function retrieveCallSource(): Promise<string> {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile('workers/mcp/src/search.ts', 'utf8');
+  const start = source.indexOf('await env.AI_SEARCH.search(');
+  if (start === -1) throw new Error('the AI_SEARCH call moved; this helper needs updating');
+  const end = source.indexOf('});', start);
+  if (end === -1) throw new Error('the AI_SEARCH call is unterminated; this helper needs updating');
+  return source.slice(start, end + 3);
 }

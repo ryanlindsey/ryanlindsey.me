@@ -110,8 +110,8 @@ const CAMPAIGN_DOMAINS_OFF: readonly string[] = [];
  * this key, so a value of the wrong shape is a leftover from an older contract
  * rather than an attack, but `results.length` on a non-array is `undefined` in
  * the datapoint and an unrenderable body on the page. `SEARCH_CACHE_VERSION`
- * is what makes a deliberate shape change safe; this is what makes an
- * accidental one harmless.
+ * is what makes a deliberate change to the cached value safe, its shape or its
+ * content; this is what makes an accidental one harmless.
  *
  * ONLY THE RESULTS ARRAY IS STORED, never the answer object. The query is put
  * back on the response by the caller, so no value in KV carries the text
@@ -198,7 +198,8 @@ async function resultsFor(
  * `match_threshold` alone would allow and the reranker's score replaces the
  * cosine score on the way out. ("Pool" rather than the term the retrieval
  * literature uses for it, because that term is one of the words the static
- * scan in tests/ bans from every shipped file, and this file is one.) And it
+ * scan in tests/ bans from every shipped file without an entry in its
+ * exception register, and this file has none.) And it
  * is LEXICAL in a way the embedding is not, which is why it repairs exact
  * terms and also why `skip to content` went from five weak matches to eight
  * confident ones. That contamination belongs to the crawl, and a
@@ -214,28 +215,54 @@ async function resultsFor(
  * Somebody searching a half-remembered phrase is worse off than they were, and
  * that handoff link is the only thing catching them.
  *
- * NO `reranking_model`, for the reason the omitted `retrieval_type` above
- * rests on. The instance carries an empty one and the default applies; naming
- * a model here would keep answering with one while the instance moved to
- * another and nothing would say so.
+ * NOTHING ELSE INSIDE `reranking`, for the reason the omitted `retrieval_type`
+ * above rests on. The per-request object takes a `model` and a
+ * `match_threshold` besides `enabled` (see `AiSearchOptions` in
+ * worker-configuration.d.ts), and neither is set. The instance's
+ * `reranking_model` is empty so its default applies, and pinning a model in
+ * this call would keep answering with one while the instance moved to another
+ * with nothing to say so. Worth keeping the two names straight while reading
+ * this: `reranking_model` is the INSTANCE field and `reranking.model` is the
+ * REQUEST one, so a guard written against the instance's spelling would not
+ * see a model pinned here at all.
  *
- * `match_threshold` is left at its documented default of 0.4, which is also
- * what the instance carries. #148 swept it at 0.4, 0.3 and 0.2 and found the
- * answers identical query for query and score for score under reranking: the
- * reranker applies its own internal cut and the configured value never binds.
- * It stays at 0.4 because it is inert here, not because 0.4 was measured to be
+ * `match_threshold` IS TWO FIELDS NOW, AND ONLY ONE OF THEM WAS SWEPT.
+ * `retrieval.match_threshold` is the cosine cut and is left unset, so the
+ * instance's 0.4 applies; `reranking.match_threshold` is a separate per-request
+ * value documented at the same default, and is also left unset. #148 swept the
+ * instance's `score_threshold` at 0.4, 0.3 and 0.2 and found the answers
+ * identical query for query and score for score once reranking was on, which
+ * is the reranker applying its own cut downstream of the one being moved. It
+ * stays at 0.4 because it is inert there, not because 0.4 was measured to be
  * the right number.
  *
- * `max_num_results: 20` IS SERVED NOW AND WAS NOT BEFORE. The binding honors
- * per-request options, which is the whole reason the reranking line below
- * reaches the index at all; wrangler's CLI flags do not, and #145 read that
- * asymmetry as an API limitation when it belongs to the CLI. The instance
- * carried `max_num_results: 10` when #148 measured it, quietly serving half of
- * what #146 asked for here, and #249 raises it to 20 with
- * `wrangler ai-search update` so the two agree. THAT VALUE LIVES IN NO FILE IN
- * THIS REPOSITORY, which is exactly why it is written down in one: nothing in
- * a diff, a test or a deploy will tell the next reader what the instance
- * carries, and `wrangler ai-search get` is the only thing that will.
+ * `max_num_results: 20` AND THE INSTANCE NOW AGREE, WHICH IS NOT THE SAME AS
+ * THE REQUEST WINNING. Two per-request options in this one call were measured
+ * and they did not behave alike: `reranking` here overruled an instance that
+ * had it ON (that is the whole of #249), while #148 found the instance's
+ * `max_num_results: 10` serving in front of the `20` this call has asked for
+ * since #146. So "the binding honors per-request options" is the documented
+ * rule and not a safe assumption per option, and the committed type says only
+ * "Maximum number of results to return (1-50). Default 10" without saying what
+ * an instance value does to it. #249 raised the instance to 20 rather than
+ * leaving the question open. Separately, wrangler's CLI flags are ignored
+ * outright; #145 read that as an API limitation when it belongs to the CLI, so
+ * any measurement taken through `wrangler ai-search search` reflects the
+ * instance rather than the flag passed.
+ *
+ * THE INSTANCE VALUE LIVES IN NO FILE IN THIS REPOSITORY, which is exactly why
+ * it is written down in one: nothing in a diff, a test or a deploy will tell
+ * the next reader what the instance carries.
+ *
+ * ASK `wrangler ai-search list`, NOT `wrangler ai-search get`, AND THAT IS
+ * MEASURED. The raise above was applied in the dashboard on 2026-09-17 at
+ * about 23:04 UTC. `list` reported `max_num_results: 20` and the new
+ * `modified_at` immediately; `get --json` went on reporting `10` and the
+ * PREVIOUS `modified_at` on two calls after that, so it is serving a cached
+ * copy rather than lagging by a moment. #148 verified its own instance change
+ * by diffing `get --json` before and after, which happened to be a field that
+ * had already propagated; on a fresh write that method reports no change and
+ * looks exactly like a write that failed.
  *
  * `return_on_failure: false` IS THE MOST IMPORTANT LINE IN THIS CALL, and the
  * default is the trap. The binding's own committed type says of it: "If true
@@ -380,9 +407,9 @@ export async function handleSiteSearch(request: Request, env: McpEnv): Promise<R
   // `search_writing` an `inference` tool, and #249 put reranking behind this
   // same call, so a cache miss now runs a second model as well. Its own bucket
   // name rather than a tool's, so a visitor searching cannot starve an agent's
-  // `search_writing` allowance or the other way round. The `null` grant is not an oversight either: this surface is
-  // public and holds no token, so the address is the only thing there is to
-  // key on.
+  // `search_writing` allowance or the other way round. The `null` grant is not
+  // an oversight either: this surface is public and holds no token, so the
+  // address is the only thing there is to key on.
   //
   // A DURABLE OBJECT AND NOT THE PLATFORM `ratelimits` BINDING. That binding
   // was configured correctly, deployed correctly and enforced nothing --

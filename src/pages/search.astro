@@ -44,10 +44,11 @@ import {
  * NO TURNSTILE, AND `/chat` IS WHY IT IS FINE. A bot check on a plain `GET`
  * page breaks linking, sharing and reloading, which is the entire premise
  * above. This page renders and spends nothing itself, and the search behind it
- * is cheap rather than free: an embedding per uncached query, and since #249
- * a reranker pass as well, at about two cents per thousand searches all in.
- * An earlier version of this sentence said the page spent nothing on
- * inference, which read as though there were nothing to protect at all. The
+ * is cheap rather than free: an embedding per uncached query, and since #249 a
+ * reranker pass as well, the reranker costing about two cents per thousand
+ * searches and the embedding coming on top of that. An earlier version of this
+ * sentence said the page spent nothing on inference, which read as though
+ * there were nothing to protect at all. The
  * limiter on the far side is what bounds abuse, the day-long cache is what
  * keeps a loop off the index, and anybody whose search was really a question
  * is handed to `/chat`, which has the bot check, the retention policy and the
