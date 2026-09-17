@@ -86,10 +86,10 @@ work:
     endDate: 2021-02
     highlights:
       - >-
-        Managed 12 to 19 engineers, from junior through staff level, across
+        Managed up to 19 engineers, from junior through staff level, across
         several cross-functional product delivery teams on a consumer platform
-        serving more than 8 million monthly active users. Reports spanned
-        backend, front-end, iOS, and Android.
+        used by millions of people every month. Reports spanned backend,
+        front-end, iOS, and Android.
       - >-
         Decoupled deployment from feature release, so the product and
         go-to-market teams could control launch timing independently of
@@ -106,18 +106,22 @@ work:
         they were handed.
       - >-
         Led image processing pipeline work spanning millions of unique assets,
-        improving engineering efficiency, vendor costs, application performance, and
-        improved inter-service communication for business-critical APIs with a
-        publish-subscribe message queue pattern.
+        improving engineering efficiency, vendor costs, and application
+        performance. Improved inter-service communication for business-critical
+        APIs with a publish-subscribe message queue pattern.
       - >-
         Sat several hundred interviews and grew the engineering team by dozens
         across multiple growth cycles. Promoted a dozen or more, a few onto the
         management track and the majority further along the technical one.
       - >-
+        As one of the company's first engineering managers, helped shape its
+        performance management program, iterated on it with HR for nearly a
+        decade, and coached other managers on running it, one-to-ones, and
+        situational management.
+      - >-
         Founded and ran a public monthly engineering meetup that passed 250
-        members inside a year, coached other engineering managers on one-to-one
-        practice and situational management, and built a repeatable onboarding
-        process for new engineers.
+        members inside a year, and built a repeatable onboarding process for
+        new engineers.
   - name: Weedmaps
     position: Manager, Front End Engineering
     location: Irvine, CA
@@ -159,13 +163,9 @@ work:
     endDate: 2016-02
     highlights:
       - >-
-        Architected and implemented user-interface features for the company's
-        e-commerce, marketing, and customer support websites, serving a global
-        customer base.
-      - >-
-        Drove the adoption of a new UI component library and design language
-        across those applications, working closely with the design and
-        marketing departments.
+        Architected UI features for the company's e-commerce, marketing, and
+        customer support websites, and drove adoption of a new UI component
+        library and design language with the design and marketing departments.
   - name: Innocean Worldwide
     position: Sr. Front End Developer
     location: Huntington Beach, CA
@@ -173,13 +173,9 @@ work:
     endDate: 2011-10
     highlights:
       - >-
-        Led development of interactive experiences for Hyundai USA, including
-        hyundaiusa.com, a set of microsites, Facebook games, and a custom
-        YouTube channel built entirely in HTML5, CSS3, and JavaScript.
-      - >-
-        Worked with the creative team from the conceptual phase onward,
-        providing technical advisement, research, and prototyping. Also built
-        and maintained the agency's own website.
+        Led interactive development for Hyundai USA, including hyundaiusa.com,
+        microsites, Facebook games, and a custom YouTube channel, working with
+        the creative team from concept onward.
   - name: Y&R Brands / Wunderman
     position: Front End Developer
     location: Irvine, CA
@@ -187,14 +183,9 @@ work:
     endDate: 2011-02
     highlights:
       - >-
-        Delivered award-winning interactive experiences for Land Rover,
-        Southwest Airlines, Toshiba, and Hilton, and provided technical
-        assessment during the conceptual phase of new work.
-      - >-
-        Recognized with Lester Wunderman awards for the Southwest Airlines "A
-        new form of free media" campaign (2009) and the Toshiba "Gamer
-        Preparedness" (2009) and "Boring vs Normal" (2008) campaigns, and with
-        a 38th Annual Creativity Award for Toshiba "Fusion Finish" (2008).
+        Delivered interactive work for Land Rover, Southwest Airlines, Toshiba,
+        and Hilton, recognized with Lester Wunderman awards (2008, 2009) and a
+        38th Annual Creativity Award (2008).
   - name: Freelance
     position: Web design & development
     location: Orange County, CA
