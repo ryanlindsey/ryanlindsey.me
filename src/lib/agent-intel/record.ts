@@ -26,8 +26,8 @@ export const AE_BLOB_FIELDS = [
   'status_class',
 ] as const;
 
-/** Where the request was served: the site, the MCP endpoint, chat, or /fit. */
-export type Surface = 'site' | 'mcp' | 'chat' | 'fit';
+/** Where the request was served: the site, the MCP endpoint, chat, /fit or /search. */
+export type Surface = 'site' | 'mcp' | 'chat' | 'fit' | 'search';
 
 export interface AgentEvent {
   classification: Classification;
@@ -105,5 +105,79 @@ export function recordAgentEvent(env: RecorderEnv, event: AgentEvent): void {
     env.AE.writeDataPoint(dataPointFor(event));
   } catch (error) {
     console.error('agent-intel: the datapoint could not be written', error);
+  }
+}
+
+/**
+ * The fields a `/search` row APPENDS to the six above, at `blob7` and at
+ * `doubles[2]` and `doubles[3]` (issue #146, epic #143).
+ *
+ * APPENDED, NEVER INSERTED, which is the rule `AE_BLOB_FIELDS` states at the
+ * top of this file and the reason this is a separate array rather than three
+ * more entries in that one. `blob1` through `blob6` mean exactly what they
+ * meant before on a search row too, so every /ops query keeps working over a
+ * dataset that now carries one more kind of row: the sitewide p50 reads
+ * `double2` and gets this request's latency, the agent breakdown reads `blob1`
+ * and gets an agent class, and the route-class breakdown reads `blob3` and gets
+ * a real route class. A second dataset was the alternative and was rejected for
+ * that reason, since it would have split the p50 rather than widened it.
+ *
+ * `search_type` is the FILTER THAT WAS ASKED FOR rather than the type of any
+ * result, and it is `all` when the caller passed none. Four values, which is
+ * what keeps it cheap to group by.
+ *
+ * NOTHING HERE IS THE QUERY, and that is the whole promise this surface makes.
+ * A result count, a cache flag, a latency and a closed-set filter name say how
+ * the feature is performing and say nothing about who asked what. /ai-policy
+ * needs no new sentence and there is no retention entry, because there is
+ * nothing retained to describe.
+ */
+export const AE_SEARCH_BLOB_FIELDS = ['search_type'] as const;
+
+/** `doubles[2]` and `doubles[3]`. `doubles[0]` and `doubles[1]` are unchanged. */
+export const AE_SEARCH_DOUBLE_FIELDS = ['result_count', 'cache_hit'] as const;
+
+export interface SearchEventFields {
+  /** How many results the caller was handed, after the type filter. */
+  results: number;
+  /** Whether the answer came from KV rather than from the index. */
+  cacheHit: boolean;
+  /** The filter the caller asked for, or `null` for an unfiltered search. */
+  type: string | null;
+}
+
+/**
+ * One `/search` row: the ordinary six blobs and two doubles, plus the three
+ * fields above.
+ *
+ * `cacheHit` becomes 1 or 0 rather than a blob, because it is a rate to average
+ * rather than a label to group by. `avg(double4)` over a window is the cache's
+ * hit rate, which is the question anyone asks of it.
+ */
+export function searchDataPointFor(
+  event: AgentEvent,
+  search: SearchEventFields,
+): AnalyticsEngineDataPoint {
+  const base = dataPointFor(event);
+  return {
+    ...base,
+    blobs: [...(base.blobs ?? []), search.type ?? 'all'],
+    doubles: [...(base.doubles ?? []), search.results, search.cacheHit ? 1 : 0],
+  };
+}
+
+/**
+ * Writes it, swallowing its own failure exactly as `recordAgentEvent` does and
+ * for the identical reason: a search must never fail because a counter did.
+ */
+export function recordSearchEvent(
+  env: RecorderEnv,
+  event: AgentEvent,
+  search: SearchEventFields,
+): void {
+  try {
+    env.AE.writeDataPoint(searchDataPointFor(event, search));
+  } catch (error) {
+    console.error('agent-intel: the search datapoint could not be written', error);
   }
 }

@@ -314,6 +314,29 @@ export const MCP_WORKER = {
      * against a deployed endpoint.
      */
     JUDGE_ENGINE: 'off',
+    /**
+     * Issue #146's `/search` handler (workers/mcp/src/search.ts), stubbed.
+     * Same seam shape as the seven above, and the one whose absence would leave
+     * a route with no executable path at all rather than merely an expensive
+     * one: the `AI_SEARCH` override below is a SERVICE binding, so
+     * `env.AI_SEARCH.search()` here is an RPC call into a Worker that does not
+     * implement the method and throws at the await.
+     *
+     * `'stub'` rather than `'off'`, unlike `FIT_ENGINE`, `CHAT_ENGINE` and
+     * `JUDGE_ENGINE`, and the difference is what sits behind each of them. An
+     * engine that refuses is still a truthful answer for a tool whose caller
+     * is an agent. What sits behind this one is a page a person looks at, so
+     * the thing worth exercising is the whole route with results on it -- the
+     * cache, the limiter, the mapping and the response shape -- rather than a
+     * refusal at the seam. The fixture is `SEARCH_STUB_RESULTS` in
+     * src/lib/search/engine.ts, and it deliberately names a draft so #147's
+     * join has something it must drop.
+     *
+     * Retrieval quality itself proves nothing here and is not meant to: the
+     * ranking and the excerpts are verified by hand against the live instance,
+     * which is what #145's baselines exist for.
+     */
+    SEARCH_ENGINE: 'stub',
   },
   bindingOverrides: { AI: 'mock-ai', AI_SEARCH: 'mock-ai' },
 };
@@ -324,11 +347,12 @@ export const MOCK_AI_WORKER = { configPath: './workers/mock-ai/wrangler.jsonc' }
 /**
  * A THIRD mock lives in `workers/mock-ae`, for the `AE` (Analytics Engine)
  * binding -- NOT exported here and not in `MCP_HARNESS_WORKERS` below, unlike
- * its two siblings above. `tests/chat-endpoint.test.ts` is the only suite
- * that needs a readable `AE`, so it builds its own worker list locally
+ * its two siblings above. `tests/chat-endpoint.test.ts` and
+ * `tests/mcp-site-search.test.ts` are the only suites that need a readable
+ * `AE` (the second arrived with #146), so each builds its own worker list
  * (`bindingOverrides: { AE: 'mock-ae' }` merged onto `MCP_WORKER`) rather than
- * widening this shared config for one file's sake -- see that file's
- * top-of-file comment for the reasoning, and workers/mock-ae's own
+ * widening this shared config for two files' sake -- see their own
+ * top-of-file comments for the reasoning, and workers/mock-ae's own
  * wrangler.jsonc for why the mock exists at all. Noted here only so a reader
  * of this file discovers it exists (task-13a-findings-final.md item 8).
  */

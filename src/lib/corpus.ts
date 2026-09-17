@@ -41,6 +41,35 @@ import { SITE_ORIGIN } from './markdown-export';
 //
 // The corpus is therefore never able to contain something the site does not
 // publish, without this module holding an opinion about drafts at all.
+//
+// THIS IS NOT THE ONLY INDEX OVER THIS SITE, AND THE OTHER ONE IS NOT A
+// MISTAKE (issue #146, epic #143). `/search` reads a Cloudflare AI Search
+// instance, `ryanlindsey-me-search`, over the `AI_SEARCH` binding on the same
+// Worker that runs this job. Neither index should ever be pointed at the
+// other, because they differ in all three of the things that matter:
+//
+//   - THIS corpus serves AGENTS -- `search_writing`, `/chat`, `/fit` -- over
+//     PUBLISHED DOCUMENTS only, with PURE VECTOR retrieval, and it promises
+//     that the excerpt handed back IS the passage that matched
+//     (src/lib/mcp/search.ts's `exact` flag, which says so when it is not).
+//   - THAT index serves PEOPLE over EVERY PAGE THE SITEMAP LISTS, `/ops` and
+//     `/ai-policy` included -- pages this corpus has never held and was never
+//     built to hold, because a question about published writing is not the
+//     same request as finding a page. It promises findability rather than a
+//     verified passage: its excerpts are crawled text and nothing checks them
+//     against the document they came from.
+//
+// So pointing `/chat` at AI Search would trade a checked excerpt for an
+// unchecked one on the surface whose whole requirement is citations that are
+// exactly right, and pointing `/search` at this corpus would leave a person
+// typing `ops` with nothing to find.
+//
+// FOUR FILES CARRY THIS COMMENT, one for each place a reader can arrive at
+// the ambiguity: src/lib/corpus.ts (the index the corpus builds),
+// src/lib/mcp/search.ts (the contract that reads it), src/lib/search/engine.ts
+// (the rules this one applies) and workers/mcp/src/search.ts (the route that
+// serves it). Each names the other three, because a reader who finds two
+// indexes over overlapping content is right to suspect one is a mistake.
 
 /**
  * Bump when chunking, the embedding model, or the metadata shape changes in a

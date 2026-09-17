@@ -5,6 +5,7 @@ import { buildMcpServerCard } from '../../../src/lib/discovery/server-card';
 import { buildProtectedResource } from '../../../src/lib/discovery/protected-resource';
 import { handleChat } from './chat';
 import { handleGrantContext } from './grant-context';
+import { handleSiteSearch } from './search';
 import { resolveGrant } from '../../../src/lib/tier/grant';
 import { type McpEnv } from './env';
 import { createServer } from './server';
@@ -246,6 +247,16 @@ export default {
     // exist in a config `astro build` instantiates (see both wrangler.jsonc
     // files for the CI failure that settled it).
     if (pathname === '/chat') return handleChat(request, env, ctx);
+
+    // `GET /search` (issue #146, epic #143), routed here for the same reason
+    // `/chat` is -- HANDLER_OPTIONS answers exactly `/mcp` and 404s everything
+    // else it sees. It lives on THIS Worker because the `ai_search` binding
+    // cannot exist in a config `astro build` instantiates: #144 measured that
+    // wrangler classifies it exactly as it classifies `ai`, so declaring it
+    // opens a remote proxy session at boot rather than at the call. The
+    // retrieval, the spend, the cache and the rate limiter are all already
+    // here too, so the site route is a renderer that holds none of them.
+    if (pathname === '/search') return handleSiteSearch(request, env);
 
     // `POST /grant` (04 §2): what one bearer unlocks, answered here for the
     // same reason `/chat` is -- HANDLER_OPTIONS answers exactly `/mcp` and

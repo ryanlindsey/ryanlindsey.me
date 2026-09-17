@@ -62,7 +62,20 @@ test('no wrangler config declares a day-5 test-only seam', async () => {
   // property is enforced: src/worker.ts flattens `/fit` 500s to the site 404,
   // so the `throw` on an unrecognised value reaches no caller (see the
   // `console.error` there, which is what makes it visible to the operator).
-  for (const name of ['RLME_TOKEN_KEY_SOURCE', 'FIT_ENGINE', 'RLME_TURNSTILE_MODE']) {
+  // `SEARCH_ENGINE` (src/lib/search/engine.ts's `searchEngineMode`) is the
+  // fourth, added by #146, and it fails in the third direction again: `'stub'`
+  // does not weaken a check or turn a feature off, it makes `/search` answer
+  // every visitor with a three-row FIXTURE. A stray entry in either config
+  // would ship a results page that looks like it works, returns the same three
+  // links for every query, spends nothing, logs nothing unusual, and leaves the
+  // whole suite green -- so the guard matters more here than the loudness of
+  // the alternative suggests.
+  for (const name of [
+    'RLME_TOKEN_KEY_SOURCE',
+    'FIT_ENGINE',
+    'RLME_TURNSTILE_MODE',
+    'SEARCH_ENGINE',
+  ]) {
     for (const path of ['wrangler.jsonc', 'workers/mcp/wrangler.jsonc']) {
       const source = await readFile(path, 'utf8');
       expect(source, `${path} must not declare ${name}`).not.toContain(name);

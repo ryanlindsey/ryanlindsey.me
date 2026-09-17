@@ -260,6 +260,18 @@ describe('the policy', () => {
     expect(policy, 'the no-address claim').toMatch(
       /No IP address in any table\.\*\*\s+There is no address column/,
     );
+    // Issue #146 added a fourth surface to this page's analytics paragraph and
+    // the only reason this line exists is that the paragraph drifted first: it
+    // said "six bounded labels" and enumerated exactly six while a search row
+    // had already grown to nine fields. Nothing here read that sentence, so the
+    // count was falsified in silence. Directional for the same reason as the
+    // two above -- what has to survive an edit is the DISCLAIMER, since the
+    // promise that no query text is recorded is the whole reason the row is
+    // publishable at all, and the count beside it is the thing most likely to
+    // go stale next.
+    expect(policy, 'the no-query-text claim').toMatch(
+      /text of the search is not\s+among them and is not recorded anywhere/,
+    );
   });
 
   test('matches no banned pattern', () => {

@@ -170,12 +170,27 @@ export interface McpEnv {
    * tests/workers.ts for the same reason `FIT_ENGINE` is.
    */
   JUDGE_ENGINE?: string;
+
+  /**
+   * Test-only seam, the eighth declared on this Worker and the tenth of
+   * this shape in the repository; see `SearchEngineEnv.SEARCH_ENGINE` in
+   * src/lib/search/engine.ts, where the accepted values and the reasoning are
+   * written down. ABSENT queries the index; `'stub'` answers with a fixture
+   * and never touches the binding; anything else throws.
+   *
+   * It is the one seam here that is load-bearing rather than merely thrifty.
+   * `AI_SEARCH` is overridden to a service Worker under the harness (see
+   * `AI_SEARCH` above and tests/workers.ts), so the binding is a `Fetcher`
+   * there and the call throws at the await. Without this var there is no
+   * executable path through `/search` in any test at all.
+   */
+  SEARCH_ENGINE?: string;
 }
 
 /**
  * The same list as runtime data, for the drift test. `CORPUS_REFRESH`,
  * `MCP_SEARCH_EMBEDDER`, `RLME_TOKEN_KEY_SOURCE`, `FIT_ENGINE`,
- * `RLME_TURNSTILE_MODE`, `CHAT_ENGINE` and `JUDGE_ENGINE` are excluded deliberately: they are
+ * `RLME_TURNSTILE_MODE`, `CHAT_ENGINE`, `JUDGE_ENGINE` and `SEARCH_ENGINE` are excluded deliberately: they are
  * test-only vars that no deployed environment and no config declares, so
  * `wrangler types` will never emit them. This list is the CONFIG's bindings,
  * and tests/mcp-env.test.ts fails in both directions if it drifts -- so adding

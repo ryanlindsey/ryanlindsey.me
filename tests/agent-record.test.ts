@@ -1,5 +1,12 @@
 import { describe, expect, test, vi } from 'vitest';
-import { AE_BLOB_FIELDS, dataPointFor, recordAgentEvent } from '../src/lib/agent-intel/record';
+import {
+  AE_BLOB_FIELDS,
+  AE_SEARCH_BLOB_FIELDS,
+  AE_SEARCH_DOUBLE_FIELDS,
+  dataPointFor,
+  recordAgentEvent,
+  searchDataPointFor,
+} from '../src/lib/agent-intel/record';
 import { classifyRequest } from '../src/lib/agent-intel/classify';
 
 const event = {
@@ -30,6 +37,31 @@ describe('dataPointFor', () => {
       'status_class',
     ]);
     expect(point.blobs).toEqual(['agent', 'ClaudeBot', 'agent-signal', 'none', 'site', '2xx']);
+  });
+
+  test('a search row appends to the legend rather than reordering it', () => {
+    // Issue #146. `AE_BLOB_FIELDS`'s own contract is APPEND, never insert and
+    // never reorder, because /ops addresses these by NUMBER over the whole
+    // dataset with no surface filter -- so a search row that shifted
+    // `route_class` off `blob3` would silently re-label every historical row in
+    // the query that groups by it, with both sides still internally consistent.
+    // This test is what makes the two legend arrays load-bearing rather than
+    // decorative: they are the declaration, and the positions below are what
+    // the code actually emits.
+    const point = searchDataPointFor(event, { results: 3, cacheHit: true, type: 'writing' });
+    expect(AE_SEARCH_BLOB_FIELDS).toEqual(['search_type']);
+    expect(AE_SEARCH_DOUBLE_FIELDS).toEqual(['result_count', 'cache_hit']);
+    expect(point.blobs?.slice(0, AE_BLOB_FIELDS.length)).toEqual(dataPointFor(event).blobs);
+    expect(point.blobs?.slice(AE_BLOB_FIELDS.length)).toEqual(['writing']);
+    expect(point.doubles?.slice(2)).toEqual([3, 1]);
+  });
+
+  test('an unfiltered search names its filter rather than leaving a hole', () => {
+    // `blob7` is a bounded label and an absent one would be an empty string
+    // sitting in a column whose whole value is that it is cheap to group by.
+    const point = searchDataPointFor(event, { results: 0, cacheHit: false, type: null });
+    expect(point.blobs?.[6]).toBe('all');
+    expect(point.doubles?.[3]).toBe(0);
   });
 
   test('the index is the agent class, which is the low-cardinality one', () => {
