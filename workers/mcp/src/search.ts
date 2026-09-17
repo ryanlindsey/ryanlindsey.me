@@ -110,8 +110,8 @@ const CAMPAIGN_DOMAINS_OFF: readonly string[] = [];
  * this key, so a value of the wrong shape is a leftover from an older contract
  * rather than an attack, but `results.length` on a non-array is `undefined` in
  * the datapoint and an unrenderable body on the page. `SEARCH_CACHE_VERSION`
- * is what makes a deliberate shape change safe; this is what makes an
- * accidental one harmless.
+ * is what makes a deliberate change to the cached value safe, its shape or its
+ * content; this is what makes an accidental one harmless.
  *
  * ONLY THE RESULTS ARRAY IS STORED, never the answer object. The query is put
  * back on the response by the caller, so no value in KV carries the text
@@ -168,15 +168,101 @@ async function resultsFor(
  * nothing would say so. #148 owns re-measuring this.
  *
  * `query_rewrite` AND `reranking` ARE BOTH DECISIONS, NOT DEFAULTS. Each is
- * model-backed and bills through Workers AI, and they are the one way a page
- * documented as spending nothing on inference quietly becomes an inference
- * surface. Rewriting is also the wrong thing to do to somebody who typed a
- * literal term, since it works against the keyword half of the hybrid this
- * instance is meant to get back to. #148 owns whether reranking earns its cost,
- * on measurement rather than on installation.
+ * model-backed and bills through Workers AI, and each is a way this page's
+ * spend grows without any line here looking like it grew. Rewriting is also
+ * the wrong thing to do to somebody who typed a literal term, since it works
+ * against the keyword half of the hybrid this instance is meant to get back
+ * to, so `query_rewrite` stays off.
  *
- * `match_threshold` is left at its documented default of 0.4, which is also
- * what the instance carries. #148 owns moving it.
+ * RERANKING IS ON, AND THIS COMMENT USED TO SAY IT WAS OFF. #146 turned it
+ * off on the argument that it should be earned rather than installed, and #148
+ * measured it against the live instance on 2026-09-17 and earned it. On this
+ * corpus it is not a reordering nicety. It is the difference between a search
+ * that finds the page carrying your word and one that does not:
+ *
+ *   - `turnstile` appears as prose on `/ai-policy/` alone. Unreranked, that
+ *     page ranked FIFTH of seven, below four pages that do not contain the
+ *     word. Reranked it is the only result, at 0.7368.
+ *   - `durable objects` appears in ordinary prose on five of the twelve
+ *     indexed pages and returned NOTHING. Not a bad ordering; nothing.
+ *     Reranked it returns five, led by the pages carrying the exact phrase.
+ *   - `vectorize` appears on five pages and returned one result, a page
+ *     lacking the word. Reranked it returns `/ops/` and `/writing/`.
+ *   - `hyperdrive` appears NOWHERE on this site and returned five results.
+ *     Reranked it returns none.
+ *
+ * TWO THINGS #148 FOUND THAT THE WORD "RERANKING" DOES NOT PREPARE YOU FOR.
+ * It changes RETRIEVAL rather than only ordering: the `durable objects` chunks
+ * carry vector scores of 0.295 to 0.343, under the 0.4 threshold that had been
+ * discarding them, so the pool the reranker scores is drawn wider than
+ * `match_threshold` alone would allow and the reranker's score replaces the
+ * cosine score on the way out. ("Pool" rather than the term the retrieval
+ * literature uses for it, because that term is one of the words the static
+ * scan in tests/ bans from every shipped file without an entry in its
+ * exception register, and this file has none.) And it
+ * is LEXICAL in a way the embedding is not, which is why it repairs exact
+ * terms and also why `skip to content` went from five weak matches to eight
+ * confident ones. That contamination belongs to the crawl, and a
+ * `content_selector` on the data source is its fix rather than anything here.
+ *
+ * WHAT IT COSTS, both halves. About $0.0000193 per query at the published unit
+ * price for `@cf/baai/bge-reranker-base`, which is two cents per thousand
+ * searches before the cache takes most of them. The cost that is not trivial
+ * is natural language: the #145 baseline question returns six good rows
+ * unreranked and ZERO reranked. That is a trade rather than a bug, and the
+ * epic is explicit about which side of it this page is on -- `/chat` is this
+ * site's answering surface and `src/pages/search.astro` hands questions to it.
+ * Somebody searching a half-remembered phrase is worse off than they were, and
+ * that handoff link is the only thing catching them.
+ *
+ * NOTHING ELSE INSIDE `reranking`, for the reason the omitted `retrieval_type`
+ * above rests on. The per-request object takes a `model` and a
+ * `match_threshold` besides `enabled` (see `AiSearchOptions` in
+ * worker-configuration.d.ts), and neither is set. The instance's
+ * `reranking_model` is empty so its default applies, and pinning a model in
+ * this call would keep answering with one while the instance moved to another
+ * with nothing to say so. Worth keeping the two names straight while reading
+ * this: `reranking_model` is the INSTANCE field and `reranking.model` is the
+ * REQUEST one, so a guard written against the instance's spelling would not
+ * see a model pinned here at all.
+ *
+ * `match_threshold` IS TWO FIELDS NOW, AND ONLY ONE OF THEM WAS SWEPT.
+ * `retrieval.match_threshold` is the cosine cut and is left unset, so the
+ * instance's 0.4 applies; `reranking.match_threshold` is a separate per-request
+ * value documented at the same default, and is also left unset. #148 swept the
+ * instance's `score_threshold` at 0.4, 0.3 and 0.2 and found the answers
+ * identical query for query and score for score once reranking was on, which
+ * is the reranker applying its own cut downstream of the one being moved. It
+ * stays at 0.4 because it is inert there, not because 0.4 was measured to be
+ * the right number.
+ *
+ * `max_num_results: 20` AND THE INSTANCE NOW AGREE, WHICH IS NOT THE SAME AS
+ * THE REQUEST WINNING. Two per-request options in this one call were measured
+ * and they did not behave alike: `reranking` here overruled an instance that
+ * had it ON (that is the whole of #249), while #148 found the instance's
+ * `max_num_results: 10` serving in front of the `20` this call has asked for
+ * since #146. So "the binding honors per-request options" is the documented
+ * rule and not a safe assumption per option, and the committed type says only
+ * "Maximum number of results to return (1-50). Default 10" without saying what
+ * an instance value does to it. #249 raised the instance to 20 rather than
+ * leaving the question open. Separately, wrangler's CLI flags are ignored
+ * outright; #145 read that as an API limitation when it belongs to the CLI, so
+ * any measurement taken through `wrangler ai-search search` reflects the
+ * instance rather than the flag passed.
+ *
+ * THE INSTANCE VALUE LIVES IN NO FILE IN THIS REPOSITORY, which is exactly why
+ * it is written down in one: nothing in a diff, a test or a deploy will tell
+ * the next reader what the instance carries.
+ *
+ * ASK `wrangler ai-search list`, NOT `wrangler ai-search get`, AND THAT IS
+ * MEASURED. The raise above was applied in the dashboard on 2026-09-17 at
+ * about 23:04 UTC. `list` reported `max_num_results: 20` and the new
+ * `modified_at` immediately; `get --json` went on reporting `10` and the
+ * PREVIOUS `modified_at` on two calls after that, so it is serving a cached
+ * copy rather than lagging by a moment. #148 verified its own instance change
+ * by diffing `get --json` before and after, which happened to be a field that
+ * had already propagated; on a fresh write that method reports no change and
+ * looks exactly like a write that failed.
  *
  * `return_on_failure: false` IS THE MOST IMPORTANT LINE IN THIS CALL, and the
  * default is the trap. The binding's own committed type says of it: "If true
@@ -210,7 +296,7 @@ async function retrieve(env: McpEnv, query: string): Promise<SearchResult[]> {
     ai_search_options: {
       retrieval: { max_num_results: 20, return_on_failure: false },
       query_rewrite: { enabled: false },
-      reranking: { enabled: false },
+      reranking: { enabled: true },
     },
   });
 
@@ -316,14 +402,14 @@ export async function handleSiteSearch(request: Request, env: McpEnv): Promise<R
   // direction and is deliberate: a loop hitting one cached query is still a
   // loop, and a person runs one search at a time.
   //
-  // `inference` is the right cost class even though this runs no text model:
-  // a search computes an embedding, which is the property that makes
-  // `search_writing` an `inference` tool, and #148 may put reranking behind
-  // this same call. Its own bucket name rather than a tool's, so a visitor
-  // searching cannot starve an agent's `search_writing` allowance or the other
-  // way round. The `null` grant is not an oversight either: this surface is
-  // public and holds no token, so the address is the only thing there is to
-  // key on.
+  // `inference` is the right cost class, and it got more right rather than
+  // less: a search computes an embedding, which is the property that makes
+  // `search_writing` an `inference` tool, and #249 put reranking behind this
+  // same call, so a cache miss now runs a second model as well. Its own bucket
+  // name rather than a tool's, so a visitor searching cannot starve an agent's
+  // `search_writing` allowance or the other way round. The `null` grant is not
+  // an oversight either: this surface is public and holds no token, so the
+  // address is the only thing there is to key on.
   //
   // A DURABLE OBJECT AND NOT THE PLATFORM `ratelimits` BINDING. That binding
   // was configured correctly, deployed correctly and enforced nothing --

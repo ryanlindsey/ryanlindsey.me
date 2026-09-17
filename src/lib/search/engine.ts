@@ -86,12 +86,46 @@ export const MAX_QUERY_CHARS = 100;
 export const SEARCH_CACHE_TTL_SECONDS = 86_400;
 
 /**
- * Bump when the cached VALUE's shape changes, so entries written by the old
- * shape are never read by the new code. Same job as
- * `RESUME_PDF_CONTRACT_VERSION` and `CORPUS_CONTRACT_VERSION`, and needed for
- * the same reason: a cache entry outlives the deploy that wrote it.
+ * Bump when the cached VALUE changes, so entries written by the old code are
+ * never read by the new. Same job as `RESUME_PDF_CONTRACT_VERSION` and
+ * `CORPUS_CONTRACT_VERSION`, and needed for the same reason: a cache entry
+ * outlives the deploy that wrote it.
+ *
+ * SHAPE IS NOT THE ONLY REASON, AND THIS COMMENT SAID IT WAS. It read "when
+ * the cached VALUE's shape changes" until #249, which is the case that is easy
+ * to spot and not the case that bites. A change to the value's CONTENT under
+ * an unchanged shape needs a bump just as badly, because `searchCacheKey` is
+ * built from the query alone: nothing in the key names the index, the instance
+ * configuration or the retrieval options, so a query searched before the
+ * deploy keeps serving its old answer for up to `SEARCH_CACHE_TTL_SECONDS`
+ * and looks exactly like a change that did not ship.
+ *
+ * #148 REPORTED HAVING SEEN THAT, AND ITS EVIDENCE DOES NOT SHOW IT. That
+ * issue read `/search?q=turnstile` still serving pre-reranking results after
+ * the instance flag flipped as the cache holding a stale answer. It cannot
+ * have been: the handler was sending `reranking: { enabled: false }` at the
+ * time, and that request value wins, so a completely cold query would have
+ * answered the same way. What it actually demonstrated is the override this
+ * change exists to remove. The bump below is still right -- v1 entries really
+ * do hold pre-reranking answers once this deploys -- but it rests on the key
+ * being the query alone rather than on that observation.
+ *
+ * v1 -> v2 (#249): reranking turned on for the call in
+ * workers/mcp/src/search.ts. Same `SearchResult` fields, different results in
+ * them, and different scores -- roughly 0.53 to 0.99 where the cosine scores
+ * v1 cached sit between 0.40 and 0.56.
+ *
+ * WHAT THIS CANNOT COVER is the instance moving underneath a deploy that
+ * changes no file here: `reranking_model`, `embedding_model`, the crawl's
+ * chunking, or simply the index's contents after a sync. Each changes what a
+ * query answers and `wrangler ai-search update` leaves nothing in this
+ * repository to bump. Not `reranking` itself, which is the one that used to
+ * belong on this list and no longer does: #249 pins it in the request, and the
+ * request value wins. That lag is the one above, bounded by the TTL, and the
+ * epic's alternative was a cache keyed on a version the instance does not
+ * publish.
  */
-export const SEARCH_CACHE_VERSION = 1;
+export const SEARCH_CACHE_VERSION = 2;
 
 /** One result, flat, with nothing in it that was not measured or crawled. */
 export interface SearchResult {
