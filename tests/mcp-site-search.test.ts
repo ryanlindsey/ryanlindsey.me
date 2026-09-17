@@ -7,6 +7,7 @@ import { classifyRequest, signalsFrom } from '../src/lib/agent-intel/classify';
 import {
   MAX_QUERY_CHARS,
   SEARCH_CACHE_TTL_SECONDS,
+  SEARCH_CACHE_VERSION,
   normalizeQuery,
   parseSearchType,
   resultsFrom,
@@ -146,6 +147,18 @@ describe('the pure half: normalization and the cache key', () => {
 
   test('the TTL matches the instance sync interval', () => {
     expect(SEARCH_CACHE_TTL_SECONDS).toBe(86_400);
+  });
+
+  test('the cache namespace moved off v1, so pre-reranking answers are unreadable', async () => {
+    // #249 turned reranking on, which changes the CONTENT of a cached value
+    // under an unchanged shape. The key is built from the query alone, so
+    // without this bump every query anybody had already run would keep serving
+    // its pre-reranking results for up to twenty-four hours, and the by-hand
+    // verification that issue asks for would read as a failure. Observed
+    // directly on #148: `/search?q=turnstile` served pre-reranking results
+    // after the instance flag flipped.
+    expect(SEARCH_CACHE_VERSION).toBe(2);
+    expect(await searchCacheKey('turnstile')).toMatch(/^search:v2:/);
   });
 });
 
@@ -517,19 +530,40 @@ describe('GET /search', () => {
     expect(await handlerSource()).not.toContain('verifyTurnstile');
   });
 
-  test('the two model-backed options stay off, and the retrieval type stays unasked', async () => {
+  test('reranking is asked for, and the retrieval type stays unasked', async () => {
     // STRUCTURAL, because the live branch cannot execute here: under
-    // `SEARCH_ENGINE: 'stub'` nothing in this suite reaches the binding, so a
-    // future edit that enabled reranking, or that re-added
+    // `SEARCH_ENGINE: 'stub'` nothing in this suite reaches the binding, so an
+    // edit that turned reranking back off, or that re-added
     // `retrieval_type: 'hybrid'` against an instance whose `index_method` has
-    // keyword indexing off, would ship green. Both are exactly the kind of
-    // change this epic argues hardest against: the first turns a page
-    // documented as spending nothing on inference into an inference surface,
-    // and the second makes AI Search answer error 7070 to every search.
+    // keyword indexing off, would ship green either way.
+    //
+    // THE ASSERTION ON RERANKING INVERTED IN #249, AND THE REASON IS WORTH
+    // KEEPING. It read `reranking: { enabled: false }` from #146 until #148
+    // measured the instance: without reranking `durable objects` returns
+    // nothing while sitting in prose on five pages, and `hyperdrive` returns
+    // five results while appearing on none. The request value wins over the
+    // instance setting, so the instance flag #148 turned on did not reach this
+    // page until this line changed. What the assertion guards is now the
+    // opposite of what it guarded, and both directions are a silent shipping
+    // failure rather than a loud one.
     const source = await handlerSource();
-    expect(source).toContain('query_rewrite: { enabled: false }');
-    expect(source).toContain('reranking: { enabled: false }');
+    expect(source).toContain('reranking: { enabled: true }');
     expect(source).not.toContain('retrieval_type');
+  });
+
+  test('query rewriting stays off, which reranking being on does not change', async () => {
+    // The other model-backed option, and #148 moved nothing about it. It is
+    // the wrong thing to do to somebody who typed a literal term, and the
+    // literal term is exactly what reranking is now here to get right.
+    expect(await handlerSource()).toContain('query_rewrite: { enabled: false }');
+  });
+
+  test('no reranking model is pinned, so the instance owns which one runs', async () => {
+    // The same argument the omitted `retrieval_type` rests on. `reranking_model`
+    // is empty on the instance and the default applies; naming one here would
+    // keep answering with one model while the instance moved to another and
+    // nothing would say so.
+    expect(await handlerSource()).not.toContain('reranking_model');
   });
 });
 
