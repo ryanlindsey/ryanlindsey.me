@@ -263,9 +263,16 @@ export function unresolvedArtifactSlugs(
  * so a plain `vitest run` can exercise it without Astro's pipeline.
  *
  * A slug with no title is OMITTED rather than rendered with a placeholder.
- * `unresolvedArtifactSlugs()` is what fails the build for an unpublished slug,
- * and a "Case study: undefined" line here would be a second, worse error that
- * ships instead of failing.
+ * CORRECTED (final whole-branch review, finding 5): this comment used to say
+ * `unresolvedArtifactSlugs()` fails the build for an unpublished slug. It
+ * does not -- nothing in `src/` calls it; only this module's own unit tests
+ * do, against a synthetic fixture. What actually backstops an unpublished
+ * slug is tests/pages.test.ts and tests/resume-sheet.test.ts rendering the
+ * real collection, plus the résumé PDF gate's `links` check
+ * (scripts/resume-gate.mjs). `unresolvedArtifactSlugs()` is a pure helper
+ * those rendering tests could call to fail with a clearer message; omitting
+ * the slug here rather than rendering "Case study: undefined" is this
+ * function's own, narrower backstop against shipping a broken link.
  */
 export interface ArtifactLink {
   slug: string;

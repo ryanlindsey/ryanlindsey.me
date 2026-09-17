@@ -212,6 +212,15 @@ export const resumeSchema = z.object({
         roles: z.array(z.string()).default([]),
         startDate: yearOrYearMonth.optional(),
         endDate: yearOrYearMonth.optional(),
+        // A highlight is a compression of what the project's own post or case
+        // study already publishes, not a second place to state a claim for
+        // the first time. A highlight here saying something its published
+        // source does not support is the bug -- this is the rule a deleted
+        // comment on the résumé YAML used to carry (armature's highlights
+        // against armature.mdx); it had no citer outside that file, so the
+        // migration to this schema's comments missed it (final whole-branch
+        // review, finding 4). It belongs beside the schema field a highlight
+        // actually is, not the record that was about to stop having comments.
         highlights: z.array(z.string()).default([]),
         // Same `x_` extension as `work[].x_artifacts`, and the reason this
         // section needed one: the Pixelsonly Racing case study had no entry to
@@ -220,7 +229,11 @@ export const resumeSchema = z.object({
         // An entry whose write-up is a POST rather than a case study leaves
         // this absent. `unresolvedArtifactSlugs()` resolves slugs against
         // src/content/caseStudies/ only, so naming a post's slug here would
-        // fail the build rather than link anything.
+        // render no link and fail tests/pages.test.ts's "every x_artifacts
+        // slug renders as a link" assertion (and, once the résumé sheet next
+        // renders, the PDF gate's `links` check) rather than the site build
+        // itself -- see src/lib/resume.ts's `artifactLinks` doc comment for
+        // why nothing in `src/` treats this as fatal.
         x_artifacts: z.array(z.string()).optional(),
       }),
     )

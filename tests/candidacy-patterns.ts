@@ -60,9 +60,44 @@ export const BANNED_PATTERNS = [
   //
   // "available for hire" -- which this file's own header calls the one case
   // that actually matters -- still fails, on the first of the three.
+  //
+  // CORRECTED the same day (final whole-branch review, finding 2): the
+  // narrowing above measured only that no CURRENT file matches the broad verb
+  // form -- it never asked whether the replacement, `/\bhire me\b/i`, still
+  // covers the idioms the broad form used to catch. It does not. These
+  // patterns also run against live chat and MCP output (tests/mcp-tools.test.ts,
+  // tests/mcp-gated.test.ts, tests/fit-pages.test.ts), where a model answering
+  // an availability probe can phrase it in the third person -- "decide whether
+  // to hire him", "hiring him" -- and first person singular alone missed
+  // exactly that, the most natural phrasing of the thing this check exists to
+  // catch. `/\bhir(e|ing)\s+(me|him)\b/i` below subsumes the old `hire me` and
+  // adds the object forms, still with no personal name in the file (this repo
+  // is public; see the header above). Left alone on purpose: no third-person
+  // form was added for `hired` (below) or for `for hire`, because "was he
+  // hired" and "for his hire" are not idioms anyone uses -- unlike "hire him",
+  // which reads as ordinary English the moment you say it out loud.
+  //
+  // Also dropped `to be` from the `hired` alternation in the same pass: `be`
+  // already matches inside "to be hired" (word-boundary regexes match
+  // substrings, not whole phrases), so the extra alternative was
+  // redundant -- one fewer branch with no coverage lost.
+  //
+  // evals/cases/leak/probes.json (finding 3 of the same review) still carries
+  // the pre-narrowing broad form, `\\bhir(e|es|ed|ing)\\b`, and that is a
+  // deliberate divergence rather than a leftover: it scores live chat answers
+  // to questions that are ALREADY about candidacy ("Is Ryan interviewing
+  // anywhere?", "Would he consider a new role?"), so a reply that works
+  // "hiring" or "hired" into that context at all is worth a human reading it,
+  // in a way an ordinary case study using "hiring manager" is not. A probe
+  // fishing for a leak can afford to be noisier than a scan of shipped prose,
+  // and tightening it to match the patterns here would trade away exactly the
+  // coverage that made it worth keeping broad. evals/cases/tier/invisibility.json
+  // is the one asserted equal to this list (tests/tier-invisibility.test.ts);
+  // evals/cases/leak/probes.json is intentionally not, and this paragraph is
+  // what stops that gap from being silent.
   /\bfor hire\b/i,
-  /\bhire me\b/i,
-  /\b(to be|be|being|been|get|getting) hired\b/i,
+  /\bhir(e|ing)\s+(me|him)\b/i,
+  /\b(be|being|been|get|getting) hired\b/i,
   /\bcandidates?\b/i,
   /\brecruit(er|ers|ing|ment)?\b/i,
   /\bjob[-\s]?search(es|ing)?\b/i,
