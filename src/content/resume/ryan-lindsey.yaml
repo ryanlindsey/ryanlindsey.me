@@ -32,7 +32,7 @@ work:
     summary: >-
       Own incident management for the entire engineering organization since
       2024 and coach fellow engineering managers, while leading 8 engineers
-      across 2 teams. Platform: Ruby on Rails, Node.js, GraphQL, React,
+      across 2 teams. Platform: AWS, Ruby on Rails, Node.js, GraphQL, React,
       Next.js, Terraform, Kubernetes, Docker, Fastly.
     x_artifacts:
       - delivery-forecasting
@@ -290,7 +290,7 @@ skills:
       - Edge compute and caching (Fastly, Cloudflare Workers)
       - Serverless (Durable Objects, Workflows, Queues)
       - Kubernetes and Docker
-      - Terraform
+      - AWS and Terraform
       - CI/CD and automated testing
       - Blue/green, zero-downtime deployment
       - Release management

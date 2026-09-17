@@ -38,7 +38,7 @@ E X P E R I E N C E
 Weedmaps IRVINE, CA MAR 2016 — PRESENT
 Senior Engineering Manager FEB 2021 — PRESENT
 Own incident management for the entire engineering organization since 2024 and coach fellow engineering managers,
-while leading 8 engineers across 2 teams. Platform: Ruby on Rails, Node.js, GraphQL, React, Next.js, Terraform,
+while leading 8 engineers across 2 teams. Platform: AWS, Ruby on Rails, Node.js, GraphQL, React, Next.js, Terraform,
 Kubernetes, Docker, Fastly.
 • Designed and built a delivery-forecasting toolchain for engineering managers, beginning as a set of Claude Skills and
 migrating to an internal MCP server as adoption outgrew that packaging. Adopted by >80% of engineering managers
@@ -149,8 +149,8 @@ ENGINEERING LEADERSHIP Incident management, Change management (CAB, rollback pla
 executive reporting, Hiring and team growth, Coaching engineering managers, Engineering
 enablement, Cross-functional partnership, Performance management
 PLATFORM AND DELIVERY Edge compute and caching (Fastly, Cloudflare Workers), Serverless (Durable Objects,
-Workflows, Queues), Kubernetes and Docker, Terraform, CI/CD and automated testing,
-Blue/green, zero-downtime deployment, Release management, Bot mitigation, API design,
-High availability
+Workflows, Queues), Kubernetes and Docker, AWS and Terraform, CI/CD and automated
+testing, Blue/green, zero-downtime deployment, Release management, Bot mitigation, API
+design, High availability
 LANGUAGES AND FRAMEWORKS TypeScript, JavaScript, Node.js, React and Next.js, Ruby on Rails, SQL (SQLite, D1), GraphQL,
 *nix shell
