@@ -16,6 +16,30 @@ import { CORPUS_EMBEDDING_MODEL, chunkMarkdown, type CorpusType } from '../corpu
 // the cited document with the SAME pure `chunkMarkdown` that produced the
 // vectors, and the manifest's `chunks` count is the check that the
 // reconstruction still lines up.
+//
+// WHY THIS PATH CANNOT SIMPLY BE POINTED AT AI SEARCH (issue #146, epic
+// #143). `/search` reads a second index, `ryanlindsey-me-search`, over every
+// page the sitemap lists, and a reader who finds two retrieval paths over
+// overlapping content is right to ask why there are two. `exact` below is the
+// answer, and it is a contract rather than a detail: this path promises that
+// the excerpt it returns is the text that produced the matched vector, and it
+// says so in a field when it could not keep that promise.
+//
+// AI Search cannot make that promise at all. Its chunks are crawled HTML
+// converted to Markdown -- #145 measured a synthesised frontmatter block and a
+// `[Skip to content](#main)` line inside the first chunk of every page -- and
+// there is no manifest, no chunk count and no second copy of the document to
+// check a reconstruction against. It is the right index for finding a page and
+// the wrong one for quoting it, which is exactly the split: that index serves
+// people looking for a page, this one serves agents that will cite what they
+// are handed.
+//
+// FOUR FILES CARRY THIS COMMENT, one for each place a reader can arrive at
+// the ambiguity: src/lib/corpus.ts (the index the corpus builds),
+// src/lib/mcp/search.ts (the contract that reads it), src/lib/search/engine.ts
+// (the rules this one applies) and workers/mcp/src/search.ts (the route that
+// serves it). Each names the other three, because a reader who finds two
+// indexes over overlapping content is right to suspect one is a mistake.
 
 /** A retrieved passage, and everything a caller needs to verify it themselves. */
 export interface Citation {

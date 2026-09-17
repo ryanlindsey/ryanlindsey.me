@@ -64,8 +64,11 @@ a visitor typed.
 **Per-request analytics.** One row per request reaching a Worker, carrying six
 bounded labels: a class for the client (agent, browser or unknown), a stable name
 for it, a class for the route, a class for the referrer, which surface served it,
-and whether the status was 2xx, 3xx, 4xx or 5xx. These are aggregate counters and
-nobody can be picked out of them.
+and whether the status was 2xx, 3xx, 4xx or 5xx. A row from a search carries
+three more: which kind of page the search was filtered to, how many results came
+back, and whether the answer came from the cache. The text of the search is not
+among them and is not recorded anywhere. These are aggregate counters and nobody
+can be picked out of them.
 
 ## What is never stored
 
