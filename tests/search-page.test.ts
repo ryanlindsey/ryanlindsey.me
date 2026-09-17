@@ -4,6 +4,8 @@ import { SITE_HARNESS_WORKERS } from './workers';
 import { SEARCHABLE_PAGES } from '../src/lib/search/pages';
 import {
   countRows,
+  EXCERPT_CHARS,
+  excerptFrom,
   filterRows,
   highlight,
   joinResults,
@@ -65,6 +67,20 @@ describe('the path a result URL names', () => {
 });
 
 describe('the join', () => {
+  test('cleans the crawled chunk on its way into the row', () => {
+    const rows = joinResults(
+      [
+        result(
+          'https://ryanlindsey.me/writing/armature/',
+          '---\ndescription: x\n---\n\n[Skip to content](#main)\n\n## Armature\n\nA plugin.',
+        ),
+      ],
+      documents,
+    );
+
+    expect(rows[0]?.excerpt).toBe('Armature A plugin.');
+  });
+
   test('gives a published post its own date and reading time', () => {
     const rows = joinResults([result('https://ryanlindsey.me/writing/armature/')], documents);
 
@@ -179,6 +195,78 @@ describe('the excerpt', () => {
     expect(highlight('the rate limiter', 'rate limiter')).toBe(
       'the <mark>rate</mark> <mark>limiter</mark>',
     );
+  });
+});
+
+describe('the excerpt, before it is marked', () => {
+  test('drops the frontmatter fence the crawler picked up', () => {
+    expect(excerptFrom('---\ndescription: A case study.\n---\n\nThe real opening line.')).toBe(
+      'The real opening line.',
+    );
+  });
+
+  test('drops the skip link every page opens with', () => {
+    expect(excerptFrom('[Skip to content](#main)\n\nThe real opening line.')).toBe(
+      'The real opening line.',
+    );
+  });
+
+  test("keeps a link's text and discards its target", () => {
+    expect(excerptFrom('Built on [Cloudflare](https://www.cloudflare.com) throughout.')).toBe(
+      'Built on Cloudflare throughout.',
+    );
+  });
+
+  test('drops an empty heading anchor rather than leaving its brackets', () => {
+    expect(excerptFrom('## Models[](#models)\n\nChat runs on Sonnet.')).toBe(
+      'Models Chat runs on Sonnet.',
+    );
+  });
+
+  test('drops heading markers, bullets and emphasis', () => {
+    expect(excerptFrom('## Evals\n\n* **Chat** runs on `sonnet`.')).toBe(
+      'Evals Chat runs on sonnet.',
+    );
+  });
+
+  test('drops a markdown table, which cannot be a paragraph', () => {
+    expect(
+      excerptFrom('Suites:\n\n| Suite | Pass |\n| --- | --- |\n| chat | 4/4 |\n\nAfter.'),
+    ).toBe('Suites: After.');
+  });
+
+  test('collapses the whitespace a stripped block leaves behind', () => {
+    expect(excerptFrom('One.\n\n\nTwo.   Three.')).toBe('One. Two. Three.');
+  });
+
+  test('truncates to the cap, on a word boundary, with an ellipsis', () => {
+    const long = 'word '.repeat(80).trim();
+    const excerpt = excerptFrom(long);
+
+    expect(excerpt.length).toBeLessThanOrEqual(EXCERPT_CHARS + 1);
+    expect(excerpt.endsWith('…')).toBe(true);
+    expect(excerpt).not.toMatch(/\s…$/);
+  });
+
+  test('does not butt the ellipsis against sentence punctuation', () => {
+    // Rendered against the live index, the first row read "639 driver
+    // sessions.…", which reads as four dots rather than as a continuation.
+    const text = `${'word '.repeat(38)}sentences. ${'tail '.repeat(20)}`;
+    const excerpt = excerptFrom(text);
+
+    expect(excerpt).toMatch(/sentences…$/);
+    expect(excerpt).not.toContain('.…');
+  });
+
+  test('leaves a short excerpt alone, with no ellipsis', () => {
+    expect(excerptFrom('Short enough.')).toBe('Short enough.');
+  });
+
+  test('strips before it truncates, so the cap counts prose rather than syntax', () => {
+    // The fence alone is longer than the cap. Truncating first would leave an
+    // excerpt made entirely of frontmatter.
+    const fence = `---\ndescription: ${'x'.repeat(EXCERPT_CHARS)}\n---\n\nThe real opening line.`;
+    expect(excerptFrom(fence)).toBe('The real opening line.');
   });
 });
 

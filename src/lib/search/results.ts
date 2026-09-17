@@ -138,6 +138,12 @@ export function pathOf(url: string): string | null {
  * to one row per URL, so re-ranking here would be this page inventing an
  * opinion about relevance that nothing measured. #148 owns ranking.
  *
+ * THE EXCERPT IS CLEANED HERE, once, for both row kinds. `excerptFrom` is what
+ * turns a crawled markdown chunk into the sentence a row shows, and doing it in
+ * the join rather than in the page means the truncation and the stripping are
+ * asserted by the same tests that assert the drop rule, and a second renderer
+ * could not forget them.
+ *
  * DEDUPED AGAIN ANYWAY, on the normalised path rather than on the raw key.
  * Upstream's dedupe is per URL string, so `…/ops/` and `…/ops` survive it as
  * two entries and would render as two identical rows. Nothing has been
@@ -164,7 +170,7 @@ export function joinResults(
       rows.push({
         href: path,
         title: document.title,
-        excerpt: result.excerpt,
+        excerpt: excerptFrom(result.excerpt),
         kind: document.kind,
         publishedAt: document.publishedAt,
         readingMinutes: document.readingMinutes,
@@ -179,7 +185,7 @@ export function joinResults(
     rows.push({
       href: page.path,
       title: page.title,
-      excerpt: result.excerpt,
+      excerpt: excerptFrom(result.excerpt),
       kind: 'page',
       publishedAt: null,
       readingMinutes: null,
@@ -204,6 +210,110 @@ export function countRows(rows: readonly SearchRow[]): SearchCounts {
     work: rows.filter((row) => row.kind === 'work').length,
     page: rows.filter((row) => row.kind === 'page').length,
   };
+}
+
+/**
+ * The longest excerpt a row renders.
+ *
+ * MATCHED TO THE HAND-WRITTEN DESCRIPTIONS the index rows carry, because this
+ * sits in exactly the slot those occupy on `/writing` and `/work` and the
+ * epic's argument is that a search result IS an index row. Two to three lines
+ * at the row's `max-w-[64ch]` measure.
+ */
+export const EXCERPT_CHARS = 200;
+
+/**
+ * Everything the crawler keeps that a reader should never see.
+ *
+ * MEASURED AGAINST THE LIVE INSTANCE on 2026-09-17 rather than guessed at, and
+ * every entry below is something that was actually rendered on the page before
+ * this function existed. `ai_search`'s website source hands back page text as
+ * markdown, so a chunk arrives carrying the document's YAML frontmatter fence,
+ * the `Skip to content` link every page opens with, heading markers, list
+ * bullets, table pipes, emphasis, and links in full `[text](target)` form.
+ * Chunks ran 1,300 to 3,000 characters and the page printed all of it, so a
+ * result row was a wall of syntax.
+ *
+ * STRIPPED RATHER THAN RENDERED, WHICH IS A SECURITY DECISION BEFORE IT IS A
+ * VISUAL ONE. Parsing this into real HTML was the alternative and was rejected:
+ * it would hand `set:html` markup derived from crawled third-party text, which
+ * is the one thing this page is built not to do (see `highlight`), and it would
+ * put headings, tables and lists inside a three-line row slot, which reads
+ * worse rather than better. What a reader wants here is a sentence about the
+ * page, and a sentence is what markdown syntax is in the way of.
+ *
+ * ORDER MATTERS AND IS ASSERTED. The fence goes before the link unwrapping, so
+ * a `description:` containing brackets cannot leave fragments behind, and every
+ * strip happens before the truncation, so the cap counts prose rather than
+ * syntax. A document whose frontmatter alone is longer than `EXCERPT_CHARS`
+ * would otherwise render an excerpt made entirely of frontmatter, which is the
+ * exact shape the live `/work` chunk had.
+ *
+ * NOT A MARKDOWN PARSER, deliberately. This runs on every result of every
+ * search and has to produce a paragraph, not a document tree; a parser would be
+ * a dependency, a bundle cost and a far larger surface for a page whose whole
+ * posture is that crawled text is data. What it cannot do is understood: a
+ * literal asterisk in prose is removed with the emphasis markers, and a line
+ * that merely looks like a table row is dropped. Both are acceptable in an
+ * excerpt whose own contract (src/lib/search/engine.ts) is findability rather
+ * than a verified passage.
+ */
+const STRIPS: ReadonlyArray<readonly [RegExp, string]> = [
+  // The document's own frontmatter, which the crawler keeps as literal text.
+  // Anchored to the start, because a `---` later in a page is a horizontal
+  // rule and its text is real content.
+  [/^\s*---\s*\n[\s\S]*?\n---\s*(?:\n|$)/, ' '],
+  // The skip link, which is the first thing inside every page's <body> and
+  // therefore the first thing in a chunk taken from the top of one.
+  [/\[Skip to content\]\([^)]*\)/g, ' '],
+  // Images before links, since an image is a link with a `!` in front and the
+  // link rule would otherwise leave the `!` and the alt text behind.
+  [/!\[[^\]]*\]\([^)]*\)/g, ' '],
+  // A link keeps its text and loses its target. An empty text is a heading
+  // anchor -- `## Models[](#models)` -- and leaves nothing at all.
+  [/\[([^\]]*)\]\([^)]*\)/g, '$1'],
+  // A table row cannot be a sentence, so the whole line goes rather than its
+  // pipes, which would otherwise run the cells together into a false one.
+  [/^[ \t]*\|.*$/gm, ' '],
+  [/^[ \t]{0,3}#{1,6}[ \t]+/gm, ''],
+  [/^[ \t]*[-*+][ \t]+/gm, ''],
+  [/^[ \t]*>[ \t]?/gm, ''],
+  [/[*_`~]/g, ''],
+];
+
+/**
+ * One chunk of crawled text, as the sentence a row shows.
+ *
+ * PLAIN TEXT OUT. Nothing here emits markup, and the result is handed to
+ * `highlight`, which escapes every character of it before adding the only tags
+ * this page writes. The two functions are the whole of the excerpt path and
+ * neither trusts the input.
+ *
+ * TRUNCATED ON A WORD BOUNDARY, with the ellipsis closed up against the last
+ * word rather than following a space, because a space before an ellipsis reads
+ * as a missing word rather than as a continuation.
+ *
+ * TRAILING PUNCTUATION GOES WITH THE SPACE, for the same reason and MEASURED
+ * ON THE LIVE INDEX: the first row of `?q=turnstile` cut after a full stop and
+ * rendered "639 driver sessions.…", which reads as four dots rather than as a
+ * sentence that continues. Whatever the cut lands on -- a stop, a comma, a
+ * colon, a dash, the middle dot this site uses between metadata -- is
+ * punctuation joining the excerpt to text nobody is going to see, so it goes.
+ */
+export function excerptFrom(chunk: string): string {
+  let text = chunk;
+  for (const [pattern, replacement] of STRIPS) {
+    text = text.replace(pattern, replacement);
+  }
+  text = text.replace(/\s+/g, ' ').trim();
+
+  if (text.length <= EXCERPT_CHARS) return text;
+
+  const cut = text.lastIndexOf(' ', EXCERPT_CHARS);
+  // A single word longer than the cap has no boundary to cut on, so the hard
+  // cut is the fallback rather than the rule.
+  const kept = text.slice(0, cut === -1 ? EXCERPT_CHARS : cut);
+  return `${kept.replace(/[\s.,;:!?·\u2013\u2014-]+$/, '')}…`;
 }
 
 /**
