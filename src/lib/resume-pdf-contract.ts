@@ -85,7 +85,12 @@
 // /resume.pdf reads from, so without it the workflow would read a hash it has
 // already seen, skip the upload, and go on serving the sheet with the credit
 // line on it.
-export const RESUME_PDF_CONTRACT_VERSION = 5;
+//
+// 6 since 2026-09-16: the sheet gained a role summary paragraph, a printed
+// case-study URL per artifact-bearing entry, and a date beside each project's
+// roles. All three change what identical résumé data renders as, which is
+// exactly what this constant tracks.
+export const RESUME_PDF_CONTRACT_VERSION = 6;
 
 const encoder = new TextEncoder();
 

@@ -119,3 +119,27 @@ test("src/pages/fit/run.ts's source never mentions setting a cookie", async () =
   const source = await readFile('src/pages/fit/run.ts', 'utf8');
   expect(source).not.toMatch(/set-cookie/i);
 });
+
+test('the hire pattern matches availability, not the managerial sense', () => {
+  // 09 §2 is about Ryan as the OBJECT of a search. Every other pattern in
+  // BANNED_PATTERNS reads that way; the broad verb form did not, and flagged
+  // the ordinary managerial sense this site states as fact.
+  const flagged = (text: string) => BANNED_PATTERNS.some((pattern) => pattern.test(text));
+
+  expect(flagged('available for hire')).toBe(true);
+  expect(flagged('hire me')).toBe(true);
+  expect(flagged('open to being hired')).toBe(true);
+  expect(flagged('looking to get hired')).toBe(true);
+
+  // Finding 2 of the final whole-branch review: the third-person object
+  // forms are the most natural phrasing of exactly what this check exists to
+  // catch, and the narrowing that added the managerial-sense exclusions below
+  // dropped them by accident -- `/\bhire me\b/i` alone never covered them.
+  expect(flagged('decide whether to hire him')).toBe(true);
+  expect(flagged('hiring him')).toBe(true);
+
+  expect(flagged('Hiring and team growth')).toBe(false);
+  expect(flagged('hiring manager')).toBe(false);
+  expect(flagged('raised the hiring bar')).toBe(false);
+  expect(flagged('hired and promoted dozens of engineers')).toBe(false);
+});

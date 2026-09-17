@@ -1,7 +1,8 @@
 ---
+import { getCollection } from 'astro:content';
 import '../styles/resume-sheet.css';
 import { getResume } from '../lib/resume-collection';
-import { formatDateRange, groupWorkByCompany } from '../lib/resume';
+import { artifactLinks, formatDateRange, groupWorkByCompany } from '../lib/resume';
 import { buildPerson, stringifyJsonLd } from '../lib/structured-data';
 
 /*
@@ -46,6 +47,13 @@ const resume = await getResume();
 // src/lib/resume.ts. A second implementation here is the drift this repo has
 // already been bitten by once -- see that file's header.
 const workGroups = groupWorkByCompany(resume.work);
+
+// Titles for the case studies `x_artifacts` points at. Read here rather than
+// in src/lib/resume.ts, which stays free of `astro:content` so a plain vitest
+// run can exercise its helpers.
+const caseStudyTitles = new Map(
+  (await getCollection('caseStudies')).map((study) => [study.id, study.data.title]),
+);
 
 /*
  * The sitewide Person node, built the way src/layouts/Base.astro builds it and
@@ -231,6 +239,7 @@ const fields: Field[] = [
                   <span class="dates">{formatDateRange(role.startDate, role.endDate)}</span>
                 )}
               </h4>
+              {role.summary && <p class="role-summary">{role.summary}</p>}
               {role.highlights.length > 0 && (
                 <ul>
                   {role.highlights.map((highlight) => (
@@ -238,6 +247,14 @@ const fields: Field[] = [
                   ))}
                 </ul>
               )}
+              {artifactLinks(role, caseStudyTitles).map((link) => {
+                const absolute = new URL(link.href, Astro.site!).href;
+                return (
+                  <p class="artifact">
+                    Case study: <a href={absolute}>{displayUrl(absolute)}</a>
+                  </p>
+                );
+              })}
             </div>
           ))}
         </div>
@@ -257,22 +274,27 @@ const fields: Field[] = [
                 <span class="org-name">
                   {project.url ? <a href={project.url}>{project.name}</a> : project.name}
                 </span>
-                {project.roles.length > 0 && (
-                  <span class="org-loc">{project.roles.join(', ')}</span>
-                )}
+                {(() => {
+                  const meta = [
+                    project.roles.join(', '),
+                    project.startDate ? formatDateRange(project.startDate, project.endDate) : '',
+                  ].filter(Boolean);
+                  return meta.length > 0 ? <span class="org-loc">{meta.join(' · ')}</span> : null;
+                })()}
                 <span class="fill" />
                 {/*
                   THE URL, NOT A DATE, in the slot the work entries use for
-                  their tenure -- the reference sheet's own arrangement and
-                  worth keeping. A link annotation is invisible on paper, so
+                  their tenure. A link annotation is invisible on paper, so
                   printing the host is the only way the address survives being
                   photocopied or parsed by an ATS.
 
-                  `project.startDate` is therefore not rendered on this sheet.
-                  The schema allows one, no project declares one today, and the
-                  slot it would occupy is taken; if a project ever needs both,
-                  that is a design decision about this row rather than a field
-                  someone forgot.
+                  The date therefore shares the `org-loc` span with the roles,
+                  joined the way src/pages/resume.md.ts already joins the same
+                  two values. An earlier version of this comment said
+                  `project.startDate` was simply not rendered here, which was
+                  true while no project declared one and stopped being true the
+                  moment three did. The slot it would have taken is still the
+                  URL's; that part has not changed.
                 */}
                 {project.url && <span class="dates">{displayUrl(project.url)}</span>}
               </h3>
@@ -284,6 +306,14 @@ const fields: Field[] = [
                   ))}
                 </ul>
               )}
+              {artifactLinks(project, caseStudyTitles).map((link) => {
+                const absolute = new URL(link.href, Astro.site!).href;
+                return (
+                  <p class="artifact">
+                    Case study: <a href={absolute}>{displayUrl(absolute)}</a>
+                  </p>
+                );
+              })}
             </div>
           ))}
         </section>

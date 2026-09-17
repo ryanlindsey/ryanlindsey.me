@@ -1,23 +1,6 @@
-# Source of truth for every rendered résumé format (HTML, Markdown, JSON, PDF
-# -- 02 §1). One commit here is meant to update all of them atomically, so
-# nothing in this file should exist only for one format's benefit.
-#
-# Structural facts (company, title, dates, location) come from the 2026-09-05
-# role inventory. `highlights`, `education` and `skills` were filled on
-# 2026-09-07 from résumé interview session 2, which combined Ryan's own career
-# archive (~/Documents/Career/, 2013-2022) with a live interview covering the
-# Weedmaps decade. Every claim below traces to that session record:
-# ryanlindsey.me.docs/docs/content/resume-interviews/2026-09-07-session-02.md
-#
-# Editorial rules this file is held to (02 §4, and session 1's case-study
-# review): no em dashes, American spelling, no quantified org-wide throughput
-# or productivity figure anywhere, and no company name in `basics.summary`
-# (00 §5 -- the résumé names the employer in `work`, positioning surfaces do
-# not). Role scope is stated as it actually was; see the session record on why
-# understating the title is the stronger claim here.
 basics:
   name: Ryan Lindsey
-  label: Senior Engineering Manager
+  label: Senior Engineering Manager, Agentic Engineering
   summary: >-
     Agentic engineering is making engineers dramatically faster. I build the
     instruments that let the organization around them keep pace. Nineteen years
@@ -32,9 +15,6 @@ basics:
     city: Laguna Niguel
     region: CA
     countryCode: US
-  # Ryan ruled on 2026-09-07: publish it. His read is that the number is
-  # effectively public already, having appeared on every résumé he has sent out
-  # since 2014. This closes the last content-track gap resumeGaps() reported.
   phone: (714) 330-6251
   profiles:
     - network: GitHub
@@ -49,15 +29,33 @@ work:
     position: Senior Engineering Manager
     location: Irvine, CA
     startDate: 2021-02
+    summary: >-
+      Own incident management for the entire engineering organization since
+      2024 and coach fellow engineering managers, while leading 8 engineers
+      across 2 teams. Platform: AWS, Ruby on Rails, Node.js, GraphQL, React,
+      Next.js, Terraform, Kubernetes, Docker, Fastly.
     x_artifacts:
       - delivery-forecasting
     highlights:
       - >-
-        Own incident management for the entire engineering organization: the
-        process itself, the communication strategy, service integrations, data
-        reporting, and training. Data Engineering and InfoSec run their own
-        incident processes on the same tooling. Accountable for the area's OKRs
-        and report on them to the executive team monthly.
+        Designed and built a delivery-forecasting toolchain for engineering
+        managers, beginning as a set of Claude Skills and migrating to an
+        internal MCP server as adoption outgrew that packaging. Adopted by >80%
+        of engineering managers and absorbed into the org-wide roadmapping and
+        reporting process.
+      - >-
+        The incident process I own now runs on agentic investigation: incident
+        commanders use agents and connected MCP servers over live telemetry,
+        which has raised root-cause-analysis quality and sharply reduced the
+        time to produce one.
+      - >-
+        That ownership covers the process itself, the communication strategy,
+        service integrations, data reporting, and training. Data Engineering
+        and InfoSec run their own incident processes on the same tooling.
+        Accountable for the area's OKRs and report on them to the executive
+        team monthly. Risky changes go through a change advisory board with
+        documented rollback plans, and post-incident review is blameless with
+        linked action items.
       - >-
         Measured the inherited process before changing it, and found response
         and resolution times were already at or better than industry standard,
@@ -65,19 +63,6 @@ work:
         weakness was time to detect, so that became the focus: a service-level
         observability initiative run with DevOps and SRE now surfaces issues
         before customers report them, across both web and native applications.
-      - >-
-        Risky changes are reviewed in advance by a change advisory board and
-        ship with documented rollback plans. Post-incident review is blameless
-        and every analysis carries linked action items. Incident commanders
-        investigate alerts using agents and connected MCP servers over live
-        telemetry, which has raised root-cause-analysis quality while sharply
-        reducing the time it takes to produce one.
-      - >-
-        Designed and built a delivery-forecasting toolchain for engineering
-        managers, beginning as a set of Claude Skills and migrating to an
-        internal MCP server as adoption outgrew that packaging. Adopted by >80% 
-        of engineering managers and absorbed into the org-wide
-        roadmapping and reporting process.
       - >-
         Publish agentic tooling as Claude Skills in a shared repository open to
         every engineering manager, running on scheduled cloud routines,
@@ -101,10 +86,10 @@ work:
     endDate: 2021-02
     highlights:
       - >-
-        Managed 12 to 19 engineers, from junior through staff level, across
+        Managed up to 19 engineers, from junior through staff level, across
         several cross-functional product delivery teams on a consumer platform
-        serving more than 8 million monthly active users. Reports spanned
-        backend, front-end, iOS, and Android.
+        used by millions of people every month. Reports spanned backend,
+        front-end, iOS, and Android.
       - >-
         Decoupled deployment from feature release, so the product and
         go-to-market teams could control launch timing independently of
@@ -121,18 +106,22 @@ work:
         they were handed.
       - >-
         Led image processing pipeline work spanning millions of unique assets,
-        improving engineering efficiency, vendor costs, application performance, and
-        improved inter-service communication for business-critical APIs with a
-        publish-subscribe message queue pattern.
+        improving engineering efficiency, vendor costs, and application
+        performance. Improved inter-service communication for business-critical
+        APIs with a publish-subscribe message queue pattern.
       - >-
         Sat several hundred interviews and grew the engineering team by dozens
         across multiple growth cycles. Promoted a dozen or more, a few onto the
         management track and the majority further along the technical one.
       - >-
+        As one of the company's first engineering managers, helped shape its
+        performance management program, iterated on it with HR for nearly a
+        decade, and coached other managers on running it, one-to-ones, and
+        situational management.
+      - >-
         Founded and ran a public monthly engineering meetup that passed 250
-        members inside a year, coached other engineering managers on one-to-one
-        practice and situational management, and built a repeatable onboarding
-        process for new engineers.
+        members inside a year, and built a repeatable onboarding process for
+        new engineers.
   - name: Weedmaps
     position: Manager, Front End Engineering
     location: Irvine, CA
@@ -152,8 +141,8 @@ work:
         meant changing three separate code bases to reach every user and
         device, a legacy of the pre-responsive mobile subdomain era. The work
         cut time to market and became the foundation for the company's later
-        front-end architecture, including a shared UI library built with
-        Design.
+        front-end architecture on React and Next.js, including a shared UI
+        library built with the Design team.
       - >-
         Defined and delivered the front-end staffing roadmap, and rebuilt the
         front-end technical exercise with the talent team.
@@ -174,13 +163,9 @@ work:
     endDate: 2016-02
     highlights:
       - >-
-        Architected and implemented user-interface features for the company's
-        e-commerce, marketing, and customer support websites, serving a global
-        customer base.
-      - >-
-        Drove the adoption of a new UI component library and design language
-        across those applications, working closely with the design and
-        marketing departments.
+        Architected UI features for the company's e-commerce, marketing, and
+        customer support websites, and drove adoption of a new UI component
+        library and design language with the design and marketing departments.
   - name: Innocean Worldwide
     position: Sr. Front End Developer
     location: Huntington Beach, CA
@@ -188,13 +173,9 @@ work:
     endDate: 2011-10
     highlights:
       - >-
-        Led development of interactive experiences for Hyundai USA, including
-        hyundaiusa.com, a set of microsites, Facebook games, and a custom
-        YouTube channel built entirely in HTML5, CSS3, and JavaScript.
-      - >-
-        Worked with the creative team from the conceptual phase onward,
-        providing technical advisement, research, and prototyping. Also built
-        and maintained the agency's own website.
+        Led interactive development for Hyundai USA, including hyundaiusa.com,
+        microsites, Facebook games, and a custom YouTube channel, working with
+        the creative team from concept onward.
   - name: Y&R Brands / Wunderman
     position: Front End Developer
     location: Irvine, CA
@@ -202,14 +183,9 @@ work:
     endDate: 2011-02
     highlights:
       - >-
-        Delivered award-winning interactive experiences for Land Rover,
-        Southwest Airlines, Toshiba, and Hilton, and provided technical
-        assessment during the conceptual phase of new work.
-      - >-
-        Recognized with Lester Wunderman awards for the Southwest Airlines "A
-        new form of free media" campaign (2009) and the Toshiba "Gamer
-        Preparedness" (2009) and "Boring vs Normal" (2008) campaigns, and with
-        a 38th Annual Creativity Award for Toshiba "Fusion Finish" (2008).
+        Delivered interactive work for Land Rover, Southwest Airlines, Toshiba,
+        and Hilton, recognized with Lester Wunderman awards (2008, 2009) and a
+        38th Annual Creativity Award (2008).
   - name: Freelance
     position: Web design & development
     location: Orange County, CA
@@ -222,28 +198,14 @@ work:
         communities, and custom content management systems for local
         businesses, independent films, and bands.
 
-# Work Ryan owns outright. Deliberately NOT in `work`: that section is
-# employment history, and `workHistoryIssues()` requires exactly one entry
-# without an `endDate` because exactly one job is current. See the `projects`
-# comment in content.config.ts for the full reasoning.
-#
-# `startDate` is omitted because no verified founding date exists yet. Same rule
-# as everywhere else in this file: an unknown date is left out, not guessed.
-# Ryan can supply one and it renders automatically.
-#
-# Scope of claims follows Ryan's own IP line from the 2026-09-06 technical
-# brief: the primitive composition, the isolation model, the eval architecture
-# including its unmet gate, and cost per unit of work are all publishable in
-# full. The hold-back list (loss-attribution parameters, corner classification
-# vocabulary, prompt corpus, glossary and coaching-style contents, catalog build
-# pipeline) appears nowhere here, and the other drivers are not named.
 projects:
   - name: Pixelsonly Racing
     description: >-
-      A sim racing coaching platform that turns raw telemetry into driver
-      development goals, with a personal AI race engineer for every driver, plus
-      a products line for the sim racing community.
+      A sim racing coaching platform that turns telemetry into driver
+      development goals, with a personal AI race engineer for every driver,
+      plus a products line for sim racers.
     url: https://pixelsonly.racing
+    startDate: 2026-06
     roles:
       - Founder
     x_artifacts:
@@ -251,76 +213,42 @@ projects:
     highlights:
       - >-
         Built and run solo on Cloudflare Workers, D1, R2, Durable Objects,
-        Queues and Workflows, with Anthropic's Claude routed through AI Gateway.
-        Workflows because CPU time excludes time awaiting I/O, which is what
-        makes a minutes-long model call affordable inside a request-shaped
-        runtime.
+        Queues and Workflows, with Claude routed through AI Gateway.
       - >-
-        Per-driver isolation by object addressing rather than query filtering:
-        the Durable Object instance name is the verified token slug, so each
-        driver's working memory is a physically separate SQLite instance and no
-        shared table exists for a bug to leak across. Asserted per tool inside
-        workerd against real storage, not against a mock.
-      - >-
-        Two eval harnesses, property-based rather than string-matching, one of
-        which reports its own replay gate as unmet because the bar was written
-        before any numbers existed. A run that measures nothing is a failure,
-        not a pass.
-      - >-
-        Cost tracked per unit of work from a spend ledger, with per-driver
-        budgets and delivery observability gated into the roadmap before the
-        driver count grows rather than after.
-  # Added 2026-09-13. Every claim below is already published in
-  # src/content/posts/armature.mdx, which is what makes this entry safe to
-  # write without a fresh disclosure review: the post is the reviewed artifact
-  # and this is a compression of it, not a new statement about the work. If a
-  # bullet here ever says something the post does not, that is the bug.
-  #
-  # `x_artifacts` is deliberately absent. Those slugs resolve to case studies
-  # under src/content/caseStudies/ and Armature has a post instead, so naming
-  # one here would fail unresolvedArtifactSlugs() rather than link anything.
-  #
-  # `url` is the repository rather than the post. The project IS the repository
-  # -- it is public, MIT, and the post's own closing argument is that the source
-  # is where a reader should go to check the claims.
+        Per-driver isolation by object addressing, property-based eval
+        harnesses that report their own unmet gates, and cost tracked per unit
+        of work against per-driver budgets.
   - name: Armature
     description: >-
-      A Claude Code plugin that gives an agent a GitHub Projects board to work
-      from: it picks the next actionable item across every repository the board
-      covers, claims it, works it on a branch, and opens a pull request it is
-      not permitted to merge.
+      A Claude Code plugin that gives an agent a GitHub Projects board: it
+      claims the next item, works it on a branch, and opens a pull request it
+      cannot merge.
     url: https://github.com/ryanlindsey/armature
+    startDate: 2026-06
     roles:
       - Author
     highlights:
       - >-
-        Open source under MIT, and the public iteration of a private set of
-        Claude Skills that had been running for months. The conversion is most
-        of the engineering: a private tool can hardcode one board and one set of
-        repositories, and a published one meets organizations, boards it has
-        never seen, and repositories that sit on more than one of them.
+        Open source under MIT since September 2026 and used every day to
+        deliver production features for Pixelsonly Racing. The public iteration
+        of private Claude Skills in use since June.
       - >-
-        Cross-repository by construction, because a platform split along
-        sensible lines needs changes in several codebases to deliver one
-        feature. A bare issue number is refused, since issue 278 names a
-        different issue in every repository that has had 278 issues, and
-        repositories instead claim short aliases in their own committed config,
-        read over GraphQL rather than from a central registry.
+        Claims work on the board before writing code and never merges, with no
+        flag or option to allow it. Runs daily against production work and
+        builds itself.
+  - name: ryanlindsey.me
+    description: >-
+      An agent-native personal site and MCP server on Cloudflare, built largely
+      by agents working a plan, with grounded chat and a published AI policy
+      and risk register.
+    url: https://ryanlindsey.me
+    startDate: 2026-08
+    highlights:
       - >-
-        An item is claimed on the board before a line of code is written, so an
-        interrupted run leaves a visible fact behind rather than losing its
-        state to a session transcript. Armature never merges, with no flag and
-        no configuration option: an agent that both writes the code and decides
-        the code is acceptable has removed the only checkpoint that was doing
-        any work.
-      - >-
-        Runs daily against production work and builds itself. Its own board
-        governs its development, and every pull request in the repository was
-        merged by a human, because the tool that opened them cannot.
+        Retrieval through Vectorize, rate limits in a Durable Object, a
+        tool-call audit trail, fenced untrusted content against prompt
+        injection, and evals scored by a model judge.
 
-# Years confirmed by Ryan 2026-09-07. They are bare years on purpose: the
-# schema's `yearOrYearMonth` accepts `YYYY` for education specifically, so no
-# invented month is needed to satisfy a regex. See content.config.ts.
 education:
   - institution: The Art Institute of California
     area: Interactive Media (HCI)
@@ -334,43 +262,52 @@ education:
     endDate: '2003'
 
 skills:
+  - name: Agentic engineering
+    keywords:
+      - MCP servers (Model Context Protocol)
+      - Claude Code and Claude Skills
+      - Agent design and tool use
+      - Spec-driven agentic development
+      - LLM evals (property-based, LLM-as-judge)
+      - Retrieval-augmented generation (RAG)
+      - Human-in-the-loop controls
+      - AI governance (acceptable use, risk register, audit trail)
+      - Prompt-injection defenses
+      - LLM cost controls and gateways
   - name: Engineering leadership
     keywords:
       - Incident management
-      - Change management
-      - Observability practice
-      - Team growth and promotion
+      - Change management (CAB, rollback plans)
+      - Observability
+      - OKRs and executive reporting
+      - Hiring and team growth
       - Coaching engineering managers
-      - Org process design
+      - Engineering enablement
+      - Cross-functional partnership
       - Performance management
-  - name: Agentic engineering
-    keywords:
-      - MCP servers
-      - Claude Skills
-      - Agent design
-      - Evals and golden fixtures
-      - Human-in-the-loop disclosure controls
-      - AI Gateway
   - name: Platform and delivery
     keywords:
-      - CI/CD
-      - Blue/green deployment
-      - CDN and edge caching
-      - Bot defense and mitigation
+      - Edge compute and caching (Fastly, Cloudflare Workers)
+      - Serverless (Durable Objects, Workflows, Queues)
+      - Kubernetes and Docker
+      - AWS and Terraform
+      - CI/CD and automated testing
+      - Blue/green, zero-downtime deployment
+      - Release management
+      - Bot mitigation
       - API design
       - High availability
-      - Serverless
-      - Infrastructure as code
-      - Containerization
-  - name: Languages and runtimes
+  - name: Languages and frameworks
     keywords:
       - TypeScript
-      - JavaScript, ESNext
-      - Ruby
+      - JavaScript
       - Node.js
-      - Python
+      - React and Next.js
+      - Ruby on Rails
+      - SQL (SQLite, D1)
+      - GraphQL
       - '*nix shell'
 
 meta:
-  version: 0.4.0
-  lastModified: '2026-09-13'
+  version: 0.5.0
+  lastModified: '2026-09-17'

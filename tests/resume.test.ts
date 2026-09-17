@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { SITE_HARNESS_WORKERS } from './workers';
 import {
+  artifactLinks,
   formatDateRange,
   groupWorkByCompany,
   resumeGaps,
@@ -36,26 +37,40 @@ const workEntry = (
   ...entry,
 });
 
-// Mirrors src/content/resume/ryan-lindsey.yaml. Kept here by hand rather than
-// read from that file: resumeGaps/workHistoryIssues are pure and this suite
-// deliberately runs without Astro's content pipeline (see src/lib/resume.ts's
-// header), and there is no dependency-free way from a plain vitest process to
-// parse real YAML. Task 2's HTTP-level tests, once /resume renders through
-// the real collection, are the stronger, drift-proof version of the
-// completeness assertion below -- this fixture must be kept in sync by hand
-// until then.
+// Shaped after src/content/resume/ryan-lindsey.yaml -- same companies, same
+// reverse-chronological order, same count of open (endDate-less) roles --
+// rather than read from that file: resumeGaps/workHistoryIssues are pure and
+// this suite deliberately runs without Astro's content pipeline (see
+// src/lib/resume.ts's header), and there is no dependency-free way from a
+// plain vitest process to parse real YAML. Task 2's HTTP-level tests, once
+// /resume renders through the real collection, are the stronger, drift-proof
+// version of the completeness assertion below.
 //
-// Highlight TEXT is abbreviated here rather than duplicated verbatim: the pure
-// functions under test only ever read `highlights.length`, and a second copy of
-// ~25 paragraphs of résumé prose would be a maintenance trap that drifts
-// silently. Highlight COUNTS, and every other field, do mirror the real file --
-// those are what these assertions actually depend on. The HTTP-level tests
+// CORRECTED 2026-09-16 (final whole-branch review, finding 1): this comment
+// used to say highlight COUNTS, and every other field, mirror the real file.
+// That was already false by the time it was written and drifted further
+// since -- the real record has grown to 8 highlights on the Engineering
+// Manager role, one highlight each on the pre-2016 roles, three `projects`
+// entries with their own `startDate`s, against this fixture's 7, two, and one
+// respectively. Wording that named a real, now-retired figure ("Managed 12 to
+// 19 engineers") made the false promise worse: a reader could mistake this
+// block for a second copy of the real data instead of the synthetic shape it
+// actually is.
+//
+// What this fixture mirrors, and what these assertions depend on, is
+// STRUCTURE: the company names, their order, one open role, and dates shaped
+// like the real ones. Highlight TEXT is invented rather than duplicated
+// verbatim -- the pure functions under test only ever read
+// `highlights.length` -- and highlight COUNTS, the project list, and project
+// dates are free to differ from the real file for the same reason: keeping
+// them in lockstep by hand is a maintenance trap that drifts silently, same
+// as copying ~25 paragraphs of résumé prose would be. The HTTP-level tests
 // further down read the real collection and are the drift-proof check on the
-// prose itself.
+// real content.
 const resumeFixture: Resume = {
   basics: {
     name: 'Ryan Lindsey',
-    label: 'Senior Engineering Manager',
+    label: 'Fixture Engineering Manager',
     summary:
       'Agentic engineering is making engineers dramatically faster. I build the instruments that let the organization around them keep pace. Nineteen years in software, a decade of it leading engineering teams: I own incident management for an entire engineering organization, I build the agentic tooling that other managers choose to adopt, and I still ship the code. The habit underneath all of it is to measure a process before improving it, because the constraint is rarely where everyone assumes it is.',
     email: 'hello@ryanlindsey.me',
@@ -93,7 +108,7 @@ const resumeFixture: Resume = {
       startDate: '2017-09',
       endDate: '2021-02',
       highlights: [
-        'Managed 12 to 19 engineers across several cross-functional teams',
+        'Managed engineers across several cross-functional teams',
         'Decoupled deployment from feature release',
         'Introduced global edge caching across the primary web applications',
         'Tripled overall test coverage and reduced escape defects',
@@ -182,7 +197,7 @@ const resumeFixture: Resume = {
     },
     { name: 'Agentic engineering', keywords: ['MCP servers', 'Claude Skills', 'Agent design'] },
     { name: 'Platform and delivery', keywords: ['CI/CD', 'Blue/green deployment'] },
-    { name: 'Languages and runtimes', keywords: ['TypeScript', 'Ruby', 'Node.js'] },
+    { name: 'Fixture languages', keywords: ['TypeScript', 'Ruby', 'Node.js'] },
   ],
   projects: [
     {
@@ -406,6 +421,37 @@ describe('unresolvedArtifactSlugs', () => {
   });
 });
 
+describe('artifactLinks', () => {
+  test('artifactLinks resolves each slug to a title and a /work href', () => {
+    const titles = new Map([
+      ['delivery-forecasting', 'Forecasting delivery'],
+      ['silent-failure', 'The silent failure'],
+    ]);
+    expect(artifactLinks({ x_artifacts: ['delivery-forecasting'] }, titles)).toEqual([
+      {
+        slug: 'delivery-forecasting',
+        title: 'Forecasting delivery',
+        href: '/work/delivery-forecasting',
+      },
+    ]);
+  });
+
+  test('artifactLinks returns [] for an entry declaring none', () => {
+    expect(artifactLinks({}, new Map())).toEqual([]);
+  });
+
+  test('artifactLinks omits a slug with no known title rather than inventing one', () => {
+    // CORRECTED (final whole-branch review, finding 5): nothing in `src/`
+    // calls unresolvedArtifactSlugs() to fail a build; the real backstop for
+    // an unpublished slug is tests/pages.test.ts and tests/resume-sheet.test.ts
+    // rendering the real collection, plus the résumé PDF gate's `links`
+    // check. Rendering "Case study: undefined" here would still be a second,
+    // worse error than simply omitting the slug, which is what this test
+    // guards.
+    expect(artifactLinks({ x_artifacts: ['never-published'] }, new Map())).toEqual([]);
+  });
+});
+
 describe('formatDateRange', () => {
   test('renders a closed range', () => {
     expect(formatDateRange('2016-05', '2017-09')).toBe('May 2016 — Sep 2017');
@@ -521,6 +567,22 @@ describe('stripXKeys', () => {
       prefix_x_suffix: 'kept',
     });
   });
+});
+
+test('no line in the résumé record ends in whitespace', () => {
+  // A folded scalar (`>-`) joins its lines with a single space, so a trailing
+  // space before the break folds into a DOUBLE space and ships that way to
+  // HTML, Markdown, JSON and the PDF alike. It is invisible in the source and
+  // invisible in review. Asserted over the raw bytes, because `parse()` has
+  // already folded by the time a parsed value could be inspected.
+  const source = readFileSync(resumeYamlPath, 'utf8');
+  const offenders = source
+    .split('\n')
+    .map((line, index) => [index + 1, line] as const)
+    .filter(([, line]) => /[ \t]+$/.test(line))
+    .map(([number, line]) => `line ${number}: ${JSON.stringify(line)}`);
+
+  expect(offenders, offenders.join('\n')).toEqual([]);
 });
 
 // Day 3 Task 3: /resume.json and /resume.md, exercised over HTTP the same

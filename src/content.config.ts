@@ -106,6 +106,32 @@ const isoDate = z
   .string()
   .regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, 'expected a YYYY-MM-DD date');
 
+/*
+ * THE RULES THIS RECORD IS HELD TO. They lived in the YAML's own header until
+ * the file was reduced to data; a résumé record in a public repository is the
+ * worst place to write down how its content was decided, and the header also
+ * enumerated the Pixelsonly Racing hold-back list, which published the names of
+ * the things it was withholding.
+ *
+ * ONE SOURCE FOR FOUR FORMATS. HTML, Markdown, JSON and the PDF all render from
+ * this one file, so one commit to it updates all four. Nothing in it should
+ * exist only for one format's benefit -- src/content/now/now.yaml's header
+ * quotes that rule as its own reason for being a separate file.
+ *
+ * 00 §5: THE RÉSUMÉ NAMES THE EMPLOYER IN `work`, POSITIONING SURFACES DO NOT.
+ * `basics.summary` carries no company name, and neither does the home page bio
+ * or the site footer. src/pages/index.astro and src/components/SiteFooter.astro
+ * both record that constraint at their own copy, and tests/pages.test.ts
+ * asserts the outcome on the home page rather than the mechanism.
+ *
+ * 02 §4: no em dashes, American spelling, and no quantified org-wide throughput
+ * or productivity figure anywhere. Extended 2026-09-16: no exact audience,
+ * traffic or revenue figure for any employer either, with order-of-magnitude
+ * wording as the ceiling.
+ *
+ * Role scope is stated as it actually was. Understating the title is the
+ * stronger claim here.
+ */
 export const resumeSchema = z.object({
   basics: z.object({
     name: z.string(),
@@ -186,10 +212,28 @@ export const resumeSchema = z.object({
         roles: z.array(z.string()).default([]),
         startDate: yearOrYearMonth.optional(),
         endDate: yearOrYearMonth.optional(),
+        // A highlight is a compression of what the project's own post or case
+        // study already publishes, not a second place to state a claim for
+        // the first time. A highlight here saying something its published
+        // source does not support is the bug -- this is the rule a deleted
+        // comment on the résumé YAML used to carry (armature's highlights
+        // against armature.mdx); it had no citer outside that file, so the
+        // migration to this schema's comments missed it (final whole-branch
+        // review, finding 4). It belongs beside the schema field a highlight
+        // actually is, not the record that was about to stop having comments.
         highlights: z.array(z.string()).default([]),
         // Same `x_` extension as `work[].x_artifacts`, and the reason this
         // section needed one: the Pixelsonly Racing case study had no entry to
         // hang off while `work` was the only place artifacts could be declared.
+        //
+        // An entry whose write-up is a POST rather than a case study leaves
+        // this absent. `unresolvedArtifactSlugs()` resolves slugs against
+        // src/content/caseStudies/ only, so naming a post's slug here would
+        // render no link and fail tests/pages.test.ts's "every x_artifacts
+        // slug renders as a link" assertion (and, once the résumé sheet next
+        // renders, the PDF gate's `links` check) rather than the site build
+        // itself -- see src/lib/resume.ts's `artifactLinks` doc comment for
+        // why nothing in `src/` treats this as fatal.
         x_artifacts: z.array(z.string()).optional(),
       }),
     )

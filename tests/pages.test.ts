@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
+import { parse } from 'yaml';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import type { CollectionEntry } from 'astro:content';
@@ -7,7 +8,12 @@ import { BANNED_PATTERNS } from './candidacy-patterns';
 import { elementWith } from './markup';
 import { GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
 import { PILLAR_LABELS } from '../src/lib/pillars';
-import { formatDateRange, groupWorkByCompany, type ResumeWorkEntry } from '../src/lib/resume';
+import {
+  formatDateRange,
+  groupWorkByCompany,
+  type Resume,
+  type ResumeWorkEntry,
+} from '../src/lib/resume';
 import { buildLlmsTxt, buildLlmsFullTxt, type LlmsLink } from '../src/lib/llms-index';
 import { buildRssFeed, buildJsonFeed, RSS_MARKDOWN_NOTICE, type JsonFeed } from '../src/lib/feeds';
 import { GLOBAL_LIMITS, LIMITS } from '../src/lib/mcp/limits';
@@ -535,7 +541,7 @@ test('the lead story is the most recent published post, linked whole', async () 
 });
 
 test('the home page never names an employer', async () => {
-  // 00 §5, the rule src/content/resume/ryan-lindsey.yaml's header records:
+  // 00 §5, the rule `src/content.config.ts` records beside `resumeSchema`:
   // the résumé names the employer in `work`, positioning surfaces do not.
   // The prototype's bio copy broke this and the fix was to read the résumé
   // record instead of typing a line -- so this asserts the outcome rather
@@ -1687,6 +1693,26 @@ test('links every resume format, and every link resolves', async () => {
     expect(page, `/resume should link ${format}`).toContain(`href="${format}"`);
     const response = await server.fetch(format);
     expect(response.status, `${format} should resolve`).toBe(200);
+  }
+});
+
+test('a role summary reaches /resume and /resume.md', async () => {
+  const record = parse(readFileSync(resumeYamlPath, 'utf8')) as Resume;
+  const summary = record.work.find((entry) => entry.summary)?.summary;
+  expect(summary, 'no work entry declares a summary').toBeTruthy();
+  expect(await html('/resume')).toContain(summary);
+  expect(await html('/resume.md')).toContain(summary);
+});
+
+test('every x_artifacts slug renders as a link on /resume and /resume.md', async () => {
+  const record = parse(readFileSync(resumeYamlPath, 'utf8')) as Resume;
+  const slugs = [...record.work, ...(record.projects ?? [])].flatMap((e) => e.x_artifacts ?? []);
+  expect(slugs.length, 'the record declares no artifact slugs').toBeGreaterThan(0);
+  const page = await html('/resume');
+  const markdown = await html('/resume.md');
+  for (const slug of slugs) {
+    expect(page, `/resume does not link ${slug}`).toContain(`/work/${slug}`);
+    expect(markdown, `/resume.md does not link ${slug}`).toContain(`/work/${slug}`);
   }
 });
 

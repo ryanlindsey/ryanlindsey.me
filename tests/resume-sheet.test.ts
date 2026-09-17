@@ -556,3 +556,41 @@ test('the revision line is read from the record rather than typed into the page'
   // move in the same commit as the content they describe.
   expect(html).toContain(`Rev ${resume.meta.version} · ${resume.meta.lastModified}`);
 });
+
+test('the print sheet prints each artifact URL as text, not only as a link', async () => {
+  // A link annotation is invisible on paper and is often stripped by applicant
+  // tracking systems, which is the same reasoning the sheet already applies to
+  // project URLs. The address has to survive as characters.
+  const slugs = [...resume.work, ...projects].flatMap((entry) => entry.x_artifacts ?? []);
+  expect(slugs.length).toBeGreaterThan(0);
+  const markup = await sheet();
+  for (const slug of slugs) {
+    expect(markup, `the sheet does not print ${slug}`).toContain(`ryanlindsey.me/work/${slug}`);
+  }
+});
+
+test('a role summary reaches the print sheet', async () => {
+  const summary = resume.work.find((entry) => entry.summary)?.summary;
+  expect(summary, 'no work entry declares a summary').toBeTruthy();
+  expect(await sheet()).toContain(summary);
+});
+
+test('a dated project prints its range on the sheet', async () => {
+  // `projects` and `formatDateRange` are already in scope in this suite.
+  const dated = projects.filter((project) => project.startDate);
+  expect(dated.length, 'no project declares a startDate').toBeGreaterThan(0);
+  const markup = await sheet();
+  for (const project of dated) {
+    const range = formatDateRange(project.startDate!, project.endDate);
+    expect(markup, `${project.name} does not print ${range}`).toContain(range);
+  }
+});
+
+test('a dated project still prints its URL on the sheet', async () => {
+  // The date shares the row; it does not evict the address. A link annotation
+  // is invisible on paper, so the printed host is the only form that survives.
+  const markup = await sheet();
+  for (const project of projects.filter((p) => p.url)) {
+    expect(markup).toContain(project.url!.replace(/^https?:\/\//, '').replace(/^www\./, ''));
+  }
+});

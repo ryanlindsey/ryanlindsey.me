@@ -1,10 +1,11 @@
 ---
+import { getCollection } from 'astro:content';
 import Shell from '../layouts/Shell.astro';
 import ResumeFormats from '../components/ResumeFormats.astro';
 import TableOfContents from '../components/TableOfContents.astro';
 import type { TocNode } from '../lib/toc';
 import { getResume } from '../lib/resume-collection';
-import { formatDateRange, resumeGaps, groupWorkByCompany } from '../lib/resume';
+import { artifactLinks, formatDateRange, resumeGaps, groupWorkByCompany } from '../lib/resume';
 
 // Day 3 (02 §1): render from the single validated résumé source instead of
 // the day-2 hardcoded skeleton. getResume() reads the `resume` content
@@ -25,6 +26,13 @@ const showGapNotice = import.meta.env.DEV && gaps.length > 0;
 // the number beside the company name, which for a company where several
 // titles were held is a span no single role has.
 const workGroups = groupWorkByCompany(resume.work);
+
+// Titles for the case studies `x_artifacts` points at. Read here rather than
+// in src/lib/resume.ts, which stays free of `astro:content` so a plain vitest
+// run can exercise its helpers.
+const caseStudyTitles = new Map(
+  (await getCollection('caseStudies')).map((study) => [study.id, study.data.title]),
+);
 
 /*
  * The sticky section rail (design 1k, issue #108). Built as TocNode[] and
@@ -304,6 +312,9 @@ const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading tex
                           </p>
                         )}
                       </div>
+                      {role.summary && (
+                        <p class="mt-4 max-w-[72ch] text-body text-ink-muted">{role.summary}</p>
+                      )}
                       {role.highlights.length > 0 && (
                         <ul class="mt-4 flex max-w-[72ch] list-disc flex-col gap-2.5 pl-5 text-body text-ink-muted">
                           {role.highlights.map((highlight) => (
@@ -311,6 +322,11 @@ const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading tex
                           ))}
                         </ul>
                       )}
+                      {artifactLinks(role, caseStudyTitles).map((link) => (
+                        <p class="mt-4 text-body text-ink-muted">
+                          Case study: <a href={link.href}>{link.title}</a>
+                        </p>
+                      ))}
                     </div>
                   ))}
                 </div>
@@ -358,6 +374,11 @@ const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading tex
                           ))}
                         </ul>
                       )}
+                      {artifactLinks(project, caseStudyTitles).map((link) => (
+                        <p class="mt-4 text-body text-ink-muted">
+                          Case study: <a href={link.href}>{link.title}</a>
+                        </p>
+                      ))}
                     </div>
                   </li>
                 ))}

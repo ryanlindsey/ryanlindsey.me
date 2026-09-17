@@ -368,6 +368,12 @@ li::before {
 .project-desc {
   margin-bottom: 2pt;
 }
+.role-summary {
+  margin-bottom: 2pt;
+}
+.artifact {
+  margin-bottom: 2pt;
+}
 
 /*
  * The hanging label column. The text-indent property INHERITS, so unless it is
