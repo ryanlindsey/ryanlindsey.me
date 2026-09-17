@@ -25,14 +25,18 @@
  * SHARPENED 2026-09-17 (issue #144), because the sentence above is true of the
  * CALL and was quietly read as true of the property, which is how a guard gets
  * written that does not guard. A `Fetcher` answers every property access with
- * an RPC stub, so `typeof env.AI.run` is `'function'` here, not `undefined`,
- * and the TypeError arrives only when the returned promise is awaited:
+ * an RPC stub, so the property is a function and the TypeError arrives only
+ * when the returned promise is awaited. MEASURED on `AI_SEARCH`, from inside a
+ * Worker and again through `getEnv()`:
+ *   env.AI_SEARCH.constructor.name -> 'Fetcher'
+ *   typeof env.AI_SEARCH.search    -> 'function'   <- NOT undefined
  *   await env.AI_SEARCH.search({ query: 'turnstile' })
  *   -> TypeError: The RPC receiver does not implement the method "search".
- * Measured from inside a Worker and again through `getEnv()`. So code asking
- * "is the real service reachable here" must ask a var rather than probe the
- * binding, which is what every `*_ENGINE` and `*_MODE` seam in this repo is
- * for.
+ * `env.AI.run` was not measured separately and is not claimed to have been:
+ * the same override installs the same `Fetcher`, so the shape follows from the
+ * mechanism rather than from a second reading. Either way, code asking "is the
+ * real service reachable here" must ask a var rather than probe the binding,
+ * which is what every `*_ENGINE` and `*_MODE` seam in this repo is for.
  */
 export default {
   async fetch(request: Request): Promise<Response> {

@@ -178,7 +178,13 @@
   // An always-remote binding costs you the BOOT, so every suite that starts
   // this Worker fails at once, including the ones that never mention search.
   //
-  // MEASURED 2026-09-17, wrangler 4.131.1, miniflare 5.20260831.0-alpha.
+  // MEASURED 2026-09-17, wrangler 4.131.1 and the miniflare IT resolves,
+  // 5.20260911.0-alpha. That version matters and is easy to cite wrong: two
+  // miniflares are installed, and the hoisted one (5.20260831.0-alpha, pulled
+  // in by @cloudflare/vite-plugin) is NOT the one the harness runs, because
+  // `createTestHarness` is imported from `wrangler` and resolves wrangler's own
+  // nested copy.
+  //
   // Declared with no test override, `npm test` went from 80 files green to
   // 32 FAILED / 48 passed -- every suite that boots this Worker. Isolated
   // against a throwaway Worker whose ONLY binding was this one, so the
@@ -187,18 +193,27 @@
   //   -> Error: Failed to start the remote proxy session. Error reloading
   //      remote server: More than one account available but unable to select
   //      one in non-interactive mode.
+  // Which credential error the failure ends in varies with what the shell can
+  // see, so read the "Failed to start the remote proxy session" half as the
+  // signal and the rest as noise.
   //
-  // `"remote": false` DOES NOT SILENCE IT. Measured on the same day, with the
-  // flag set, the harness still opened the session and still failed there --
-  // so this is not a binding whose locality you get to choose. Which credential
-  // error the failure ends in varies with what the shell can see, so read the
-  // "Failed to start the remote proxy session" half as the signal and the rest
-  // as noise. wrangler's own
-  // binding table classifies `ai_search` as
-  // "DO-NOT-USE-this-resource-will-never-have-a-local-simulator", the same
-  // string it gives `ai`, and Cloudflare's AI Search documentation says it in
-  // prose: "AI Search has no local emulator, so the binding always talks to
-  // the remote service". Do not spend an afternoon on the flag.
+  // `"remote": false` DOES NOT SILENCE IT HERE, and the reason is worth more
+  // than the fact, because wrangler's source reads as though it should.
+  // `validateBindingRemoteSetting` throws a UserError on `remote: false` for
+  // any binding classified
+  // "DO-NOT-USE-this-resource-will-never-have-a-local-simulator", which is what
+  // wrangler's binding table calls `ai_search` and `ai` alike. THAT VALIDATOR IS
+  // ON THE `wrangler dev` PATH AND THE HARNESS NEVER REACHES IT. Re-measured
+  // 2026-09-17 with the flag set and the override removed: no UserError, and
+  // the harness opened the remote proxy session anyway. `wrangler deploy
+  // --dry-run` accepts it in silence too. So reading the validator and
+  // concluding the flag is rejected here gets the right instinct from the wrong
+  // evidence: the flag is not rejected, it is ignored.
+  //
+  // Cloudflare says the same thing in prose, in the AI Search agent guide at
+  // /ai-search/how-to/human-in-the-loop-knowledge-base/: "AI Search has no
+  // local emulator, so the binding always talks to the remote service
+  // (`remote = true`)." Do not spend an afternoon on the flag.
   //
   // The remedy is therefore the one `ai` already uses, and not a new idea:
   // tests/workers.ts overrides this binding to workers/mock-ai, which is a
@@ -206,6 +221,15 @@
   // that boots this Worker must carry that override, which in practice means
   // going through MCP_WORKER in tests/workers.ts rather than writing a fresh
   // worker list.
+  //
+  // NO `remote` KEY AT ALL, for the same reason `ai` above carries none: a
+  // deployed Worker always reaches the real service, so the flag decides
+  // nothing in production and only describes local intent. `remote: true`
+  // would suppress wrangler's dev-time warning at the cost of declaring that
+  // local development should reach the live index, which is a decision for
+  // whoever is developing rather than a default this file should make.
+  // Measured 2026-09-17: `wrangler deploy --dry-run` emits no warning either
+  // way, so the omission costs nothing on the path Workers Builds takes.
   //
   // WHAT CALLING IT DOES UNDER THE HARNESS, measured from inside a Worker and
   // again through `getEnv()`, and the shape is a trap worth reading twice:
@@ -215,11 +239,12 @@
   //   -> TypeError: The RPC receiver does not implement the method "search".
   // A service binding answers every property access with an RPC stub, so the
   // `typeof` check passes and the failure arrives at the AWAIT. Anything in
-  // #146 that means to ask "is AI Search reachable here" has to ask a var
-  // rather than the binding, which is what `SEARCH_ENGINE` is for. The
-  // corresponding note in workers/mock-ai/src/index.ts calls `env.AI.run()`
-  // "a TypeError here before it is ever a 501", which is true of the call and
-  // was never true of the property.
+  // #146 that means to ask "is AI Search reachable here" will have to ask a
+  // var rather than the binding; that var does not exist yet, and #146 is
+  // where `SEARCH_ENGINE` arrives. Four comments in this repo had written that
+  // as `env.AI.run` rather than `env.AI.run()`, and this change added the
+  // parentheses to all four, because the property form of that sentence is
+  // exactly the guard that would not guard.
   //
   // `wrangler types` emits `AI_SEARCH: AiSearchInstance`, and that type is
   // already in the committed worker-configuration.d.ts, so nothing had to be

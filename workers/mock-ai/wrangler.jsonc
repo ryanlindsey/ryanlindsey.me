@@ -25,19 +25,30 @@
   // instead replaces the binding with a plain service binding pointed here,
   // which is local, so no remote session is started at all.
   //
-  // Setting `"remote": false` on the root `ai` binding would also have silenced
-  // it, in one line and with no new files -- but it would disarm real AI under
-  // `wrangler dev` for everyone, which is precisely what the embedding job
-  // built on this binding needs. The cost belongs in the test harness, not in
-  // the config that local development reads.
+  // This paragraph USED TO SAY that setting `"remote": false` on the root `ai`
+  // binding "would also have silenced it, in one line and with no new files",
+  // and rejected it only because it would disarm real AI under `wrangler dev`
+  // for everyone, which is precisely what the embedding job built on this
+  // binding needs. The second half still holds and is still the reason the cost
+  // belongs in the test harness rather than in the config local development
+  // reads. THE FIRST HALF WAS FALSE, and #144 is what measured it.
   //
-  // SINCE #144 IT STANDS IN FRONT OF TWO BINDINGS, not one. `ai_search` carries
-  // the same wrangler classification as `ai`, so declaring it on the MCP Worker
-  // reproduced this failure exactly: measured 2026-09-17, `npm test` went from
-  // 80 files green to 32 failed, and `"remote": false` did not help there
-  // either. A second mock Worker would have been byte-identical to this one,
-  // and this file already argues that a moving part protecting nothing is what
-  // retired workers/mock-browser, so both bindings resolve here.
+  // `remote: false` silences nothing here. Measured 2026-09-17 on the sibling
+  // `ai_search` binding, which wrangler classifies identically: with the flag
+  // set and the override removed, the harness opened the remote proxy session
+  // anyway. wrangler does have a validator that rejects `remote: false` for
+  // this class of binding, which is what makes the old sentence sound
+  // plausible, but it sits on the `wrangler dev` path and the harness never
+  // calls it. So the one-line alternative was never an alternative: it would
+  // have cost the local `ai` binding for nothing, and the suites would still
+  // have failed.
+  //
+  // SINCE #144 THIS WORKER STANDS IN FRONT OF TWO BINDINGS, not one. Declaring
+  // `ai_search` on the MCP Worker reproduced the failure above exactly: `npm
+  // test` went from 80 files green to 32 failed. A second mock Worker would
+  // have been byte-identical to this one, and the argument in tests/workers.ts
+  // that retired workers/mock-browser -- a moving part protecting nothing --
+  // applies to writing one, so both bindings resolve here.
   //
   // The name is what `bindingOverrides: { AI: "mock-ai", AI_SEARCH: "mock-ai" }`
   // resolves.

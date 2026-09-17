@@ -37,12 +37,12 @@ export interface McpEnv {
    * rather than anything chosen here.
    *
    * THE TYPE IS A PROMISE ABOUT THE DEPLOYED WORKER AND NOT ABOUT THE TEST
-   * HARNESS, and this binding is the one where that gap bites. tests/workers.ts
-   * overrides it to a service Worker, so `env.AI_SEARCH` is a `Fetcher` there,
-   * `typeof env.AI_SEARCH.search` is still `'function'` because an RPC stub
-   * answers every property, and the call throws only once awaited. The
-   * measurement and the reason the override is not optional are written out in
-   * full beside the binding in workers/mcp/wrangler.jsonc.
+   * HARNESS, and this binding is the one where that gap bites: under the
+   * harness it is a `Fetcher`, not an `AiSearchInstance`, and a `typeof` check
+   * on any method here passes and then throws at the await. The measurement,
+   * and the reason the override that produces it is not optional, are written
+   * out in full beside the binding in workers/mcp/wrangler.jsonc rather than
+   * repeated here.
    *
    * The interface carries `update`, `items` and `jobs` as well as `search`, so
    * the epic's "retrieval only" rule is something this code has to keep rather
@@ -127,7 +127,7 @@ export interface McpEnv {
    *
    * `'off'` is set on this Worker by tests/workers.ts, for the same reason
    * `MCP_SEARCH_EMBEDDER` is `'stub'` there: the harness overrides `AI` to a
-   * service Worker, so `env.AI.run` is a TypeError here by design. Under the
+   * service Worker, so `env.AI.run()` is a TypeError here by design. Under the
    * seam, `analyze_fit` exercises everything AROUND the model call -- the
    * scope gate, the argument schema, the limiter, the audit row and the error
    * shape -- and the call itself is covered with a stub `Ai` in

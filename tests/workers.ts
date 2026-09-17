@@ -179,8 +179,10 @@ export const SITE_WORKER = {
  * failure is at startup rather than at the call. MEASURED 2026-09-17 with the
  * override removed: `npm test` went from 80 files green to 32 failed and 48
  * passed, which is every suite that boots this Worker and most that never
- * mention search. `"remote": false` in the config does not help, measured the
- * same day. The full measurement, including what the binding looks like under
+ * mention search. `"remote": false` does not help either, measured the same
+ * day: wrangler's validator that would reject it sits on the `wrangler dev`
+ * path, and this harness never reaches it, so the flag is ignored rather than
+ * refused. The full measurement, including what the binding looks like under
  * this override, is beside the binding in workers/mcp/wrangler.jsonc.
  *
  * So the rule the `AI` override already implied is now a hard one: any harness
@@ -306,7 +308,7 @@ export const MCP_WORKER = {
     /**
      * Day 6's judge (src/lib/judge/engine.ts), off. Same seam shape and same
      * cause as `FIT_ENGINE` and `CHAT_ENGINE`: `env.AI` is a service binding
-     * under the harness, so `env.AI.run` is a TypeError. Under the seam,
+     * under the harness, so `env.AI.run()` is a TypeError. Under the seam,
      * `judge_answer` exercises the scope gate, the argument schema, the limiter
      * and the error shape; the model call is exercised only by `npm run evals`
      * against a deployed endpoint.

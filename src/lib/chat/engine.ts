@@ -98,7 +98,7 @@ export interface ChatEnv extends DocumentsEnv {
    * Test-only seam, the same shape as `FIT_ENGINE`: no deployed config declares
    * it, `'off'` refuses before anything is read or spent, and an unrecognised
    * value throws. tests/workers.ts sets it on the MCP Worker because the
-   * harness overrides `AI` to a service binding, so `env.AI.run` is a TypeError
+   * harness overrides `AI` to a service binding, so `env.AI.run()` is a TypeError
    * there by design.
    */
   CHAT_ENGINE?: string;
