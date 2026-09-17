@@ -31,6 +31,25 @@ export interface McpEnv {
   AI: Ai;
   VECTORIZE: VectorizeIndex;
   /**
+   * AI Search, the retrieval behind /search (epic #143). `wrangler types`
+   * generates exactly this type from the `ai_search` entry in
+   * workers/mcp/wrangler.jsonc, which is why the name is `AiSearchInstance`
+   * rather than anything chosen here.
+   *
+   * THE TYPE IS A PROMISE ABOUT THE DEPLOYED WORKER AND NOT ABOUT THE TEST
+   * HARNESS, and this binding is the one where that gap bites. tests/workers.ts
+   * overrides it to a service Worker, so `env.AI_SEARCH` is a `Fetcher` there,
+   * `typeof env.AI_SEARCH.search` is still `'function'` because an RPC stub
+   * answers every property, and the call throws only once awaited. The
+   * measurement and the reason the override is not optional are written out in
+   * full beside the binding in workers/mcp/wrangler.jsonc.
+   *
+   * The interface carries `update`, `items` and `jobs` as well as `search`, so
+   * the epic's "retrieval only" rule is something this code has to keep rather
+   * than something the binding enforces.
+   */
+  AI_SEARCH: AiSearchInstance;
+  /**
    * The high-intent events queue (06 §3). Produced here, consumed on the site
    * Worker -- a queue is the seam that lets one Worker report an event another
    * one acts on, which is what keeps the `EMAIL` binding and the destination
@@ -174,6 +193,7 @@ export const MCP_BINDING_NAMES = [
   'AE',
   'AI',
   'VECTORIZE',
+  'AI_SEARCH',
   'EVENTS',
   'RATE_LIMITER',
   'RLME_TOKEN_SIGNING_KEY',

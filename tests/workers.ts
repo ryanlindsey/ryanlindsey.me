@@ -169,6 +169,24 @@ export const SITE_WORKER = {
  * workers/mock-ai/wrangler.jsonc for why this is not `"remote": false` instead.
  * Any harness that lists this Worker must therefore list MOCK_AI_WORKER too.
  *
+ * `AI_SEARCH` IS OVERRIDDEN TO THE SAME MOCK, AND IT IS THE LEAST OPTIONAL
+ * OVERRIDE IN THIS FILE. Issue #144 added the `ai_search` binding to find out
+ * what it does to this harness, having assumed it would behave like
+ * `VECTORIZE`: boot cleanly, throw when called. It does not. wrangler
+ * classifies `ai_search` exactly as it classifies `ai` --
+ * "DO-NOT-USE-this-resource-will-never-have-a-local-simulator" -- so declaring
+ * it makes booting this Worker open a real remote proxy session, and the
+ * failure is at startup rather than at the call. MEASURED 2026-09-17 with the
+ * override removed: `npm test` went from 80 files green to 32 failed and 48
+ * passed, which is every suite that boots this Worker and most that never
+ * mention search. `"remote": false` in the config does not help, measured the
+ * same day. The full measurement, including what the binding looks like under
+ * this override, is beside the binding in workers/mcp/wrangler.jsonc.
+ *
+ * So the rule the `AI` override already implied is now a hard one: any harness
+ * that boots this Worker must carry BOTH overrides, which is the argument for
+ * every suite going through this file rather than assembling its own list.
+ *
  * `CORPUS_REFRESH: 'off'` (day 3 Task 15) follows from that AI override and from
  * one more fact about `env.VECTORIZE` here: whatever it is, it is not
  * `ryanlindsey-me-corpus`. Running the embedding job here would therefore need
@@ -295,7 +313,7 @@ export const MCP_WORKER = {
      */
     JUDGE_ENGINE: 'off',
   },
-  bindingOverrides: { AI: 'mock-ai' },
+  bindingOverrides: { AI: 'mock-ai', AI_SEARCH: 'mock-ai' },
 };
 
 /** The Workers AI stand-in the override above resolves. Test-only, never deployed. */

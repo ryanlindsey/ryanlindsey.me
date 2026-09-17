@@ -167,6 +167,90 @@
   // binding points at production.
   "vectorize": [{ "binding": "VECTORIZE", "index_name": "ryanlindsey-me-corpus" }],
 
+  // AI Search, for the /search page (epic #143). Bound HERE rather than on the
+  // site for the same build constraint the `ai` binding above records, and
+  // issue #144 existed to find out whether that was the only thing the two had
+  // in common. It was not, and the answer is the more expensive one.
+  //
+  // #144 ASSUMED THIS BEHAVED LIKE `vectorize`: boots fine, throws `needs to be
+  // run remotely` when called. IT BEHAVES LIKE `ai` INSTEAD, and the difference
+  // is where the failure lands. A Vectorize binding costs you one thrown call.
+  // An always-remote binding costs you the BOOT, so every suite that starts
+  // this Worker fails at once, including the ones that never mention search.
+  //
+  // MEASURED 2026-09-17, wrangler 4.131.1, miniflare 5.20260831.0-alpha.
+  // Declared with no test override, `npm test` went from 80 files green to
+  // 32 FAILED / 48 passed -- every suite that boots this Worker. Isolated
+  // against a throwaway Worker whose ONLY binding was this one, so the
+  // attribution is not an inference:
+  //   server.listen()
+  //   -> Error: Failed to start the remote proxy session. Error reloading
+  //      remote server: More than one account available but unable to select
+  //      one in non-interactive mode.
+  //
+  // `"remote": false` DOES NOT SILENCE IT. Measured on the same day, with the
+  // flag set, the harness still opened the session and still failed there --
+  // so this is not a binding whose locality you get to choose. Which credential
+  // error the failure ends in varies with what the shell can see, so read the
+  // "Failed to start the remote proxy session" half as the signal and the rest
+  // as noise. wrangler's own
+  // binding table classifies `ai_search` as
+  // "DO-NOT-USE-this-resource-will-never-have-a-local-simulator", the same
+  // string it gives `ai`, and Cloudflare's AI Search documentation says it in
+  // prose: "AI Search has no local emulator, so the binding always talks to
+  // the remote service". Do not spend an afternoon on the flag.
+  //
+  // The remedy is therefore the one `ai` already uses, and not a new idea:
+  // tests/workers.ts overrides this binding to workers/mock-ai, which is a
+  // LOCAL service Worker, so no remote session is opened at all. Any harness
+  // that boots this Worker must carry that override, which in practice means
+  // going through MCP_WORKER in tests/workers.ts rather than writing a fresh
+  // worker list.
+  //
+  // WHAT CALLING IT DOES UNDER THE HARNESS, measured from inside a Worker and
+  // again through `getEnv()`, and the shape is a trap worth reading twice:
+  //   env.AI_SEARCH.constructor.name  -> 'Fetcher'
+  //   typeof env.AI_SEARCH.search     -> 'function'      <- NOT undefined
+  //   await env.AI_SEARCH.search({ query: 'turnstile' })
+  //   -> TypeError: The RPC receiver does not implement the method "search".
+  // A service binding answers every property access with an RPC stub, so the
+  // `typeof` check passes and the failure arrives at the AWAIT. Anything in
+  // #146 that means to ask "is AI Search reachable here" has to ask a var
+  // rather than the binding, which is what `SEARCH_ENGINE` is for. The
+  // corresponding note in workers/mock-ai/src/index.ts calls `env.AI.run()`
+  // "a TypeError here before it is ever a 501", which is true of the call and
+  // was never true of the property.
+  //
+  // `wrangler types` emits `AI_SEARCH: AiSearchInstance`, and that type is
+  // already in the committed worker-configuration.d.ts, so nothing had to be
+  // installed for it. Note what that interface carries: `search` and
+  // `chatCompletions`, but also `update`, `items` and `jobs`. An instance
+  // binding is not read-only, so the epic's "retrieval only" constraint is a
+  // discipline this code keeps rather than a limit the binding imposes.
+  //
+  // THE INSTANCE DOES NOT EXIST YET, AND THAT DECIDES THE MERGE ORDER.
+  // `wrangler ai-search list` against this account, 2026-09-17: "You haven't
+  // created any AI Search instances in namespace "default" on this account."
+  // Cloudflare's configuration reference says an `ai_search` instance "Must
+  // exist in the default namespace at deploy time", and wrangler does no
+  // client-side check -- it passes `{ type: "ai_search", instance_name }`
+  // straight into the upload metadata and lets the API judge it. So issue
+  // #145, which creates `ryanlindsey-me-search`, is a DEPLOY PREREQUISITE for
+  // this line rather than merely the next task in the epic. Nothing in this
+  // repository can catch that: the whole test suite is green with the name
+  // pointing at nothing, because the harness never resolves it.
+  //
+  // `ai_search` rather than `ai_search_namespaces`, and the ordering problem
+  // above is the argument AGAINST the choice rather than for it: a namespace
+  // binding names the `default` namespace, which every account already has,
+  // and wrangler creates a missing one on deploy, so it could not fail this
+  // way. What it buys instead is `list()`, `create()` and `delete()` over
+  // every instance in the namespace. That is the same trade the R2 credential
+  // in .github/workflows/resume-pdf.yml makes and settles the same way: the
+  // narrow binding, and the ordering constraint written down where the person
+  // merging will read it.
+  "ai_search": [{ "binding": "AI_SEARCH", "instance_name": "ryanlindsey-me-search" }],
+
   // 05:32 UTC daily: the corpus embedding refresh (src/lib/corpus.ts), invoked
   // from this Worker's `scheduled()`. It used to share the site Worker's 05:17
   // trigger and moved here with the two bindings above.

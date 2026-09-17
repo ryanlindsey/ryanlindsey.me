@@ -31,7 +31,16 @@
   // built on this binding needs. The cost belongs in the test harness, not in
   // the config that local development reads.
   //
-  // The name is what `bindingOverrides: { AI: "mock-ai" }` resolves.
+  // SINCE #144 IT STANDS IN FRONT OF TWO BINDINGS, not one. `ai_search` carries
+  // the same wrangler classification as `ai`, so declaring it on the MCP Worker
+  // reproduced this failure exactly: measured 2026-09-17, `npm test` went from
+  // 80 files green to 32 failed, and `"remote": false` did not help there
+  // either. A second mock Worker would have been byte-identical to this one,
+  // and this file already argues that a moving part protecting nothing is what
+  // retired workers/mock-browser, so both bindings resolve here.
+  //
+  // The name is what `bindingOverrides: { AI: "mock-ai", AI_SEARCH: "mock-ai" }`
+  // resolves.
   "name": "mock-ai",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-02",
