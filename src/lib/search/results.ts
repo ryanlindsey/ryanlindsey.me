@@ -234,6 +234,65 @@ export const EXCERPT_CHARS = 200;
  * Chunks ran 1,300 to 3,000 characters and the page printed all of it, so a
  * result row was a wall of syntax.
  *
+ * TWO OF THOSE ENTRIES CHANGED STATUS IN #250 AND THEY CHANGED IN OPPOSITE
+ * DIRECTIONS, which is the part worth reading before editing either rule.
+ * That issue put one content selector on the instance -- path `**`, selector
+ * `main` -- so a chunk is now a page's `<main>` element rather than its whole
+ * document. A selector reaches the BODY ONLY, and everything below follows
+ * from that one fact.
+ *
+ *   - THE SKIP LINK NO LONGER REACHES A CHUNK. It sits ahead of `<main>` in
+ *     src/layouts/Shell.astro, so the selector drops it at crawl time, and
+ *     tests/seo.test.ts holds it there on every page the sitemap lists. Its
+ *     rule below STAYS ANYWAY, and not as belt and braces: the selector is
+ *     dashboard configuration this repository cannot read, and an instance
+ *     rebuilt without it starts carrying the link again. That is not a
+ *     hypothetical -- #145 rebuilt this instance once already -- although
+ *     #250 established that a rebuild is not required to change a selector,
+ *     which is the correction src/lib/search/engine.ts carries in full. The
+ *     cost of keeping the rule is one regex over text that no longer contains
+ *     the string.
+ *   - THE FRONTMATTER FENCE IS EXPECTED TO SURVIVE THE SELECTOR, where #148
+ *     predicted it would not. Its findings comment proposed a content selector
+ *     "to drop the skip link and the synthetic frontmatter from chunks", and
+ *     only the first half follows from how the pipeline is documented to work.
+ *     Cloudflare's HTML pre-processing extracts `title`, `description` and the
+ *     `og:` tags from `<head>` as a step of its own, ahead of and separate
+ *     from the `cssSelector` filter, so the fence is built from metadata
+ *     rather than from the body a selector narrows. The step order is the
+ *     whole reason, and it is worth not reaching for the tidier one: a CSS
+ *     selector CAN match a head element, so "the selector cannot see `<head>`"
+ *     would be a wrong argument for a right conclusion. #145 corroborates from
+ *     the other end:
+ *     `item.metadata` on this instance carries `description` and
+ *     `chunk_modality` and nothing else, and `description` is the only field
+ *     the fence has ever contained. READ FROM THE DOCUMENTATION RATHER THAN
+ *     MEASURED, which is why this says expected: #250's verification is what
+ *     settles it, and the first rule below is what removes the fence either
+ *     way.
+ *
+ * AND A THIRD SURVIVOR NOBODY HAD LOOKED FOR, found in #250's review and then
+ * MEASURED against the live instance on 2026-09-17. The same documented step
+ * that extracts the meta tags also says "JSON-LD content is extracted, if it
+ * exists. This will be appended at the end of the converted markdown", and it
+ * runs before the `cssSelector` filter as well. src/layouts/Base.astro emits a
+ * Person node on every page plus BlogPosting, BreadcrumbList or TechArticle on
+ * an article, so every page's markdown ENDS with a fenced ```json block
+ * carrying all of them. Confirmed by querying the index directly: `"@context"`
+ * returns five pages scoring 0.9392 to 0.9775, and the top chunk of
+ * `/writing/armature/` ends in exactly that block.
+ *
+ * SO IT IS THE SKIP LINK'S PROBLEM EXACTLY, at a higher score, and #250 did
+ * not fix it. It is not fixable the way the skip link was: no selector can
+ * reach it, and the structured data is not going anywhere -- it is what #150's
+ * work put there on purpose. That leaves a rule here, which would clean the
+ * excerpt without touching what the reranker matches on, and nothing at all
+ * for retrieval. Left whole for its own issue rather than half-fixed here,
+ * because the display half alone would read as the finding having been dealt
+ * with. What it costs today is that a tail chunk can render as raw JSON in a
+ * `/search` row: the emphasis rule below takes the backticks off and the
+ * braces stay.
+ *
  * STRIPPED RATHER THAN RENDERED, WHICH IS A SECURITY DECISION BEFORE IT IS A
  * VISUAL ONE. Parsing this into real HTML was the alternative and was rejected:
  * it would hand `set:html` markup derived from crawled third-party text, which
@@ -257,14 +316,33 @@ export const EXCERPT_CHARS = 200;
  * that merely looks like a table row is dropped. Both are acceptable in an
  * excerpt whose own contract (src/lib/search/engine.ts) is findability rather
  * than a verified passage.
+ *
+ * THE ONE IT CANNOT DO THAT IS VISIBLE ON THE PAGE is the run-together card
+ * text on `/`, `/writing/` and `/work/`, and #250 left it there on purpose.
+ * The cause is not this function: the index cards are anchors wrapping block
+ * elements, so the crawler's HTML-to-markdown step flattens each card into one
+ * link, and what arrives here is already
+ * `[2026-09-1212 minAgents that deliver across repositoriesArmature is a
+ * Claude Code plugin...](/writing/armature)`. The link rule below unwraps it
+ * correctly and the result is still a run-on, because nothing in the text says
+ * where one card ended. A rule that guessed would have to guess.
+ *
+ * NOT FIXED BY #250's CONTENT SELECTOR EITHER, and #145 guessed otherwise:
+ * "A content selector would likely fix this too." It does not. Narrowing a
+ * page to `<main>` keeps the anchors; only a selector reaching INSIDE them
+ * would separate the cards, and that selector would have to name the markup
+ * of three index pages and would mark an item errored the day a redesign
+ * moved any of it. Measured and left for its own change.
  */
 const STRIPS: ReadonlyArray<readonly [RegExp, string]> = [
   // The document's own frontmatter, which the crawler keeps as literal text.
   // Anchored to the start, because a `---` later in a page is a horizontal
   // rule and its text is real content.
   [/^\s*---\s*\n[\s\S]*?\n---\s*(?:\n|$)/, ' '],
-  // The skip link, which is the first thing inside every page's <body> and
-  // therefore the first thing in a chunk taken from the top of one.
+  // The skip link, which was the first thing inside every page's <body> and
+  // therefore the first thing in a chunk taken from the top of one. #250's
+  // content selector now drops it before it is indexed; this rule is what
+  // covers an instance rebuilt without that selector. See the note above.
   [/\[Skip to content\]\([^)]*\)/g, ' '],
   // Images before links, since an image is a link with a `!` in front and the
   // link rule would otherwise leave the `!` and the alt text behind.

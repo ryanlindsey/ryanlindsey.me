@@ -27,9 +27,13 @@ import { CORPUS_EMBEDDING_MODEL, chunkMarkdown, type CorpusType } from '../corpu
 //
 // AI Search cannot make that promise at all. Its chunks are crawled HTML
 // converted to Markdown -- #145 measured a synthesised frontmatter block and a
-// `[Skip to content](#main)` line inside the first chunk of every page -- and
-// there is no manifest, no chunk count and no second copy of the document to
-// check a reconstruction against. It is the right index for finding a page and
+// `[Skip to content](#main)` line inside the first chunk of every page, and
+// #250 measured a fenced JSON-LD block closing the last one -- and there is no
+// manifest, no chunk count and no second copy of the document to check a
+// reconstruction against. #250's content selector removed the skip link and
+// neither of the other two, which changes how much of that text is chrome and
+// changes nothing about the promise: what a chunk holds is still whatever the
+// crawler made of a page. It is the right index for finding a page and
 // the wrong one for quoting it, which is exactly the split: that index serves
 // people looking for a page, this one serves agents that will cite what they
 // are handed.
