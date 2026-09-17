@@ -201,9 +201,9 @@ work:
 projects:
   - name: Pixelsonly Racing
     description: >-
-      A sim racing coaching platform that turns raw telemetry into driver
-      development goals, with a personal AI race engineer for every driver, plus
-      a products line for the sim racing community.
+      A sim racing coaching platform that turns telemetry into driver
+      development goals, with a personal AI race engineer for every driver,
+      plus a products line for sim racers.
     url: https://pixelsonly.racing
     startDate: 2026-06
     roles:
@@ -213,60 +213,41 @@ projects:
     highlights:
       - >-
         Built and run solo on Cloudflare Workers, D1, R2, Durable Objects,
-        Queues and Workflows, with Anthropic's Claude routed through AI Gateway.
-        Workflows because CPU time excludes time awaiting I/O, which is what
-        makes a minutes-long model call affordable inside a request-shaped
-        runtime.
+        Queues and Workflows, with Claude routed through AI Gateway.
       - >-
-        Per-driver isolation by object addressing rather than query filtering:
-        the Durable Object instance name is the verified token slug, so each
-        driver's working memory is a physically separate SQLite instance and no
-        shared table exists for a bug to leak across. Asserted per tool inside
-        workerd against real storage, not against a mock.
-      - >-
-        Two eval harnesses, property-based rather than string-matching, one of
-        which reports its own replay gate as unmet because the bar was written
-        before any numbers existed. A run that measures nothing is a failure,
-        not a pass.
-      - >-
-        Cost tracked per unit of work from a spend ledger, with per-driver
-        budgets and delivery observability gated into the roadmap before the
-        driver count grows rather than after.
+        Per-driver isolation by object addressing, property-based eval
+        harnesses that report their own unmet gates, and cost tracked per unit
+        of work against per-driver budgets.
   - name: Armature
     description: >-
-      A Claude Code plugin that gives an agent a GitHub Projects board to work
-      from: it picks the next actionable item across every repository the board
-      covers, claims it, works it on a branch, and opens a pull request it is
-      not permitted to merge.
+      A Claude Code plugin that gives an agent a GitHub Projects board: it
+      claims the next item, works it on a branch, and opens a pull request it
+      cannot merge.
     url: https://github.com/ryanlindsey/armature
     startDate: 2026-06
     roles:
       - Author
     highlights:
       - >-
-        Open source under MIT, and the public iteration of a private set of
-        Claude Skills that had been running for months. The conversion is most
-        of the engineering: a private tool can hardcode one board and one set of
-        repositories, and a published one meets organizations, boards it has
-        never seen, and repositories that sit on more than one of them.
+        Open source under MIT since September 2026 and used every day to
+        deliver production features for Pixelsonly Racing. The public iteration
+        of private Claude Skills in use since June.
       - >-
-        Cross-repository by construction, because a platform split along
-        sensible lines needs changes in several codebases to deliver one
-        feature. A bare issue number is refused, since issue 278 names a
-        different issue in every repository that has had 278 issues, and
-        repositories instead claim short aliases in their own committed config,
-        read over GraphQL rather than from a central registry.
+        Claims work on the board before writing code and never merges, with no
+        flag or option to allow it. Runs daily against production work and
+        builds itself.
+  - name: ryanlindsey.me
+    description: >-
+      An agent-native personal site and MCP server on Cloudflare, built largely
+      by agents working a plan, with grounded chat and a published AI policy
+      and risk register.
+    url: https://ryanlindsey.me
+    startDate: 2026-08
+    highlights:
       - >-
-        An item is claimed on the board before a line of code is written, so an
-        interrupted run leaves a visible fact behind rather than losing its
-        state to a session transcript. Armature never merges, with no flag and
-        no configuration option: an agent that both writes the code and decides
-        the code is acceptable has removed the only checkpoint that was doing
-        any work.
-      - >-
-        Runs daily against production work and builds itself. Its own board
-        governs its development, and every pull request in the repository was
-        merged by a human, because the tool that opened them cannot.
+        Retrieval through Vectorize, rate limits in a Durable Object, a
+        tool-call audit trail, fenced untrusted content against prompt
+        injection, and evals scored by a model judge.
 
 education:
   - institution: The Art Institute of California
@@ -281,41 +262,49 @@ education:
     endDate: '2003'
 
 skills:
+  - name: Agentic engineering
+    keywords:
+      - MCP servers (Model Context Protocol)
+      - Claude Code and Claude Skills
+      - Agent design and tool use
+      - Spec-driven agentic development
+      - LLM evals (property-based, LLM-as-judge)
+      - Retrieval-augmented generation (RAG)
+      - Human-in-the-loop controls
+      - AI governance (acceptable use, risk register, audit trail)
+      - Prompt-injection defenses
+      - LLM cost controls and gateways
   - name: Engineering leadership
     keywords:
       - Incident management
-      - Change management
-      - Observability practice
-      - Team growth and promotion
+      - Change management (CAB, rollback plans)
+      - Observability
+      - OKRs and executive reporting
+      - Hiring and team growth
       - Coaching engineering managers
-      - Org process design
+      - Engineering enablement
+      - Cross-functional partnership
       - Performance management
-  - name: Agentic engineering
-    keywords:
-      - MCP servers
-      - Claude Skills
-      - Agent design
-      - Evals and golden fixtures
-      - Human-in-the-loop disclosure controls
-      - AI Gateway
   - name: Platform and delivery
     keywords:
-      - CI/CD
-      - Blue/green deployment
-      - CDN and edge caching
-      - Bot defense and mitigation
+      - Edge compute and caching (Fastly, Cloudflare Workers)
+      - Serverless (Durable Objects, Workflows, Queues)
+      - Kubernetes and Docker
+      - Terraform
+      - CI/CD and automated testing
+      - Blue/green, zero-downtime deployment
+      - Release management
+      - Bot mitigation
       - API design
       - High availability
-      - Serverless
-      - Infrastructure as code
-      - Containerization
-  - name: Languages and runtimes
+  - name: Languages and data
     keywords:
       - TypeScript
-      - JavaScript, ESNext
-      - Ruby
+      - JavaScript
       - Node.js
-      - Python
+      - Ruby on Rails
+      - SQL (SQLite, D1)
+      - GraphQL
       - '*nix shell'
 
 meta:
