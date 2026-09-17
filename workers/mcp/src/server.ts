@@ -24,7 +24,7 @@ import { registerTools } from './tools';
  * describing the same server should not disagree about what it serves.
  *
  * Candidacy-language discipline (09 §2/§4) applies to this string exactly as
- * it does to `request_private_access`'s copy in ./tools.ts: never `hire`,
+ * it does to `request_private_access`'s copy in ./tools.ts: never `for hire`,
  * `candidate`, `job-search`, `recruiter`. The vocabulary here is *audience
  * tiers*, *private tier*, *scoped tokens*.
  *

@@ -10,7 +10,9 @@
     "get_application_narrative"
   ],
   "banned_patterns": [
-    "\\bhir(e|es|ed|ing)\\b",
+    "\\bfor hire\\b",
+    "\\bhire me\\b",
+    "\\b(to be|be|being|been|get|getting) hired\\b",
     "\\bcandidates?\\b",
     "\\brecruit(er|ers|ing|ment)?\\b",
     "\\bjob[-\\s]?search(es|ing)?\\b",

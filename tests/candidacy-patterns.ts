@@ -27,7 +27,7 @@
  * ordinary technical-writing phrases this site's own case studies and posts
  * are exactly the kind of content to use for something that has nothing to do
  * with candidacy. The one case that actually matters, "available for hire",
- * is already caught by `hir(e|es|ed|ing)` above without that added risk --
+ * is already caught by `/\bfor hire\b/i` without that added risk --
  * this pattern's only unique catch would be a phrase like "available for new
  * opportunities" that names no other banned word, which is a narrower, real
  * gap this list accepts in exchange for not crying wolf on generic prose.
@@ -44,7 +44,25 @@
  * `tests/**\/*.test.ts` as suites, so this file is inert to import.
  */
 export const BANNED_PATTERNS = [
-  /\bhir(e|es|ed|ing)\b/i,
+  // NARROWED 2026-09-16, and the reason is the shape of the rest of this list.
+  // Every other pattern here describes Ryan as the OBJECT of a search:
+  // `candidates?`, `recruit`, `job-search`, `actively looking`, `open to work`,
+  // `candidac(y|ies)`. The broad verb form did not, so it also matched the
+  // MANAGERIAL sense -- "hiring manager", "Hiring and team growth", "hired and
+  // promoted dozens of engineers" -- which 09 §2 was never about, and which
+  // src/content/resume/ryan-lindsey.yaml states as ordinary fact.
+  //
+  // MEASURED BEFORE NARROWING, not assumed: across all 189 files `git ls-files`
+  // reports under SCAN_ROOTS, the broad form's only hit was
+  // workers/mcp/src/server.ts, which SCAN_EXCEPTIONS already excuses and which
+  // matches four other patterns here besides, so its entry stays valid and this
+  // file's equality assertion still holds. No coverage in use was lost.
+  //
+  // "available for hire" -- which this file's own header calls the one case
+  // that actually matters -- still fails, on the first of the three.
+  /\bfor hire\b/i,
+  /\bhire me\b/i,
+  /\b(to be|be|being|been|get|getting) hired\b/i,
   /\bcandidates?\b/i,
   /\brecruit(er|ers|ing|ment)?\b/i,
   /\bjob[-\s]?search(es|ing)?\b/i,
