@@ -8,12 +8,6 @@
 
   "workers_dev": false,
   "routes": [{ "pattern": "mcp.ryanlindsey.me", "custom_domain": true }],
-  // Spelled out rather than the bare `"enabled": true` shorthand. While automatic
-  // tracing is in early beta the top-level flag turns on logs *only*; traces need
-  // their own `enabled` and will not follow it until a future compatibility date
-  // (Cloudflare's traces doc, verified 2026-09-05). `persist` is already the
-  // default -- it is explicit because dashboard retention is billed separately
-  // from ingestion, so paying for it should be a decision, not an inherited default.
   "observability": {
     "enabled": true,
     "logs": {
@@ -34,21 +28,10 @@
       "binding": "DB",
       "database_name": "ryanlindsey-me-db",
       "database_id": "3e7e8dfd-7926-4309-80ec-b583529394d3",
-      // Default is `migrations/` relative to this config file, i.e.
-      // `workers/mcp/migrations/`. The site Worker binds the same database
-      // and will get its own migrations later; two migration directories
-      // against one D1 database is a corruption waiting to happen, so both
-      // configs point at the one directory at the repo root instead.
       "migrations_dir": "../../migrations",
     },
   ],
 
-  // KV_CACHE is where the corpus manifest lives, under `corpus:manifest`
-  // (src/lib/corpus.ts). The id below is the SAME namespace the site Worker
-  // binds, and it has to stay that way: the key already exists in production
-  // with real content, so a second namespace would make the refresh read an
-  // empty manifest, conclude every document had changed, and re-embed and
-  // re-bill the whole corpus on its first run.
   "kv_namespaces": [
     { "binding": "KV_CONFIG", "id": "aa1dd780da1e49eb8cf2dbf8ac9cf2b9" },
     { "binding": "KV_CACHE", "id": "c0a1106f9c9944979cd228070be21b53" },
@@ -61,307 +44,19 @@
 
   "analytics_engine_datasets": [{ "binding": "AE", "dataset": "ryanlindsey_me_events" }],
 
-  // Day 6 (06 §3). The gated-tier events -- a fit run, any gated tool call --
-  // are observed HERE, because this is the Worker that resolves the grant and
-  // knows the audience. The site Worker holds the consumer; a queue is the
-  // seam that lets one Worker report an event another one acts on.
   "queues": { "producers": [{ "binding": "EVENTS", "queue": "ryanlindsey-me-events" }] },
 
-  // Workers AI, for the publishing corpus's embedding job -- which runs HERE
-  // rather than on the site Worker, and the reason is a build constraint rather
-  // than a preference. @cloudflare/vite-plugin's binding table classifies `ai` as
-  // "DO-NOT-USE-this-resource-will-never-have-a-local-simulator":
-  // `pickRemoteBindings` returns true for it regardless of `remote`, and
-  // `validateBindingRemoteSetting` throws on `remote: false`, so any tooling that
-  // instantiates the owning Worker's bindings opens a remote proxy session. On
-  // the site Worker that tooling is `astro build` (via @astrojs/cloudflare's
-  // prerenderer), and CI has no Cloudflare credentials by design, so the build
-  // failed there. Nothing in CI builds THIS Worker -- .github/workflows/checks.yml
-  // has no reference to it -- so the binding is inert as far as the required
-  // checks are concerned. It is also not conflation: day 4's semantic search runs
-  // over this same corpus and needs `ai` and `vectorize` anyway.
-  //
-  // The test harness still overrides this binding to workers/mock-ai (see
-  // tests/workers.ts). That is unchanged and still necessary: `npm test` boots
-  // this Worker, and an un-overridden `ai` binding would open the same remote
-  // session under vitest that it opened under `astro build`.
-  //
-  // MEASURED against this account 2026-09-06 from a throwaway dev Worker, kept
-  // because no Cloudflare model page states qwen3's output width and a Vectorize
-  // index can never change the one it is created at:
-  //   env.AI.run('@cf/qwen/qwen3-embedding-0.6b', { documents: ['hello'] })
-  //   -> { shape: [1, 1024] }, L2-normalised (|v| = 1.0000000).
-  // `{ text: 'x' }` returns a BIT-IDENTICAL vector to `{ documents: ['x'] }` --
-  // an alias, not a second mode. Both keys take an array and batch: [n, 1024].
-  //
-  // CORRECTED 2026-09-07 (Task 15). Task 14 concluded from a `3030: invalid
-  // input` on `{ query: 'x' }` that this model "has NO query-side mode on
-  // Workers AI". That was wrong, and the reason is a spelling: the key in the
-  // model's own input schema is `queries`, PLURAL. `query` is not a schema key
-  // at all, so 3030 was a rejection of an unknown field, not evidence of a
-  // missing capability. Re-measured, with a repeated identical call as the
-  // bit-identity control:
-  //   { documents: ['agentic engineering manager'] } ->  5 prompt tokens
-  //   { queries:   ['agentic engineering manager'] } -> 24 prompt tokens
-  //   cosine 0.717 between them, NOT bit-identical.
-  // The query side wraps its input in an instruction template, `instruction`
-  // customises that template, and it moves ONLY the query side. `queries` and
-  // `documents` in one call error 3030. The refresh below is unaffected -- a
-  // corpus document is embedded document-side and bare -- but day 4's retrieval
-  // should embed its queries through `queries`.
-  //
-  // No `remote`: Workers AI has no local emulator, so calls reach the real
-  // account either way, and marking it remote would only add a route by which a
-  // future test bills neurons. Object, not array, and not inherited by named
-  // environments.
   "ai": { "binding": "AI" },
 
-  // The publishing corpus. Created 2026-09-07 at the 1024 measured above, metric
-  // cosine, and BOTH of those are permanent: Vectorize has no resize and no way
-  // to change a metric, so a wrong number would have meant a new index and a new
-  // name rather than an edit. Naming an index that does not exist breaks
-  // `wrangler types` and every deploy, so the name here is one `vectorize get`
-  // has confirmed.
-  //
-  // The `tier` and `type` metadata indexes were created immediately after the
-  // index itself and BEFORE anything was upserted (confirmed: vectorCount 0 at
-  // the time). This ordering is not a preference. Vectorize does not backfill
-  // metadata indexes, and a filtered query against an unindexed property returns
-  // partial or empty results with NO error -- so getting it wrong produces a
-  // corpus that looks healthy and quietly under-answers. Any future filterable
-  // property has to be indexed before the vectors carrying it land.
-  //
-  // Vectors go in pre-normalised (|v| = 1.0 straight from the model), so cosine
-  // and dot product coincide and nothing has to normalise before upserting.
-  //
-  // No `remote`, and what that means was CORRECTED 2026-09-07 by day 4 Task 9.
-  // This comment used to say that wrangler defaults an unset `remote` to LOCAL
-  // SIMULATION for `vectorize` (as against remote for `ai`, which has no local
-  // emulator), and therefore that `env.VECTORIZE` under `wrangler dev` and
-  // under the test harness was an empty local index. The second half is false,
-  // and it fails in the direction that wastes the most time: the wrong belief
-  // predicts a green run returning zero matches, so what a test author actually
-  // meets is a thrown binding where they expected an empty result, with nothing
-  // in the message pointing back at this line. MEASURED under
-  // `createTestHarness` (tests/workers.ts), twice -- through `getEnv()`, and
-  // from inside the Worker by wrapping the call and reading the message off the
-  // JSON-RPC response:
-  //   env.VECTORIZE.query(vector, {...})
-  //   -> Error: Binding VECTORIZE needs to be run remotely
-  // So this binding is REMOTE-ONLY as far as the test harness is concerned:
-  // there is no simulated index there, empty or otherwise, and every call
-  // throws. `wrangler dev` was not re-measured and may still simulate; do not
-  // read this note as a claim about it either way.
-  //
-  // The consequence for tests is the important part, and it is stronger than
-  // the old note implied: nothing that touches `env.VECTORIZE` can run in
-  // credential-free CI at all. Day 3's embedding job does not run there
-  // (`CORPUS_REFRESH: 'off'`), and day 4's `search_writing` cannot complete
-  // there -- both are verified by hand against the live index instead, and
-  // both say so in their tests rather than asserting against a fake.
-  //
-  // It is left without `remote` on purpose: `remote: true` would open the very
-  // proxy session this whole move exists to avoid. Anything that must reach the
-  // real index should say so deliberately -- `wrangler vectorize insert`, the
-  // deployed Worker, or a temporary `remote: true` -- rather than assuming this
-  // binding points at production.
   "vectorize": [{ "binding": "VECTORIZE", "index_name": "ryanlindsey-me-corpus" }],
 
-  // AI Search, for the /search page (epic #143). Bound HERE rather than on the
-  // site for the same build constraint the `ai` binding above records, and
-  // issue #144 existed to find out whether that was the only thing the two had
-  // in common. It was not, and the answer is the more expensive one.
-  //
-  // #144 ASSUMED THIS BEHAVED LIKE `vectorize`: boots fine, throws `needs to be
-  // run remotely` when called. IT BEHAVES LIKE `ai` INSTEAD, and the difference
-  // is where the failure lands. A Vectorize binding costs you one thrown call.
-  // An always-remote binding costs you the BOOT, so every suite that starts
-  // this Worker fails at once, including the ones that never mention search.
-  //
-  // MEASURED 2026-09-17, wrangler 4.131.1 and the miniflare IT resolves,
-  // 5.20260911.0-alpha. That version matters and is easy to cite wrong: two
-  // miniflares are installed, and the hoisted one (5.20260831.0-alpha, pulled
-  // in by @cloudflare/vite-plugin) is NOT the one the harness runs, because
-  // `createTestHarness` is imported from `wrangler` and resolves wrangler's own
-  // nested copy.
-  //
-  // Declared with no test override, `npm test` went from 80 files green to
-  // 32 FAILED / 48 passed -- every suite that boots this Worker. Isolated
-  // against a throwaway Worker whose ONLY binding was this one, so the
-  // attribution is not an inference:
-  //   server.listen()
-  //   -> Error: Failed to start the remote proxy session. Error reloading
-  //      remote server: More than one account available but unable to select
-  //      one in non-interactive mode.
-  // Which credential error the failure ends in varies with what the shell can
-  // see, so read the "Failed to start the remote proxy session" half as the
-  // signal and the rest as noise.
-  //
-  // `"remote": false` DOES NOT SILENCE IT HERE, and the reason is worth more
-  // than the fact, because wrangler's source reads as though it should.
-  // `validateBindingRemoteSetting` throws a UserError on `remote: false` for
-  // any binding classified
-  // "DO-NOT-USE-this-resource-will-never-have-a-local-simulator", which is what
-  // wrangler's binding table calls `ai_search` and `ai` alike. THAT VALIDATOR IS
-  // ON THE `wrangler dev` PATH AND THE HARNESS NEVER REACHES IT. Re-measured
-  // 2026-09-17 with the flag set and the override removed: no UserError, and
-  // the harness opened the remote proxy session anyway. `wrangler deploy
-  // --dry-run` accepts it in silence too. So reading the validator and
-  // concluding the flag is rejected here gets the right instinct from the wrong
-  // evidence: the flag is not rejected, it is ignored.
-  //
-  // Cloudflare says the same thing in prose, in the AI Search agent guide at
-  // /ai-search/how-to/human-in-the-loop-knowledge-base/: "AI Search has no
-  // local emulator, so the binding always talks to the remote service
-  // (`remote = true`)." Do not spend an afternoon on the flag.
-  //
-  // The remedy is therefore the one `ai` already uses, and not a new idea:
-  // tests/workers.ts overrides this binding to workers/mock-ai, which is a
-  // LOCAL service Worker, so no remote session is opened at all. Any harness
-  // that boots this Worker must carry that override, which in practice means
-  // going through MCP_WORKER in tests/workers.ts rather than writing a fresh
-  // worker list.
-  //
-  // NO `remote` KEY AT ALL, for the same reason `ai` above carries none: a
-  // deployed Worker always reaches the real service, so the flag decides
-  // nothing in production and only describes local intent. `remote: true`
-  // would suppress wrangler's dev-time warning at the cost of declaring that
-  // local development should reach the live index, which is a decision for
-  // whoever is developing rather than a default this file should make.
-  // Measured 2026-09-17: `wrangler deploy --dry-run` emits no warning either
-  // way, so the omission costs nothing on the path Workers Builds takes.
-  //
-  // WHAT CALLING IT DOES UNDER THE HARNESS, measured from inside a Worker and
-  // again through `getEnv()`, and the shape is a trap worth reading twice:
-  //   env.AI_SEARCH.constructor.name  -> 'Fetcher'
-  //   typeof env.AI_SEARCH.search     -> 'function'      <- NOT undefined
-  //   await env.AI_SEARCH.search({ query: 'turnstile' })
-  //   -> TypeError: The RPC receiver does not implement the method "search".
-  // A service binding answers every property access with an RPC stub, so the
-  // `typeof` check passes and the failure arrives at the AWAIT. Anything in
-  // #146 that means to ask "is AI Search reachable here" will have to ask a
-  // var rather than the binding; that var does not exist yet, and #146 is
-  // where `SEARCH_ENGINE` arrives. Four comments in this repo had written that
-  // as `env.AI.run` rather than `env.AI.run()`, and this change added the
-  // parentheses to all four, because the property form of that sentence is
-  // exactly the guard that would not guard.
-  //
-  // `wrangler types` emits `AI_SEARCH: AiSearchInstance`, and that type is
-  // already in the committed worker-configuration.d.ts, so nothing had to be
-  // installed for it. Note what that interface carries: `search` and
-  // `chatCompletions`, but also `update`, `items` and `jobs`. An instance
-  // binding is not read-only, so the epic's "retrieval only" constraint is a
-  // discipline this code keeps rather than a limit the binding imposes.
-  //
-  // THE INSTANCE DOES NOT EXIST YET, AND THAT DECIDES THE MERGE ORDER.
-  // `wrangler ai-search list` against this account, 2026-09-17: "You haven't
-  // created any AI Search instances in namespace "default" on this account."
-  // Cloudflare's configuration reference says an `ai_search` instance "Must
-  // exist in the default namespace at deploy time", and wrangler does no
-  // client-side check -- it passes `{ type: "ai_search", instance_name }`
-  // straight into the upload metadata and lets the API judge it. So issue
-  // #145, which creates `ryanlindsey-me-search`, is a DEPLOY PREREQUISITE for
-  // this line rather than merely the next task in the epic. Nothing in this
-  // repository can catch that: the whole test suite is green with the name
-  // pointing at nothing, because the harness never resolves it.
-  //
-  // `ai_search` rather than `ai_search_namespaces`, and the ordering problem
-  // above is the argument AGAINST the choice rather than for it: a namespace
-  // binding names the `default` namespace, which every account already has,
-  // and wrangler creates a missing one on deploy, so it could not fail this
-  // way. What it buys instead is `list()`, `create()` and `delete()` over
-  // every instance in the namespace. That is the same trade the R2 credential
-  // in .github/workflows/resume-pdf.yml makes and settles the same way: the
-  // narrow binding, and the ordering constraint written down where the person
-  // merging will read it.
   "ai_search": [{ "binding": "AI_SEARCH", "instance_name": "ryanlindsey-me-search" }],
 
-  // 05:32 UTC daily: the corpus embedding refresh (src/lib/corpus.ts), invoked
-  // from this Worker's `scheduled()`. It used to share the site Worker's 05:17
-  // trigger and moved here with the two bindings above.
-  //
-  // A separate slot rather than the same one, because the jobs now sit in
-  // different Workers with separate logs: 15 minutes of separation means a cron
-  // failure is attributable on sight rather than by reading which handler threw.
-  // There is no ordering dependency in either direction -- the résumé job writes
-  // a PDF to R2, and this one reads the build's published `.md` assets, which
-  // neither job produces.
-  //
-  // The handler is hash-gated: `refreshCorpus` embeds nothing unless a
-  // document's hash has moved, so the steady state is a handful of asset reads
-  // and one KV read, and a daily cron over unchanged content bills no neurons.
   "triggers": { "crons": ["32 5 * * *"] },
 
-  // The rate limiter (03 §3). This USED TO BE two `ratelimits` bindings --
-  // RATE_LIMITER at namespace 1001, 60/60s, for document reads, and
-  // RATE_LIMITER_SEARCH at 1002, 10/60s, for search_writing's Workers AI
-  // spend. That block's comment explained the two-bucket design as though it
-  // worked. It did not, and the correction is kept here rather than deleted
-  // because the config looked RIGHT the whole time it was enforcing nothing:
-  //
-  // MEASURED 2026-09-08 against deployed version f7634c05, whose bindings
-  // `wrangler versions view` reported as `env.RATE_LIMITER (60 requests/60s)`
-  // and `env.RATE_LIMITER_SEARCH (10 requests/60s)` -- so the config was
-  // valid, Workers Builds applied it exactly as `wrangler deploy` would, and
-  // both bindings were live. 150 STRICTLY SEQUENTIAL get_contact calls, 22s,
-  // one 60s window, 120 of them in a single Cloudflare location (SJC, read
-  // off `cf-ray`), against the 60/60s bucket: ZERO refusals, all 150 audited
-  // `ok`. #29's own 140-parallel burst and a 90-sequential run: also zero.
-  //
-  // Cloudflare's Rate Limiting docs say why, and say it as a design property
-  // rather than a caveat: the API is "permissive, eventually consistent, and
-  // intentionally designed to not be used as an accurate accounting system",
-  // its counters are "cached on the same machine that your Worker runs in,
-  // and updated asynchronously in the background", and every limit is per
-  // Cloudflare location. That is a fine shield in front of a busy origin. It
-  // is not the guarantee 03 §3 asks for.
-  //
-  // Two further things that block settled, so nobody re-opens them: the
-  // `namespace_id` values did NOT need registering -- the docs define one as
-  // "a string containing a positive integer that uniquely defines this rate
-  // limiting namespace within your Cloudflare account", so "1001" was always
-  // legal -- and sharing 1001 with the SITE Worker's own (unused) binding
-  // would have made the two SHARE counters, which is documented, intentional,
-  // and in the STRICTER direction. Neither could have caused zero refusals.
-  //
-  // So the mechanism is a Durable Object now: one object per `<tool>:<ip>`
-  // (workers/mcp/src/rate-limiter.ts), single-threaded, strongly consistent,
-  // with the limits themselves in `LIMITS` in src/lib/mcp/limits.ts where a
-  // test can read them. `new_sqlite_classes` rather than `new_classes`: the
-  // SQLite backend is the only one available on the Workers Free plan and is
-  // what Cloudflare recommends for all new classes.
   "durable_objects": {
     "bindings": [{ "name": "RATE_LIMITER", "class_name": "RateLimiter" }],
   },
-  // `new_sqlite_classes` rather than `new_classes`: SQLite is the only backend
-  // a new namespace may use on an account without an existing key-value one
-  // (Cloudflare's 2026-07-09 changelog), and `consume` needs `ctx.storage.sql`
-  // anyway.
-  //
-  // THIS ENTRY MAKES THE PR-BRANCH BUILD CHECK FAIL, EXACTLY ONCE, AND THAT IS
-  // EXPECTED RATHER THAN A DEFECT. Workers Builds runs a non-production branch
-  // through `wrangler versions upload`, and a version upload cannot carry a
-  // Durable Object migration. MEASURED on the #29 pull request, 2026-09-08 --
-  // the build compiled and resolved every binding (`env.RATE_LIMITER
-  // (RateLimiter) Durable Object`) and then failed on the final API call:
-  //
-  //   Version upload failed. You attempted to upload a version of a Worker that
-  //   includes a Durable Object migration, but migrations must be fully applied
-  //   via a non-versioned deployment.  [code: 10211]
-  //
-  // Cloudflare's deployment-management doc states the rule: any change that
-  // creates, deletes, renames or transfers a Durable Object class "must be
-  // applied through `wrangler deploy`", because migrations are atomic and
-  // cannot be gradually deployed. The production branch DOES run `wrangler
-  // deploy` (verified: the 2026-09-08T14:09Z deployment applied #28's `SITE`
-  // service binding), so merging is what applies this -- the red check on the
-  // pull request is the system working as documented, not a broken build.
-  //
-  // Once applied, later branch builds go green again: an upload only fails
-  // while a migration is still UNAPPLIED, and this entry then describes state
-  // the deployed Worker already has. So do not "fix" this by deleting the
-  // migration, and do not point the branch build at `wrangler deploy` -- that
-  // would deploy every pull request to production.
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RateLimiter"] }],
 
   "secrets_store_secrets": [
@@ -370,15 +65,6 @@
       "store_id": "3b06d2a92de642d999509352cfd3ebed",
       "secret_name": "RLME_TOKEN_SIGNING_KEY",
     },
-    // Day 6 (04 §1). NOT A NEW SECRET -- the same store entry the site Worker
-    // already binds. `POST /chat` verifies its own bot check, because a
-    // Turnstile token is the one thing the site can hand across a service
-    // binding that this Worker can check for itself (see src/chat.ts).
-    //
-    // The site MUST NOT also verify it: a Turnstile response is single-use, so
-    // two verifications means the second one fails as `timeout-or-duplicate`.
-    // src/pages/chat/send.ts forwards without verifying, and that is a pair of
-    // facts rather than two independent choices.
     {
       "binding": "RLME_TURNSTILE_SECRET_KEY",
       "store_id": "3b06d2a92de642d999509352cfd3ebed",
@@ -386,131 +72,10 @@
     },
   ],
 
-  // The fit prompt is a MARKDOWN FILE, not a TypeScript string, because 04 §4
-  // requires it to be versioned in `prompts/` and reviewed as a document. This
-  // rule is what lets `src/lib/fit/engine.ts` import it: wrangler ships a
-  // matching file as a module whose default export is its contents.
-  //
-  // THE GLOB IS MATCHED AGAINST THE IMPORT SPECIFIER, NOT AGAINST A FILE PATH,
-  // and getting that wrong costs an hour, so it is written down. wrangler turns
-  // each glob into a regex and hands it to esbuild as an `onResolve` FILTER
-  // (wrangler-dist/cli.js, `parsedRules.rules?.forEach` -> `build.onResolve({
-  // filter: globToRegExp(glob) })`), and esbuild tests that filter against the
-  // string as written in the source -- here `'../../../prompts/fit.md?raw'`,
-  // three levels up from src/lib/fit/, query string included. Nothing
-  // normalises it against the config directory, the repo root, or `base_dir`
-  // first. MEASURED, Task 10 Step 5, one dry run per measurement below -- the
-  // second row is one glob run twice. The three that decide it:
-  //   ../../../prompts/*.md  -> MATCHES (import still without its `?raw`), so
-  //                             the depth that works is the SPECIFIER's
-  //   **/prompts/*.md        -> MATCHES, then NO MATCH once the `?raw` landed
-  //   **/prompts/*.md?raw    -> MATCHES  <- what is used
-  // Nothing else moved a result. Four more globs each missed, all measured
-  // before the `?raw` landed -- `prompts/**/*.md` (the brief's glob),
-  // `prompts/*.md`, `**/prompts/**/*.md` and `../../prompts/*.md` -- and
-  // `base_dir: "../.."` was tried as well and changed none of the rows above.
-  // THE TRAP is that last miss: esbuild's ERROR MESSAGE for it
-  // says `../../prompts/fit.md` -- relative to cwd, NOT the specifier -- and
-  // copying it out of the error is how the wrong depth gets written down as
-  // the right one.
-  //
-  // The `?raw` is in the SOURCE for a TypeScript reason, not a bundler one, and
-  // src/lib/fit/markdown-modules.d.ts is where that is explained: Astro's own
-  // ambient `declare module '*.md'` resolves the default export to a page
-  // component, so a plain `.md` specifier fails `astro check`. It costs nothing
-  // here -- wrangler calls `stripQueryString(args.path)` before resolving, so
-  // the file it loads is `prompts/fit.md` either way -- but the glob has to
-  // carry it, because the FILTER runs before that strip. The `?` is a
-  // single-character wildcard to the glob, which matches the literal `?`.
-  //
-  // Scoped to a `prompts/` directory rather than a blanket `**/*.md` on
-  // principle rather than on a measured saving: measured 2026-09-08, the two
-  // emitted an IDENTICAL bundle (1995.11 KiB either way), because nothing else
-  // in this Worker's module graph imports a `.md` at all. The scoping is what
-  // keeps that true -- the day someone imports a README or a doc fixture, a
-  // blanket rule would quietly ship it.
-  //
-  // WHAT THE CHECK ACTUALLY SHOWS, because the obvious version of it fails for
-  // an innocent reason: `grep -c 'Fit analysis prompt' <outdir>/*.js` finds
-  // ZERO. Wrangler does not inline a text module into `index.js`; it emits it
-  // as a sibling module and imports it by a hashed name. So the real evidence,
-  // from `wrangler deploy --dry-run --outdir`, is both halves of that.
-  //
-  // RE-MEASURED 2026-09-09 (day 5 Task 11), and the re-run is the one that
-  // counts: the 2026-09-08 measurement was taken while NOTHING in this Worker's
-  // module graph imported the engine, so the rule was being exercised against
-  // an import that esbuild reached only through a temporary edit. Registering
-  // `analyze_fit` in ./src/gated.ts made it a real edge of the graph, and the
-  // bundle now says so:
-  //   index.js          `import FIT_PROMPT from "./01998436…-fit.md"`, and
-  //                     `system: FIT_PROMPT` at the model call
-  //   01998436…-fit.md  emitted beside it, byte for byte the prompt (equal
-  //                     sha256 against prompts/fit.md, and `diff` silent)
-  //   *.js              zero matches for the prompt's own text, as above
-  //   Total Upload      2000.91 KiB, against 1995.11 KiB before the tool
-  // The emitted name is CONTENT-derived, not build-derived, which is why
-  // quoting it here is safe: it is `shasum -a 1 prompts/fit.md` exactly
-  // (measured -- two dry runs produced the same name, and it equals that
-  // digest), so it moves when the prompt does and never otherwise.
-  // A rule that silently did not apply is the failure this is guarding against
-  // -- the import would resolve to something that is not the prompt, and every
-  // test would still pass, because they all stub the model.
-  //
-  // `fallthrough: true` because this is an ADDITIONAL rule, not a replacement
-  // set: without it wrangler drops its own defaults (`.js`, `.mjs`, `.wasm` and
-  // the rest) and warns about every one it dropped.
   "rules": [{ "type": "Text", "globs": ["**/prompts/*.md?raw"], "fallthrough": true }],
 
-  // How this Worker reads the site's published documents (`/llms.txt`,
-  // `/resume.json`, `/{writing,work}/*.md`) -- for the corpus refresh below AND
-  // for every day-4 content tool. Added by issue #28, which this replaced a
-  // global `fetch()` over `SITE_ORIGIN` to fix. The full mechanism is in
-  // `corpusEnv`'s comment in src/index.ts; the short version, because a config
-  // file is where someone will look before deleting this:
-  //
-  // `ryanlindsey.me` is a Cloudflare CUSTOM DOMAIN for `ryanlindsey-me`, and
-  // Cloudflare's Error 522 page states that a Worker on a custom domain
-  // performing a `fetch` to its OWN hostname gets a 522. Day 4 Task 13 made the
-  // site forward `ryanlindsey.me/mcp` into this Worker over its `MCP` service
-  // binding, URL and `Host` untouched -- so for a request that arrived there,
-  // this Worker's `fetch('https://ryanlindsey.me/llms.txt')` was a fetch to the
-  // hostname of the request it was serving, and 522'd. Seven of eight tools and
-  // `resources/list` failed on the PRIMARY endpoint while `mcp.ryanlindsey.me`
-  // (a different hostname, so an ordinary same-zone subrequest to a Worker on a
-  // custom domain, which Cloudflare's Custom Domains doc explicitly permits
-  // without a binding) stayed green.
-  //
-  // A service binding never reaches the edge at all, so it cannot loop no matter
-  // which hostname the request arrived on. That is why this, rather than adding
-  // `global_fetch_strictly_public` (Cloudflare's other documented remedy for the
-  // same 522, and the flag the SITE's own wrangler.jsonc carries): the flag
-  // works by sending the read out to Cloudflare's front door as a public
-  // request, which keeps a full public round trip per document, bills a second
-  // Worker invocation for it, and -- in the flag doc's own words -- leaves it
-  // "possibly even looping back to the same Worker again" if `/mcp` and an asset
-  // path ever converge. This makes the loop unreachable instead of survivable.
-  //
-  // THIS IS HALF OF A DELIBERATE CYCLE: ./wrangler.jsonc binds `MCP` ->
-  // `ryanlindsey-me-mcp`, and this binds `SITE` -> `ryanlindsey-me`. That is
-  // legal and boots -- verified under the miniflare harness, which starts both
-  // Workers with the cycle in place (tests/workers.ts's `MCP_HARNESS_WORKERS`)
-  // -- because a service binding is resolved when it is CALLED, not when the
-  // Worker is defined. There is no runtime loop either: the only paths this
-  // Worker ever asks the site for are the three named above, never `/mcp`.
   "services": [{ "binding": "SITE", "service": "ryanlindsey-me" }],
 
-  // SITE_ORIGIN no longer decides WHERE the documents come from -- the `SITE`
-  // binding above does, and it ignores the hostname entirely. What this var
-  // still does is decide what URL a document is ADDRESSED by: the absolute URL
-  // handed to the binding (only its path is read) and, more visibly, the
-  // `url`/`markdownUrl` citation every tool answers with (`pageUrlFor` and
-  // `summarize` in src/lib/mcp/documents.ts). So a wrong value here no longer
-  // breaks reads; it makes the server cite documents at an address that is not
-  // theirs, which is quieter and worth knowing about. The test harness overrides
-  // it to a sentinel that resolves nowhere (tests/workers.ts) -- since #28 that
-  // sentinel is load-bearing rather than incidental, because a read that still
-  // works against an unroutable origin is the proof that it is not a network
-  // call.
   "vars": {
     "RLME_AI_GATEWAY_ID": "ryanlindsey-me",
     "SITE_ORIGIN": "https://ryanlindsey.me",
