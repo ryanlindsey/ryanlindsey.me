@@ -1068,7 +1068,7 @@ describe('analyze_fit', () => {
   test('it refuses cleanly when the engine is off, and says so in a sentence', async () => {
     // The harness sets FIT_ENGINE: 'off' (tests/workers.ts) because there is
     // no usable `Ai` here -- the binding is overridden to a service Worker, so
-    // `env.AI.run` is a TypeError by design. What this test proves is
+    // `env.AI.run()` is a TypeError by design. What this test proves is
     // everything AROUND the model call: the scope gate, the argument schema,
     // the limiter, the audit row and the error shape. The model call itself is
     // covered in tests/fit-engine.test.ts with a stub `Ai`, and end to end by

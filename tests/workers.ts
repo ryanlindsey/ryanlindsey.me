@@ -169,6 +169,26 @@ export const SITE_WORKER = {
  * workers/mock-ai/wrangler.jsonc for why this is not `"remote": false` instead.
  * Any harness that lists this Worker must therefore list MOCK_AI_WORKER too.
  *
+ * `AI_SEARCH` IS OVERRIDDEN TO THE SAME MOCK, AND IT IS THE LEAST OPTIONAL
+ * OVERRIDE IN THIS FILE. Issue #144 added the `ai_search` binding to find out
+ * what it does to this harness, having assumed it would behave like
+ * `VECTORIZE`: boot cleanly, throw when called. It does not. wrangler
+ * classifies `ai_search` exactly as it classifies `ai` --
+ * "DO-NOT-USE-this-resource-will-never-have-a-local-simulator" -- so declaring
+ * it makes booting this Worker open a real remote proxy session, and the
+ * failure is at startup rather than at the call. MEASURED 2026-09-17 with the
+ * override removed: `npm test` went from 80 files green to 32 failed and 48
+ * passed, which is every suite that boots this Worker and most that never
+ * mention search. `"remote": false` does not help either, measured the same
+ * day: wrangler's validator that would reject it sits on the `wrangler dev`
+ * path, and this harness never reaches it, so the flag is ignored rather than
+ * refused. The full measurement, including what the binding looks like under
+ * this override, is beside the binding in workers/mcp/wrangler.jsonc.
+ *
+ * So the rule the `AI` override already implied is now a hard one: any harness
+ * that boots this Worker must carry BOTH overrides, which is the argument for
+ * every suite going through this file rather than assembling its own list.
+ *
  * `CORPUS_REFRESH: 'off'` (day 3 Task 15) follows from that AI override and from
  * one more fact about `env.VECTORIZE` here: whatever it is, it is not
  * `ryanlindsey-me-corpus`. Running the embedding job here would therefore need
@@ -288,14 +308,14 @@ export const MCP_WORKER = {
     /**
      * Day 6's judge (src/lib/judge/engine.ts), off. Same seam shape and same
      * cause as `FIT_ENGINE` and `CHAT_ENGINE`: `env.AI` is a service binding
-     * under the harness, so `env.AI.run` is a TypeError. Under the seam,
+     * under the harness, so `env.AI.run()` is a TypeError. Under the seam,
      * `judge_answer` exercises the scope gate, the argument schema, the limiter
      * and the error shape; the model call is exercised only by `npm run evals`
      * against a deployed endpoint.
      */
     JUDGE_ENGINE: 'off',
   },
-  bindingOverrides: { AI: 'mock-ai' },
+  bindingOverrides: { AI: 'mock-ai', AI_SEARCH: 'mock-ai' },
 };
 
 /** The Workers AI stand-in the override above resolves. Test-only, never deployed. */

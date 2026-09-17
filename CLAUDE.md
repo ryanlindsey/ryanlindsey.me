@@ -44,7 +44,7 @@ CI's `checks` workflow is the gate that matters on a pull request. A red Cloudfl
 
 `ryanlindsey-me-mcp` (`workers/mcp/wrangler.jsonc`) serves the MCP protocol, the chat endpoint, the fit engine, the LLM judge, the rate limiter Durable Object, and a 05:32 UTC cron that refreshes the Vectorize corpus.
 
-The `ai` and `vectorize` bindings live on the MCP Worker because an `ai` binding in the site's config makes `astro build` open a remote proxy session that credential-free CI cannot authenticate. That is the reason the split exists. Do not move either binding back.
+The `ai`, `vectorize` and `ai_search` bindings live on the MCP Worker because an `ai` binding in the site's config makes `astro build` open a remote proxy session that credential-free CI cannot authenticate. That is the reason the split exists. Do not move any of them back. `ai_search` was added by issue 01 (#144), which measured that wrangler classifies it exactly as it classifies `ai`: no local emulator, remote no matter what `remote` says, and a failure at boot rather than at the call.
 
 The two Workers name each other: the site's `MCP` service binding forwards `/mcp`, `/fit` and `/chat` work, and the MCP Worker's `SITE` binding reads published documents back. The cycle is deliberate and legal, because a service binding resolves when it is called rather than when the Worker is defined. Its practical consequence is that any test harness booting one Worker must list the other, or workerd refuses to start.
 

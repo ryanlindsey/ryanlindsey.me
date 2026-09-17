@@ -31,6 +31,25 @@ export interface McpEnv {
   AI: Ai;
   VECTORIZE: VectorizeIndex;
   /**
+   * AI Search, the retrieval behind /search (epic #143). `wrangler types`
+   * generates exactly this type from the `ai_search` entry in
+   * workers/mcp/wrangler.jsonc, which is why the name is `AiSearchInstance`
+   * rather than anything chosen here.
+   *
+   * THE TYPE IS A PROMISE ABOUT THE DEPLOYED WORKER AND NOT ABOUT THE TEST
+   * HARNESS, and this binding is the one where that gap bites: under the
+   * harness it is a `Fetcher`, not an `AiSearchInstance`, and a `typeof` check
+   * on any method here passes and then throws at the await. The measurement,
+   * and the reason the override that produces it is not optional, are written
+   * out in full beside the binding in workers/mcp/wrangler.jsonc rather than
+   * repeated here.
+   *
+   * The interface carries `update`, `items` and `jobs` as well as `search`, so
+   * the epic's "retrieval only" rule is something this code has to keep rather
+   * than something the binding enforces.
+   */
+  AI_SEARCH: AiSearchInstance;
+  /**
    * The high-intent events queue (06 §3). Produced here, consumed on the site
    * Worker -- a queue is the seam that lets one Worker report an event another
    * one acts on, which is what keeps the `EMAIL` binding and the destination
@@ -108,7 +127,7 @@ export interface McpEnv {
    *
    * `'off'` is set on this Worker by tests/workers.ts, for the same reason
    * `MCP_SEARCH_EMBEDDER` is `'stub'` there: the harness overrides `AI` to a
-   * service Worker, so `env.AI.run` is a TypeError here by design. Under the
+   * service Worker, so `env.AI.run()` is a TypeError here by design. Under the
    * seam, `analyze_fit` exercises everything AROUND the model call -- the
    * scope gate, the argument schema, the limiter, the audit row and the error
    * shape -- and the call itself is covered with a stub `Ai` in
@@ -174,6 +193,7 @@ export const MCP_BINDING_NAMES = [
   'AE',
   'AI',
   'VECTORIZE',
+  'AI_SEARCH',
   'EVENTS',
   'RATE_LIMITER',
   'RLME_TOKEN_SIGNING_KEY',
