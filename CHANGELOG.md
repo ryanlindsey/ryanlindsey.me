@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.25.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.24.0...ryanlindsey-me-v1.25.0) (2026-09-17)
+
+
+### Features
+
+* **mcp:** declare the ai_search binding and keep the harness credential-free ([#243](https://github.com/ryanlindsey/ryanlindsey.me/issues/243)) ([e344b49](https://github.com/ryanlindsey/ryanlindsey.me/commit/e344b49883c76cdb0f7063e4364a1402672a567b))
+* **observability:** enable traces on the site Worker ([#245](https://github.com/ryanlindsey/ryanlindsey.me/issues/245)) ([de4d313](https://github.com/ryanlindsey/ryanlindsey.me/commit/de4d313ee96396a2cbd8151b681963a2f575c4d1))
+
 ## [1.24.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.23.0...ryanlindsey-me-v1.24.0) (2026-09-17)
 
 
