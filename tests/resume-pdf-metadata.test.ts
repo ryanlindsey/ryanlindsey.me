@@ -190,6 +190,26 @@ describe('the append never rewrites what is already there', () => {
   });
 });
 
+/**
+ * The three characters a PDF literal string must escape, restated here
+ * rather than imported from the module under test: an expectation built by
+ * calling the function it is checking proves only that the function is
+ * itself. `pdfString` in src/lib/resume-pdf-metadata.ts backslash-escapes
+ * the same three characters, and that escaping is correct PDF syntax -- a
+ * literal string is delimited by parentheses, so an unescaped one inside the
+ * value would terminate the string early and corrupt the dictionary.
+ *
+ * This assertion passed VACUOUSLY until 2026-09-16, when the skills section
+ * gained keywords carrying parentheses ("MCP servers (Model Context
+ * Protocol)"). Until then no value in the record contained a character
+ * needing an escape, so the unescaped form happened to match the escaped
+ * one. Author and Subject carry no parens or backslashes today either, but
+ * they are strings from the same record read through the same `pdfString`,
+ * so they get the same treatment rather than waiting for their own name to
+ * grow one.
+ */
+const pdfLiteral = (value: string): string => value.replace(/([\\()])/g, '\\$1');
+
 describe('the information dictionary', () => {
   const info = () => dictAround(appendedRegion(stamped, fixture), '/Author');
 
@@ -198,9 +218,9 @@ describe('the information dictionary', () => {
     expect(fields.subject).toBe(resume.basics.label);
 
     const dict = info();
-    expect(dict).toContain(`/Author (${resume.basics.name})`);
-    expect(dict).toContain(`/Subject (${resume.basics.label})`);
-    expect(dict).toContain(`/Keywords (${fields.keywords.join(', ')})`);
+    expect(dict).toContain(`/Author (${pdfLiteral(resume.basics.name)})`);
+    expect(dict).toContain(`/Subject (${pdfLiteral(resume.basics.label)})`);
+    expect(dict).toContain(`/Keywords (${pdfLiteral(fields.keywords.join(', '))})`);
   });
 
   test('every skill in the record reaches Keywords', () => {
