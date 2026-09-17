@@ -20,7 +20,7 @@ Bullet markers: 29
 
 --- page 1 of 3 ---
 
-R É S U M É · R Y A N L I N D S E Y R E V 0 . 5 . 0 · 2 0 2 6 - 0 9 - 1 6
+R É S U M É · R Y A N L I N D S E Y R E V 0 . 5 . 0 · 2 0 2 6 - 0 9 - 1 7
 Ryan Lindsey
 S E N I O R E N G I N E E R I N G M A N A G E R , A G E N T I C E N G I N E E R I N G
 BASED Laguna Niguel, CA
@@ -38,17 +38,17 @@ E X P E R I E N C E
 Weedmaps IRVINE, CA MAR 2016 — PRESENT
 Senior Engineering Manager FEB 2021 — PRESENT
 Own incident management for the entire engineering organization since 2024 and coach fellow engineering managers,
-while leading 8 engineers across 2 teams. Platform: Ruby on Rails, Node.js, Terraform, Kubernetes, Docker, Fastly.
+while leading 8 engineers across 2 teams. Platform: Ruby on Rails, Node.js, GraphQL, Terraform, Kubernetes, Docker,
+Fastly.
 • Designed and built a delivery-forecasting toolchain for engineering managers, beginning as a set of Claude Skills and
 migrating to an internal MCP server as adoption outgrew that packaging. Adopted by >80% of engineering managers
 and absorbed into the org-wide roadmapping and reporting process.
 • The incident process I own now runs on agentic investigation: incident commanders use agents and connected MCP
 servers over live telemetry, which has raised root-cause-analysis quality and sharply reduced the time to produce one.
-• Own incident management for the entire engineering organization: the process itself, the communication strategy,
-service integrations, data reporting, and training. Data Engineering and InfoSec run their own incident processes on the
-same tooling. Accountable for the area's OKRs and report on them to the executive team monthly. Risky changes go
-through a change advisory board with documented rollback plans, and post-incident review is blameless with linked
-action items.
+• That ownership covers the process itself, the communication strategy, service integrations, data reporting, and training.
+Data Engineering and InfoSec run their own incident processes on the same tooling. Accountable for the area's OKRs
+and report on them to the executive team monthly. Risky changes go through a change advisory board with
+documented rollback plans, and post-incident review is blameless with linked action items.
 • Measured the inherited process before changing it, and found response and resolution times were already at or better
 than industry standard, a reading corroborated independently by a vendor in the space. The real weakness was time to
 detect, so that became the focus: a service-level observability initiative run with DevOps and SRE now surfaces issues

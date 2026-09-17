@@ -32,8 +32,8 @@ work:
     summary: >-
       Own incident management for the entire engineering organization since
       2024 and coach fellow engineering managers, while leading 8 engineers
-      across 2 teams. Platform: Ruby on Rails, Node.js, Terraform, Kubernetes,
-      Docker, Fastly.
+      across 2 teams. Platform: Ruby on Rails, Node.js, GraphQL, Terraform,
+      Kubernetes, Docker, Fastly.
     x_artifacts:
       - delivery-forecasting
     highlights:
@@ -49,13 +49,13 @@ work:
         which has raised root-cause-analysis quality and sharply reduced the
         time to produce one.
       - >-
-        Own incident management for the entire engineering organization: the
-        process itself, the communication strategy, service integrations, data
-        reporting, and training. Data Engineering and InfoSec run their own
-        incident processes on the same tooling. Accountable for the area's OKRs
-        and report on them to the executive team monthly. Risky changes go
-        through a change advisory board with documented rollback plans, and
-        post-incident review is blameless with linked action items.
+        That ownership covers the process itself, the communication strategy,
+        service integrations, data reporting, and training. Data Engineering
+        and InfoSec run their own incident processes on the same tooling.
+        Accountable for the area's OKRs and report on them to the executive
+        team monthly. Risky changes go through a change advisory board with
+        documented rollback plans, and post-incident review is blameless with
+        linked action items.
       - >-
         Measured the inherited process before changing it, and found response
         and resolution times were already at or better than industry standard,
@@ -309,4 +309,4 @@ skills:
 
 meta:
   version: 0.5.0
-  lastModified: '2026-09-16'
+  lastModified: '2026-09-17'
