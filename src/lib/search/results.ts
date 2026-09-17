@@ -90,6 +90,35 @@ export interface SearchCounts {
  * value: `item.key` comes off the crawler, and one measurement on one day is
  * not a guarantee. A key that cannot be read is one result fewer, not a page
  * that fails to render.
+ *
+ * WHAT IS NORMALISED IS THE TRAILING SLASH AND NOTHING ELSE, which is worth
+ * writing down because the omissions look like oversights and two of them were
+ * raised in review:
+ *
+ *   - PERCENT-ENCODING SURVIVES. `pathname` does not decode, so
+ *     `/writing/arm%61ture/` misses the collection id and the result is
+ *     dropped. Decoding here would mean deciding what to do with an encoded
+ *     `/`, `.` or `..`, which is a path-traversal question this function has
+ *     no reason to open when the alternative is one result fewer.
+ *   - CASE SURVIVES. `/Writing/Armature/` misses for the same reason. Astro's
+ *     routes are case-sensitive, so a lowercase match would render a row whose
+ *     `href` differs from the URL the crawler actually saw.
+ *
+ * Both are the safe direction, and both are invisible rather than loud: a
+ * crawler emitting either would look like an index returning fewer results.
+ * Nothing has been observed emitting either, and #145's measurement of the live
+ * instance found twelve keys, all lowercase and unencoded.
+ *
+ * THE ORIGIN IS DISCARDED, WHICH IS THE ONE OMISSION THAT IS A JUDGMENT RATHER
+ * THAN A SAFE DEFAULT. A result naming `https://elsewhere.example/writing/armature/`
+ * becomes a row whose href, title, date and reading time are all this site's
+ * own, with only the excerpt coming from the foreign document. Enforcing the
+ * origin was considered and not done: it costs two lines, but it makes a crawl
+ * pointed at a staging hostname drop every result silently, and the condition
+ * it defends against is an AI Search instance configured to crawl a domain the
+ * owner does not control, which is a bigger problem than the excerpt it
+ * produces. The excerpt is escaped either way (`highlight`). Left as a
+ * deliberate gap rather than an unexamined one.
  */
 export function pathOf(url: string): string | null {
   let path: string;

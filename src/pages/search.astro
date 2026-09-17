@@ -66,6 +66,9 @@ const SEARCH_URL = 'https://mcp.ryanlindsey.me/search';
  */
 const UNAVAILABLE = 'Search is briefly unavailable. Try again in a moment.';
 
+/** How long this page waits on the MCP Worker before calling it an outage. */
+const SEARCH_TIMEOUT_MS = 8_000;
+
 /**
  * The line the masthead's right column carries when nothing has been typed.
  *
@@ -127,6 +130,17 @@ async function answerFor(text: string): Promise<{ answer: SearchAnswer | null; m
         'user-agent': 'ryanlindsey-me-search/1',
         ...(clientIp ? { 'cf-connecting-ip': clientIp } : {}),
       },
+      // A FAR SIDE THAT NEVER ANSWERS IS AN OUTAGE, NOT A HANG. Without this
+      // the `catch` below is unreachable for the one failure it most needs to
+      // cover: a dispatch that is accepted and then never completes leaves this
+      // render waiting rather than reaching the unavailable state that was
+      // written for exactly this. The abort makes it a caught error and the
+      // visitor gets a sentence.
+      //
+      // Longer than the search itself should ever need -- a cache hit is a KV
+      // read and a miss is one index query -- so this fires on something being
+      // wrong rather than on something being slow.
+      signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
     });
   } catch (error) {
     // A service-binding dispatch that never returned. The visitor gets the
@@ -148,7 +162,37 @@ async function answerFor(text: string): Promise<{ answer: SearchAnswer | null; m
     return { answer: null, message };
   }
 
-  return { answer: (await response.json()) as SearchAnswer, message: '' };
+  /**
+   * THE SUCCESS BODY IS CHECKED, not merely awaited, and the asymmetry with
+   * the refusal path above was a review finding rather than a design.
+   *
+   * That path already catches an unparsable body and type-checks the one field
+   * it reads; this one used to be a bare `await response.json()` with a cast in
+   * front of it, and a cast asserts rather than checks. Two concrete `500`s
+   * came out of that, both of them an operator's problem being served to a
+   * reader as a broken page:
+   *
+   *   - A `200` whose body is not JSON at all, which a deploy mid-flight or a
+   *     truncated response produces. `response.json()` throws and Astro answers
+   *     `500`.
+   *   - A `200` that is valid JSON of the wrong shape, say `{"query":"x"}` from
+   *     a rolled-back MCP Worker. `results` is then `undefined` and
+   *     `joinResults` throws on the `for ... of`.
+   *
+   * Both are exactly what the unavailable state exists for: the request was
+   * well formed, the far side is having a problem, and the visitor should be
+   * told to try again rather than shown a stack. workers/mcp/src/search.ts
+   * applies the identical discipline to its own cached value, with a comment
+   * saying "checked, not merely non-null"; the argument does not stop at the
+   * service binding.
+   */
+  const body = (await response.json().catch(() => null)) as SearchAnswer | null;
+  if (body === null || !Array.isArray(body.results)) {
+    console.error('search: the MCP Worker answered 200 with a body this page cannot render');
+    return { answer: null, message: UNAVAILABLE };
+  }
+
+  return { answer: body, message: '' };
 }
 
 /**
@@ -164,6 +208,15 @@ async function answerFor(text: string): Promise<{ answer: SearchAnswer | null; m
  *
  * READ ONLY WHEN THERE IS A QUERY. The landing state renders no rows, so the
  * collections and every entry's reading time would be work done for nothing.
+ *
+ * THE READING TIME IS COMPUTED FOR EVERY PUBLISHED ENTRY AND USED FOR AT MOST
+ * TWENTY, which is the one wasteful thing on this path and is deliberate at
+ * this corpus size. The alternative is joining first and computing after, which
+ * means `joinResults` either taking a callback or returning entries for the
+ * page to finish, and both put the collection back into a module that is pure
+ * precisely so a plain Vitest run can exercise it. Revisit when the two
+ * collections together pass a few dozen entries; `reading-time` walks the whole
+ * body of each.
  */
 async function publishedDocuments(): Promise<SearchDocument[]> {
   const [posts, caseStudies] = await Promise.all([
@@ -190,7 +243,19 @@ async function publishedDocuments(): Promise<SearchDocument[]> {
 }
 
 let rows: SearchRow[] = [];
-let unavailable = '';
+
+/**
+ * WHETHER THE SEARCH FAILED, AS A BOOLEAN RATHER THAN AS A NON-EMPTY STRING.
+ *
+ * The first version of this derived the failure from `unavailable !== ''`,
+ * which makes the state depend on the far side's copy: an outage answered with
+ * an empty `message` would have fallen through to the empty state and told a
+ * reader "Nothing matched." about an index that was down. `answerFor` already
+ * says exactly this by returning a null answer, so the flag records the fact
+ * and the string is kept for display only.
+ */
+let failed = false;
+let unavailable = UNAVAILABLE;
 
 if (query !== '') {
   const [{ answer, message }, documents] = await Promise.all([
@@ -199,7 +264,10 @@ if (query !== '') {
   ]);
 
   if (answer === null) {
-    unavailable = message;
+    failed = true;
+    // Still guarded, because an empty sentence would render as an empty
+    // paragraph and say nothing at all.
+    unavailable = message === '' ? UNAVAILABLE : message;
   } else {
     rows = joinResults(answer.results, documents);
   }
@@ -215,13 +283,7 @@ const shown = filterRows(rows, activeType);
  * into a page that renders both a landing line and a row.
  */
 const state: 'landing' | 'unavailable' | 'empty' | 'results' =
-  query === ''
-    ? 'landing'
-    : unavailable !== ''
-      ? 'unavailable'
-      : shown.length === 0
-        ? 'empty'
-        : 'results';
+  query === '' ? 'landing' : failed ? 'unavailable' : shown.length === 0 ? 'empty' : 'results';
 
 /** A chip's address: this query, that filter. `All` drops the parameter entirely. */
 const chipHref = (type: SearchType | null): string => {
@@ -406,11 +468,18 @@ const summary =
             ))}
           </nav>
 
-          <p class="font-mono text-micro uppercase text-accent">
-            <a href={chatHref} class="text-accent">
-              Ask my agent instead
-            </a>
-          </p>
+          {/*
+            THE RIGHT SIDE OF THIS ROW IS DELIBERATELY EMPTY, where
+            src/components/WritingIndex.astro puts its feed links. A third link
+            to `/chat` lived here and was cut in review: #147 asks for ONE link
+            carrying the query, under the results, and the empty state needs its
+            own, which already makes two. A third sitting above the rows offered
+            the reader somewhere else to go before they had looked at what they
+            asked for.
+
+            Nothing takes its place. A feed of a query is not a thing, and the
+            flex row reads correctly with one child.
+          */}
         </div>
       </div>
 

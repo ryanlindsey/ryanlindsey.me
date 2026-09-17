@@ -108,9 +108,19 @@ function builtPages(dir: URL, prefix = ''): string[] {
  * purpose: if this list grows past a handful, derive it from the route files
  * instead.
  *
- * Trailing slashes, to match the sitemap's own spelling of these two. Both
- * answer at either spelling, which is a defect rather than a convenience --
- * see the canonical test below, which records it.
+ * Trailing slashes, to match the sitemap's own spelling. All three answer at
+ * either spelling, which is a defect rather than a convenience -- see the
+ * canonical test below, which records it.
+ *
+ * `/search` IS HERE ALTHOUGH IT IS `noindex`, and that is the whole reason
+ * this list matters for it. The sweeps below check what a page CLAIMS about
+ * itself and whether the sitemap agrees, not whether it may be indexed; the
+ * contradiction test at the bottom of this file is the only thing in the repo
+ * that holds `src/lib/unindexed-routes.mjs`'s new `/search` entry and the
+ * route's own `noindex, follow` to each other. tests/search-page.test.ts
+ * asserts each of those separately, which is two facts rather than the
+ * agreement between them. The description floor exempts it along with every
+ * other non-indexable page.
  *
  * `/fit` IS NOT HERE, and its absence is written down because it looks like
  * exactly the oversight this file exists to prevent. A tokenless `/fit` is a
@@ -122,7 +132,7 @@ function builtPages(dir: URL, prefix = ''): string[] {
  * suite about `<head>` tags. `/fit`'s own `noindex, nofollow` is asserted where
  * a granted token already exists, in tests/fit-pages.test.ts.
  */
-const ON_DEMAND_PAGES = ['/chat/', '/ops/'];
+const ON_DEMAND_PAGES = ['/chat/', '/ops/', '/search/'];
 
 const ALL_PAGES = [
   ...builtPages(new URL('../dist/client/', import.meta.url)),

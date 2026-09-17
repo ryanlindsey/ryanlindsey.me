@@ -13,6 +13,7 @@ import {
 import { SEARCH_STUB_RESULTS } from '../src/lib/search/engine';
 import { isUnindexed, unindexedRoutes } from '../src/lib/unindexed-routes.mjs';
 import { BANNED_PATTERNS } from './candidacy-patterns';
+import { LIMITS } from '../src/lib/mcp/limits';
 import { elementWith } from './markup';
 
 /**
@@ -199,8 +200,45 @@ describe('the page', () => {
     await server.close();
   });
 
+  /**
+   * EVERY CALL GETS ITS OWN ADDRESS, and the trap this avoids had already been
+   * measured one issue earlier.
+   *
+   * This page forwards `cf-connecting-ip` to the MCP Worker, so a request
+   * carrying none keys `site-search:unknown`, whose capacity is
+   * `LIMITS.inference.limit` -- ten. The limiter sits in front of the cache, so
+   * a repeated query still spends a token. This block issues more than ten
+   * query-bearing requests in under a second, and the bucket refills by nothing
+   * in that time.
+   *
+   * WHAT THAT COST BEFORE IT WAS FIXED IS THE REASON THE NOTE IS THIS LONG. The
+   * failures were not merely flaky: the last three tests in source order were
+   * reading the UNAVAILABLE page and passing against it, because that page also
+   * carries no `<script>` and no candidacy vocabulary. So the candidacy sweep,
+   * whose entire job is scanning the results and empty states, was scanning
+   * neither. A shuffled run then failed four times in five, on assertions that
+   * read as a limiter bug rather than as an exhausted allowance.
+   *
+   * tests/mcp-site-search.test.ts carries the same counter and records the same
+   * measurement from the other side of the service binding. A counter rather
+   * than a constant, so a test added in the middle cannot silently share a
+   * bucket with one added at the end, and TEST-NET-1 rather than the blocks
+   * that suite uses, so the two files stay readable side by side.
+   */
+  let addresses = 0;
   const fetchPage = async (path: string): Promise<string> => {
-    const response = await server.fetch(path);
+    addresses += 1;
+    return fetchFrom(path, `192.0.2.${addresses % 200}`);
+  };
+
+  const fetchFrom = async (path: string, address: string): Promise<string> => {
+    const response = await server.fetch(path, {
+      headers: { 'cf-connecting-ip': address },
+    });
+    // A refused search still renders a page. The far side's `429` is the
+    // page's unavailable STATE, not the page's status, which is the whole
+    // reason this route holds the rendering and the MCP Worker holds the
+    // limiter.
     expect(response.status).toBe(200);
     return response.text();
   };
@@ -306,6 +344,49 @@ describe('the page', () => {
     const html = await fetchPage('/search?q=armature');
     const main = elementWith(html, 'main', 'id="main"');
     expect(main).not.toContain('<script');
+  });
+
+  test('renders the excerpt as markup, with the matched term marked', async () => {
+    const rows = rowsOf(await fetchPage('/search?q=armature'));
+
+    // The stub's own excerpt for that URL opens with the word. What this holds
+    // is the `set:html`: swap it for `{highlight(...)}` and every other test in
+    // this file still passes while a visitor sees literal `&lt;mark&gt;` tags,
+    // which is what the second assertion exists to catch.
+    expect(rows).toContain('<mark>Armature</mark>');
+    expect(rows).not.toContain('&lt;mark&gt;');
+  });
+
+  test('says the search is unavailable when the far side refuses it', async () => {
+    /**
+     * THE ONLY STATE THIS SUITE CANNOT REACH BY ASKING FOR IT, so it is reached
+     * by spending the allowance the far side enforces. One pinned address,
+     * outside the rotating range above, and `LIMITS.inference.limit` requests
+     * to exhaust it: the next one comes back `429` and the page renders the
+     * sentence that Worker wrote.
+     *
+     * A real refusal rather than a stubbed one, which is the point. What is
+     * being checked is that the sentence travelled across the service binding
+     * and reached the markup, and a mocked `fetch` would prove only that this
+     * file can build a string.
+     */
+    const address = '192.0.2.250';
+    for (let spent = 0; spent < LIMITS.inference.limit; spent += 1) {
+      await fetchFrom(`/search?q=armature`, address);
+    }
+
+    const html = await fetchFrom('/search?q=armature', address);
+
+    expect(html).toContain('data-search-unavailable');
+    // The far side's own words, not this page's fallback: workers/mcp/src/search.ts
+    // is where the retry hint is known, and the sentence is shaped so this page
+    // can print it rather than keep a second table of codes.
+    expect(html).toContain('That is a lot of searches at once.');
+    // The form survives, so the visitor can try again without going back.
+    expect(elementWith(html, 'form', 'data-search-form')).toContain('name="q"');
+    // And nothing pretends there were results to filter.
+    expect(html).not.toContain('data-search-filters');
+    expect(html).not.toContain('data-search-row');
   });
 
   test('carries no candidacy vocabulary on any of its states', async () => {
