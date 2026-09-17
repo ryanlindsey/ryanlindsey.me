@@ -1,20 +1,3 @@
-# Source of truth for every rendered résumé format (HTML, Markdown, JSON, PDF
-# -- 02 §1). One commit here is meant to update all of them atomically, so
-# nothing in this file should exist only for one format's benefit.
-#
-# Structural facts (company, title, dates, location) come from the 2026-09-05
-# role inventory. `highlights`, `education` and `skills` were filled on
-# 2026-09-07 from résumé interview session 2, which combined Ryan's own career
-# archive (~/Documents/Career/, 2013-2022) with a live interview covering the
-# Weedmaps decade. Every claim below traces to that session record:
-# ryanlindsey.me.docs/docs/content/resume-interviews/2026-09-07-session-02.md
-#
-# Editorial rules this file is held to (02 §4, and session 1's case-study
-# review): no em dashes, American spelling, no quantified org-wide throughput
-# or productivity figure anywhere, and no company name in `basics.summary`
-# (00 §5 -- the résumé names the employer in `work`, positioning surfaces do
-# not). Role scope is stated as it actually was; see the session record on why
-# understating the title is the stronger claim here.
 basics:
   name: Ryan Lindsey
   label: Senior Engineering Manager
@@ -32,9 +15,6 @@ basics:
     city: Laguna Niguel
     region: CA
     countryCode: US
-  # Ryan ruled on 2026-09-07: publish it. His read is that the number is
-  # effectively public already, having appeared on every résumé he has sent out
-  # since 2014. This closes the last content-track gap resumeGaps() reported.
   phone: (714) 330-6251
   profiles:
     - network: GitHub
@@ -227,21 +207,6 @@ work:
         communities, and custom content management systems for local
         businesses, independent films, and bands.
 
-# Work Ryan owns outright. Deliberately NOT in `work`: that section is
-# employment history, and `workHistoryIssues()` requires exactly one entry
-# without an `endDate` because exactly one job is current. See the `projects`
-# comment in content.config.ts for the full reasoning.
-#
-# `startDate` is omitted because no verified founding date exists yet. Same rule
-# as everywhere else in this file: an unknown date is left out, not guessed.
-# Ryan can supply one and it renders automatically.
-#
-# Scope of claims follows Ryan's own IP line from the 2026-09-06 technical
-# brief: the primitive composition, the isolation model, the eval architecture
-# including its unmet gate, and cost per unit of work are all publishable in
-# full. The hold-back list (loss-attribution parameters, corner classification
-# vocabulary, prompt corpus, glossary and coaching-style contents, catalog build
-# pipeline) appears nowhere here, and the other drivers are not named.
 projects:
   - name: Pixelsonly Racing
     description: >-
@@ -276,19 +241,6 @@ projects:
         Cost tracked per unit of work from a spend ledger, with per-driver
         budgets and delivery observability gated into the roadmap before the
         driver count grows rather than after.
-  # Added 2026-09-13. Every claim below is already published in
-  # src/content/posts/armature.mdx, which is what makes this entry safe to
-  # write without a fresh disclosure review: the post is the reviewed artifact
-  # and this is a compression of it, not a new statement about the work. If a
-  # bullet here ever says something the post does not, that is the bug.
-  #
-  # `x_artifacts` is deliberately absent. Those slugs resolve to case studies
-  # under src/content/caseStudies/ and Armature has a post instead, so naming
-  # one here would fail unresolvedArtifactSlugs() rather than link anything.
-  #
-  # `url` is the repository rather than the post. The project IS the repository
-  # -- it is public, MIT, and the post's own closing argument is that the source
-  # is where a reader should go to check the claims.
   - name: Armature
     description: >-
       A Claude Code plugin that gives an agent a GitHub Projects board to work
@@ -325,9 +277,6 @@ projects:
         governs its development, and every pull request in the repository was
         merged by a human, because the tool that opened them cannot.
 
-# Years confirmed by Ryan 2026-09-07. They are bare years on purpose: the
-# schema's `yearOrYearMonth` accepts `YYYY` for education specifically, so no
-# invented month is needed to satisfy a regex. See content.config.ts.
 education:
   - institution: The Art Institute of California
     area: Interactive Media (HCI)

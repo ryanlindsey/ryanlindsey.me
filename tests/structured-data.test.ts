@@ -50,10 +50,11 @@ const resumeYaml = readFileSync(
   new URL('../src/content/resume/ryan-lindsey.yaml', import.meta.url),
   'utf8',
 );
-const basicsBlock = resumeYaml.slice(
-  resumeYaml.indexOf('\nbasics:'),
-  resumeYaml.indexOf('\nwork:'),
-);
+// `^basics:` rather than `'\nbasics:'`: the record is pure data (Task 6, 02
+// §1) and now opens directly on `basics:` with no header before it, so a
+// search for a preceding newline no longer finds one. `m` matches the start
+// of any line, which still works if a future edit puts something before it.
+const basicsBlock = resumeYaml.slice(resumeYaml.search(/^basics:/m), resumeYaml.indexOf('\nwork:'));
 const basicsName = basicsBlock.match(/\n {2}name: (.+)\n/)?.[1];
 if (!basicsName) throw new Error("no 'basics.name' found in the résumé YAML");
 

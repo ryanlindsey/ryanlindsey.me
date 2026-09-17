@@ -541,7 +541,7 @@ test('the lead story is the most recent published post, linked whole', async () 
 });
 
 test('the home page never names an employer', async () => {
-  // 00 §5, the rule src/content/resume/ryan-lindsey.yaml's header records:
+  // 00 §5, the rule `src/content.config.ts` records beside `resumeSchema`:
   // the résumé names the employer in `work`, positioning surfaces do not.
   // The prototype's bio copy broke this and the fix was to read the résumé
   // record instead of typing a line -- so this asserts the outcome rather

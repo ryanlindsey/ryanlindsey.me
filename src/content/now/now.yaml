@@ -6,11 +6,12 @@
 # Edit this file and nothing else.
 #
 # Deliberately NOT in src/content/resume/ryan-lindsey.yaml, which was the other
-# option the redesign offered (issue #103). That file's own header rules it out:
-# it is the source of truth for four rendered résumé formats and "nothing in it
-# should exist only for one format's benefit". A line about this month is for
-# one surface. It is also loaded by a collection whose reader throws unless the
-# directory holds exactly one entry, so a second file there breaks /resume.
+# option the redesign offered (issue #103). `src/content.config.ts` rules it
+# out beside `resumeSchema`: it is the source of truth for four rendered
+# résumé formats and "nothing in it should exist only for one format's
+# benefit". A line about this month is for one surface. It is also loaded by a
+# collection whose reader throws unless the directory holds exactly one entry,
+# so a second file there breaks /resume.
 #
 # Two rules this copy is held to, both from 00 §5 and the epic's global
 # constraints. No employer is named: the home page is a positioning surface,

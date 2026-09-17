@@ -106,6 +106,32 @@ const isoDate = z
   .string()
   .regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, 'expected a YYYY-MM-DD date');
 
+/*
+ * THE RULES THIS RECORD IS HELD TO. They lived in the YAML's own header until
+ * the file was reduced to data; a résumé record in a public repository is the
+ * worst place to write down how its content was decided, and the header also
+ * enumerated the Pixelsonly Racing hold-back list, which published the names of
+ * the things it was withholding.
+ *
+ * ONE SOURCE FOR FOUR FORMATS. HTML, Markdown, JSON and the PDF all render from
+ * this one file, so one commit to it updates all four. Nothing in it should
+ * exist only for one format's benefit -- src/content/now/now.yaml's header
+ * quotes that rule as its own reason for being a separate file.
+ *
+ * 00 §5: THE RÉSUMÉ NAMES THE EMPLOYER IN `work`, POSITIONING SURFACES DO NOT.
+ * `basics.summary` carries no company name, and neither does the home page bio
+ * or the site footer. src/pages/index.astro and src/components/SiteFooter.astro
+ * both record that constraint at their own copy, and tests/pages.test.ts
+ * asserts the outcome on the home page rather than the mechanism.
+ *
+ * 02 §4: no em dashes, American spelling, and no quantified org-wide throughput
+ * or productivity figure anywhere. Extended 2026-09-16: no exact audience,
+ * traffic or revenue figure for any employer either, with order-of-magnitude
+ * wording as the ceiling.
+ *
+ * Role scope is stated as it actually was. Understating the title is the
+ * stronger claim here.
+ */
 export const resumeSchema = z.object({
   basics: z.object({
     name: z.string(),
@@ -190,6 +216,11 @@ export const resumeSchema = z.object({
         // Same `x_` extension as `work[].x_artifacts`, and the reason this
         // section needed one: the Pixelsonly Racing case study had no entry to
         // hang off while `work` was the only place artifacts could be declared.
+        //
+        // An entry whose write-up is a POST rather than a case study leaves
+        // this absent. `unresolvedArtifactSlugs()` resolves slugs against
+        // src/content/caseStudies/ only, so naming a post's slug here would
+        // fail the build rather than link anything.
         x_artifacts: z.array(z.string()).optional(),
       }),
     )
