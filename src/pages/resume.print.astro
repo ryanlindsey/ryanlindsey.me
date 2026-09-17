@@ -274,22 +274,27 @@ const fields: Field[] = [
                 <span class="org-name">
                   {project.url ? <a href={project.url}>{project.name}</a> : project.name}
                 </span>
-                {project.roles.length > 0 && (
-                  <span class="org-loc">{project.roles.join(', ')}</span>
-                )}
+                {(() => {
+                  const meta = [
+                    project.roles.join(', '),
+                    project.startDate ? formatDateRange(project.startDate, project.endDate) : '',
+                  ].filter(Boolean);
+                  return meta.length > 0 ? <span class="org-loc">{meta.join(' · ')}</span> : null;
+                })()}
                 <span class="fill" />
                 {/*
                   THE URL, NOT A DATE, in the slot the work entries use for
-                  their tenure -- the reference sheet's own arrangement and
-                  worth keeping. A link annotation is invisible on paper, so
+                  their tenure. A link annotation is invisible on paper, so
                   printing the host is the only way the address survives being
                   photocopied or parsed by an ATS.
 
-                  `project.startDate` is therefore not rendered on this sheet.
-                  The schema allows one, no project declares one today, and the
-                  slot it would occupy is taken; if a project ever needs both,
-                  that is a design decision about this row rather than a field
-                  someone forgot.
+                  The date therefore shares the `org-loc` span with the roles,
+                  joined the way src/pages/resume.md.ts already joins the same
+                  two values. An earlier version of this comment said
+                  `project.startDate` was simply not rendered here, which was
+                  true while no project declared one and stopped being true the
+                  moment three did. The slot it would have taken is still the
+                  URL's; that part has not changed.
                 */}
                 {project.url && <span class="dates">{displayUrl(project.url)}</span>}
               </h3>

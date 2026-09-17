@@ -249,6 +249,7 @@ projects:
       development goals, with a personal AI race engineer for every driver, plus
       a products line for the sim racing community.
     url: https://pixelsonly.racing
+    startDate: 2026-06
     roles:
       - Founder
     x_artifacts:
@@ -295,6 +296,7 @@ projects:
       covers, claims it, works it on a branch, and opens a pull request it is
       not permitted to merge.
     url: https://github.com/ryanlindsey/armature
+    startDate: 2026-06
     roles:
       - Author
     highlights:
