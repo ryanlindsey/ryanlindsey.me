@@ -66,8 +66,34 @@ const SEARCH_URL = 'https://mcp.ryanlindsey.me/search';
  */
 const UNAVAILABLE = 'Search is briefly unavailable. Try again in a moment.';
 
-/** How long this page waits on the MCP Worker before calling it an outage. */
-const SEARCH_TIMEOUT_MS = 8_000;
+/**
+ * How long this page waits on the MCP Worker before calling it an outage.
+ *
+ * MEASURED 2026-09-17, AND THE FIRST NUMBER HERE WAS NOT. This was 8_000,
+ * chosen with nothing behind it and carrying a comment asserting it was
+ * "longer than the search itself should ever need". The first request of a
+ * `wrangler dev` session against the live `ryanlindsey-me-search` instance hit
+ * it and rendered the unavailable state; three further cold queries then came
+ * back in 3.8s, 4.3s and 7.1s, with repeats at 8ms off the KV cache. So the
+ * assertion was wrong by a margin of about one second on the one measurement
+ * that existed.
+ *
+ * WHAT THAT MEASUREMENT IS AND IS NOT. Those times include the round trip from
+ * a laptop to Cloudflare, because `ai_search` has no local emulator and dev
+ * reaches it through a remote proxy session (CLAUDE.md records that the
+ * binding is remote no matter what `remote` says). A deployed MCP Worker calls
+ * the instance from inside Cloudflare's network and pays none of that, so
+ * production is very probably faster. Nobody has measured production, which is
+ * exactly why this number is not tuned to the figures above.
+ *
+ * FIFTEEN SECONDS BECAUSE THIS CATCHES A HANG RATHER THAN ENFORCING A BUDGET.
+ * A timeout that fires on a slow-but-working search turns it into an outage
+ * the visitor is told to retry, which is strictly worse than making them wait;
+ * the only thing this has to catch is a dispatch that is never coming back.
+ * Generous is therefore the correct direction, and the cost of being generous
+ * is bounded by the far side's own limiter and cache.
+ */
+const SEARCH_TIMEOUT_MS = 15_000;
 
 /**
  * The line the masthead's right column carries when nothing has been typed.
@@ -137,9 +163,9 @@ async function answerFor(text: string): Promise<{ answer: SearchAnswer | null; m
       // written for exactly this. The abort makes it a caught error and the
       // visitor gets a sentence.
       //
-      // Longer than the search itself should ever need -- a cache hit is a KV
-      // read and a miss is one index query -- so this fires on something being
-      // wrong rather than on something being slow.
+      // See `SEARCH_TIMEOUT_MS` for what the number is, what was measured to
+      // get it, and why it is deliberately generous rather than tuned to the
+      // latency of a working search.
       signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
     });
   } catch (error) {
