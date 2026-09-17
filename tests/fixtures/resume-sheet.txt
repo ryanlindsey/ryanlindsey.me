@@ -38,8 +38,8 @@ E X P E R I E N C E
 Weedmaps IRVINE, CA MAR 2016 — PRESENT
 Senior Engineering Manager FEB 2021 — PRESENT
 Own incident management for the entire engineering organization since 2024 and coach fellow engineering managers,
-while leading 8 engineers across 2 teams. Platform: Ruby on Rails, Node.js, GraphQL, Terraform, Kubernetes, Docker,
-Fastly.
+while leading 8 engineers across 2 teams. Platform: Ruby on Rails, Node.js, GraphQL, React, Next.js, Terraform,
+Kubernetes, Docker, Fastly.
 • Designed and built a delivery-forecasting toolchain for engineering managers, beginning as a set of Claude Skills and
 migrating to an internal MCP server as adoption outgrew that packaging. Adopted by >80% of engineering managers
 and absorbed into the org-wide roadmapping and reporting process.
@@ -91,8 +91,8 @@ the same VP or CTO.
 its cultural shift started.
 • Began the front-end re-architecture. Shipping a single roadmap feature meant changing three separate code bases to
 reach every user and device, a legacy of the pre-responsive mobile subdomain era. The work cut time to market and
-became the foundation for the company's later front-end architecture, including a shared UI library built with the Design
-team.
+became the foundation for the company's later front-end architecture on React and Next.js, including a shared UI library
+built with the Design team.
 • Defined and delivered the front-end staffing roadmap, and rebuilt the front-end technical exercise with the talent team.
 Sr. Front End Engineer MAR 2016 — MAY 2016
 • Built and maintained features across the company's web applications, mentored other engineers, reviewed code, and
@@ -152,4 +152,5 @@ PLATFORM AND DELIVERY Edge compute and caching (Fastly, Cloudflare Workers), Ser
 Workflows, Queues), Kubernetes and Docker, Terraform, CI/CD and automated testing,
 Blue/green, zero-downtime deployment, Release management, Bot mitigation, API design,
 High availability
-LANGUAGES AND DATA TypeScript, JavaScript, Node.js, Ruby on Rails, SQL (SQLite, D1), GraphQL, *nix shell
+LANGUAGES AND FRAMEWORKS TypeScript, JavaScript, Node.js, React and Next.js, Ruby on Rails, SQL (SQLite, D1), GraphQL,
+*nix shell

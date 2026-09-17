@@ -32,8 +32,8 @@ work:
     summary: >-
       Own incident management for the entire engineering organization since
       2024 and coach fellow engineering managers, while leading 8 engineers
-      across 2 teams. Platform: Ruby on Rails, Node.js, GraphQL, Terraform,
-      Kubernetes, Docker, Fastly.
+      across 2 teams. Platform: Ruby on Rails, Node.js, GraphQL, React,
+      Next.js, Terraform, Kubernetes, Docker, Fastly.
     x_artifacts:
       - delivery-forecasting
     highlights:
@@ -141,8 +141,8 @@ work:
         meant changing three separate code bases to reach every user and
         device, a legacy of the pre-responsive mobile subdomain era. The work
         cut time to market and became the foundation for the company's later
-        front-end architecture, including a shared UI library built with the
-        Design team.
+        front-end architecture on React and Next.js, including a shared UI
+        library built with the Design team.
       - >-
         Defined and delivered the front-end staffing roadmap, and rebuilt the
         front-end technical exercise with the talent team.
@@ -297,11 +297,12 @@ skills:
       - Bot mitigation
       - API design
       - High availability
-  - name: Languages and data
+  - name: Languages and frameworks
     keywords:
       - TypeScript
       - JavaScript
       - Node.js
+      - React and Next.js
       - Ruby on Rails
       - SQL (SQLite, D1)
       - GraphQL
