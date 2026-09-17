@@ -5,35 +5,7 @@
   "compatibility_date": "2026-09-02",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 
-  // Day 3 Task 5 closes the day-1 open loop. /resume.pdf is the first route with
-  // `export const prerender = false`, so Astro's build output flips from "static"
-  // to "server", the adapter stops passing `main: undefined` to its Vite plugin,
-  // and a real Worker bundle is emitted. `main` and the `ASSETS` binding are both
-  // meaningful again -- and `main` is what carries `scheduled()`: without a server
-  // bundle the cron handler runs under `astro dev` and is silently absent from the
-  // deployed Worker.
   "main": "./src/worker.ts",
-  // Day 3 Task 8 (02 §3): `run_worker_first` defaults to false, meaning a
-  // request that matches a static asset is served straight from the Asset
-  // Worker and NEVER reaches src/worker.ts's `fetch` at all -- confirmed
-  // empirically (a debug header set unconditionally at the top of `fetch`
-  // never appeared on a response for any of these paths without this
-  // setting). Every one of Task 7's HTML content pages is exactly such a
-  // static asset, so `Accept`-based negotiation would otherwise be dead code
-  // for the one thing it exists to intercept.
-  //
-  // Scoped to the content and agent-signal routes only (not `true`/global), so
-  // every other static asset -- `/_astro/*`, favicon, the images -- keeps the
-  // fast, Worker-free asset-serving path. `*` matches across path segments
-  // (Cloudflare's own docs example has `/api/*` needing `!/api/docs/*` to
-  // exclude a nested path), so `/writing/*` alone covers `/writing/foo`,
-  // `/writing/foo/` AND `/writing/foo.md`. Day 3 carved that last form back out
-  // with two `!.../*.md` negative patterns; DAY 6 DELETED THEM, and the reason
-  // is with the agent-signal block below. `/resume.json`/`.md`/`.pdf` never
-  // needed a negative pattern either way: there is no `/resume/*` positive
-  // pattern to catch them in the first place. The bare, no-slug forms
-  // (`/writing`, `/work`) are listed explicitly rather than relied on, since
-  // neither takes a markdown variant anyway and there is no reason to guess.
   "assets": {
     "directory": "./dist/client",
     "binding": "ASSETS",
@@ -44,88 +16,9 @@
       "/writing/*",
       "/work",
       "/work/*",
-      // Day 4 Task 13 (03 §1): `/mcp` has no matching entry in `dist/client`
-      // (confirmed: `find dist/client -iname '*mcp*'` is empty), so today it
-      // already falls through to src/worker.ts's forward with no entry here
-      // -- unlike every other path above, which is listed BECAUSE it shadows
-      // a real static asset. This one changes NOTHING today; it is here for
-      // durability. `not_found_handling` is unset now (the plain "answer a
-      // real 404" default), but `single-page-application` or `404-page`
-      // would change what an UNMATCHED path does -- the Asset Worker would
-      // answer it directly and src/worker.ts's `fetch` would never run,
-      // exactly the "code before `handle()` is unreachable for paths it does
-      // not name" trap the comment above this array already names. If that
-      // ever changes, `/mcp` -- the endpoint 03 §1 calls PRIMARY -- would go
-      // silently unreachable while `mcp.ryanlindsey.me` kept working: the
-      // asymmetric-origin failure this whole task exists to close, reopened
-      // by asset config instead of code. Do not delete this as redundant.
-      //
-      // What listing it here does NOT do, measured 2026-09-07 while closing
-      // issue #28: it does not cost `/mcp` the `public/_headers` courtesy
-      // headers. It has none (`X-MCP-Server` and `X-For-AI-Agents` are both
-      // absent from a HEAD and from a POST to it), but `/resume` and
-      // `/work/<slug>/` are in this same list and DO carry them -- so
-      // `run_worker_first` is not what drops them. Those rules are applied by
-      // the asset server to asset responses, and `/mcp` has no asset behind it.
-      // The full measurement and the decision not to inject them in code are
-      // written up beside the `/*` rule in public/_headers.
       "/mcp",
-      // Day 5 Task 13 (04 §2, 09 §1): the same durability argument as `/mcp`
-      // above, and here it guards something sharper than reachability. `/fit`
-      // is on-demand, so it shadows no asset and already falls through today
-      // -- these two entries change nothing now. What they insure against is
-      // `not_found_handling` ever being set: the Asset Worker would then answer
-      // unmatched paths itself and src/worker.ts's `fetch` would stop running
-      // for them. `/fit` would keep rendering (Astro's routing lives inside
-      // `handle()`), and would SILENTLY LOSE `Referrer-Policy: no-referrer` --
-      // the header that keeps the scoped token in that page's URL out of the
-      // `Referer` on the Turnstile script request to challenges.cloudflare.com
-      // -- along with the flattening that keeps a refusal from being a
-      // route-existence oracle. Both entries, because `/fit` is not matched by
-      // `/fit/*`.
       "/fit",
       "/fit/*",
-      // DAY 6 (06 §3) ADDED THE BLOCK BELOW AND DELETED TWO NEGATIVE PATTERNS,
-      // and the deletion is the part that needs the argument, because day 3's
-      // reasoning for them was correct at the time and is quoted here rather
-      // than lost: routing an already-suffixed `.md` request through the Worker
-      // "bought nothing but an extra hop before falling to the same asset it
-      // would have been served directly anyway".
-      //
-      // It buys something now. A request served by the Asset Worker never
-      // reaches src/worker.ts, so it cannot be classified and cannot be
-      // counted -- and `/llms.txt` and the `.md` variants are not incidental
-      // traffic, they are THE agent-signal routes, the ones "agents served"
-      // (06 §1's headline number) exists to measure. Leaving them off this list
-      // would have shipped an /ops page whose central statistic was blind to
-      // the requests it was about.
-      //
-      // The cost is one Worker invocation per request on these paths; the bytes
-      // still come from `ASSETS` either way. NOT added, deliberately:
-      // `/_astro/*`, fonts and images. Those are browser sub-resources -- they
-      // would multiply invocations by a factor of ten and tell us nothing an
-      // agent did, since an agent fetching a markdown file requests no CSS.
-      //
-      // `/` WAS NOT HERE FOR AGENT-SIGNAL COUNTING (day 6, 06 §3), and that
-      // reasoning still holds on its own terms: the home page is the busiest
-      // path on the site and the least informative one to count as an agent
-      // signal -- a request for it is not an agent signal, it is everybody.
-      // Adding it for THAT reason alone would have put an invocation in
-      // front of the front page to improve a "requests served" figure that
-      // /ops already labels as partial. The labelling was the honest fix;
-      // the invocation was not, and nothing below changes that argument.
-      //
-      // Issue #171 (epic #165) added it anyway, for an unrelated reason: the
-      // homepage is a static asset exactly like /resume, /writing/* and
-      // /work/* above, so `Accept: text/markdown` negotiation
-      // (markdownAssetPathFor in src/worker.ts, which maps `/` to
-      // /index.md) is dead code for `/` without this entry -- the same
-      // empirically-confirmed rule the file-header comment states for every
-      // other route in this list. Removing this line does not fail loudly:
-      // it makes the homepage's markdown twin silently unreachable while
-      // every test that calls `markdownAssetPathFor('/')` directly keeps
-      // passing, because that function has no idea whether the Worker it
-      // runs in was ever reached.
       "/",
       "/llms.txt",
       "/llms-full.txt",
@@ -141,7 +34,20 @@
   "workers_dev": false,
   "preview_urls": true,
   "routes": [{ "pattern": "ryanlindsey.me", "custom_domain": true }],
-  "observability": { "enabled": true },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true,
+      "persist": true,
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "persist": true,
+    },
+  },
 
   "d1_databases": [
     {
@@ -158,36 +64,12 @@
 
   "r2_buckets": [
     { "binding": "R2_ASSETS", "bucket_name": "ryanlindsey-me-assets" },
-    // DECLARED AND UNUSED ON THIS WORKER, deliberately, and said out loud here
-    // because this is the Worker that serves anonymous traffic
-    // (final-review Important 4). Nothing under src/pages or src/worker.ts
-    // imports src/lib/tier/private-docs.ts -- the private tier's only reader
-    // is the MCP Worker, and `/fit` reaches it over the `MCP` service binding
-    // rather than reading R2 itself.
-    //
-    // What this comment is NOT: the partition's guarantee. That is structural
-    // and lives in the type system -- `DocumentsEnv` (src/lib/mcp/documents.ts)
-    // names no R2 binding at all, so a public document tool cannot reach this
-    // bucket by forgetting a filter, and tests/tier-private-docs.test.ts pins
-    // it with a `@ts-expect-error`. This binding is a capability the site
-    // Worker holds and must never exercise, which is a weaker property than
-    // the one the branch advertises, and the difference is worth knowing when
-    // reading either claim. tests/pages.test.ts pins the binding list so the
-    // set cannot drift without a test saying so.
+    // DECLARED AND UNUSED ON THIS WORKER (#180).
     { "binding": "R2_PRIVATE", "bucket_name": "ryanlindsey-me-private" },
   ],
 
   "queues": {
     "producers": [{ "binding": "EVENTS", "queue": "ryanlindsey-me-events" }],
-    // Day 6 (06 §3). Small batches with a short timeout, because the value of
-    // these messages is TIMING -- "when a target's tools start probing, Ryan
-    // knows same-hour" -- and a large batch window would trade the only
-    // property they have for an email volume that is already single figures.
-    //
-    // The dead-letter queue is not optional-with-a-default: without one, a
-    // message that fails `max_retries` is DROPPED, and the failure mode this
-    // consumer is most likely to have (a misconfigured address) would silently
-    // discard exactly the events it exists to deliver.
     "consumers": [
       {
         "queue": "ryanlindsey-me-events",
@@ -201,144 +83,17 @@
 
   "analytics_engine_datasets": [{ "binding": "AE", "dataset": "ryanlindsey_me_events" }],
 
-  // Browser Run. Measured 2026-09-06 against the installed miniflare
-  // (5.20260831.0-alpha): its bundle carries a real browser-rendering plugin
-  // that downloads Chrome-for-Testing and launches it locally, and ZERO
-  // references to `quickAction`. So `puppeteer.launch(env.BROWSER)` worked here
-  // with no Cloudflare credentials, and this binding is NOT remote-only -- the
-  // day-1 comment that claimed it was has been deleted rather than moved. That
-  // measurement is why the harness needed a mock Worker in front of this
-  // binding while the renderer existed, and why it needs none now.
-  //
-  // Object, not array: the schema is `{ binding, remote? }` with
-  // additionalProperties: false, and it is not inherited by named environments.
-  //
-  // MEASURED, and kept here because #186 deleted the only file that recorded
-  // it: Browser Run stamps `cf-biso-devtools` (the Quick Actions spelling) or
-  // `cf-brapi-devtools` (the Puppeteer/CDP one) on every request it makes, and
-  // neither can be stripped or overridden with `setExtraHTTPHeaders`. The
-  // deleted route used them as a recursion guard, 404ing its own renderer so a
-  // rendered page that linked back could not cost a Worker invocation AND a
-  // browser session per level. Anything that reaches for this binding again
-  // needs that fact, and would otherwise pay to rediscover it.
-  //
-  // DECLARED AND UNUSED ON THIS WORKER since #186, which deleted the runtime
-  // renderer that was its only reader: the résumé sheet is now rendered by
-  // scripts/resume-sheet.mjs in GitHub Actions against a local headless Chrome,
-  // and this Worker only reads the result out of R2. Kept rather than removed
-  // as a locked decision of epic #180, following the convention `R2_PRIVATE`
-  // already uses -- and the comment is the half that matters, because a config
-  // granting browser access reads exactly like one where the Worker still
-  // renders. tests/site-env.test.ts pins the binding list and this note.
+  // DECLARED AND UNUSED ON THIS WORKER (#180, #186).
   "browser": { "binding": "BROWSER" },
 
-  // 05:47 UTC daily, the retention sweep (day 6, 06 §2). Every five minutes,
-  // the campaign hero index refresh (#233): it derives one `hero:index` key in
-  // `KV_CACHE` from the authored campaign entries, and the interval is the
-  // staleness a newly deployed campaign pays before its band appears. The
-  // reasoning for that number, and what 288 invocations a day buy, is in
-  // src/worker.ts's `scheduled()` docblock beside the job itself.
-  //
-  // The 05:17 slot next to it was the résumé-PDF refresh, and #186 removed it
-  // with the runtime renderer: the PDF is a pure function of the commit, so
-  // .github/workflows/resume-pdf.yml renders it on the push that changes it
-  // rather than a cron asking daily whether anything changed. The corpus
-  // refresh that once shared this trigger moved earlier still, to
-  // workers/mcp/wrangler.jsonc with the bindings it runs on (see the note
-  // below). Separate slots were chosen for the reason that file records about
-  // its own 05:32: they make a cron failure attributable on sight rather than
-  // by reading which handler threw.
-  //
-  // These expressions are matched STRING FOR STRING by the `switch` in
-  // src/worker.ts's `scheduled()`. Editing one without the other leaves the
-  // handler matching nothing; the switch's `default` arm is what makes that
-  // loud rather than a job that silently stopped running.
   "triggers": { "crons": ["47 5 * * *", "*/5 * * * *"] },
 
-  // NO `ai` AND NO `vectorize` BINDING HERE, AND THAT IS A BUILD CONSTRAINT
-  // RATHER THAN A STATEMENT ABOUT NEED. Both moved to workers/mcp/wrangler.jsonc
-  // together with the corpus-refresh cron; see that file for the measurements
-  // (embedding width, metric, metadata-index ordering) that used to live here.
-  //
-  // The `ai` binding cannot exist in THIS config, because this config is the one
-  // `astro build` instantiates. @cloudflare/vite-plugin classifies `ai` as
-  // "DO-NOT-USE-this-resource-will-never-have-a-local-simulator", so
-  // `pickRemoteBindings` returns true for it no matter what `remote` says --
-  // and `validateBindingRemoteSetting` THROWS on `remote: false`, so it cannot
-  // be opted out of either. Any tooling that instantiates this Worker's
-  // bindings therefore opens a remote proxy session, including
-  // @astrojs/cloudflare's prerenderer, which `astro build` runs. CI has no
-  // Cloudflare credentials by design (10 §2.4), so `npm run build` failed there
-  // with "In a non-interactive environment, it's necessary to set a
-  // CLOUDFLARE_API_TOKEN". A local build passed only because a dev machine has
-  // wrangler OAuth -- the exact class of green-here/red-in-CI gap this repo
-  // keeps finding. Confirmed by bisection: with `ai` removed and nothing else
-  // changed, `astro build` completes against an isolated `HOME`.
-  //
-  // `vectorize` did NOT force the session (an unset `remote` resolves to local
-  // simulation for it, the opposite of `ai`), so it could have stayed. It went
-  // with `ai` because the two are one feature: the embedding job needs both, and
-  // splitting them across two Workers would put half a job in a config that
-  // cannot hold the other half.
-  //
-  // `browser` above stays. It is `local-and-remote` in the same plugin table, so
-  // it is served by miniflare's real local browser plugin and starts no session.
-  //
-  // Day 4's MCP server does semantic search over this corpus, so it needed both
-  // bindings regardless; the Worker that queries the corpus is now also the one
-  // that fills it. CI never builds that Worker -- .github/workflows/checks.yml
-  // has no reference to it -- so the conflict has nowhere left to reappear.
-
-  // No `destination_address`: this binding may send to any address verified on
-  // Email Routing, and the owner's private address must not appear in a public repo.
   "send_email": [{ "name": "EMAIL" }],
-
-  // NO RATE LIMITER HERE, and the absence is the point rather than an
-  // oversight. This config used to declare `ratelimits` with `RATE_LIMITER` at
-  // namespace 1001, 60/60s -- the SAME namespace_id the MCP Worker used. Two
-  // facts made it worth deleting rather than leaving:
-  //
-  // It was never read. `src/worker.ts` has no reference to `env.RATE_LIMITER`;
-  // the only limited surface this Worker serves is `/mcp`, and that is
-  // forwarded to the MCP Worker over the `MCP` service binding below and
-  // limited there, on the request's own `CF-Connecting-IP` (MEASURED
-  // 2026-09-08: a `User-Agent` sent to https://ryanlindsey.me/mcp arrives
-  // intact in `mcp_tool_calls.user_agent`, so the forwarded request is the
-  // client's, headers and all).
-  //
-  // And the shared namespace_id was a live trap for whoever read it next.
-  // Cloudflare's docs: "Two rate limiting bindings that share the same
-  // namespace_id -- even across different Workers on the same account -- share
-  // the same rate limit counters for a given key." So this entry did not
-  // define a second, independent 60/60s allowance; it silently joined the MCP
-  // Worker's. It is not what broke #29 (sharing is the STRICTER direction, and
-  // nothing here ever called `limit()`), but a future author who wired this
-  // binding up would have got a bucket entangled with another Worker's and no
-  // hint of it anywhere.
-  //
-  // The MCP Worker no longer uses `ratelimits` at all -- see
-  // workers/mcp/src/rate-limiter.ts for the measurement that replaced it with
-  // a Durable Object. If this Worker ever needs limiting of its own, it needs
-  // the same mechanism, not this one.
 
   "services": [{ "binding": "MCP", "service": "ryanlindsey-me-mcp" }],
 
   "secrets_store_secrets": [
-    // DECLARED AND UNUSED ON THIS WORKER, which is the plan's locked decision
-    // written down where the binding is (day-5 plan, "Where the token is
-    // verified"): *"The site Worker therefore needs no signing key; the
-    // binding it already declares stays declared and unused, with a comment
-    // saying so."* The comment was the half that went missing
-    // (final-review Important 4).
-    //
-    // The reason it stays rather than being deleted: the token is verified in
-    // EXACTLY ONE place, `resolveGrant` in the MCP Worker
-    // (src/lib/tier/grant.ts). `/fit` treats the token as an opaque string and
-    // asks that Worker, over the `MCP` service binding, whether the granted
-    // surface contains `analyze_fit` -- so the page's gate exercises the real
-    // boundary instead of agreeing with a second copy of it. A signing key
-    // here would make a second verifier possible, which is the thing the
-    // design is spending a service-binding round trip to prevent.
+    // DECLARED AND UNUSED ON THIS WORKER (#180).
     {
       "binding": "RLME_TOKEN_SIGNING_KEY",
       "store_id": "3b06d2a92de642d999509352cfd3ebed",
@@ -349,50 +104,11 @@
       "store_id": "3b06d2a92de642d999509352cfd3ebed",
       "secret_name": "RLME_TURNSTILE_SECRET_KEY",
     },
-    // Day 6 (06 §3): the verified Email Routing destination high-intent
-    // notifications are delivered to. A secret because it is the owner's own
-    // address and must not appear in a public repo -- the SENDER is public and
-    // is the `RLME_NOTIFY_FROM` var below. Read by src/lib/agent-intel/notify.ts
-    // and nowhere else; its absence is a skipped send with a log line, never a
-    // failed batch, so this Worker deploys and runs correctly without it.
     {
       "binding": "RLME_NOTIFY_ADDRESS",
       "store_id": "3b06d2a92de642d999509352cfd3ebed",
       "secret_name": "RLME_NOTIFY_ADDRESS",
     },
-    // Day 6 (06 §1): the read-only account token /ops reads its credentialed
-    // half through. Neither Analytics Engine nor AI Gateway has a binding-side
-    // READ -- the `AE` binding writes and cannot query, and the gateway's
-    // numbers are not exposed to a Worker at all -- so this is the one
-    // credential in this repo that is not a deploy credential Cloudflare holds
-    // for itself (10 §3.1). Scoped to Account Analytics Read and AI Gateway
-    // Read on this account only; it can create, change and deploy nothing.
-    //
-    // WHICH gateway endpoint it is spent against is DETERMINED, MEASURED
-    // 2026-09-11 against this account with this token, through a temporary
-    // Worker route under `wrangler dev --remote` (deleted before committing):
-    //
-    //   - THE GRAPHQL DATASET `aiGatewayRequestsAdaptiveGroups` ANSWERS 200
-    //     with the spend, request and cache-hit numbers /ops publishes. POST to
-    //     `https://api.cloudflare.com/client/v4/graphql`. This is the one
-    //     `readSpend` in src/lib/ops/analytics.ts now calls.
-    //   - THE REST ROUTE `/accounts/{account}/ai-gateway/gateways/{id}` ANSWERS
-    //     403 `{"code":10000,"message":"Authentication error"}`. Ruled out for
-    //     this token; do not reach for it again on the assumption that the
-    //     GraphQL query is the awkward way round.
-    //
-    // The Analytics Engine half was measured in the same run: a POST to
-    // `/accounts/{account}/analytics_engine/sql` answering
-    // `{ meta, data, rows, rows_before_limit_at_least }`, with `UInt64` columns
-    // as JSON strings and `Float64` as numbers. src/lib/ops/analytics.ts
-    // transcribes the recorded envelopes at more length -- the probe's raw
-    // output is in gitignored working notes, so those comments and this one are
-    // the record, and the two are meant to be edited together.
-    //
-    // Read by src/lib/ops/analytics.ts and nowhere else. Its absence is a
-    // labelled "not configured" section on /ops, never a zero and never a
-    // failed render, so this Worker deploys and serves correctly without it --
-    // which is the state every test in this repo runs in.
     {
       "binding": "RLME_ANALYTICS_TOKEN",
       "store_id": "3b06d2a92de642d999509352cfd3ebed",
@@ -400,50 +116,11 @@
     },
   ],
 
-  // SITE_ORIGIN is this Worker's own canonical origin, and NOTHING ON THIS
-  // WORKER READS IT since #186. It was what the Browser Run job navigated to,
-  // and it was deliberately a var rather than something derived from
-  // `request.url`: Wrangler's `--infer-origin-from-routes` defaults to true, so
-  // with the custom-domain route above, `request.url` reads as
-  // https://ryanlindsey.me/... even under local dev -- deriving the render URL
-  // from it would have made local dev silently render production.
-  //
-  // Kept, and WHERE THE ORIGIN ACTUALLY LIVES is worth stating because this is
-  // now the copy that no code reads. Every site route resolves the CONSTANT in
-  // src/lib/markdown-export.ts, which hardcodes the same string for the reason
-  // its own comment gives about not loading astro.config.mjs into a plain
-  // vitest process. workers/mcp/wrangler.jsonc declares this var a second time
-  // and the MCP Worker DOES read it, for citation URLs and as the base its
-  // `SITE` service binding resolves paths against. Three spellings of one
-  // origin, then. This one is kept so the two Worker configs stay symmetrical
-  // rather than one of them quietly lacking a var its sibling has.
-  // The test harness overrides it (tests/workers.ts); under `astro dev`,
-  // override it in .dev.vars rather than editing this value.
   "vars": {
     "RLME_AI_GATEWAY_ID": "ryanlindsey-me",
-    // The account this Worker's Analytics Engine dataset and AI Gateway live
-    // in, for the two REST reads /ops makes (src/lib/ops/analytics.ts). A
-    // PUBLIC identifier (10 §2.6) and already the top-level `account_id` in
-    // this same file -- it is repeated here because `account_id` is wrangler's
-    // own field and is not exposed to the Worker at runtime.
     "RLME_ACCOUNT_ID": "1b764d090899bf1ee61a8d1e87c10710",
-    // The sender. PUBLIC -- it is an address on this site's own domain and it
-    // appears in the `From` header of every notification. The DESTINATION is
-    // the secret half and is never here (see `secrets_store_secrets` above);
-    // `send_email` deliberately declares no `destination_address`, which is
-    // what lets the binding send to whatever verified address that secret names.
     "RLME_NOTIFY_FROM": "notifications@ryanlindsey.me",
     "SITE_ORIGIN": "https://ryanlindsey.me",
-    // PUBLIC (10 §2.6), and here rather than in a `.env` for two reasons: the
-    // one page that uses it is on-demand rendered, so it reads this at request
-    // time from `Astro.locals.runtime.env`; and this is where the account id
-    // and gateway id already live, which is the right neighbourhood for an
-    // identifier that ships in page HTML anyway. The SECRET half is
-    // `RLME_TURNSTILE_SECRET_KEY` in Secrets Store and is never here.
-    //
-    // Named without the `PUBLIC_` prefix 10 §2.6 suggests: that prefix is
-    // Astro's convention for build-time env, this is a Worker var, and 10
-    // §3.2's own rule is `RLME_<PURPOSE>` with no prefix.
     "RLME_TURNSTILE_SITEKEY": "0x4AAAAAAElhnY8ov3OYHN8m",
   },
 }
