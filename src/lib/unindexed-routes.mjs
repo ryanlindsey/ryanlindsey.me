@@ -8,7 +8,7 @@ import { readdirSync, readFileSync } from 'node:fs';
  * layer exists, so `getCollection` is not available to it. Same reason
  * heading-anchors.mjs is `.mjs` and imported the same way.
  *
- * FOUR SEPARATE REASONS A ROUTE IS EXCLUDED, and conflating them would be the
+ * FIVE SEPARATE REASONS A ROUTE IS EXCLUDED, and conflating them would be the
  * bug here:
  *
  * 1. DRAFTS. `src/pages/writing/[...slug].astro` deliberately gives every
@@ -55,6 +55,30 @@ import { readdirSync, readFileSync } from 'node:fs';
  *    with none of reason 3's excuse that the filtered view is worth addressing.
  *    It carries its own `noindex, nofollow` as well, for the reason reason 1
  *    gives about drafts: neither mechanism should ever be the only one.
+ *
+ * 5. QUERY-DRIVEN PAGES. `/search` (issue #147, epic #143) has no content of
+ *    its own. `/search` with nothing typed is a form, and `/search?q=<query>`
+ *    is an arrangement of rows that already have their own routes, assembled
+ *    at request time from an index that resyncs daily. Crawling it would offer
+ *    a search engine one empty page plus, for every query a link ever carried,
+ *    a document made entirely of other documents' titles and excerpts.
+ *
+ *    THIS IS NOT REASON 3, though both are about duplicates. A pillar view is
+ *    a FIXED subset of a fixed set, so there are exactly three of them and a
+ *    crawler picking a canonical among four pages is the whole problem. A
+ *    query-driven page has no cardinality at all: every distinct `?q=` is
+ *    another URL, so this is not four near-identical documents but an
+ *    unbounded supply of them.
+ *
+ *    THE ROUTE SAYS `noindex, follow` TOO, both halves for the reason reason 1
+ *    gives: neither mechanism is sufficient alone. `follow` rather than
+ *    `nofollow`, on reason 3's logic -- every row on it links a published page
+ *    and is a fine path to one.
+ *
+ *    ONE PREFIX COVERS IT, because the query is a query string rather than a
+ *    path segment and `isUnindexed` reads the pathname. `/search?q=x` and
+ *    `/search` are the same route to this filter, which is what makes this one
+ *    line rather than an enumeration nobody could write.
  *
  * The draft half is derived from disk rather than hand-listed, so a new draft
  * is covered the day it lands rather than the day someone remembers this file.
@@ -103,7 +127,7 @@ export function unindexedRoutes() {
       (slug) => `/work/${slug}`,
     ),
   ];
-  return ['/fit', '/writing/pillar', '/resume.print', ...drafts];
+  return ['/fit', '/writing/pillar', '/resume.print', '/search', ...drafts];
 }
 
 /**

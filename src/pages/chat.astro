@@ -2,6 +2,7 @@
 import { env } from 'cloudflare:workers';
 import Shell from '../layouts/Shell.astro';
 import Turnstile from '../components/Turnstile.astro';
+import { MAX_QUESTION_CHARS } from '../lib/chat/engine';
 import { MCP_ENDPOINT } from '../lib/nav';
 import { LIMITS } from '../lib/mcp/limits';
 import { formatWindow, RETENTION } from '../lib/retention';
@@ -78,6 +79,32 @@ const PROTOCOL_LINKS = [
 ];
 
 const isExternal = (href: string): boolean => href.startsWith('http');
+
+/**
+ * A question handed over from `/search?q=<query>` (issue #147, epic #143).
+ *
+ * `/search` ends every one of its states with a link here carrying the query,
+ * because a search that was really a question has to have somewhere to go and
+ * this is the surface that answers questions. A link carrying a parameter
+ * nothing reads is not carrying anything, so this is the reading half of that
+ * decision and the two ship together.
+ *
+ * PRELOADED, NEVER SENT. The composer is filled and the visitor presses Send
+ * themselves, which is what keeps the bot check, the per-caller limiter and
+ * the budget breaker in front of every answer this page gives. A link that
+ * submitted on arrival would be a GET that spends money, and anybody could
+ * post one.
+ *
+ * `MAX_QUESTION_CHARS` rather than `/search`'s own hundred-character cap: this
+ * is the field's limit and the `maxlength` below is the same number, so a
+ * value arriving from anywhere else is held to what this page accepts rather
+ * than to what sent it.
+ *
+ * Rendered as the textarea's CHILD, which is where a textarea's value lives,
+ * and escaped by Astro like any other interpolation. It is caller text and is
+ * never anything but text.
+ */
+const handoff = (Astro.url.searchParams.get('q') ?? '').trim().slice(0, MAX_QUESTION_CHARS);
 
 /** A rail block after the first: opened by a rule, the way every rail on this site is. */
 const RAIL_BLOCK = 'border-t border-rule pt-[18px]';
@@ -268,7 +295,7 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
             maxlength="1000"
             class="w-full resize-none border-0 bg-transparent text-body text-ink placeholder:text-ink-muted"
             placeholder="Ask about the work, the writing, or the résumé"
-          ></textarea>
+          >{handoff}</textarea>
           <button
             type="submit"
             class="shrink-0 bg-accent-ground px-4 py-[10px] font-mono text-small uppercase text-accent-on"

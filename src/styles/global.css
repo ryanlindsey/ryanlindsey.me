@@ -324,6 +324,38 @@
     color: var(--rl-accent-on);
   }
 
+  /*
+   * A matched term in a `/search` excerpt (the results-page issue, in the site
+   * search epic -- cited by name, per the note on the footer link rule above,
+   * because a hash followed by an issue number reads as a hex literal to
+   * tests/tokens.test.ts and this file may carry none).
+   *
+   * ACCENT INK AND AN ACCENT UNDERLINE, NEVER A HIGHLIGHTER BLOCK. The UA
+   * default for `mark` is a yellow background, which is both a color this
+   * site does not have and the one thing tokens.css's opening paragraph
+   * forbids outright: flat bright color as signal, never a wash. So the
+   * background is cleared and the accent does the work, the same accent every
+   * other "this is the thing" on the site uses.
+   *
+   * THE UNDERLINE IS NOT DECORATION. A mark distinguished by color alone is a
+   * mark that vanishes for a red-green color-blind reader and again on paper,
+   * and the excerpt around it is `--rl-ink-muted` body text, so the contrast
+   * between marked and unmarked is exactly the kind a second channel has to
+   * carry. WCAG 1.4.1 is the rule; two channels is the fix.
+   *
+   * SCOPED TO NOTHING, because `mark` appears in exactly one place on this
+   * site and a `[data-search-row] mark` selector would be a scope invented
+   * before a second use exists. Authored content can use it and will inherit
+   * this, which is the right answer for it too.
+   */
+  mark {
+    background-color: transparent;
+    color: var(--rl-accent);
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+
   /* Numbers line up in the resume, /ops, and every metadata run. */
   time,
   [data-numeric] {
