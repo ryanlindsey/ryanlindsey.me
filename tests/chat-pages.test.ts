@@ -166,6 +166,21 @@ describe('GET /chat', () => {
     expect(rail).toContain('https://mcp.ryanlindsey.me/mcp');
   });
 
+  test('a query handed over from /search arrives in the composer', async () => {
+    // `/search` ends every one of its states with a link to `/chat?q=<query>`
+    // (issue #147), and a link that carried a parameter nothing read would not
+    // be carrying the query at all.
+    const form = /<form[^>]*data-chat-form[\s\S]*?<\/form>/.exec(await html('/chat?q=turnstile'));
+    expect(form, 'no chat form on the page').not.toBeNull();
+    expect(form![0]).toContain('>turnstile</textarea>');
+  });
+
+  test('a handed-over query is text, never markup', async () => {
+    const page = await html('/chat?q=%3Cscript%3E');
+    expect(page).not.toContain('<script>alert');
+    expect(page).toContain('&lt;script&gt;</textarea>');
+  });
+
   test('the Turnstile widget and sitekey survive the restyle', async () => {
     // Unchanged assertion. Restated here because a layout rewrite is exactly
     // when a widget gets moved out of the form it belongs to -- so this one

@@ -1,0 +1,535 @@
+---
+import { getCollection } from 'astro:content';
+import { env } from 'cloudflare:workers';
+import Shell from '../layouts/Shell.astro';
+import { readingTimeFor } from '../lib/reading-time';
+import {
+  normalizeQuery,
+  parseSearchType,
+  UNKNOWN_SEARCH_TYPE,
+  type SearchAnswer,
+  type SearchType,
+} from '../lib/search/engine';
+import {
+  countRows,
+  filterRows,
+  highlight,
+  joinResults,
+  type SearchDocument,
+  type SearchRow,
+} from '../lib/search/results';
+
+/**
+ * `/search` (issue #147, epic #143): the results page.
+ *
+ * A QUERY IS AN ADDRESS, which is the epic's first decision and the one every
+ * other decision on this page follows from. `/search?q=turnstile` is a page
+ * somebody can link, reload and share, so there is no modal, no command
+ * palette, no autocomplete, and no script of any kind: the form is a `GET`
+ * form and the chips are links. The whole page works with JavaScript off.
+ *
+ * ON-DEMAND BECAUSE IT READS `?q=`. A prerendered route would bake one
+ * query's answer into a static file.
+ *
+ * THIS ROUTE HOLDS NO AI SEARCH BINDING AND SPENDS NOTHING. It forwards to
+ * `https://mcp.ryanlindsey.me/search` over the `MCP` service binding, which
+ * is the arrangement `/chat` and `/fit` already use and which
+ * src/pages/chat/send.ts calls "one implementation, two frontends". That
+ * Worker owns the binding, the cache, the rate limit and the Analytics Engine
+ * row; this page owns the join and the markup. CLAUDE.md records why the
+ * binding cannot live here: an `ai`-family binding in the site's config makes
+ * `astro build` open a remote proxy session that credential-free CI cannot
+ * authenticate.
+ *
+ * NO TURNSTILE, AND `/chat` IS WHY IT IS FINE. A bot check on a plain `GET`
+ * page breaks linking, sharing and reloading, which is the entire premise
+ * above. This page spends nothing on inference, so there is nothing here worth
+ * protecting with one; the limiter on the far side bounds abuse, and anybody
+ * whose search was really a question is handed to `/chat`, which has the bot
+ * check, the retention policy and the budget breaker already.
+ *
+ * NO GENERATED ANSWER, for the same reason. A second answering surface would
+ * drift from the first.
+ */
+export const prerender = false;
+
+const SEARCH_URL = 'https://mcp.ryanlindsey.me/search';
+
+/**
+ * What a visitor is told when the far side said nothing at all.
+ *
+ * The only sentence on this page written here rather than by
+ * workers/mcp/src/search.ts, and it covers the one failure that Worker cannot
+ * describe because it never answered: a service-binding dispatch that threw.
+ * Deliberately the same words its own `503` uses, since the two are the same
+ * event from where the reader is standing.
+ */
+const UNAVAILABLE = 'Search is briefly unavailable. Try again in a moment.';
+
+/**
+ * The line the masthead's right column carries when nothing has been typed.
+ *
+ * It names what the index covers rather than promising a number, because the
+ * index is a crawl of the published sitemap and the sitemap changes without
+ * this file changing.
+ */
+const SEARCHABLE =
+  'The writing, the case studies, the résumé, and the pages about how this site is built and run.';
+
+const params = Astro.url.searchParams;
+
+// Normalised with the handler's own function rather than a second copy of the
+// rules, so the string this page echoes back in the form and the heading is
+// the string the far side searched for.
+const query = normalizeQuery(params.get('q'));
+
+/**
+ * The active chip.
+ *
+ * AN UNRECOGNISED `type` FALLS BACK TO THE UNFILTERED VIEW, which is the
+ * opposite of what the handler does with the same value, and the difference is
+ * the audience. `GET /search?type=nope` is answered `400` there because a
+ * caller reading JSON deserves to be told its filter was not applied. Here the
+ * chips are the only thing that produces this parameter, so a value outside
+ * the closed set arrived by hand or from a mangled link, and an error page is
+ * a worse answer to that than the results the visitor came for.
+ */
+const parsed = parseSearchType(params.get('type'));
+const activeType: SearchType | null = parsed === UNKNOWN_SEARCH_TYPE ? null : parsed;
+
+/**
+ * Whatever the far side said, or `null` if it could not say anything.
+ *
+ * `cf-connecting-ip` IS FORWARDED EXPLICITLY, exactly as src/pages/chat/send.ts
+ * forwards it and for the same measured reason: a service-binding dispatch
+ * does not go through the edge, so without it the limiter keys every visitor
+ * of this site into one bucket and the first person to search would spend the
+ * allowance for all of them.
+ *
+ * NO `type` PARAMETER IS SENT, deliberately. The chips are views of one result
+ * set: the page asks for everything once and filters what came back, so
+ * clicking through All, Writing, Work and Pages costs one index query and one
+ * cache entry rather than four. src/lib/search/engine.ts's `filterByType`
+ * records what keying the cache on the filter used to cost.
+ */
+async function answerFor(text: string): Promise<{ answer: SearchAnswer | null; message: string }> {
+  const url = new URL(SEARCH_URL);
+  url.searchParams.set('q', text);
+
+  const clientIp = Astro.request.headers.get('cf-connecting-ip');
+
+  let response: Response;
+  try {
+    response = await env.MCP.fetch(url, {
+      headers: {
+        // So /ops can tell a browser search from an agent's, the way
+        // src/pages/chat/send.ts and src/lib/fit/client.ts label their own.
+        'user-agent': 'ryanlindsey-me-search/1',
+        ...(clientIp ? { 'cf-connecting-ip': clientIp } : {}),
+      },
+    });
+  } catch (error) {
+    // A service-binding dispatch that never returned. The visitor gets the
+    // same sentence a 503 would give them, because the two are the same event
+    // from where they are standing.
+    console.error('search: the MCP Worker could not be reached', error);
+    return { answer: null, message: UNAVAILABLE };
+  }
+
+  if (!response.ok) {
+    // THE FAR SIDE'S OWN SENTENCE, not a second table of codes to sentences on
+    // this side. workers/mcp/src/search.ts answers `{ error, message }` where
+    // `message` is already written for a reader, and its comment records that
+    // it is shaped that way precisely so this page can print it: the rate
+    // limit's retry hint and the index's outage read differently and only that
+    // Worker knows which happened.
+    const refusal = (await response.json().catch(() => null)) as { message?: unknown } | null;
+    const message = typeof refusal?.message === 'string' ? refusal.message : UNAVAILABLE;
+    return { answer: null, message };
+  }
+
+  return { answer: (await response.json()) as SearchAnswer, message: '' };
+}
+
+/**
+ * Every published document, as the join needs it.
+ *
+ * DRAFTS ARE FILTERED IN THE `getCollection` CALL, the way every other index
+ * route on this site does it, and that call IS the epic's third gate. A draft
+ * keeps its route by design (src/pages/writing/[...slug].astro) and is omitted
+ * from the sitemap for it (src/lib/unindexed-routes.mjs), but both of those are
+ * arrangements elsewhere. This is the one that lives in code: a result naming a
+ * document that is not in this list cannot be rendered, because there is
+ * nothing to render it from.
+ *
+ * READ ONLY WHEN THERE IS A QUERY. The landing state renders no rows, so the
+ * collections and every entry's reading time would be work done for nothing.
+ */
+async function publishedDocuments(): Promise<SearchDocument[]> {
+  const [posts, caseStudies] = await Promise.all([
+    getCollection('posts', ({ data }) => !data.draft),
+    getCollection('caseStudies', ({ data }) => !data.draft),
+  ]);
+
+  return [
+    ...posts.map((post) => ({
+      path: `/writing/${post.id}`,
+      title: post.data.title,
+      publishedAt: post.data.publishedAt,
+      readingMinutes: readingTimeFor(post.body).minutes,
+      kind: 'writing' as const,
+    })),
+    ...caseStudies.map((study) => ({
+      path: `/work/${study.id}`,
+      title: study.data.title,
+      publishedAt: study.data.publishedAt,
+      readingMinutes: readingTimeFor(study.body).minutes,
+      kind: 'work' as const,
+    })),
+  ];
+}
+
+let rows: SearchRow[] = [];
+let unavailable = '';
+
+if (query !== '') {
+  const [{ answer, message }, documents] = await Promise.all([
+    answerFor(query),
+    publishedDocuments(),
+  ]);
+
+  if (answer === null) {
+    unavailable = message;
+  } else {
+    rows = joinResults(answer.results, documents);
+  }
+}
+
+const counts = countRows(rows);
+const shown = filterRows(rows, activeType);
+
+/**
+ * The four states, decided once here rather than by four conditions scattered
+ * through the markup below. Everything between the masthead and the footer
+ * follows from this one value, which is what keeps the states from overlapping
+ * into a page that renders both a landing line and a row.
+ */
+const state: 'landing' | 'unavailable' | 'empty' | 'results' =
+  query === ''
+    ? 'landing'
+    : unavailable !== ''
+      ? 'unavailable'
+      : shown.length === 0
+        ? 'empty'
+        : 'results';
+
+/** A chip's address: this query, that filter. `All` drops the parameter entirely. */
+const chipHref = (type: SearchType | null): string => {
+  const search = new URLSearchParams({ q: query });
+  if (type !== null) search.set('type', type);
+  return `/search?${search}`;
+};
+
+const chips = [
+  { label: 'All', type: null, count: counts.all },
+  { label: 'Writing', type: 'writing' as const, count: counts.writing },
+  { label: 'Work', type: 'work' as const, count: counts.work },
+  { label: 'Pages', type: 'page' as const, count: counts.page },
+];
+
+// Lifted verbatim from src/components/WritingIndex.astro. The epic's argument
+// for this page is that a search result IS an index row, so the chip a visitor
+// clicks here is the chip they left behind on /writing.
+const chipClass = (active: boolean) =>
+  active
+    ? 'bg-ink px-[11px] py-[6px] font-mono text-micro uppercase text-bg no-underline'
+    : 'border border-rule px-[11px] py-[6px] font-mono text-micro uppercase text-ink-muted no-underline';
+
+const KIND_LABELS: Record<SearchType, string> = {
+  writing: 'Writing',
+  work: 'Work',
+  page: 'Page',
+};
+
+const day = (date: Date) => date.toISOString().slice(0, 10);
+
+const chatHref = `/chat?q=${encodeURIComponent(query)}`;
+
+/**
+ * The longest query that still reads as display type.
+ *
+ * MEASURED IN THE BROWSER rather than reasoned about: `--text-display` clamps
+ * to 4.5rem at the 1440px cap, which sets about thirty characters on a line
+ * against the masthead's left column. A query at `MAX_QUERY_CHARS` therefore
+ * renders as six lines of 72px type that push the search field itself below
+ * the fold on a laptop, which was the state of this page before this constant
+ * existed.
+ *
+ * STEPPED DOWN RATHER THAN TRUNCATED, and the direction matters. Clamping the
+ * line count would hide part of what the visitor searched for, on the page
+ * whose entire job is telling them what they searched for. `--text-title` is
+ * the next step down the same scale and holds the same query in two lines.
+ */
+const DISPLAY_QUERY_CHARS = 32;
+
+const headingSize = query.length > DISPLAY_QUERY_CHARS ? 'text-title' : 'text-display';
+
+/**
+ * The right column of the masthead, which is the only thing that moves between
+ * the four states.
+ *
+ * The three empty-ish states each say one plain thing and then offer somewhere
+ * to go, which is the rule src/components/WritingIndex.astro follows with its
+ * own two empty states: an empty screen is an invitation rather than an
+ * apology.
+ */
+const summary =
+  state === 'landing'
+    ? SEARCHABLE
+    : state === 'unavailable'
+      ? unavailable
+      : `${shown.length} ${shown.length === 1 ? 'result' : 'results'}`;
+---
+
+<Shell
+  title={query === '' ? 'Search' : `Search: ${query}`}
+  description="Search everything published on ryanlindsey.me."
+  robots="noindex, follow"
+>
+  {/*
+    THE QUERY IS THE HEADLINE, and that is the one deliberate departure from
+    the index mastheads this page otherwise copies. A results page has exactly
+    one subject and the visitor chose it, so it gets the display type rather
+    than a generic "Search results" that would read identically on every
+    search anybody ever runs. With nothing typed, the word is the invitation
+    instead.
+
+    `break-words` because the query is caller text capped at a hundred
+    characters (`MAX_QUERY_CHARS`), and a hundred characters with no space in
+    them would otherwise run off the side at display size.
+  */}
+  <section
+    data-search-masthead
+    class="mx-auto grid max-w-[1440px] items-end gap-8 px-5 pb-11 pt-10 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-14 lg:px-10 lg:pt-12"
+  >
+    <div>
+      <p class="font-mono text-micro uppercase text-accent">Search</p>
+      <h1 class={`mt-5 break-words font-display text-ink ${headingSize}`} data-search-heading>
+        {query === '' ? 'Find anything published here.' : query}
+      </h1>
+    </div>
+    {/*
+      ONE PARAGRAPH FOR ALL FOUR STATES, carrying the marker for the two that
+      have nothing under the form. A landing page whose sentence sat both here
+      and in a band below would be the same fact printed twice, and the band
+      was cut for exactly that reason.
+    */}
+    <p
+      class="text-body text-ink-muted"
+      data-search-landing={state === 'landing' ? '' : undefined}
+      data-search-unavailable={state === 'unavailable' ? '' : undefined}
+    >
+      {summary}
+    </p>
+  </section>
+
+  {/*
+    One bordered box holding the field and the button, which is the shape
+    src/pages/chat.astro gives its composer. Reused rather than redrawn: both
+    are the same gesture, and a site with two different-looking text inputs on
+    its two typing surfaces is a site that drew one of them twice.
+
+    The label is present and not shown, for the reason that file states: a
+    placeholder is not a label, since it disappears the moment anybody types
+    and is not reliably announced.
+  */}
+  <div class="mx-auto max-w-[1440px] px-5 pb-10 lg:px-10">
+    <form data-search-form method="get" action="/search" role="search">
+      <label class="sr-only" for="q">
+        Search this site
+      </label>
+      <div class="flex items-center gap-[14px] border border-rule px-[18px] py-4">
+        <input
+          id="q"
+          name="q"
+          type="search"
+          value={query}
+          maxlength="100"
+          autocomplete="off"
+          class="w-full border-0 bg-transparent text-body text-ink placeholder:text-ink-muted"
+          placeholder="A word, a title, a product name"
+        />
+        <button
+          type="submit"
+          class="shrink-0 bg-accent-ground px-4 py-[10px] font-mono text-small uppercase text-accent-on"
+        >
+          Search
+        </button>
+      </div>
+    </form>
+  </div>
+
+  {(state === 'results' || state === 'empty') && (
+    <>
+      {/*
+        THE CHIPS MUST BE THE FIRST ELEMENT TO CLOSE INSIDE THIS ROW. The
+        identical note sits on src/components/WritingIndex.astro's filter row
+        and records why it is a test contract rather than a styling choice:
+        two suites scope themselves by matching from the attribute to the next
+        closing nav or div, so an extra wrapper around the chips ends the match
+        early and the assertions then run against a fragment holding none of
+        them. tests/search-page.test.ts scopes itself by counted depth
+        (tests/markup.ts) instead, which does not have that failure, but the
+        two rows are meant to stay the same markup and the day somebody copies
+        this one back is the day the trap returns.
+
+        A `{...}` COMMENT RATHER THAN AN HTML ONE, also copied: that file's
+        first attempt at this note shipped as an HTML comment, named the
+        attribute, and was itself matched by the scoping regex instead of the
+        element.
+      */}
+      <div data-filter-row class="border-y border-rule">
+        <div class="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-4 px-5 py-[18px] lg:px-10">
+          <nav
+            data-search-filters
+            aria-label="Filter results by kind"
+            class="flex flex-wrap items-center gap-2"
+          >
+            {chips.map((chip) => (
+              <a
+                href={chipHref(chip.type)}
+                class={chipClass(activeType === chip.type)}
+                aria-current={activeType === chip.type ? 'page' : undefined}
+              >
+                {chip.label} {chip.count}
+              </a>
+            ))}
+          </nav>
+
+          <p class="font-mono text-micro uppercase text-accent">
+            <a href={chatHref} class="text-accent">
+              Ask my agent instead
+            </a>
+          </p>
+        </div>
+      </div>
+
+      {state === 'empty' ? (
+        <div class="mx-auto max-w-[1440px] px-5 py-16 lg:px-10">
+          {/*
+            Two empty states, because they answer two different questions, and
+            src/components/WritingIndex.astro splits its own for the same
+            reason. An unfiltered search that found nothing says the site has
+            nothing on the subject; a filter that emptied a set says this kind
+            of page does not, which is a different fact and a different next
+            move.
+
+            THE MONO LINE IS A LABEL AND IS KEPT TO ONE, and that is a
+            measurement rather than a preference. This paragraph is
+            `uppercase text-micro`, which is the treatment this site gives a
+            four-word marker, and the first version of it set a two-sentence
+            explanation in caps. Read back in the browser it was a wall. What
+            the caps can carry is the verdict; the sentences belong in body
+            type below, which is where the reader is already going next.
+          */}
+          <p class="font-mono text-micro uppercase text-ink-muted" data-search-empty>
+            {activeType === null ? 'Nothing matched.' : 'No matches under this filter.'}
+          </p>
+          <p class="mt-6 max-w-[64ch] text-body text-ink-muted">
+            {activeType !== null && 'The other chips still have results. '}
+            <a href={chatHref}>Ask my agent</a>, which answers from the same pages and can take a
+            question rather than a term.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/*
+            `data-search-results` on the list, so tests/search-page.test.ts can
+            scope an assertion to the rows. MEASURED, not precautionary: the
+            first version of that suite asserted `not.toContain('/writing/...')`
+            against the whole response to prove a filter had excluded a row, and
+            it failed against a long HTML comment in the site header that names
+            that very path. tests/markup.ts's own header records the same trap
+            from two other issues; a page-wide substring check is an assertion
+            about the whole document, and this document is mostly prose about
+            itself.
+          */}
+          <ul data-search-results>
+            {shown.map((row) => (
+              // `data-search-row` sits on the WRAPPER rather than on the
+              // anchor, which is the contract src/components/WritingIndex.astro
+              // states for `data-post-row`: an assertion that counts anchors
+              // between this attribute and the first `</a>` would find none if
+              // the attribute were on the opening anchor tag itself.
+              <li data-search-row class="border-b border-rule">
+                <a
+                  href={row.href}
+                  class="mx-auto grid max-w-[1440px] gap-4 px-5 py-[30px] no-underline lg:grid-cols-[150px_minmax(0,1fr)_300px] lg:gap-10 lg:px-10"
+                >
+                  {/*
+                    THE LEFT COLUMN SAYS WHAT KIND OF THING THE ROW IS before
+                    the chip on the right does. A document has a publish date
+                    and a reading time and shows them, exactly as the writing
+                    index does; a page has neither, so it shows its own path,
+                    which is the fact about `/ops` that a reader scanning a
+                    results list actually wants. An empty column would have
+                    been the alternative, and an empty column is a hole rather
+                    than a distinction.
+                  */}
+                  <p class="font-mono text-micro uppercase text-ink-muted">
+                    {row.publishedAt === null ? (
+                      <span class="normal-case">{row.href}</span>
+                    ) : (
+                      <>
+                        <time datetime={row.publishedAt.toISOString()} data-numeric>
+                          {day(row.publishedAt)}
+                        </time>
+                        <span class="block text-accent">{row.readingMinutes} min</span>
+                      </>
+                    )}
+                  </p>
+
+                  <div>
+                    <h2 class="font-display text-section text-ink">{row.title}</h2>
+                    {/*
+                      `set:html` OVER CRAWLED TEXT, AND THE ONE ON THIS SITE.
+                      `highlight` escapes every character of the excerpt and
+                      emits `<mark>` itself, so the only unescaped bytes here
+                      are ones this repository wrote; src/lib/search/results.ts
+                      carries the argument and tests/search-page.test.ts holds
+                      it to it. Rendering the excerpt with `{}` instead would
+                      be safe and would show the reader literal `<mark>` tags.
+                    */}
+                    <p
+                      class="mt-4 max-w-[64ch] text-body text-ink-muted"
+                      set:html={highlight(row.excerpt, query)}
+                    />
+                  </div>
+
+                  <p class="lg:justify-self-start">
+                    <span class="inline-block border border-rule px-[11px] py-[6px] font-mono text-micro uppercase text-ink-muted">
+                      {KIND_LABELS[row.kind]}
+                    </span>
+                  </p>
+                </a>
+              </li>
+            ))}
+          </ul>
+
+          {/*
+            THE HANDOFF, under the rows rather than above them: somebody who
+            found what they came for never reads this line, and somebody who
+            scrolled past every row is exactly the person whose search was
+            really a question. It goes to `/chat` rather than to a second
+            answering surface built here, because that page already has the
+            bot check, the retention policy and the budget breaker.
+          */}
+          <p class="mx-auto max-w-[1440px] px-5 py-12 text-body text-ink-muted lg:px-10">
+            Was that a question rather than a term? <a href={chatHref}>Ask my agent</a>, which
+            answers from these same pages and cites them.
+          </p>
+        </>
+      )}
+    </>
+  )}
+</Shell>
