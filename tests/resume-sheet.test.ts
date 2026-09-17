@@ -556,3 +556,9 @@ test('the revision line is read from the record rather than typed into the page'
   // move in the same commit as the content they describe.
   expect(html).toContain(`Rev ${resume.meta.version} · ${resume.meta.lastModified}`);
 });
+
+test('a role summary reaches the print sheet', async () => {
+  const summary = resume.work.find((entry) => entry.summary)?.summary;
+  expect(summary, 'no work entry declares a summary').toBeTruthy();
+  expect(await sheet()).toContain(summary);
+});

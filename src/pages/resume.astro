@@ -304,6 +304,9 @@ const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading tex
                           </p>
                         )}
                       </div>
+                      {role.summary && (
+                        <p class="mt-4 max-w-[72ch] text-body text-ink-muted">{role.summary}</p>
+                      )}
                       {role.highlights.length > 0 && (
                         <ul class="mt-4 flex max-w-[72ch] list-disc flex-col gap-2.5 pl-5 text-body text-ink-muted">
                           {role.highlights.map((highlight) => (

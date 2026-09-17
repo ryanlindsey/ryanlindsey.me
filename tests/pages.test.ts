@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
+import { parse } from 'yaml';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import type { CollectionEntry } from 'astro:content';
@@ -7,7 +8,12 @@ import { BANNED_PATTERNS } from './candidacy-patterns';
 import { elementWith } from './markup';
 import { GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
 import { PILLAR_LABELS } from '../src/lib/pillars';
-import { formatDateRange, groupWorkByCompany, type ResumeWorkEntry } from '../src/lib/resume';
+import {
+  formatDateRange,
+  groupWorkByCompany,
+  type Resume,
+  type ResumeWorkEntry,
+} from '../src/lib/resume';
 import { buildLlmsTxt, buildLlmsFullTxt, type LlmsLink } from '../src/lib/llms-index';
 import { buildRssFeed, buildJsonFeed, RSS_MARKDOWN_NOTICE, type JsonFeed } from '../src/lib/feeds';
 import { GLOBAL_LIMITS, LIMITS } from '../src/lib/mcp/limits';
@@ -1688,6 +1694,14 @@ test('links every resume format, and every link resolves', async () => {
     const response = await server.fetch(format);
     expect(response.status, `${format} should resolve`).toBe(200);
   }
+});
+
+test('a role summary reaches /resume and /resume.md', async () => {
+  const record = parse(readFileSync(resumeYamlPath, 'utf8')) as Resume;
+  const summary = record.work.find((entry) => entry.summary)?.summary;
+  expect(summary, 'no work entry declares a summary').toBeTruthy();
+  expect(await html('/resume')).toContain(summary);
+  expect(await html('/resume.md')).toContain(summary);
 });
 
 test('every writing and work entry has a resolving .md variant, drafts included', async () => {

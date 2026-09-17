@@ -231,6 +231,7 @@ const fields: Field[] = [
                   <span class="dates">{formatDateRange(role.startDate, role.endDate)}</span>
                 )}
               </h4>
+              {role.summary && <p class="role-summary">{role.summary}</p>}
               {role.highlights.length > 0 && (
                 <ul>
                   {role.highlights.map((highlight) => (

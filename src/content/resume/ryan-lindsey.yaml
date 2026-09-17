@@ -49,6 +49,11 @@ work:
     position: Senior Engineering Manager
     location: Irvine, CA
     startDate: 2021-02
+    summary: >-
+      Own incident management for the entire engineering organization since
+      2024 and coach fellow engineering managers, while leading 8 engineers
+      across 2 teams. Platform: Ruby on Rails, Node.js, Terraform, Kubernetes,
+      Docker, Fastly.
     x_artifacts:
       - delivery-forecasting
     highlights:

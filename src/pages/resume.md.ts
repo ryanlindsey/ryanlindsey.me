@@ -35,11 +35,15 @@ function escapeMarkdown(text: string): string {
 
 function renderRole(role: ResumeWorkEntry): string {
   const title = `**${escapeMarkdown(role.position)}** · ${formatDateRange(role.startDate, role.endDate)}`;
-  // "A role with no highlights contributes its title line and stops" -- no
-  // empty bullet list under it.
-  if (role.highlights.length === 0) return title;
-  const bullets = role.highlights.map((highlight) => `- ${escapeMarkdown(highlight)}`).join('\n');
-  return `${title}\n\n${bullets}`;
+  // "A role with no highlights contributes its title line and stops" -- and
+  // now the same for a role with no summary. Built as parts rather than by
+  // early return, because a role may carry either, both or neither.
+  const parts = [title];
+  if (role.summary) parts.push(escapeMarkdown(role.summary));
+  if (role.highlights.length > 0) {
+    parts.push(role.highlights.map((highlight) => `- ${escapeMarkdown(highlight)}`).join('\n'));
+  }
+  return parts.join('\n\n');
 }
 
 function renderExperience(work: readonly ResumeWorkEntry[]): string {
