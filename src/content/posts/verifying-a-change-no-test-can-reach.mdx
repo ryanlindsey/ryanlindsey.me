@@ -89,3 +89,11 @@ I do not think the lesson is that these checks are worthless. The instance read 
 They stop being interchangeable exactly where this site is most interesting to me: retrieval, ranking, model output, anything whose correctness is a property of a running system rather than of a file. No suite reaches those. The verification is by hand or it does not happen, which makes the discipline of it the whole game.
 
 So the rule, and it costs one command: **check the surface, not the setting.**
+
+## What the surface says now
+
+The change shipped, and the first thing I did was ask. `durable objects` returns five results led by the case study that carries the phrase, at 0.9711. `hyperdrive` returns nothing. `turnstile` returns the single page containing the word, alone, at 0.7368. The scores run between 0.49 and 0.97 where the same four queries used to run between 0.40 and 0.49, which is the shape a reranked answer has and an unreranked one does not.
+
+`turnstile` is the one I would point at, and not because it is the prettiest row. It is the query I had run most often while measuring, so it was the query most certain to have an entry sitting in the cache under the old key, and that cache holds for a day. Ship the reranking without versioning the key and it answers 0.4099 out of the cache, on the first thing anybody would think to check. The fix I shipped for a reason that turned out to be wrong is the reason this reads clean.
+
+That is the whole of it. Four confirmations said the change was in place, one query said what it did, and the only one I can hand to somebody else is the query.
