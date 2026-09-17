@@ -1,6 +1,6 @@
 basics:
   name: Ryan Lindsey
-  label: Senior Engineering Manager
+  label: Senior Engineering Manager, Agentic Engineering
   summary: >-
     Agentic engineering is making engineers dramatically faster. I build the
     instruments that let the organization around them keep pace. Nineteen years
@@ -38,11 +38,24 @@ work:
       - delivery-forecasting
     highlights:
       - >-
+        Designed and built a delivery-forecasting toolchain for engineering
+        managers, beginning as a set of Claude Skills and migrating to an
+        internal MCP server as adoption outgrew that packaging. Adopted by >80%
+        of engineering managers and absorbed into the org-wide roadmapping and
+        reporting process.
+      - >-
+        The incident process I own now runs on agentic investigation: incident
+        commanders use agents and connected MCP servers over live telemetry,
+        which has raised root-cause-analysis quality and sharply reduced the
+        time to produce one.
+      - >-
         Own incident management for the entire engineering organization: the
         process itself, the communication strategy, service integrations, data
         reporting, and training. Data Engineering and InfoSec run their own
         incident processes on the same tooling. Accountable for the area's OKRs
-        and report on them to the executive team monthly.
+        and report on them to the executive team monthly. Risky changes go
+        through a change advisory board with documented rollback plans, and
+        post-incident review is blameless with linked action items.
       - >-
         Measured the inherited process before changing it, and found response
         and resolution times were already at or better than industry standard,
@@ -50,19 +63,6 @@ work:
         weakness was time to detect, so that became the focus: a service-level
         observability initiative run with DevOps and SRE now surfaces issues
         before customers report them, across both web and native applications.
-      - >-
-        Risky changes are reviewed in advance by a change advisory board and
-        ship with documented rollback plans. Post-incident review is blameless
-        and every analysis carries linked action items. Incident commanders
-        investigate alerts using agents and connected MCP servers over live
-        telemetry, which has raised root-cause-analysis quality while sharply
-        reducing the time it takes to produce one.
-      - >-
-        Designed and built a delivery-forecasting toolchain for engineering
-        managers, beginning as a set of Claude Skills and migrating to an
-        internal MCP server as adoption outgrew that packaging. Adopted by >80%
-        of engineering managers and absorbed into the org-wide roadmapping and
-        reporting process.
       - >-
         Publish agentic tooling as Claude Skills in a shared repository open to
         every engineering manager, running on scheduled cloud routines,
@@ -137,8 +137,8 @@ work:
         meant changing three separate code bases to reach every user and
         device, a legacy of the pre-responsive mobile subdomain era. The work
         cut time to market and became the foundation for the company's later
-        front-end architecture, including a shared UI library built with
-        Design.
+        front-end architecture, including a shared UI library built with the
+        Design team.
       - >-
         Defined and delivered the front-end staffing roadmap, and rebuilt the
         front-end technical exercise with the talent team.
