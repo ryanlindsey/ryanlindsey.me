@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.23.0...ryanlindsey-me-v1.24.0) (2026-09-17)
+
+
+### Features
+
+* **resume:** revise the record to v0.5.0 and render three fields it already held ([#241](https://github.com/ryanlindsey/ryanlindsey.me/issues/241)) ([fdc2409](https://github.com/ryanlindsey/ryanlindsey.me/commit/fdc2409c64c4a1558749a6a11d8e146aea11a9f3))
+
 ## [1.23.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.22.1...ryanlindsey-me-v1.23.0) (2026-09-16)
 
 
