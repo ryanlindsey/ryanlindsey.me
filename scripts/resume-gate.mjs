@@ -205,6 +205,16 @@ async function expectations() {
   const resume = parse(await readFile(RESUME_YAML, 'utf8'));
   const { email, phone, url, profiles = [] } = resume.basics;
 
+  /* The résumé's own artifact links, in the absolute form the print sheet
+   * prints them (src/pages/resume.print.astro): a relative `/work/<slug>`
+   * would resolve against the localhost origin scripts/resume-sheet.mjs
+   * serves the sheet from, and never match this URL. Both `work` and
+   * `projects` are checked, same as unresolvedArtifactSlugs() -- checking
+   * only `work` would let a project's artifact link go unverified. */
+  const artifactUrls = [...resume.work, ...(resume.projects ?? [])]
+    .flatMap((entry) => entry.x_artifacts ?? [])
+    .map((slug) => `${url.replace(/\/$/, '')}/work/${slug}`);
+
   return {
     /* What must appear in the text layer. The sheet prints URLs in display
      * form, so these are compared after the same trimming -- see displayForm(). */
@@ -213,6 +223,7 @@ async function expectations() {
       ['phone', phone],
       ['url', url],
       ...profiles.map((profile) => [`profile:${profile.network}`, profile.url]),
+      ...artifactUrls.map((href, index) => [`artifact:${index}`, href]),
     ],
     /* What must be reachable. mailto: and tel: are built the way
      * src/pages/resume.print.astro builds them; the rest are URLs as authored. */
@@ -222,6 +233,7 @@ async function expectations() {
       url,
       ...profiles.map((profile) => profile.url),
       ...(resume.projects ?? []).map((project) => project.url).filter(Boolean),
+      ...artifactUrls,
     ],
   };
 }

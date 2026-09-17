@@ -254,3 +254,33 @@ export function unresolvedArtifactSlugs(
   }
   return [...unresolved];
 }
+
+/**
+ * One rendered case-study link per resolvable `x_artifacts` slug.
+ *
+ * The caller supplies the titles for the same reason `unresolvedArtifactSlugs`
+ * takes its known slugs: this module stays free of any `astro:content` import,
+ * so a plain `vitest run` can exercise it without Astro's pipeline.
+ *
+ * A slug with no title is OMITTED rather than rendered with a placeholder.
+ * `unresolvedArtifactSlugs()` is what fails the build for an unpublished slug,
+ * and a "Case study: undefined" line here would be a second, worse error that
+ * ships instead of failing.
+ */
+export interface ArtifactLink {
+  slug: string;
+  title: string;
+  href: string;
+}
+
+export function artifactLinks(
+  entry: ArtifactBearing,
+  titlesBySlug: ReadonlyMap<string, string>,
+): ArtifactLink[] {
+  const links: ArtifactLink[] = [];
+  for (const slug of entry.x_artifacts ?? []) {
+    const title = titlesBySlug.get(slug);
+    if (title) links.push({ slug, title, href: `/work/${slug}` });
+  }
+  return links;
+}

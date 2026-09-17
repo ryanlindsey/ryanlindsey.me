@@ -1704,6 +1704,18 @@ test('a role summary reaches /resume and /resume.md', async () => {
   expect(await html('/resume.md')).toContain(summary);
 });
 
+test('every x_artifacts slug renders as a link on /resume and /resume.md', async () => {
+  const record = parse(readFileSync(resumeYamlPath, 'utf8')) as Resume;
+  const slugs = [...record.work, ...(record.projects ?? [])].flatMap((e) => e.x_artifacts ?? []);
+  expect(slugs.length, 'the record declares no artifact slugs').toBeGreaterThan(0);
+  const page = await html('/resume');
+  const markdown = await html('/resume.md');
+  for (const slug of slugs) {
+    expect(page, `/resume does not link ${slug}`).toContain(`/work/${slug}`);
+    expect(markdown, `/resume.md does not link ${slug}`).toContain(`/work/${slug}`);
+  }
+});
+
 test('every writing and work entry has a resolving .md variant, drafts included', async () => {
   // Day 3 Task 7 (02 §3): `/writing/<slug>.md` and `/work/<slug>.md` mirror
   // their HTML sibling's getStaticPaths exactly -- src/pages/writing/[...slug].astro

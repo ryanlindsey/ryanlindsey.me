@@ -557,6 +557,18 @@ test('the revision line is read from the record rather than typed into the page'
   expect(html).toContain(`Rev ${resume.meta.version} · ${resume.meta.lastModified}`);
 });
 
+test('the print sheet prints each artifact URL as text, not only as a link', async () => {
+  // A link annotation is invisible on paper and is often stripped by applicant
+  // tracking systems, which is the same reasoning the sheet already applies to
+  // project URLs. The address has to survive as characters.
+  const slugs = [...resume.work, ...projects].flatMap((entry) => entry.x_artifacts ?? []);
+  expect(slugs.length).toBeGreaterThan(0);
+  const markup = await sheet();
+  for (const slug of slugs) {
+    expect(markup, `the sheet does not print ${slug}`).toContain(`ryanlindsey.me/work/${slug}`);
+  }
+});
+
 test('a role summary reaches the print sheet', async () => {
   const summary = resume.work.find((entry) => entry.summary)?.summary;
   expect(summary, 'no work entry declares a summary').toBeTruthy();

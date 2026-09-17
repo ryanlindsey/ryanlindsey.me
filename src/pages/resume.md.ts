@@ -1,8 +1,11 @@
 import type { APIRoute } from 'astro';
+import { getCollection } from 'astro:content';
 import { getResume } from '../lib/resume-collection';
 import {
+  artifactLinks,
   formatDateRange,
   groupWorkByCompany,
+  type ArtifactLink,
   type Resume,
   type ResumeWorkEntry,
 } from '../lib/resume';
@@ -33,7 +36,7 @@ function escapeMarkdown(text: string): string {
   return pipesEscaped.startsWith('#') ? `\\${pipesEscaped}` : pipesEscaped;
 }
 
-function renderRole(role: ResumeWorkEntry): string {
+function renderRole(role: ResumeWorkEntry, links: readonly ArtifactLink[]): string {
   const title = `**${escapeMarkdown(role.position)}** · ${formatDateRange(role.startDate, role.endDate)}`;
   // "A role with no highlights contributes its title line and stops" -- and
   // now the same for a role with no summary. Built as parts rather than by
@@ -43,12 +46,21 @@ function renderRole(role: ResumeWorkEntry): string {
   if (role.highlights.length > 0) {
     parts.push(role.highlights.map((highlight) => `- ${escapeMarkdown(highlight)}`).join('\n'));
   }
+  for (const link of links) {
+    parts.push(`Case study: [${escapeMarkdown(link.title)}](${link.href})`);
+  }
   return parts.join('\n\n');
 }
 
-function renderExperience(work: readonly ResumeWorkEntry[]): string {
+function renderExperience(
+  work: readonly ResumeWorkEntry[],
+  caseStudyTitles: ReadonlyMap<string, string>,
+): string {
   const companies = groupWorkByCompany(work).map(
-    (group) => `### ${escapeMarkdown(group.name)}\n\n${group.roles.map(renderRole).join('\n\n')}`,
+    (group) =>
+      `### ${escapeMarkdown(group.name)}\n\n${group.roles
+        .map((role) => renderRole(role, artifactLinks(role, caseStudyTitles)))
+        .join('\n\n')}`,
   );
   return `## Experience\n\n${companies.join('\n\n')}`;
 }
@@ -74,7 +86,10 @@ function renderEducation(education: Resume['education']): string | null {
  * Education and Skills. A project renders its name (linked when it carries a
  * `url`), then roles and dates where present, then its highlights.
  */
-function renderProjects(projects: Resume['projects']): string | null {
+function renderProjects(
+  projects: Resume['projects'],
+  caseStudyTitles: ReadonlyMap<string, string>,
+): string | null {
   if (projects.length === 0) return null;
   const entries = projects.map((project) => {
     const name = escapeMarkdown(project.name);
@@ -87,6 +102,9 @@ function renderProjects(projects: Resume['projects']): string | null {
     lines.push(escapeMarkdown(project.description));
     if (project.highlights.length > 0) {
       lines.push(project.highlights.map((h) => `- ${escapeMarkdown(h)}`).join('\n'));
+    }
+    for (const link of artifactLinks(project, caseStudyTitles)) {
+      lines.push(`Case study: [${escapeMarkdown(link.title)}](${link.href})`);
     }
     return lines.join('\n\n');
   });
@@ -103,13 +121,16 @@ function renderSkills(skills: Resume['skills']): string | null {
   return `## Skills\n\n${items.join('\n')}`;
 }
 
-export function renderResumeMarkdown(resume: Resume): string {
+export function renderResumeMarkdown(
+  resume: Resume,
+  caseStudyTitles: ReadonlyMap<string, string>,
+): string {
   const sections = [
     `# ${escapeMarkdown(resume.basics.name)}`,
     escapeMarkdown(resume.basics.label),
     escapeMarkdown(resume.basics.summary),
-    renderExperience(resume.work),
-    renderProjects(resume.projects),
+    renderExperience(resume.work, caseStudyTitles),
+    renderProjects(resume.projects, caseStudyTitles),
     renderEducation(resume.education),
     renderSkills(resume.skills),
   ].filter((section): section is string => section !== null);
@@ -118,7 +139,13 @@ export function renderResumeMarkdown(resume: Resume): string {
 
 export const GET: APIRoute = async () => {
   const resume = await getResume();
-  return new Response(renderResumeMarkdown(resume), {
+  // Titles for the case studies `x_artifacts` points at. Read here rather than
+  // in src/lib/resume.ts, which stays free of `astro:content` so a plain vitest
+  // run can exercise its helpers.
+  const caseStudyTitles = new Map(
+    (await getCollection('caseStudies')).map((study) => [study.id, study.data.title]),
+  );
+  return new Response(renderResumeMarkdown(resume, caseStudyTitles), {
     headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
   });
 };

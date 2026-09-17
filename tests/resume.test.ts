@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { SITE_HARNESS_WORKERS } from './workers';
 import {
+  artifactLinks,
   formatDateRange,
   groupWorkByCompany,
   resumeGaps,
@@ -403,6 +404,32 @@ describe('unresolvedArtifactSlugs', () => {
     expect(unresolvedArtifactSlugs(resumeFixture.projects, ['delivery-forecasting'])).toEqual([
       'silent-failure',
     ]);
+  });
+});
+
+describe('artifactLinks', () => {
+  test('artifactLinks resolves each slug to a title and a /work href', () => {
+    const titles = new Map([
+      ['delivery-forecasting', 'Forecasting delivery'],
+      ['silent-failure', 'The silent failure'],
+    ]);
+    expect(artifactLinks({ x_artifacts: ['delivery-forecasting'] }, titles)).toEqual([
+      {
+        slug: 'delivery-forecasting',
+        title: 'Forecasting delivery',
+        href: '/work/delivery-forecasting',
+      },
+    ]);
+  });
+
+  test('artifactLinks returns [] for an entry declaring none', () => {
+    expect(artifactLinks({}, new Map())).toEqual([]);
+  });
+
+  test('artifactLinks omits a slug with no known title rather than inventing one', () => {
+    // unresolvedArtifactSlugs() is what fails the build for an unpublished slug.
+    // Rendering "Case study: undefined" here would be a second, worse error.
+    expect(artifactLinks({ x_artifacts: ['never-published'] }, new Map())).toEqual([]);
   });
 });
 

@@ -1,7 +1,8 @@
 ---
+import { getCollection } from 'astro:content';
 import '../styles/resume-sheet.css';
 import { getResume } from '../lib/resume-collection';
-import { formatDateRange, groupWorkByCompany } from '../lib/resume';
+import { artifactLinks, formatDateRange, groupWorkByCompany } from '../lib/resume';
 import { buildPerson, stringifyJsonLd } from '../lib/structured-data';
 
 /*
@@ -46,6 +47,13 @@ const resume = await getResume();
 // src/lib/resume.ts. A second implementation here is the drift this repo has
 // already been bitten by once -- see that file's header.
 const workGroups = groupWorkByCompany(resume.work);
+
+// Titles for the case studies `x_artifacts` points at. Read here rather than
+// in src/lib/resume.ts, which stays free of `astro:content` so a plain vitest
+// run can exercise its helpers.
+const caseStudyTitles = new Map(
+  (await getCollection('caseStudies')).map((study) => [study.id, study.data.title]),
+);
 
 /*
  * The sitewide Person node, built the way src/layouts/Base.astro builds it and
@@ -239,6 +247,14 @@ const fields: Field[] = [
                   ))}
                 </ul>
               )}
+              {artifactLinks(role, caseStudyTitles).map((link) => {
+                const absolute = new URL(link.href, Astro.site!).href;
+                return (
+                  <p class="artifact">
+                    Case study: <a href={absolute}>{displayUrl(absolute)}</a>
+                  </p>
+                );
+              })}
             </div>
           ))}
         </div>
@@ -285,6 +301,14 @@ const fields: Field[] = [
                   ))}
                 </ul>
               )}
+              {artifactLinks(project, caseStudyTitles).map((link) => {
+                const absolute = new URL(link.href, Astro.site!).href;
+                return (
+                  <p class="artifact">
+                    Case study: <a href={absolute}>{displayUrl(absolute)}</a>
+                  </p>
+                );
+              })}
             </div>
           ))}
         </section>
