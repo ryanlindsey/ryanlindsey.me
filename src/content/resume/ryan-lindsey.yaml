@@ -75,9 +75,9 @@ work:
       - >-
         Designed and built a delivery-forecasting toolchain for engineering
         managers, beginning as a set of Claude Skills and migrating to an
-        internal MCP server as adoption outgrew that packaging. Adopted by >80% 
-        of engineering managers and absorbed into the org-wide
-        roadmapping and reporting process.
+        internal MCP server as adoption outgrew that packaging. Adopted by >80%
+        of engineering managers and absorbed into the org-wide roadmapping and
+        reporting process.
       - >-
         Publish agentic tooling as Claude Skills in a shared repository open to
         every engineering manager, running on scheduled cloud routines,

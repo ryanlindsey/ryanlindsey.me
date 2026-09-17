@@ -523,6 +523,22 @@ describe('stripXKeys', () => {
   });
 });
 
+test('no line in the résumé record ends in whitespace', () => {
+  // A folded scalar (`>-`) joins its lines with a single space, so a trailing
+  // space before the break folds into a DOUBLE space and ships that way to
+  // HTML, Markdown, JSON and the PDF alike. It is invisible in the source and
+  // invisible in review. Asserted over the raw bytes, because `parse()` has
+  // already folded by the time a parsed value could be inspected.
+  const source = readFileSync(resumeYamlPath, 'utf8');
+  const offenders = source
+    .split('\n')
+    .map((line, index) => [index + 1, line] as const)
+    .filter(([, line]) => /[ \t]+$/.test(line))
+    .map(([number, line]) => `line ${number}: ${JSON.stringify(line)}`);
+
+  expect(offenders, offenders.join('\n')).toEqual([]);
+});
+
 // Day 3 Task 3: /resume.json and /resume.md, exercised over HTTP the same
 // way tests/pages.test.ts exercises /resume. This has to be HTTP-level, not
 // a plain import, for the same reason this file's header gives for
