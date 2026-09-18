@@ -31,6 +31,24 @@ let db: D1Database;
  * this form sends the header, so a test that omits it is testing a client that
  * does not exist and never reaches the route it means to.
  *
+ * THE SENTENCE ABOVE IS THE BLIND SPOT THIS SUITE HAD, and it is left standing
+ * because the correction is the point. "A browser submitting this form sends
+ * the header" was false for the entire life of the feature: `/fit` served
+ * `Referrer-Policy: no-referrer`, and Fetch serializes a form POST's `Origin`
+ * as the literal string `null` under that policy and no other, so every real
+ * browser sent `origin: null`, was refused 403, and had it flattened to the
+ * site 404 by src/worker.ts. Corrected 2026-09-17; the policy is now
+ * `strict-origin` and the sentence is true again.
+ *
+ * What it cost is the lesson. Hard-coding a correct `origin` here is still
+ * right -- a test that omits it exercises no real client -- but it means this
+ * suite asserts what a browser WOULD send rather than what one DOES, so every
+ * test below passed while the form was completely broken in production. A
+ * value this file supplies can never falsify an assumption about the value a
+ * browser supplies. `/fit never serves \`no-referrer\`, in either delivery`
+ * stands in that gap deliberately, by naming the one policy value that makes
+ * the assumption false.
+ *
  * A review argued that 403 was itself a route-existence oracle, on the reading
  * that Astro's `handleRequest` returns its 404 when `!state.routeData` before
  * any middleware, so only a path matching a real on-demand route could produce
@@ -200,7 +218,7 @@ test('the form page uses the redesign type scale, not the pre-redesign one', asy
   expect(html).not.toContain('text-display');
 });
 
-test('/fit carries its own noindex and a no-referrer policy', async () => {
+test('/fit carries its own noindex and a strict-origin policy', async () => {
   // Both survive day 7 removing the SITEWIDE noindex from Base.astro: the
   // meta tag is set by an explicit prop, and the headers are on the response.
   // The referrer policy is load-bearing rather than tidy -- the token is in
@@ -209,14 +227,37 @@ test('/fit carries its own noindex and a no-referrer policy', async () => {
   // `Referer`.
   const response = await server.fetch(`/fit?t=${await grant()}`);
   expect(response.headers.get('x-robots-tag')).toMatch(/noindex/);
-  expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+  expect(response.headers.get('referrer-policy')).toBe('strict-origin');
   const html = await response.text();
   expect(html).toMatch(/<meta name="robots" content="noindex, nofollow"/);
   // The SECOND delivery of the referrer policy, and the reason `Base.astro`
   // has a `referrer` prop at all: the header above is set in one line of
   // src/worker.ts whose reachability depends on asset routing config. The
   // token's confinement should not rest on one line.
-  expect(html).toMatch(/<meta name="referrer" content="no-referrer"/);
+  expect(html).toMatch(/<meta name="referrer" content="strict-origin"/);
+});
+
+test('/fit never serves `no-referrer`, in either delivery', async () => {
+  // THE REGRESSION GUARD, and the value is named rather than left to the
+  // equality assertions above because what makes `no-referrer` wrong here is
+  // invisible from this file. Fetch serializes a form POST's `Origin` as the
+  // literal string `null` when the document's referrer policy is
+  // `no-referrer`, and for no other policy; Astro's CSRF middleware compares
+  // `origin` to the URL's origin as strings and answers 403; src/worker.ts
+  // flattens 403 into the site 404. So `no-referrer` here does not degrade
+  // the form, it removes it, and it does so wearing the costume of a dead
+  // route. Shipped that way from #37 until 2026-09-17, with `fit_reports`
+  // holding zero rows against 22 issued tokens the whole time.
+  //
+  // NOTHING ELSE IN THIS SUITE CAN CATCH IT. Every POST below passes `origin`
+  // explicitly, because the harness composes its own requests -- so the suite
+  // exercises the header a browser would send only if it were told to, and a
+  // referrer policy that stops the browser sending it is invisible here. That
+  // is the gap this test stands in for, and the reason it asserts on a value
+  // rather than on a behaviour.
+  const response = await server.fetch(`/fit?t=${await grant()}`);
+  expect(response.headers.get('referrer-policy')).not.toBe('no-referrer');
+  expect(await response.text()).not.toMatch(/content="no-referrer"/);
 });
 
 test('the load-bearing headers are on the 303, not only on the rendered page', async () => {
@@ -241,7 +282,7 @@ test('the load-bearing headers are on the 303, not only on the rendered page', a
     }).toString(),
   });
   expect(response.status).toBe(303);
-  expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+  expect(response.headers.get('referrer-policy')).toBe('strict-origin');
   expect(response.headers.get('x-robots-tag')).toMatch(/noindex/);
 });
 
@@ -590,11 +631,11 @@ test('an unknown permalink id is indistinguishable from a path that does not exi
   );
 });
 
-test('the permalink carries noindex and no-referrer too', async () => {
+test('the permalink carries noindex and strict-origin too', async () => {
   await storeReport('fixture-headers-id');
   const response = await server.fetch('/fit/r/fixture-headers-id');
   expect(response.headers.get('x-robots-tag')).toMatch(/noindex/);
-  expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+  expect(response.headers.get('referrer-policy')).toBe('strict-origin');
   // FIX ROUND 1, FINDING 2: the two header checks above cannot fail from
   // anything this PAGE does -- src/worker.ts sets both headers
   // unconditionally on every non-refusal `/fit*` response, so they would
@@ -609,7 +650,7 @@ test('the permalink carries noindex and no-referrer too', async () => {
   // external citation could otherwise carry this URL off in a `Referer`.
   const html = await response.text();
   expect(html).toMatch(/<meta name="robots" content="noindex, nofollow"/);
-  expect(html).toMatch(/<meta name="referrer" content="no-referrer"/);
+  expect(html).toMatch(/<meta name="referrer" content="strict-origin"/);
 });
 
 test('the report page states its provenance, dropped citations included', async () => {

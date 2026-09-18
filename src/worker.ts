@@ -430,14 +430,40 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   // EVERY OTHER `/fit` RESPONSE REQUIRES A VALID GRANT, and those get two
   // headers. `X-Robots-Tag` is the header form of the page's own meta tag and
   // covers the 303, which has no head to put a tag in. `Referrer-Policy:
-  // no-referrer` is the load-bearing one: the Turnstile widget on this page
+  // strict-origin` is the load-bearing one: the Turnstile widget on this page
   // loads a script from challenges.cloudflare.com FROM A DOCUMENT WHOSE URL
   // CARRIES THE TOKEN, and this header is what keeps the token out of the
-  // `Referer` on that subrequest. Base.astro emits the meta-tag form as well
-  // (see its `referrer` prop) so that confinement does not rest on one line.
-  // Neither header belongs on the 404: the site's 404 carries neither, and a
-  // refusal that carries a header nothing else on the site sets is the same
-  // oracle in a subtler form.
+  // `Referer` on that subrequest. `strict-origin` sends the origin alone and
+  // never the path or the query, same-origin and cross-origin alike, so the
+  // token reaches no `Referer` anywhere. Base.astro emits the meta-tag form as
+  // well (see its `referrer` prop) so that confinement does not rest on one
+  // line. Neither header belongs on the 404: the site's 404 carries neither,
+  // and a refusal that carries a header nothing else on the site sets is the
+  // same oracle in a subtler form.
+  //
+  // IT WAS `no-referrer` UNTIL 2026-09-17, AND THAT BROKE THE FORM COMPLETELY
+  // -- for the whole life of the feature, on the one path a reader actually
+  // uses. `Referer` was not the only header it suppressed. Fetch serializes a
+  // request's `Origin` as the literal string `null` when its referrer policy
+  // is `no-referrer`, and that clause exists for no other policy, so every
+  // browser submitting this form sent `origin: null` on a `sec-fetch-site:
+  // same-origin` POST. Astro's CSRF middleware compares
+  // `request.headers.get("origin") === url.origin` as strings, refused it 403,
+  // and the `REFUSAL_STATUSES` arm below turned that into the site 404 -- so
+  // the failure arrived wearing the costume this branch exists to put on a
+  // stranger's probe. MEASURED against the deployed Worker on 2026-09-17:
+  // `Origin: null` answers 404 and `Origin: https://ryanlindsey.me` answers
+  // 303, on the same token and the same body. `fit_reports` held zero rows
+  // against 22 issued tokens, which is the corroboration that no browser had
+  // ever completed a run.
+  //
+  // `strict-origin` keeps the property the old value was chosen for and drops
+  // the one nobody wanted: the token still reaches no `Referer`, and `Origin`
+  // is nulled only on an HTTPS-to-HTTP downgrade, which this site cannot make.
+  // The lesson worth keeping is that a referrer policy is not only about
+  // `Referer`, and that flattening 403 into the 404 is what let this hide:
+  // the arm is still right, and the cost of it is that a bug on the granted
+  // path is indistinguishable from a dead route to everyone but the operator.
   //
   // BEFORE the negotiation block below rather than after it, deliberately:
   // `/fit` is never a markdown route and must not acquire `Vary: Accept`.
@@ -472,15 +498,24 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
     // Every refusal leaves as the site's own 404 and undecorated; only a
     // response that required a valid grant (the 200, the 303) is decorated
-    // below. A browser submitting this form always sends `Origin`, so the
-    // 403 arm costs a legitimate caller nothing.
+    // below.
+    //
+    // THIS COMMENT USED TO READ "a browser submitting this form always sends
+    // `Origin`, so the 403 arm costs a legitimate caller nothing", and it was
+    // false from the day it was written -- falsified by the `Referrer-Policy`
+    // line forty lines below it, in this same file. `no-referrer` made every
+    // real browser send `origin: null`, so the 403 arm cost a legitimate
+    // caller the entire feature; see the correction above the branch. The
+    // claim is true again now that the policy is `strict-origin`, and it is
+    // left standing only with what makes it true attached, because the arm
+    // silently converts a wrong answer here into a 404 nobody can read.
     if (REFUSAL_STATUSES.has(response.status)) return siteNotFound(request, env, ctx);
     // AFTER the refusal flattening, so a 303 that reaches here is a real report
     // rather than anything a stranger's probe could have produced.
     queueFitRunIntent(response, env, ctx);
     const headers = new Headers(response.headers);
     headers.set('X-Robots-Tag', 'noindex, nofollow');
-    headers.set('Referrer-Policy', 'no-referrer');
+    headers.set('Referrer-Policy', 'strict-origin');
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,

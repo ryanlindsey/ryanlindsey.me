@@ -61,7 +61,7 @@ interface Props {
    * so there is no default and no tag: a site-wide referrer policy is a
    * separate decision from this one and is not being made here.
    *
-   * `/fit` sets `no-referrer`, and it is load-bearing rather than tidy. That
+   * `/fit` sets `strict-origin`, and it is load-bearing rather than tidy. That
    * page's URL CARRIES A SCOPED TOKEN, and the Turnstile widget on it loads a
    * script from challenges.cloudflare.com -- a cross-origin subresource
    * request that would otherwise send this URL as the `Referer`. The header
@@ -69,6 +69,14 @@ interface Props {
    * the same policy, because that header's reachability depends on asset
    * routing config (`run_worker_first` in wrangler.jsonc) and the token's
    * confinement should not rest on one line.
+   *
+   * IT WAS `no-referrer` UNTIL 2026-09-17, and the meta tag was half of what
+   * broke the form: a document's referrer policy is what Fetch reads when it
+   * decides to serialize a form POST's `Origin` as the literal `null`, so this
+   * tag caused the failure just as the header did, and changing one without
+   * the other would have left it standing. `strict-origin` withholds the path
+   * and the query from every `Referer`, which is the whole of what this prop
+   * was ever for. src/worker.ts carries the measurement and the reasoning.
    */
   referrer?: string;
 }
