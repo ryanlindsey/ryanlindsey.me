@@ -35,6 +35,19 @@ export interface GrantContext {
   expiresAt: number;
   /** The campaign's configured target description, or '' when there is none. */
   preload: string;
+  /**
+   * The campaign's configured hero line, or '' when there is none or it is
+   * not `active`.
+   *
+   * GATED HERE, NOT INSIDE `readCampaignForAudience`. That function reads
+   * `status` nowhere on purpose (see its own docblock in
+   * src/lib/tier/campaigns.ts): it also resolves `preload` and the gated
+   * narrative document, and a filter inside it would take both of those out
+   * along with the hero line. `preload`, declared just above, is deliberately
+   * NOT gated on `status` -- it keeps its existing ungated behavior, and this
+   * field must not change that.
+   */
+  heroLine: string;
 }
 
 /**
@@ -78,6 +91,7 @@ export async function handleGrantContext(request: Request, env: McpEnv): Promise
     audience: grant.audience,
     expiresAt: grant.expiresAt,
     preload: campaign?.jdText ?? '',
+    heroLine: campaign?.status === 'active' ? campaign.heroLine : '',
   };
   return Response.json(body);
 }

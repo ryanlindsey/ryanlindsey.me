@@ -162,6 +162,7 @@ export interface GrantContext {
   audience: string;
   expiresAt: number;
   preload: string;
+  heroLine: string;
 }
 
 export async function grantContext(env: McpClientEnv, token: string): Promise<GrantContext | null> {
@@ -180,6 +181,7 @@ export async function grantContext(env: McpClientEnv, token: string): Promise<Gr
       audience?: unknown;
       expiresAt?: unknown;
       preload?: unknown;
+      heroLine?: unknown;
     };
     const tools = Array.isArray(body.tools)
       ? body.tools.filter((name): name is string => typeof name === 'string')
@@ -190,6 +192,7 @@ export async function grantContext(env: McpClientEnv, token: string): Promise<Gr
       audience: body.audience,
       expiresAt: typeof body.expiresAt === 'number' ? body.expiresAt : 0,
       preload: typeof body.preload === 'string' ? body.preload : '',
+      heroLine: typeof body.heroLine === 'string' ? body.heroLine : '',
     };
   } catch (error) {
     console.error('fit: could not read the grant context', error);

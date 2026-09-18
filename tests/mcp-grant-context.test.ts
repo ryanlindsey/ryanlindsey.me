@@ -206,6 +206,7 @@ test('a granted token gets its tools, audience and expiry', async () => {
     audience: string;
     expiresAt: number;
     preload: string;
+    heroLine: string;
   };
   expect(body.tools).toContain('analyze_fit');
   expect(body.tools).toContain('get_availability');
@@ -213,6 +214,8 @@ test('a granted token gets its tools, audience and expiry', async () => {
   expect(body.audience).toBe('fixture-one');
   expect(body.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000));
   expect(body.preload).toBe('');
+  // No campaign matches this audience, same as `preload` above.
+  expect(body.heroLine).toBe('');
 });
 
 test('the preload follows the grant, so two campaigns can run at once', async () => {
@@ -250,6 +253,53 @@ test('the preload follows the grant, so two campaigns can run at once', async ()
   const three = (await (await post(await grant('fixture-three'))).json()) as { preload: string };
   expect(two.preload).toBe('TWO-TARGET-TEXT');
   expect(three.preload).toBe('THREE-TARGET-TEXT');
+});
+
+test('a granted token gets the campaign hero line when the campaign is active', async () => {
+  await kv.put(
+    'campaign:fixture-hero-active',
+    JSON.stringify({
+      id: 'fixture-hero-active',
+      company: 'Alpha',
+      status: 'active',
+      jd_text: 'ACTIVE-TARGET-TEXT',
+      referrer_domains: [],
+      hero_line: 'A generic line.',
+      token_audience: 'fixture-hero-active',
+      gated_narrative_doc: 'narratives/hero-active.md',
+    }),
+  );
+
+  const response = await post(await grant('fixture-hero-active'));
+  const body = (await response.json()) as { heroLine: string };
+  expect(body.heroLine).toBe('A generic line.');
+});
+
+test('a retired campaign carries no hero line, but keeps its preload', async () => {
+  // The gate lives in `handleGrantContext`, not in `readCampaignForAudience`
+  // (grant-context.ts's own docblock on `heroLine`): that function reads
+  // `status` nowhere on purpose, because it also resolves `preload` and the
+  // gated narrative document, and a filter inside it would take both of
+  // those out along with the hero line. This asserts both halves of that:
+  // `heroLine` gated, `preload` not.
+  await kv.put(
+    'campaign:fixture-hero-retired',
+    JSON.stringify({
+      id: 'fixture-hero-retired',
+      company: 'Alpha',
+      status: 'retired',
+      jd_text: 'RETIRED-TARGET-TEXT',
+      referrer_domains: [],
+      hero_line: 'A retired line that must never render.',
+      token_audience: 'fixture-hero-retired',
+      gated_narrative_doc: 'narratives/hero-retired.md',
+    }),
+  );
+
+  const response = await post(await grant('fixture-hero-retired'));
+  const body = (await response.json()) as { heroLine: string; preload: string };
+  expect(body.heroLine).toBe('');
+  expect(body.preload).toBe('RETIRED-TARGET-TEXT');
 });
 
 test('a GET matches a genuinely unrouted path, like any other method this Worker refuses', async () => {
