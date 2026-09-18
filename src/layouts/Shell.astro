@@ -16,6 +16,22 @@ interface Props {
   // Pure pass-through as well. Undefined here means "take Base's default"
   // (`index, follow` since launch); a draft route passes `noindex, nofollow`.
   robots?: string;
+  /**
+   * Pure pass-through, and the one prop that had to be added here before
+   * `/fit` and `/fit/r/<id>` could stop reaching past this layout to
+   * `Base.astro` directly. They are still the only callers that set it.
+   *
+   * NOT OPTIONAL IN THE WAY THE `?` SUGGESTS. `/fit`'s URL carries a token and
+   * its Turnstile widget loads a cross-origin script, so `strict-origin` is
+   * what keeps that URL out of a third party's `Referer`; Base.astro's own
+   * prop comment carries the measurement, including the day in September 2026
+   * that `no-referrer` broke the form. Dropping this line would compile, would
+   * pass every test that reads the RESPONSE HEADER (src/worker.ts sets that
+   * one independently), and would silently delete the second delivery that
+   * exists because the header's reachability depends on asset routing config.
+   * tests/fit-pages.test.ts asserts the meta tag for exactly that reason.
+   */
+  referrer?: string;
   // 2026-09 redesign (issue #99): sticky is a route decision, not a viewport
   // one -- only ArticleLayout.astro (the template both article routes share)
   // passes true. Every other caller takes the default and its header scrolls
@@ -23,8 +39,16 @@ interface Props {
   stickyHeader?: boolean;
 }
 
-const { title, titleIsSiteName, description, markdownHref, structuredData, robots, stickyHeader } =
-  Astro.props;
+const {
+  title,
+  titleIsSiteName,
+  description,
+  markdownHref,
+  structuredData,
+  robots,
+  referrer,
+  stickyHeader,
+} = Astro.props;
 ---
 
 <Base
@@ -34,6 +58,7 @@ const { title, titleIsSiteName, description, markdownHref, structuredData, robot
   markdownHref={markdownHref}
   structuredData={structuredData}
   robots={robots}
+  referrer={referrer}
 >
   <a
     href="#main"

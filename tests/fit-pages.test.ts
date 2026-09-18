@@ -218,6 +218,30 @@ test('the form page uses the redesign type scale, not the pre-redesign one', asy
   expect(html).not.toContain('text-display');
 });
 
+test('the form page renders the site chrome', async () => {
+  // Both /fit pages rendered `Base` directly until this change, so they had no
+  // header, no footer and no skip link. The reason recorded on the page was
+  // that an unlisted surface should not render the nav it is absent from, and
+  // src/pages/fit/index.astro's own comment says why that was decided the
+  // wrong way round -- the short version being that src/pages/404.astro DOES
+  // use `Shell`, and src/worker.ts serves it for every ungranted `/fit`, so a
+  // BAD token already got the whole site and only a good one got a dead end.
+  //
+  // The skip link is asserted with the chrome rather than separately: it is
+  // the half of this change that is not cosmetic. tests/seo.test.ts enforces
+  // one on every page the sitemap lists, and these two are deliberately not
+  // in the sitemap, so nothing else in the suite would notice it going
+  // missing again.
+  const html = await (await server.fetch(`/fit?t=${await grant()}`)).text();
+  expect(html).toContain('data-site-header');
+  expect(html).toContain('data-site-footer');
+  expect(html).toContain('Skip to content');
+  // EXACTLY ONE `<main>`, because `Shell.astro` renders it and this page used
+  // to render its own. Leaving both would nest them, and the skip link's
+  // `#main` would land on whichever the browser matched first.
+  expect(html.match(/<main[\s>]/g)).toHaveLength(1);
+});
+
 test('/fit carries its own noindex and a strict-origin policy', async () => {
   // Both survive day 7 removing the SITEWIDE noindex from Base.astro: the
   // meta tag is set by an explicit prop, and the headers are on the response.
@@ -234,6 +258,12 @@ test('/fit carries its own noindex and a strict-origin policy', async () => {
   // has a `referrer` prop at all: the header above is set in one line of
   // src/worker.ts whose reachability depends on asset routing config. The
   // token's confinement should not rest on one line.
+  //
+  // IT NOW TRAVELS THROUGH `Shell.astro` TOO, which is a longer wire than it
+  // was: this page moved off `Base` onto the shared layout, so the prop is
+  // forwarded rather than passed. This line is what catches a `Shell` that
+  // takes `referrer` and forgets to hand it on -- the header assertion above
+  // cannot, because src/worker.ts sets that one whatever the page renders.
   expect(html).toMatch(/<meta name="referrer" content="strict-origin"/);
 });
 
@@ -639,8 +669,8 @@ test('the permalink carries noindex and strict-origin too', async () => {
   // FIX ROUND 1, FINDING 2: the two header checks above cannot fail from
   // anything this PAGE does -- src/worker.ts sets both headers
   // unconditionally on every non-refusal `/fit*` response, so they would
-  // still pass with `robots`/`referrer` deleted from the `<Base>` call
-  // entirely. The meta tags are the SECOND, independent delivery, and
+  // still pass with `robots`/`referrer` deleted from the `<Shell>` call
+  // entirely, or dropped by `Shell.astro` on the way down to `Base.astro`. The meta tags are the SECOND, independent delivery, and
   // Base.astro's own prop comment calls that delivery load-bearing precisely
   // because the header one depends on routing config
   // (`run_worker_first`/the worker's `/fit` prefix match) that can regress
@@ -651,6 +681,20 @@ test('the permalink carries noindex and strict-origin too', async () => {
   const html = await response.text();
   expect(html).toMatch(/<meta name="robots" content="noindex, nofollow"/);
   expect(html).toMatch(/<meta name="referrer" content="strict-origin"/);
+});
+
+test('the permalink renders the site chrome as well', async () => {
+  // Asserted separately from the form page rather than folded into one loop:
+  // this page is reachable with NO token at all and is built to be forwarded,
+  // so it is read by more strangers than /fit is, and it is the one of the two
+  // that most needs a way into the rest of the site. A regression that put
+  // only this page back on `Base` would pass a test that checked either.
+  await storeReport('fixture-chrome-id');
+  const html = await (await server.fetch('/fit/r/fixture-chrome-id')).text();
+  expect(html).toContain('data-site-header');
+  expect(html).toContain('data-site-footer');
+  expect(html).toContain('Skip to content');
+  expect(html.match(/<main[\s>]/g)).toHaveLength(1);
 });
 
 test('the report page states its provenance, dropped citations included', async () => {

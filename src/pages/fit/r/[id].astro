@@ -1,6 +1,6 @@
 ---
 import { env } from 'cloudflare:workers';
-import Base from '../../../layouts/Base.astro';
+import Shell from '../../../layouts/Shell.astro';
 import { FitReport } from '../../../lib/fit/schema';
 
 /**
@@ -13,6 +13,18 @@ import { FitReport } from '../../../lib/fit/schema';
  * No token is required, deliberately. The whole purpose of the permalink is
  * that it can be forwarded to people who do not have one, and requiring the
  * token would make the feature the thing it was built to replace.
+ *
+ * `Shell` rather than the bare `Base` this page used until now. The argument
+ * that kept /fit off the site chrome was about a URL carrying a token, and
+ * THIS URL CARRIES NONE -- the id is the capability and there is no query
+ * string to withhold. It is also the surface read by the most people who have
+ * never seen the rest of the site, since it is built to be forwarded on, so
+ * it is the page with the least reason of the two to be a dead end.
+ *
+ * `referrer` stays `strict-origin` all the same. The id in this path is the
+ * capability, so a `Referer` carrying the path IS the credential; nothing on
+ * this page loads a cross-origin subresource today, and that is not a
+ * property to leave resting on nobody adding one.
  */
 export const prerender = false;
 
@@ -111,13 +123,15 @@ const report = parseStoredReport(row.report_json);
 const generated = dateLabel(row.created_at);
 ---
 
-<Base
+<Shell
   title="Fit report"
   robots="noindex, nofollow"
   referrer="strict-origin"
   description="A structured comparison against Ryan Lindsey's published record."
 >
-  <main class="mx-auto w-full max-w-[1440px]">
+  {/* A `div`, not a `main`: Shell.astro renders the one `<main id="main">`
+      this page has, and the skip link at the top of every page targets it. */}
+  <div class="mx-auto w-full max-w-[1440px]">
     <section class="border-b border-rule px-5 pb-9 pt-10 lg:px-10 lg:pt-11">
       <p class="font-mono text-micro uppercase text-accent">Fit report &middot; {generated}</p>
       {report === null ? (
@@ -239,5 +253,5 @@ const generated = dateLabel(row.created_at);
         </p>
       </div>
     )}
-  </main>
-</Base>
+  </div>
+</Shell>

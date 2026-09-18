@@ -18,6 +18,7 @@ Deploys run on Workers Builds from `main`. CI has no deploy step. It holds exact
 | `npm run check`                   | `astro check`, the typecheck                                            |
 | `npm run lint` / `npm run format` | Prettier over the repo                                                  |
 | `npm test`                        | `astro build && vitest run`                                             |
+| `npm run preview:fit`             | serve `/fit` and `/fit/r/<id>` locally, with a forged grant             |
 | `npm run typegen`                 | `wrangler types`, regenerates the committed `worker-configuration.d.ts` |
 | `npm run evals`                   | the model evals, against a deployed endpoint (see `evals/README.md`)    |
 | `npm run token`                   | mint, list and revoke scoped tokens                                     |
@@ -128,6 +129,8 @@ Prompts are code. They change by pull request and this suite is what gates them.
 ## Owner-run scripts
 
 `scripts/token.mjs` mints, lists and revokes scoped tokens through wrangler's own login, and sources no credential of its own. Minting signs in process from `RLME_TOKEN_SIGNING_KEY`, which the owner injects with `op run` and the script never reads from anywhere itself, so no Worker has to be running. A Cloudflare Secrets Store value is write-only and only a binding can read it, which is why the Cloudflare copy cannot be the one that signs here. Signing locally makes the two copies of the key able to diverge, so `mint` ends by presenting the fresh token to the deployed Worker at `POST /grant` and refuses to report success unless it comes back honored, carrying the audience just written. It asks `/grant` rather than `tools/list` because the public tools answer every caller: a refused token is not rejected, it is served the public tier, so `tools/list` cannot tell a diverged key from a good mint. Minting needed a temporary `/__sign` route inside a running Worker until issue 04 (#220).
+
+`scripts/preview-fit.mts` is how you look at `/fit` and `/fit/r/<id>` before shipping a change to either, and `npm run dev` is not. Both routes are on-demand and grant-gated, so astro dev serves them the flattened 404 and nothing else: there is no token its grant check will honor and no `fit_reports` row to read. The script boots the same harness the suite boots, which is the only thing here that can forge a grant, then mints a `fit`-scoped token, inserts a report, and prints the three URLs. It reaches no credential and no remote service. Read the header before trusting it, in particular why minting a token in a public repository gives nobody anything, and what the preview deliberately cannot do.
 
 `scripts/private-doc.mjs` is invoked from the directory holding the document, not from here. The mechanism is generic and lives in this repo; every document it deploys is authored outside every repository, so nothing it writes enters any history rather than merely staying out of this one.
 
