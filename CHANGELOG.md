@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.30.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.29.0...ryanlindsey-me-v1.30.0) (2026-09-18)
+
+
+### Features
+
+* **evals:** run the suites on a Cloudflare schedule ([#292](https://github.com/ryanlindsey/ryanlindsey.me/issues/292)) ([ff10f53](https://github.com/ryanlindsey/ryanlindsey.me/commit/ff10f53bec8237b11f0104062ddd4ebf03efc409))
+
 ## [1.29.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.28.0...ryanlindsey-me-v1.29.0) (2026-09-18)
 
 
