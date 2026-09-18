@@ -5,10 +5,12 @@ import { MCP_HARNESS_WORKERS, MCP_WORKER } from './workers';
 import {
   CORPUS_CRON,
   EVALS_DAILY_CRON,
+  EVALS_USER_AGENT,
   EVALS_WEEKLY_CRON,
   evalsRunEnabled,
   suitesForCron,
 } from '../src/lib/evals/plan';
+import { readOpsMetrics } from '../src/lib/ops/metrics';
 import type { McpEnv } from '../workers/mcp/src/env';
 
 /**
@@ -199,6 +201,77 @@ test('a real suite runs its case step and its record step under the step configs
   expect(row?.model).toBeNull();
 });
 
+test('the run labels its own calls across the hop, and /ops leaves them out', async () => {
+  // WHY THIS EXISTS. F1 changes what a PUBLIC page publishes, and its whole
+  // correctness rests on two things holding at once: a `user-agent` set in
+  // workers/mcp/src/evals-client.ts surviving a service-binding dispatch into
+  // this Worker's own `fetch`, all the way to `mcp_tool_calls.user_agent`, and
+  // `readOpsMetrics` keying its exclusion off that stored value. Until this
+  // test, neither end was pinned on this path: the header was asserted against
+  // an injected stub in tests/evals-client.test.ts, which never crosses a hop,
+  // and the SQL was asserted against rows a test had inserted by hand in
+  // tests/ops-metrics.test.ts, which never proves anything about what the
+  // dispatch actually stores. The only evidence that the two met was a live
+  // probe recorded in prose in src/lib/mcp/limits.ts.
+  //
+  // THE `tier` SUITE IS WHAT MAKES IT CHEAP. It spends no inference and calls
+  // every no-required-argument PUBLIC tool over the real `SELF` binding, which
+  // is exactly the traffic being excluded, so the rows this reads are the rows
+  // the scheduled run really writes.
+  //
+  // THE CONTROL ROW IS WHAT KEEPS IT HONEST. A filter that dropped every row
+  // would pass the exclusion half of this test and be catastrophically wrong,
+  // so a row that is NOT the scheduled run has to survive the same query. Its
+  // tool name is a fixture rather than a real tool, the same device
+  // tests/ops-metrics.test.ts uses with its `bisect` suite, so it cannot
+  // collide with whatever the tier suite happens to call.
+  const VISITOR_TOOL = 'a_fixture_a_visitor_called';
+  await env.DB.prepare(
+    `INSERT INTO mcp_tool_calls (called_at, tool, args_hash, tier, audience, user_agent, outcome, duration_ms)
+     VALUES (?, ?, 'h', 'public', NULL, 'Mozilla/5.0', 'ok', 11)`,
+  )
+    .bind(new Date().toISOString(), VISITOR_TOOL)
+    .run();
+
+  await env.EVALS_WORKFLOW.create({ params: { suites: ['tier'] } });
+
+  // Polled like every other reading here: `recordToolCall` is handed to
+  // `ctx.waitUntil` (workers/mcp/src/define.ts), so the row lands after the
+  // response does.
+  const labelled = await until(
+    () =>
+      env.DB.prepare('SELECT tool, tier FROM mcp_tool_calls WHERE user_agent = ?')
+        .bind(EVALS_USER_AGENT)
+        .all<{ tool: string; tier: string }>(),
+    (rows) => rows.results.length > 0,
+    20_000,
+  );
+
+  // THE HEADER SURVIVED THE HOP. Without this, the exclusion below is a filter
+  // on a value nothing ever writes.
+  expect(
+    labelled.results.length,
+    'no mcp_tool_calls row carries the scheduled run user agent',
+  ).toBeGreaterThan(0);
+  // And they are `public` rows, which is why they were a problem: they are the
+  // exact rows /ops publishes, indistinguishable from a visitor's but for the
+  // agent.
+  for (const stored of labelled.results) expect(stored.tier).toBe('public');
+
+  const metrics = await readOpsMetrics(env.DB, new Date(), 30);
+  const published = metrics.toolCalls.map((published) => published.tool);
+  for (const stored of labelled.results) {
+    expect(published, `${stored.tool} reached /ops from the scheduled run`).not.toContain(
+      stored.tool,
+    );
+  }
+  // The control survived, so the query is reading this table and excluding on
+  // the agent rather than answering with nothing.
+  expect(published, 'the exclusion dropped a row that is not the scheduled run').toContain(
+    VISITOR_TOOL,
+  );
+});
+
 /**
  * The CODE of a TypeScript source, with its comments removed.
  *
@@ -367,7 +440,7 @@ test('a payload naming no suite list fails loudly and mints nothing', async () =
   expect(await tokenRows()).toBe(before);
 });
 
-test('an unrecognised suite name is refused and writes no row under that name', async () => {
+test('an unrecognized suite name is refused and writes no row under that name', async () => {
   // THE SECOND HALF OF THE SAME PAYLOAD BUG. An unknown name fell through
   // `runSuite`'s switch, which returned `undefined`, and `summarize` then threw
   // on `results.filter` OUTSIDE the per-suite catch -- taking down the whole
@@ -376,7 +449,7 @@ test('an unrecognised suite name is refused and writes no row under that name', 
   // AND NO ROW UNDER THE UNKNOWN NAME, which is the part worth asserting
   // rather than assuming. `eval_runs.suite` is TEXT and /ops renders the latest
   // row per suite on a PUBLIC page, so recording an `incomplete` row for a
-  // mistyped name would publish "chatt — did not run" under a heading reading
+  // mistyped name would publish "chatt -- did not run" under a heading reading
   // "Latest run per suite", permanently, with nothing that ever writes to that
   // suite again to displace it.
   const instance = await env.EVALS_WORKFLOW.create({

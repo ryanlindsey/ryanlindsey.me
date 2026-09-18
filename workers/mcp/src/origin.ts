@@ -21,10 +21,9 @@
  * else. For ./evals-client.ts the hostname is inert. That module passes this
  * URL to `env.SELF.fetch`, and a service binding routes by BINDING rather than
  * by hostname, and ./index.ts's `fetch` reads nothing out of the URL but the
- * pathname: a wrong constant there would misroute nothing and change no result.
- * It is written this way because a
- * fetch needs an absolute URL and this is the honest one to give it, not
- * because anything downstream reads it.
+ * pathname: a wrong constant there would misroute nothing and change no
+ * result. It is written this way because a fetch needs an absolute URL and
+ * this is the honest one to give it, not because anything downstream reads it.
  *
  * So the reason to keep this correct is still the first consumer's, entirely.
  * A reader tempted to reach for `request.url` on the scheduled path should know
