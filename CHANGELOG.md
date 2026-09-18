@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.26.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.25.0...ryanlindsey-me-v1.26.0) (2026-09-18)
+
+
+### Features
+
+* **home:** refresh the Now strip and trim its header ([#258](https://github.com/ryanlindsey/ryanlindsey.me/issues/258)) ([3d4c079](https://github.com/ryanlindsey/ryanlindsey.me/commit/3d4c079f0f57a5ea949cad23231d9d574867eb08))
+* **search:** add the /search handler to the MCP Worker ([#246](https://github.com/ryanlindsey/ryanlindsey.me/issues/246)) ([b6771c0](https://github.com/ryanlindsey/ryanlindsey.me/commit/b6771c0f8e0d7c419b8a414c13adfbf63d817af4)), closes [#146](https://github.com/ryanlindsey/ryanlindsey.me/issues/146)
+* **search:** build the /search results page ([#248](https://github.com/ryanlindsey/ryanlindsey.me/issues/248)) ([6c70724](https://github.com/ryanlindsey/ryanlindsey.me/commit/6c70724d4610ad305d135126b94f90d191829036))
+* **search:** keep the skip link out of the index with a content selector ([#254](https://github.com/ryanlindsey/ryanlindsey.me/issues/254)) ([18b6237](https://github.com/ryanlindsey/ryanlindsey.me/commit/18b6237040214a1a1dbb82b875538bd8f368757b))
+* **search:** replace the header placeholders with a real search form ([#257](https://github.com/ryanlindsey/ryanlindsey.me/issues/257)) ([1321c31](https://github.com/ryanlindsey/ryanlindsey.me/commit/1321c31a43ec1684aea6c9b73b57d7bb704cdcd6))
+* **search:** turn reranking on for /search ([#252](https://github.com/ryanlindsey/ryanlindsey.me/issues/252)) ([9ffc71b](https://github.com/ryanlindsey/ryanlindsey.me/commit/9ffc71b42641820f0e0cdce51823f796191edd88))
+* **writing:** publish the verification post ([#253](https://github.com/ryanlindsey/ryanlindsey.me/issues/253)) ([2e68c75](https://github.com/ryanlindsey/ryanlindsey.me/commit/2e68c75914502604c94fe5bead69d91a2d9f49ea))
+
 ## [1.25.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.24.0...ryanlindsey-me-v1.25.0) (2026-09-17)
 
 
