@@ -39,7 +39,9 @@ Two of these never travel on a reader's token, and they are the two withheld fro
 
 `authoring` belongs to the owner's drafting client, which reaches `mcp.ryanlindsey.me` and nothing else of ours and so reads the brief that governs a narrative document over HTTP. `get_narrative_brief` answers with that brief and with the key the audience's document belongs at, which is the one thing a writer outside every repository cannot work out for itself. The scope landed one issue ahead of the tool, so a token minted before that unlocked nothing; both are in place now. It is deliberately not `evals` reused: an eval-harness token that also unlocked authoring material would be exactly the merge the scope list exists to prevent.
 
-Pass `--scopes` on every mint. Omitting it defaults to the whole set, `evals` and `authoring` included, and both of those now open something: a reader handed that token gets the harness's judge and the owner's brief, which also names any audience's private-tier key back to whoever asks. The default was harmless while `authoring` opened nothing and stopped being harmless the day `get_narrative_brief` landed, so treat a mint without the flag as a mint to revoke rather than as a wide token.
+`--scopes` is required. A mint without it refuses and points at this document instead of choosing for you, which is the standing instruction to pass the flag on every mint made structural rather than advisory.
+
+It defaulted to the whole set until 2026-09-17, `evals` and `authoring` included, and both of those open something: a reader handed that token got the harness's judge and the owner's brief, which also names any audience's private-tier key back to whoever asks. The default was harmless while `authoring` opened nothing and stopped being harmless the day `get_narrative_brief` landed. That is recorded here rather than deleted because tokens minted under it may still be live, so a `list` row carrying all six scopes is a forgotten flag until something says otherwise, and a mint to revoke rather than a wide token.
 
 ## Mint
 
