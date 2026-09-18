@@ -1,7 +1,9 @@
 ---
 import { env } from 'cloudflare:workers';
 import Shell from '../../../layouts/Shell.astro';
+import CampaignBand from '../../../components/CampaignBand.astro';
 import { FitReport } from '../../../lib/fit/schema';
+import { readCampaignForAudience } from '../../../lib/tier/campaigns';
 
 /**
  * A fit report's permalink (04 §2): a link the reader can pass along to
@@ -42,14 +44,24 @@ const { id } = Astro.params;
  * should ever happen is a product decision this plan never made; dropping
  * the column from the query needs no such decision and forecloses the
  * accident instead of trusting nobody adds the line.
+ *
+ * `audience` IS now selected (04 §3), and the paragraph above is not a rule
+ * against selecting anything new -- it is specific to `target_description`,
+ * whose whole risk was rendering submitter-pasted text verbatim. `audience`
+ * carries no such text: `src/pages/fit/run.ts` writes it from the grant that
+ * created the row, it is a short label an operator assigns per campaign, and
+ * it is never rendered directly -- only fed to `readCampaignForAudience`
+ * below, which resolves it into a hero line already written to be shown to a
+ * stranger (see the note beside `CampaignBand` further down).
  */
 const row = await env.DB.prepare(
-  `SELECT created_at, model, report_json, citations_checked, citations_dropped
+  `SELECT created_at, audience, model, report_json, citations_checked, citations_dropped
      FROM fit_reports WHERE id = ?`,
 )
   .bind(id ?? '')
   .first<{
     created_at: string;
+    audience: string;
     model: string;
     report_json: string;
     citations_checked: number;
@@ -121,6 +133,41 @@ function dateLabel(value: string): string {
 
 const report = parseStoredReport(row.report_json);
 const generated = dateLabel(row.created_at);
+
+/**
+ * The campaign band (04 §3), resolved here rather than carried on a grant --
+ * THIS PAGE HAS NO GRANT. Every other `/fit` surface reads `context.heroLine`
+ * off `grantContext`, already gated on `campaign?.status === 'active'`
+ * (workers/mcp/src/grant-context.ts); this route has no token to resolve into
+ * a grant at all, so it is the first site-side code to read a `campaign:`
+ * entry directly, keyed by the audience `row.audience` recorded when the run
+ * that produced this report was made.
+ *
+ * `status === 'active'` IS GATED HERE, not inside `readCampaignForAudience`
+ * (src/lib/tier/campaigns.ts): that function's own docblock explains at
+ * length why it reads `status` nowhere -- it also resolves the preload and the
+ * gated narrative document, and a `retired` campaign is meant to keep serving
+ * those. This call site wants only the hero line, so it applies the same gate
+ * `grant-context.ts` applies on the token-bearing surfaces, matching their
+ * behavior rather than reaching into a function that deliberately does not
+ * apply it itself.
+ *
+ * SHOWN TO A STRANGER, BY DESIGN, AND THAT IS ACCEPTABLE (recorded
+ * 2026-09-18). This permalink carries no token and is built to be forwarded
+ * past the reader who first received it (see the docblock at the top of this
+ * file) -- so whatever the band shows here reaches people this feature never
+ * authenticated at all. That is the same audience `withCampaignHero`
+ * (src/lib/tier/hero-band.ts) already renders one off an attacker-forgeable
+ * `Referer` -- a value trivially forged by whoever sends the request -- and
+ * it is acceptable here for the identical reason: 09 §1 requires a
+ * `hero_line` to carry no company name, which is what makes the string
+ * harmless to a stranger rather than a disclosure. This page adds no
+ * separate check for that property -- there is nothing to add, since the
+ * property already has to hold for the referrer-matched band to be safe, and
+ * the same stored string is what both surfaces render.
+ */
+const campaign = await readCampaignForAudience(env, row.audience);
+const heroLine = campaign?.status === 'active' ? campaign.heroLine : '';
 ---
 
 <Shell
@@ -129,6 +176,21 @@ const generated = dateLabel(row.created_at);
   referrer="strict-origin"
   description="A structured comparison against Ryan Lindsey's published record."
 >
+  {/*
+    OUTSIDE THE `div` BELOW, deliberately, the same placement
+    src/pages/fit/index.astro uses and for the same reason: the band is
+    full-bleed with its own `border-b`, where the `div`'s columns are
+    constrained by `max-w-[1440px]` and padded on top of that.
+
+    RENDERED ON THE STALE-SCHEMA NOTICE PATH TOO -- `report === null` decides
+    the section below, not whether this renders. The band is about the
+    context the run happened in, the same reason the provenance section
+    (further down) renders on that path as well; whether today's schema can
+    parse `report_json` says nothing about whether that context is worth
+    showing.
+  */}
+  <CampaignBand line={heroLine} />
+
   {/* A `div`, not a `main`: Shell.astro renders the one `<main id="main">`
       this page has, and the skip link at the top of every page targets it. */}
   <div class="mx-auto w-full max-w-[1440px]">

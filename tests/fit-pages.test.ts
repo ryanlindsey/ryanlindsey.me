@@ -687,8 +687,14 @@ test('POST /fit/run with a grant reaches the engine and reports its refusal', as
 // because requiring one here would make the permalink the same gated thing
 // it exists to replace.
 
-/** A stored report, inserted directly -- the render path is what is under test. */
-async function storeReport(id: string) {
+/**
+ * A stored report, inserted directly -- the render path is what is under
+ * test. `audience` defaults to `'web'`, the value every pre-existing caller
+ * here relies on implicitly; the campaign-band tests below are the first
+ * callers that need a different one, so it is a parameter rather than a
+ * second copy of this fixture.
+ */
+async function storeReport(id: string, audience = 'web') {
   await db
     .prepare(
       `INSERT INTO fit_reports (id, created_at, audience, model, target_description,
@@ -698,7 +704,7 @@ async function storeReport(id: string) {
     .bind(
       id,
       '2026-09-08T00:00:00.000Z',
-      'web',
+      audience,
       'anthropic/claude-opus-5',
       'A generic description of a role.',
       JSON.stringify({
@@ -792,6 +798,101 @@ test('the permalink renders the site chrome as well', async () => {
   expect(html).toContain('data-site-footer');
   expect(html).toContain('Skip to content');
   expect(html.match(/<main[\s>]/g)).toHaveLength(1);
+});
+
+// The campaign band (04 §3) on the permalink, keyed by the STORED ROW's
+// `audience` rather than a grant -- this route has no token and so no grant
+// to read a resolved `heroLine` off. Same component, same rendered contract
+// as the `/fit` band tests above (`data-campaign-hero`, the line itself),
+// so what is new here is the resolution path: `readCampaignForAudience`
+// walked directly off `row.audience`, with `status === 'active'` gated at
+// the page's own call site rather than inside that function (see its
+// docblock in src/lib/tier/campaigns.ts, and the one on the page itself).
+//
+// SEEDED THROUGH `kvPutCampaign`, i.e. the MCP Worker's `KV_CONFIG`, same as
+// every band test above -- NOT through the site Worker the way
+// tests/campaign-hero.test.ts seeds, even though this route reads `KV_CONFIG`
+// on the SITE Worker and is the first site-side reader of a `campaign:` key
+// in this repo. MEASURED 2026-09-18: the four tests below, seeded entirely
+// through `kvPutCampaign`, render and hide the band exactly as their names
+// say, which they could not do if the site Worker's `env.KV_CONFIG` saw an
+// empty namespace. Both wrangler.jsonc files bind `KV_CONFIG` to the same
+// namespace id, and this harness resolves that to one shared store across
+// the Workers it boots rather than one per Worker -- so a write through
+// either binding is visible through the other.
+
+test('the band renders for a report whose audience matches an active campaign', async () => {
+  await kvPutCampaign('permalink-band-active', {
+    company: 'Zeta',
+    status: 'active',
+    hero_line: 'A generic line for the permalink.',
+    token_audience: 'permalink-active-audience',
+  });
+  await storeReport('fixture-permalink-band-active-id', 'permalink-active-audience');
+  const html = await (await server.fetch('/fit/r/fixture-permalink-band-active-id')).text();
+  expect(html).toContain('data-campaign-hero');
+  expect(html).toContain('A generic line for the permalink.');
+});
+
+test('the band is absent for a report whose audience has no campaign entry', async () => {
+  // `storeReport`'s default audience ('web') matches no `campaign:` entry
+  // seeded anywhere in this file, so this is the ordinary case rather than a
+  // dedicated no-campaign audience -- the same shape as "no KV_CONFIG write
+  // for this audience at all" on the /fit version of this test above.
+  await storeReport('fixture-permalink-band-missing-id');
+  const html = await (await server.fetch('/fit/r/fixture-permalink-band-missing-id')).text();
+  expect(html).not.toContain('data-campaign-hero');
+});
+
+test('the band is absent for a retired campaign on the permalink', async () => {
+  await kvPutCampaign('permalink-band-retired', {
+    company: 'Eta',
+    status: 'retired',
+    hero_line: 'A generic line that must not render on the permalink.',
+    token_audience: 'permalink-retired-audience',
+  });
+  await storeReport('fixture-permalink-band-retired-id', 'permalink-retired-audience');
+  const html = await (await server.fetch('/fit/r/fixture-permalink-band-retired-id')).text();
+  expect(html).not.toContain('data-campaign-hero');
+  expect(html).not.toContain('A generic line that must not render on the permalink.');
+});
+
+test('the band renders on the stale-schema notice path too', async () => {
+  // Adjustment 2's rule again (see the two "does not crash"/"renders a
+  // notice" tests below): the band is about the run's CONTEXT, not about
+  // whether today's schema can parse `report_json`, so a row that fails to
+  // parse must still carry it. `report_json` here is `'{"nope":true}'`, the
+  // same stale fixture the schema-mismatch test below uses, so this is the
+  // same failure mode with a campaign-matched audience attached.
+  await kvPutCampaign('permalink-band-stale', {
+    company: 'Theta',
+    status: 'active',
+    hero_line: 'A generic line on a page that cannot render its report.',
+    token_audience: 'permalink-stale-audience',
+  });
+  await db
+    .prepare(
+      `INSERT INTO fit_reports (id, created_at, audience, model, target_description,
+         report_json, citations_checked, citations_dropped)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      'fixture-permalink-band-stale-id',
+      '2026-09-08T00:00:00.000Z',
+      'permalink-stale-audience',
+      'm',
+      'd',
+      '{"nope":true}',
+      0,
+      0,
+    )
+    .run();
+  const response = await server.fetch('/fit/r/fixture-permalink-band-stale-id');
+  expect(response.status).toBe(200);
+  const html = await response.text();
+  expect(html).toMatch(/cannot be displayed/i);
+  expect(html).toContain('data-campaign-hero');
+  expect(html).toContain('A generic line on a page that cannot render its report.');
 });
 
 test('the report page states its provenance, dropped citations included', async () => {
