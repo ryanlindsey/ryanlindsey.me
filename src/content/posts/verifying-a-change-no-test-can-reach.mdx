@@ -1,0 +1,99 @@
+---
+title: Verifying a change no test can reach
+description: 'The search on this site could not find a phrase sitting in prose on five of its own pages. The fix had already been measured, decided and applied half an hour earlier, and it had reached nothing. This is what the verification missed: a setting that was overruled per request, a CLI that reports the old value on a fresh write, a symptom explained by the wrong cause, and a test guarding a field name the request does not use.'
+publishedAt: 2026-09-17
+pillar: building-in-the-open
+series:
+  name: Building in the open
+  order: 2
+draft: false
+---
+
+**TL;DR.** On the evening of 2026-09-17 the search on this site returned nothing for `durable objects`, a phrase that appears in ordinary prose on five of its twelve indexed pages, and returned five results for `hyperdrive`, a word that appears on none of them. Reranking was the fix, and reranking had already been measured, decided, applied and written up thirty-six minutes earlier. It had changed nothing, because the code overruled the setting on every request. The verification had missed it four separate ways, and none of the four was carelessness. This post is what each one looked like from the inside, and the rule I now apply instead.
+
+This site already carries a post about a green check that was wrong. This is the other situation. Nothing automated was involved here at all: no suite covers this code path, by design, so the work was done by hand, with real queries against a real index, by someone being careful. The four failures below are what careful looked like.
+
+## The setting said yes and the surface said no
+
+The search on this site runs on a managed retrieval service. It was returning bad answers, so I measured it: ten queries, run against the live index with reranking off and then on, checked against `grep` over the indexed pages as ground truth. The result was not close.
+
+| Query             | Pages carrying it | Reranking off                     | Reranking on                   |
+| ----------------- | ----------------- | --------------------------------- | ------------------------------ |
+| `turnstile`       | 1                 | correct answer 5th of 7           | that page alone, 0.7368        |
+| `durable objects` | 5                 | 0 results                         | 5 chunks, 3 pages, all correct |
+| `vectorize`       | 5                 | 1 result, a page lacking the word | 2 results, both correct        |
+| `hyperdrive`      | 0                 | 5 results                         | 0 results                      |
+
+So I turned reranking on, recorded the measurement, diffed the instance configuration before and after to confirm the change had landed, and closed the issue. The diff was one line: `reranking: false` became `reranking: true`.
+
+Thirty-six minutes later the page was still returning nothing for `durable objects`.
+
+The retrieval call in the handler passes its own options on every request, and one of them was `reranking: { enabled: false }`, set when the decision was to leave it off. The request value wins over the instance value. The setting was genuinely applied, genuinely recorded, and genuinely inert, and nothing anywhere reported a conflict between the two.
+
+The rule I had in my head was that the request wins. It is not a rule, and I should say exactly how far my evidence goes. For `reranking` I measured it directly: the instance carried `true`, the endpoint answered unreranked, and the request value is the only thing that explains it. For `max_num_results` the same call asks for `20` against an instance carrying `10`, and my earlier note records the instance winning there, which would be the opposite precedence in the same object on the same request. I have not re-measured that half, and the queries I ran while writing this returned too few results for the cap to bind either way. The published type says only `Maximum number of results to return (1-50). Default 10`, and nothing in it describes what happens when the two levels disagree. So I raised the instance to match rather than leave the question standing, which is the cheap move and also the one that means I still cannot tell you which wins.
+
+## The command that confirms a change reports the old value
+
+The verification step was a before-and-after diff of `wrangler ai-search get --json`. It showed the one line that changed, which is exactly what a good verification looks like.
+
+Later the same evening I raised a second setting on the same instance, this time through the dashboard, and ran the same check. It reported the old value and the old `modified_at`. So did a second call. The write looked like it had failed, or been silently refused.
+
+It had not. `wrangler ai-search list --json` reported the new value and the new timestamp immediately, on the first call.
+
+```sh
+# disagrees with the instance for some period after a write
+wrangler ai-search get NAME --json | jq '{max_num_results, modified_at}'
+
+# agreed immediately, on every call
+wrangler ai-search list --json | jq '.[] | {id, max_num_results, modified_at}'
+```
+
+That is the uncomfortable part. `get` is the command whose entire job is to answer what the instance currently carries, and for a field written moments earlier it answers with what the instance used to carry. The verification I had run forty minutes before worked, and it worked because the field I happened to be checking had already propagated. The method was never sound. It returned the right answer once.
+
+## The right fix, for a reason that was wrong
+
+While measuring, I noticed that one query kept serving its old results after the flag flipped. I wrote down the cause: the cache is keyed on the query text alone, with no index or configuration version in the key, so a query searched before a change keeps serving its old answer until the entry expires. The fix is to version the cache key, and version it on the value's content rather than only on its shape.
+
+That fix is correct. I still shipped it. The reason I gave for it was not true.
+
+The cache cannot have been what I saw, because the request override was already winning. A completely cold query, with nothing in the cache at all, would have returned the same unreranked results, for the same reason every other query did. What I had actually observed was the override. I attributed it to caching, wrote the attribution into the issue as a measured finding, and moved on.
+
+This is the failure mode I find hardest to catch in my own work, because the output is indistinguishable from success. The change was needed. The change shipped. A reader of that issue inherits a confident sentence about cache behavior that the evidence never supported, and the only way to notice is to go back and ask whether the stated cause could have produced the observed symptom. It could not.
+
+## The guard was reading the wrong field name
+
+There is no test for any of this. The harness stubs the retrieval binding, deliberately, because no test in this repository is allowed to reach a paid inference service. So the guards are structural: they read the handler's own source and assert on the shape of the request it builds.
+
+One of them asserted that the source did not contain `reranking_model`, to prove that no specific model had been pinned. `reranking_model` is the field name on the instance configuration. The per-request field is `model`, nested inside the `reranking` object. Writing `reranking: { enabled: true, model: '...' }` satisfies that assertion completely, and it is the exact thing the assertion exists to prevent.
+
+The same helper read the whole file with comment lines stripped, while its own documentation claimed it was narrowed to the one call. That held only as long as no comment in the file mentioned a guarded word. The comments I had just written mentioned three of them.
+
+Both are now fixed: the assertions match the whole object literal, over a slice of the source containing just the call. Before trusting either one, I broke the call on purpose and watched them fail.
+
+## Four confirmations, and no check
+
+Line them up and they are the same mistake wearing four costumes.
+
+**The instance said `reranking: true`.** That is a read of the setting.
+
+**The CLI said the write had landed.** That is a read of the setting, through a second mouth.
+
+**The cache theory explained the symptom.** That is a read of my own model of the system.
+
+**The test said no model was pinned.** That is a read of the source text, against the wrong name.
+
+Not one of them asked what a person typing into the search box would get back. That question takes one command and it answers immediately and without ambiguity, and when I finally asked it, the answer was `durable objects` returning nothing, which is not a subtle signal.
+
+I do not think the lesson is that these checks are worthless. The instance read is how you find a config drift, the source assertion is how you stop a regression from shipping, and both of them catch things a live query cannot. The lesson is narrower and it is about ordering. Every one of those four is a confirmation that a cause is in place. None of them is evidence that an effect occurred, and I had been treating the two as interchangeable because, most of the time, on most systems, they are.
+
+They stop being interchangeable exactly where this site is most interesting to me: retrieval, ranking, model output, anything whose correctness is a property of a running system rather than of a file. No suite reaches those. The verification is by hand or it does not happen, which makes the discipline of it the whole game.
+
+So the rule, and it costs one command: **check the surface, not the setting.**
+
+## What the surface says now
+
+The change shipped, and the first thing I did was ask. `durable objects` returns five results led by the case study that carries the phrase, at 0.9711. `hyperdrive` returns nothing. `turnstile` returns the single page containing the word, alone, at 0.7368. The scores run between 0.49 and 0.97 where the same four queries used to run between 0.40 and 0.49, which is the shape a reranked answer has and an unreranked one does not.
+
+`turnstile` is the one I would point at, and not because it is the prettiest row. It is the query I had run most often while measuring, so it was the query most certain to have an entry sitting in the cache under the old key, and that cache holds for a day. Ship the reranking without versioning the key and it answers 0.4099 out of the cache, on the first thing anybody would think to check. The fix I shipped for a reason that turned out to be wrong is the reason this reads clean.
+
+That is the whole of it. Four confirmations said the change was in place, one query said what it did, and the only one I can hand to somebody else is the query.
