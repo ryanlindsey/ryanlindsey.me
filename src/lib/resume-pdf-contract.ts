@@ -90,7 +90,15 @@
 // case-study URL per artifact-bearing entry, and a date beside each project's
 // roles. All three change what identical résumé data renders as, which is
 // exactly what this constant tracks.
-export const RESUME_PDF_CONTRACT_VERSION = 6;
+//
+// 7 since 2026-09-18: the résumé gained Snowflake on the platform line, a
+// highlight naming agent access to the warehouse, Salesforce inside the
+// incident-management highlight, two skills keywords, and a reworded
+// e-commerce bullet. The YAML moved, so the hash would have moved without this
+// bump. It is made anyway for the reason version 3's note gives: the inputs and
+// the contract are independent, and the gate requires the constant to move
+// whenever the golden does.
+export const RESUME_PDF_CONTRACT_VERSION = 7;
 
 const encoder = new TextEncoder();
 
