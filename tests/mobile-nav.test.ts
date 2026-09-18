@@ -63,14 +63,58 @@ test('the close control is labelled, because ✕ is not a name', async () => {
   expect(await html('/')).toContain('aria-label="Close menu"');
 });
 
-test('the mobile search affordance is a label, not a control', async () => {
+/**
+ * The overlay's search form (issue #149).
+ *
+ * REPLACES 'the mobile search affordance is a label, not a control', which
+ * asserted this overlay held no `<input>` and that nothing on the page bound
+ * ⌘K. That was the correct contract while site search did not exist; #149
+ * built `/search`, so it is rewritten rather than left contradicting the
+ * markup. The header's half of the same reversal is in tests/pages.test.ts.
+ */
+test('the overlay search is a real GET form, so a phone is not sent to the desktop header', async () => {
   const overlay = overlayOf(await html('/'));
-  expect(overlay).not.toContain('<input');
-  // The same rule the header's placeholder follows (tests/pages.test.ts):
-  // site search is not built, so nothing here takes focus and nothing binds
-  // the shortcut the chip advertises.
-  expect(overlay).toContain('aria-hidden="true"');
-  expect(await html('/')).not.toContain('metaKey');
+  const form = elementWith(overlay, 'form', 'data-nav-search');
+  expect(form).toContain('action="/search"');
+  expect(form).toContain('method="get"');
+  expect(form).toContain('name="q"');
+  // Below `lg` the header's cluster is hidden, so this form IS site search on
+  // a phone -- the same argument that put a theme toggle down here, and the
+  // reason it must be in the accessibility tree rather than `aria-hidden` the
+  // way the label it replaced was.
+  //
+  // SCOPED TO THE FORM TAG AND THE INPUT, not to the element's whole text. The
+  // first version of this asserted the form contained no `aria-hidden="true"`
+  // anywhere and failed correctly: the ⌘K chip inside it carries one, and
+  // should -- it is decoration, and the shortcut it draws is exposed to a
+  // screen reader as `aria-keyshortcuts` on the field instead.
+  expect(/<form[^>]*>/.exec(form)![0]).not.toContain('aria-hidden');
+  expect(/<input[^>]*>/.exec(form)![0]).not.toContain('aria-hidden');
+});
+
+test('the overlay search prefills on /search, so a phone refines without retyping', async () => {
+  // The header's half of this is in tests/pages.test.ts. Asserted separately
+  // rather than trusted to the shared `prefilledQuery`, because what this pins
+  // is that the COMPONENT calls it: below `lg` the header's field is not on the
+  // page, so this is the only one a phone can refine in.
+  const overlay = overlayOf(await html('/search?q=armature'));
+  expect(elementWith(overlay, 'form', 'data-nav-search')).toMatch(/<input[^>]*value="armature"/);
+
+  const home = overlayOf(await html('/'));
+  expect(elementWith(home, 'form', 'data-nav-search')).not.toMatch(/<input[^>]*value="[^"]/);
+});
+
+test('the overlay search input carries its own id, because /search renders one named q', async () => {
+  // Two inputs with the same id on one page is a broken label, and `/search`
+  // labels its own field `for="q"`. Asserted here because the collision is
+  // invisible until a screen reader reads the wrong name, and because the
+  // overlay ships on that page too.
+  const overlay = overlayOf(await html('/search?q=armature'));
+  const form = elementWith(overlay, 'form', 'data-nav-search');
+  const inputId = /<input[^>]*id="([^"]+)"/.exec(form);
+  expect(inputId, 'the overlay search input has no id').not.toBeNull();
+  expect(inputId![1]).not.toBe('q');
+  expect(form).toContain(`for="${inputId![1]}"`);
 });
 
 test('both 44x44 hit targets are spelled at 44px, because the design floors them there', async () => {

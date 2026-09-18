@@ -18,13 +18,40 @@
 /**
  * What Tab moves between inside the overlay.
  *
- * Deliberately short, because the overlay's contents are known and small: one
- * close button and two lists of links. The usual sprawling focusable selector
- * (inputs, selects, iframes, contenteditable, [tabindex]) would be describing
- * elements that are not in there and, in the case of an input, must never be
- * -- the search affordance in this overlay is a label, not a control.
+ * Still deliberately short, because the overlay's contents are known and small:
+ * one close button, two lists of links, and since issue #149 one search field.
+ * The rest of the usual sprawling focusable selector (selects, iframes,
+ * contenteditable, [tabindex]) would be describing elements that are not in
+ * there.
+ *
+ * THE INPUT IS THE PART THAT CHANGED, and the note that stood here said the
+ * opposite in terms: inputs "must never be" in this list, because "the search
+ * affordance in this overlay is a label, not a control". That was true while
+ * site search did not exist. Epic #143 built `/search` and #149 made this a
+ * real GET form, so the field is now the one control in here that is neither a
+ * link nor a button, and a trap that does not know about it is a trap reasoning
+ * about the wrong set.
+ *
+ * WHAT IT DOES NOT CHANGE, said plainly so the next reader does not go looking:
+ * the field sits between the nav links and the theme toggle, so `first` and
+ * `last` below are the same two elements they were. Tab already reached it, by
+ * document order, on the arms where the trap does not intervene. This makes the
+ * set honest rather than fixing a reachability bug, and it is what keeps that
+ * true the day the field moves to an end of the overlay.
+ *
+ * `[type="hidden"]` IS EXCLUDED BECAUSE `input` ALONE MATCHES IT, which is the
+ * one way this selector can be wrong while looking right. Nothing in the
+ * overlay is hidden today; the way one would arrive is a `type` filter carried
+ * into the search form as a hidden field, and if one ever landed last in
+ * document order `last.focus()` would fail silently and Shift+Tab would escape
+ * the trap.
+ *
+ * EXPORTED so tests/mobile-nav-behavior.test.ts imports it rather than retyping
+ * it. That suite computes the same set to find `first` and `last`, and a copy
+ * kept in step by hand is a copy that eventually is not.
  */
-const FOCUSABLE = 'a[href], button:not([disabled])';
+export const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"])';
 
 /**
  * The breakpoint the rule bar returns at. `64rem` is Tailwind's `lg`, which is

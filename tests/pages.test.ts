@@ -253,26 +253,98 @@ test('the active nav item is marked on the page it names, and only there', async
   expect(writing).not.toMatch(/<a[^>]*href="\/work"[^>]*aria-current="page"/);
 });
 
-test('the search affordance is a label, not a control', async () => {
+/**
+ * The header's search form (issue #149).
+ *
+ * THIS REPLACES A TEST THAT ASSERTED THE OPPOSITE, and the one it replaces is
+ * worth knowing about. Until this issue the header rendered a non-interactive
+ * `<span>`, `aria-hidden`, and the test here was called "the search affordance
+ * is a label, not a control": it asserted the element carried `aria-hidden`,
+ * held no `<input>` and no `<button>`, and that the page bound nothing to the
+ * ⌘K the chip advertises. All of that was correct while `/search` did not
+ * exist. It is exactly wrong now, so it is rewritten rather than left standing
+ * beside its contradiction.
+ *
+ * Its scoping lesson survives the rewrite and is why `elementWith` is used
+ * below rather than a window of characters after the ⌘K glyph. That first
+ * version measured 400 characters past the chip and ran into the theme toggle
+ * beside it -- a real `<button>` -- so it was measuring the control NEXT TO
+ * the placeholder rather than the placeholder. `elementWith` counts tag depth
+ * and strips comments (./markup.ts), which is the only scoping on this page
+ * that cannot drift into a neighbour or into prose about itself.
+ */
+const headerSearchForm = (page: string) => elementWith(page, 'form', 'data-header-search');
+
+test('the header search is a real GET form pointed at /search', async () => {
+  const form = headerSearchForm(await html('/'));
+  // The whole point of a results page over an overlay: Enter submits, the
+  // browser navigates, and it works with scripting off.
+  expect(form).toContain('action="/search"');
+  expect(form).toContain('method="get"');
+  expect(form).toContain('name="q"');
+});
+
+test('the header search is in the accessibility tree, with a name on the form and the input', async () => {
   const page = await html('/');
-  expect(page).toContain('⌘K');
-  // Site search is not built. A focusable control that does nothing is worse
-  // than a label, and a screen reader should not be told there is a search
-  // here -- the handoff is explicit that no behaviour should be invented.
+  const form = headerSearchForm(page);
+  // `aria-hidden` was right when this was a label for a thing that did not
+  // exist. It is a control now, so hiding it would take the site's search away
+  // from exactly the visitors who most need to be told it is there.
   //
-  // Scoped to the placeholder's own element. The first version of this test
-  // scanned the 400 characters after the ⌘K glyph instead, which the design
-  // itself fails: the theme toggle is a real <button> and the prototype opens
-  // it about ninety characters after the chip, so the window measured the
-  // control BESIDE the placeholder rather than the placeholder. Verified
-  // against the handoff's own markup before this was rewritten.
-  const search = /<span[^>]*data-search-placeholder[\s\S]*?⌘K/.exec(page);
-  expect(search, 'no search placeholder on the page').not.toBeNull();
-  expect(search![0]).toContain('aria-hidden="true"');
-  expect(search![0]).not.toContain('<input');
-  expect(search![0]).not.toContain('<button');
-  // And nothing binds the shortcut the chip advertises.
-  expect(page).not.toContain('metaKey');
+  // SCOPED TO THE FORM TAG AND THE INPUT rather than to the whole element: the
+  // ⌘K chip inside still carries `aria-hidden`, and should, because it is
+  // decoration. The shortcut it draws reaches a screen reader as
+  // `aria-keyshortcuts` on the field instead of as the characters "⌘K".
+  expect(/<form[^>]*>/.exec(form)![0]).not.toContain('aria-hidden');
+  expect(/<input[^>]*>/.exec(form)![0]).not.toContain('aria-hidden');
+  // A search landmark needs its own name, because /search renders a second one
+  // (that page's own form) and two unnamed ones are indistinguishable.
+  expect(form).toMatch(/<form[^>]*role="search"/);
+  expect(form).toMatch(/<form[^>]*aria-label="/);
+  // The input's name comes from a real <label>, not from the placeholder: a
+  // placeholder disappears the moment anybody types and is not reliably
+  // announced. src/pages/search.astro's own field states the same rule.
+  const inputId = /<input[^>]*id="([^"]+)"/.exec(form);
+  expect(inputId, 'the header search input has no id to label').not.toBeNull();
+  expect(form).toContain(`for="${inputId![1]}"`);
+});
+
+test('the ⌘K chip stops lying: the shortcut module ships with the page', async () => {
+  const page = await html('/');
+  // The chip is kept because it already existed and now describes something
+  // real. What made it a lie was that nothing anywhere bound the shortcut --
+  // the test this replaces asserted that absence deliberately.
+  expect(page).toContain('⌘K');
+  /*
+   * THE EXACT INVERSE OF THE ASSERTION THIS REPLACES, which read
+   * `expect(page).not.toContain('metaKey')` under the comment "and nothing
+   * binds the shortcut the chip advertises". That was the honest way to state
+   * a placeholder: the chip named a key combination and no code anywhere read
+   * one. Flipping the same string is the cheapest possible proof that it does
+   * now.
+   *
+   * IT WORKS ONLY BECAUSE ASTRO INLINES THIS BUNDLE. Checked against
+   * dist/client/index.html rather than assumed: the page carries three
+   * `<script type="module">` elements and none of them has a `src`, so
+   * src/lib/search-shortcut.ts is a string in the response. If the bundle ever
+   * grows past whatever threshold sends it to a file, this assertion goes
+   * quietly false-negative -- so it is paired with the field itself, which
+   * cannot be inlined away, and the behaviour lives in
+   * tests/search-shortcut.test.ts against a DOM.
+   */
+  expect(page).toContain('metaKey');
+  expect(page).toContain('data-header-search');
+});
+
+test('the header search prefills on /search and stays empty everywhere else', async () => {
+  // Refining a search should not mean retyping it. The prefill is read from
+  // the URL rather than threaded down as a prop, so it is the same string the
+  // results page put in its own heading.
+  const results = headerSearchForm(await html('/search?q=armature'));
+  expect(results).toMatch(/<input[^>]*value="armature"/);
+
+  const home = headerSearchForm(await html('/'));
+  expect(home).not.toMatch(/<input[^>]*value="[^"]/);
 });
 
 test('the header is sticky on articles and not anywhere else', async () => {
