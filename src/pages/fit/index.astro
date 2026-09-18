@@ -2,6 +2,7 @@
 import { env } from 'cloudflare:workers';
 import Shell from '../../layouts/Shell.astro';
 import Turnstile from '../../components/Turnstile.astro';
+import CampaignBand from '../../components/CampaignBand.astro';
 import { grantContext } from '../../lib/fit/client';
 import { fitErrorCopy } from '../../lib/fit/errors';
 
@@ -115,6 +116,18 @@ const RAIL_HEADING = 'font-mono text-micro uppercase text-ink-muted';
   referrer="strict-origin"
   description="Compare a description against Ryan Lindsey's published record."
 >
+  {/*
+    OUTSIDE THE GRID BELOW, DELIBERATELY. The band is full-bleed with its own
+    `border-b`, where the grid's own columns are constrained by `max-w-[1440px]`
+    and padded on top of that -- nesting it inside would double the inset on
+    one side and leave the rule short of the viewport edge. `context.heroLine`
+    arrives already resolved and already gated on `campaign?.status ===
+    'active'` (workers/mcp/src/grant-context.ts) -- this page checks nothing
+    about the campaign itself, only whether the string is non-empty, which is
+    `CampaignBand`'s own job.
+  */}
+  <CampaignBand line={context.heroLine} />
+
   {/*
     THREE GRID ITEMS RATHER THAN TWO, in the order src/pages/chat.astro
     settled on and for the reason it records: the rail is WRITTEN between the

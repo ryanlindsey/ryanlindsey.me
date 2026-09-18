@@ -129,6 +129,40 @@ async function grant(scopes: Scope[] = ['fit'], audience = 'fixture-audience'): 
   return mintToken(TEST_SIGNING_KEY, claims);
 }
 
+/**
+ * Writes one `campaign:` entry into the MCP Worker's `KV_CONFIG`, the shape
+ * an operator's `wrangler kv key put` from the private planning repo writes
+ * (10 §2.3). Only the fields the campaign-band tests below vary are taken as
+ * arguments; `jd_text`, `referrer_domains` and `gated_narrative_doc` are
+ * filled with placeholders because nothing in those tests reads them --
+ * `readCampaignForAudience`'s own preload behaviour is already covered by
+ * "the form preloads the campaign the TOKEN belongs to" above, which seeds
+ * its two entries inline rather than through this helper because it predates
+ * it.
+ */
+async function kvPutCampaign(
+  id: string,
+  fields: {
+    company: string;
+    status: 'staged' | 'active' | 'retired';
+    hero_line: string;
+    token_audience: string;
+  },
+): Promise<void> {
+  const mcp = server.getWorker<{ KV_CONFIG: KVNamespace }>('ryanlindsey-me-mcp');
+  const kv = (await mcp.getEnv()).KV_CONFIG;
+  await kv.put(
+    `campaign:${id}`,
+    JSON.stringify({
+      id,
+      jd_text: 'Not used by this test.',
+      referrer_domains: [],
+      gated_narrative_doc: `narratives/${id}.md`,
+      ...fields,
+    }),
+  );
+}
+
 test('/fit with no token is a 404, not a 403', async () => {
   // 404, deliberately. A 403 confirms the page exists, and an unlisted page's
   // whole guarantee (09 §1) is that it does not announce itself to anyone
@@ -199,6 +233,69 @@ test('the form preloads the campaign the TOKEN belongs to, not a global one', as
   expect(alpha).not.toContain('BETA-TARGET-TEXT');
   expect(beta).toContain('BETA-TARGET-TEXT');
   expect(beta).not.toContain('ALPHA-TARGET-TEXT');
+});
+
+// The campaign band (04 §3), on this surface for the first time: previously
+// only the home page rendered it, matched against a cross-origin `Referer`
+// (src/lib/tier/hero-band.ts). Here it is keyed by the grant's audience
+// instead, resolved once by workers/mcp/src/grant-context.ts and carried on
+// `context.heroLine` already gated on `campaign?.status === 'active'` -- so
+// what these tests pin is `src/components/CampaignBand.astro` rendering
+// exactly that value, not a second status check this page does not have.
+
+test('the band renders the audience campaign line for a granted, active campaign', async () => {
+  await kvPutCampaign('band-active', {
+    company: 'Gamma',
+    status: 'active',
+    hero_line: 'A generic line.',
+    token_audience: 'band-active-audience',
+  });
+  const html = await (
+    await server.fetch(`/fit?t=${await grant(['fit'], 'band-active-audience')}`)
+  ).text();
+  expect(html).toContain('data-campaign-hero');
+  expect(html).toContain('A generic line.');
+});
+
+test('the band is absent for an audience with no campaign entry', async () => {
+  // No KV_CONFIG write for this audience at all -- `readCampaignForAudience`
+  // finds nothing, `context.heroLine` resolves to '', and `CampaignBand`
+  // renders nothing rather than an empty band.
+  const html = await (
+    await server.fetch(`/fit?t=${await grant(['fit'], 'band-missing-audience')}`)
+  ).text();
+  expect(html).not.toContain('data-campaign-hero');
+});
+
+test('the band is absent for a retired campaign', async () => {
+  await kvPutCampaign('band-retired', {
+    company: 'Delta',
+    status: 'retired',
+    hero_line: 'A generic line that must not render.',
+    token_audience: 'band-retired-audience',
+  });
+  const html = await (
+    await server.fetch(`/fit?t=${await grant(['fit'], 'band-retired-audience')}`)
+  ).text();
+  expect(html).not.toContain('data-campaign-hero');
+  expect(html).not.toContain('A generic line that must not render.');
+});
+
+test('the band is absent when hero_line is the empty string', async () => {
+  // `hero_line: ''` parses to `heroLine: ''`, which is the same "render
+  // nothing at all" outcome `withCampaignHero` gives it on the home page
+  // (hero-band.ts's own `heroLine === ''` check) -- never an empty section,
+  // an empty rule or empty padding.
+  await kvPutCampaign('band-empty-line', {
+    company: 'Epsilon',
+    status: 'active',
+    hero_line: '',
+    token_audience: 'band-empty-line-audience',
+  });
+  const html = await (
+    await server.fetch(`/fit?t=${await grant(['fit'], 'band-empty-line-audience')}`)
+  ).text();
+  expect(html).not.toContain('data-campaign-hero');
 });
 
 test('the form page carries a rail stating when the link expires', async () => {

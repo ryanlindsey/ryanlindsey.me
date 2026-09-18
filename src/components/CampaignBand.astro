@@ -1,0 +1,38 @@
+---
+/**
+ * The campaign hero band (04 §3), rendered by audience rather than by
+ * referrer.
+ *
+ * THE SAME BAND `withCampaignHero` BUILDS, AND THAT IS THE POINT rather than
+ * a coincidence. src/lib/tier/hero-band.ts renders this band on the home
+ * page as an HTML string spliced in by HTMLRewriter -- a string because
+ * HTMLRewriter's `element.after()` takes one, not an Astro component, so a
+ * prerendered static page can carry a referrer-matched line without an
+ * on-demand route. `/fit` already reads its grant on every request, so there
+ * is no equivalent constraint here and this component can be the real thing.
+ * The two are kept in step BY HAND, not by one calling the other: a change
+ * to the class list, the element, or the padding belongs in both files, or
+ * the band the home page shows and the band `/fit` shows drift apart
+ * visually with nothing to catch it.
+ *
+ * NO `escapeHtml` HERE, AND THAT IS NOT AN OMISSION. `hero-band.ts` inserts
+ * its band with `{ html: true }`, so it has to escape `heroLine` itself
+ * before it is anything but markup -- see `escapeHtml`'s own docblock there.
+ * Astro escapes every `{expression}` in its template by default, which is
+ * what `{line}` below is, so an equivalent call here would double-escape the
+ * line rather than protect it. One line is operator-typed into KV either
+ * way; the two renderers just protect it through different mechanisms.
+ */
+interface Props {
+  line: string;
+}
+const { line } = Astro.props;
+---
+
+{line !== '' && (
+  <section data-campaign-hero class="border-b border-rule bg-accent-ground/10">
+    <div class="mx-auto max-w-[1440px] px-5 py-4 lg:px-10">
+      <p class="text-small text-ink">{line}</p>
+    </div>
+  </section>
+)}
