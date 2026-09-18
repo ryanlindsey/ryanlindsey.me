@@ -173,6 +173,9 @@ export async function askOnce(
     if (name === 'sources') sources = data.sources ?? [];
     else if (name === 'delta') answer += data.text ?? '';
     else if (name === 'done') cited = data.cited ?? [];
+    // `?? null` here and in evals/run.mjs's `askOnce`, moved together rather
+    // than one side quietly differing -- see that function for why, and for
+    // what the two used to report about one error frame with no `code`.
     else if (name === 'error') error = data.code ?? null;
   }
   return { sources, answer, cited, error };

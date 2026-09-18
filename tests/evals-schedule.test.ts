@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { beforeAll, expect, test } from 'vitest';
+import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { MCP_HARNESS_WORKERS, MCP_WORKER } from './workers';
 import {
@@ -39,11 +39,57 @@ let mcp: ReturnType<typeof server.getWorker<McpEnv>>;
 /** The audience the scheduled runner mints under. Generic, and deliberately so. */
 const AUDIENCE = 'scheduled-evals';
 
+/**
+ * A SECOND HARNESS, WITH THE CORPUS SEAM POISONED, and it exists to observe
+ * the one thing the harness above cannot.
+ *
+ * WHAT NEEDS OBSERVING. Until issue #291 this Worker's `scheduled()` ran the
+ * corpus refresh for EVERY trigger, because there was only one. It now runs it
+ * for `CORPUS_CRON` and for nothing else, and that is a change to an existing
+ * path rather than a new one -- an evals cron that still re-embedded the whole
+ * corpus would be two extra full refreshes a week, silently, with every other
+ * assertion in this file still green.
+ *
+ * WHY IT TAKES A POISONED VALUE. `CORPUS_REFRESH: 'off'` (tests/workers.ts)
+ * makes the refresh skip, so under the ordinary harness "the branch was
+ * entered and skipped" and "the branch was never entered" are the same
+ * observation. An UNRECOGNISED value is different: `corpusRefreshEnabled`
+ * (src/lib/corpus.ts) throws on one -- that is the seam's third documented
+ * safety property -- and a `scheduled()` handler that throws answers
+ * `outcome: 'exception'` instead of `'ok'`. So the exception IS the proof that
+ * control reached the corpus branch, and its absence is the proof that it did
+ * not.
+ *
+ * MEASURED 2026-09-18, both readings: the corpus cron answers
+ * `{"outcome":"exception","noRetry":false}` and the daily evals cron answers
+ * `{"outcome":"ok","noRetry":false}`.
+ */
+const poisonedCorpus = createTestHarness({
+  workers: MCP_HARNESS_WORKERS.map((worker) =>
+    worker === MCP_WORKER
+      ? { ...MCP_WORKER, vars: { ...MCP_WORKER.vars, CORPUS_REFRESH: 'not-a-value-it-accepts' } }
+      : worker,
+  ),
+});
+
 beforeAll(async () => {
   await server.listen();
   mcp = server.getWorker<McpEnv>('ryanlindsey-me-mcp');
   await mcp.applyD1Migrations('DB');
   env = await mcp.getEnv();
+  // Listened here rather than inside the one test that uses it: a harness
+  // started in a test body is a harness whose lifetime is not the file's, and
+  // the `afterAll` below has to be able to close both.
+  await poisonedCorpus.listen();
+});
+
+// Both of them, in one block. tests/discovery-link-headers.test.ts is the
+// other suite here that boots two harnesses and it writes two `afterAll`s
+// instead; either works, and one block is what keeps the pairing with the
+// `beforeAll` above visible at a glance.
+afterAll(async () => {
+  await server.close();
+  await poisonedCorpus.close();
 });
 
 async function tokenRows(): Promise<number> {
@@ -106,6 +152,44 @@ test('the positive control: an instance that runs leaves a token row behind', as
   expect(revokedAt, 'the run did not revoke the token it minted').not.toBeNull();
 });
 
+test('a real suite runs its case step and its record step under the step configs', async () => {
+  // WHY THIS EXISTS: `CASE_STEP` and `RECORD_STEP`
+  // (workers/mcp/src/evals-workflow.ts) were added to stop Cloudflare's default
+  // five-retry policy from becoming a third retry layer on a path where each
+  // extra attempt is another frontier-model call. A `StepConfig` that workerd
+  // rejects would fail at the step rather than at the typecheck, and the
+  // `suites: []` control above runs no steps at all, so nothing else here
+  // would notice.
+  //
+  // `tier` IS THE ONLY SUITE THIS CAN DRIVE, and it can because it spends
+  // nothing: no model call, no `AI` binding, just the handshake, two listings
+  // and the no-argument tools over the real `SELF` service binding. The other
+  // three would be a run of refusals at seams that are off (see the header).
+  await env.EVALS_WORKFLOW.create({ params: { suites: ['tier'] } });
+
+  const row = await until(
+    () =>
+      env.DB.prepare(
+        "SELECT suite, status, total, passed, model FROM eval_runs WHERE suite = 'tier' ORDER BY id DESC",
+      ).first<{ suite: string; status: string; total: number; passed: number; model: null }>(),
+    (value) => value !== null,
+    40_000,
+  );
+
+  // DELIBERATELY NOT ASSERTING `passed`. Whether the tier case passes is a fact
+  // about what the public tier currently says, and that already has its own
+  // tests -- tests/mcp-tools.test.ts and tests/tier-invisibility.test.ts scan
+  // the same surfaces against the same patterns. Asserting it here would make
+  // this file go red for a reason that has nothing to do with scheduling. What
+  // is being asserted is that the run REACHED its row: the case step executed,
+  // the record step executed, and `summarize()` wrote a suite that ran with
+  // one case in it.
+  expect(row?.status).toBe('ran');
+  expect(row?.total).toBe(1);
+  // `model` is written as an explicit NULL, exactly as evals/run.mjs writes it.
+  expect(row?.model).toBeNull();
+});
+
 test('the corpus cron starts no evals instance', async () => {
   const before = await tokenRows();
   await mcp.scheduled({ cron: CORPUS_CRON, scheduledTime: new Date() });
@@ -131,41 +215,7 @@ test('the harness sets the seam, and it reads as off', () => {
   expect(evalsRunEnabled(MCP_WORKER.vars)).toBe(false);
 });
 
-/**
- * A SECOND HARNESS, WITH THE CORPUS SEAM POISONED, and it exists to observe
- * the one thing the harness above cannot.
- *
- * WHAT NEEDS OBSERVING. Until issue #291 this Worker's `scheduled()` ran the
- * corpus refresh for EVERY trigger, because there was only one. It now runs it
- * for `CORPUS_CRON` and for nothing else, and that is a change to an existing
- * path rather than a new one -- an evals cron that still re-embedded the whole
- * corpus would be two extra full refreshes a week, silently, with every other
- * assertion in this file still green.
- *
- * WHY IT TAKES A POISONED VALUE. `CORPUS_REFRESH: 'off'` (tests/workers.ts)
- * makes the refresh skip, so under the ordinary harness "the branch was
- * entered and skipped" and "the branch was never entered" are the same
- * observation. An UNRECOGNISED value is different: `corpusRefreshEnabled`
- * (src/lib/corpus.ts) throws on one -- that is the seam's third documented
- * safety property -- and a `scheduled()` handler that throws answers
- * `outcome: 'exception'` instead of `'ok'`. So the exception IS the proof that
- * control reached the corpus branch, and its absence is the proof that it did
- * not.
- *
- * MEASURED 2026-09-18, both readings: the corpus cron answers
- * `{"outcome":"exception","noRetry":false}` and the daily evals cron answers
- * `{"outcome":"ok","noRetry":false}`.
- */
-const poisonedCorpus = createTestHarness({
-  workers: MCP_HARNESS_WORKERS.map((worker) =>
-    worker === MCP_WORKER
-      ? { ...MCP_WORKER, vars: { ...MCP_WORKER.vars, CORPUS_REFRESH: 'not-a-value-it-accepts' } }
-      : worker,
-  ),
-});
-
 test('the corpus refresh runs for its own cron, and for no other', async () => {
-  await poisonedCorpus.listen();
   const worker = poisonedCorpus.getWorker<McpEnv>('ryanlindsey-me-mcp');
 
   const corpus = await worker.scheduled({ cron: CORPUS_CRON, scheduledTime: new Date() });

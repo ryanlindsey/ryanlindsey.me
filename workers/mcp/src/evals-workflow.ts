@@ -29,7 +29,12 @@
 // instance this harness can complete: `suites: []`, which mints, iterates
 // nothing and revokes.
 
-import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
+import {
+  WorkflowEntrypoint,
+  type WorkflowEvent,
+  type WorkflowStep,
+  type WorkflowStepConfig,
+} from 'cloudflare:workers';
 import { PACE_MS, type SuiteName } from '../../../src/lib/evals/plan';
 import {
   incompleteRow,
@@ -48,6 +53,64 @@ import type { McpEnv } from './env';
 export interface EvalsRunParams {
   suites: SuiteName[];
 }
+
+/**
+ * NO RETRY ON A CASE, AND THE DEFAULT IS WHAT MAKES THAT A DECISION RATHER
+ * THAN AN OMISSION. A `step.do` with no config gets Cloudflare's default
+ * policy -- five retries, ten seconds apart, exponential backoff -- and that
+ * would be a THIRD retry layer stacked on two this repository has already
+ * measured and capped.
+ *
+ * The layers, so the composition is written down once: AI Gateway retries a
+ * call up to four times on its own (recorded in `RETRIES` in
+ * src/lib/evals/plan.ts), `ask` and `askJudge` retry once past a transient
+ * refusal, and a step would retry on top of both. plan.ts settled on exactly
+ * one client attempt for a stated reason -- the gateway already implements
+ * this, a failure reaching the client is one it has already given up on, and a
+ * second mechanism at a second layer is harder to reason about than either
+ * alone. A third is strictly worse than that, and it is not free: a case step
+ * that throws is a case that was about to be paid for again, five more times.
+ *
+ * THE CONCRETE EXPOSURE IS `fit`. `payloadOf` throws on an event stream
+ * carrying no data line, which is the exact failure its own comment records,
+ * and `rpc`'s `JSON.parse` throws on a malformed body. Under the default, each
+ * throw sends the step back through another `analyze_fit` -- an Opus call over
+ * the whole corpus -- five more times, each doing its own client retry, each
+ * of those fanning out at the gateway.
+ *
+ * WHAT A THROW DOES INSTEAD: it leaves `runSuite`, and `run()` writes an
+ * `incomplete` row for that suite. That is the same outcome evals/run.mjs
+ * reaches by different means -- a throw from `rpc` there takes down the whole
+ * suite and the process with it -- and it is strictly more informative,
+ * because the row says the suite did not run rather than leaving its absence
+ * to be noticed.
+ *
+ * `delay` is required by the type and inert at a limit of zero.
+ *
+ * THE TEN-MINUTE DEFAULT STEP TIMEOUT IS CONSIDERED AND LEFT ALONE. What
+ * bounds a step here is a call COUNT rather than a guess at latency: a `fit`
+ * case is one `analyze_fit` with no client retry at all, and the longest step
+ * in any suite is a `chat` case or a `leak` probe, which is at most two chat
+ * turns and two judge calls with a ten-second backoff before each retried one.
+ * Four model calls and twenty seconds of waiting is not a ten-minute step.
+ */
+const CASE_STEP: WorkflowStepConfig = { retries: { limit: 0, delay: 0 } };
+
+/**
+ * ONE retry on the row write, which is the one place a retry earns its keep.
+ *
+ * The 2026-09-11 incident evals/run.mjs's recording comment records was a
+ * TRANSIENT write failure: the same statement succeeded against the same
+ * database minutes later and the cause was never established. So one cheap
+ * second attempt is worth having here in a way it is not on a case, because
+ * what is being repeated costs a D1 write rather than an Opus call.
+ *
+ * One rather than the default five, and five seconds rather than ten with
+ * exponential backoff: the catch around this step logs and continues, so the
+ * only thing the default would buy is stalling the run for about five minutes
+ * before it does.
+ */
+const RECORD_STEP: WorkflowStepConfig = { retries: { limit: 1, delay: '5 seconds' } };
 
 /**
  * The audience the run mints under. GENERIC ON PURPOSE (09 §2): an audience
@@ -223,7 +286,7 @@ function messageOf(error: unknown): string {
  */
 async function record(env: McpEnv, step: WorkflowStep, row: EvalRunRecord): Promise<void> {
   try {
-    await step.do(`${row.suite}/record`, async () => {
+    await step.do(`${row.suite}/record`, RECORD_STEP, async () => {
       await env.DB.prepare(
         `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, status, notes)
          VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`,
@@ -261,7 +324,7 @@ async function runPaced(step: WorkflowStep, units: Unit[]): Promise<CaseResult[]
   const results: CaseResult[] = [];
   for (const [index, unit] of units.entries()) {
     if (index > 0) await step.sleep(`pace before ${unit.name}`, PACE_MS);
-    results.push(await step.do(unit.name, unit.run));
+    results.push(await step.do(unit.name, CASE_STEP, unit.run));
   }
   return results;
 }
@@ -284,7 +347,11 @@ async function runSuite(
       const results: CaseResult[] = [];
       for (const testCase of BUNDLED_CASES.tier) {
         results.push(
-          await step.do(`tier/${testCase.id}`, async () => await runTierCase(env.SELF, testCase)),
+          await step.do(
+            `tier/${testCase.id}`,
+            CASE_STEP,
+            async () => await runTierCase(env.SELF, testCase),
+          ),
         );
       }
       return results;

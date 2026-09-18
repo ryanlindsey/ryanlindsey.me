@@ -87,14 +87,21 @@ export interface McpEnv {
    * `event: message` frame holding the PUBLIC tool list. The bad token was
    * refused and the caller served the public tier, which is `resolveGrant`'s
    * designed behaviour -- so the request went through this Worker's whole
-   * `fetch` handler and through the one authorization check, exactly as a
-   * stranger's would.
+   * `fetch` handler and through the one authorization check.
    *
    * That is the point of the binding rather than an incidental property of it:
    * the scheduled run is not privileged and must not be. It presents a bearer
    * like any other client, and `src/lib/tier/grant.ts` stays the only place a
    * token is verified. See workers/mcp/wrangler.jsonc for why this is a
    * service binding and not a global fetch to this Worker's own custom domain.
+   *
+   * ONE THING IT IS NOT: a stranger's request in every respect. A dispatch over
+   * this binding never traverses Cloudflare's edge, so it carries no
+   * `CF-Connecting-IP`, and `limitKeyFor` (src/lib/mcp/limits.ts) therefore
+   * keys the scheduled run's `/chat` calls `chat:unknown` rather than to an
+   * address. That is a bucket of its own rather than a shared one, it has room
+   * to spare, and the reasoning is written out beside `LIMITS.conversation`
+   * where the shared-bucket claim used to stand unqualified.
    */
   SELF: Fetcher;
   /**
