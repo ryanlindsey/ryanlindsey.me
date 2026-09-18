@@ -33,7 +33,7 @@ work:
       Own incident management for the entire engineering organization since
       2024 and coach fellow engineering managers, while leading 8 engineers
       across 2 teams. Platform: AWS, Ruby on Rails, Node.js, GraphQL, React,
-      Next.js, Terraform, Kubernetes, Docker, Fastly.
+      Next.js, Terraform, Kubernetes, Docker, Fastly, Snowflake.
     x_artifacts:
       - delivery-forecasting
     highlights:
@@ -50,7 +50,8 @@ work:
         time to produce one.
       - >-
         That ownership covers the process itself, the communication strategy,
-        service integrations, data reporting, and training. Data Engineering
+        service integrations with third-party systems of record including
+        Salesforce, data reporting, and training. Data Engineering
         and InfoSec run their own incident processes on the same tooling.
         Accountable for the area's OKRs and report on them to the executive
         team monthly. Risky changes go through a change advisory board with
@@ -68,6 +69,10 @@ work:
         every engineering manager, running on scheduled cloud routines,
         including a daily digest covering incident-response concerns.
       - >-
+        Day-to-day software and product development runs through Snowflake's
+        MCP servers, so querying the system of record is part of the agentic
+        toolchain rather than a separate reporting step.
+      - >-
         Took on an advertising technology platform to raise its engineering
         rigor: documented its critical paths, built a test coverage strategy
         integrated with CI and improved it over time, moved it to blue/green
@@ -75,10 +80,10 @@ work:
         payload verification with InfoSec to protect metric integrity against
         junk traffic.
       - >-
-        Delivered an off-marketplace e-commerce platform for cannabis
-        retailers, still in production and contributing to platform GMV, built
-        to meet marketplace regulatory requirements across the United States
-        and Canada.
+        Built an off-marketplace e-commerce platform from nothing with a
+        team, to meet marketplace regulatory requirements across the United
+        States and Canada. Still in production and contributing to platform
+        GMV.
   - name: Weedmaps
     position: Engineering Manager
     location: Irvine, CA
@@ -274,6 +279,7 @@ skills:
       - AI governance (acceptable use, risk register, audit trail)
       - Prompt-injection defenses
       - LLM cost controls and gateways
+      - Agent access to systems of record (MCP over Snowflake)
   - name: Engineering leadership
     keywords:
       - Incident management
@@ -297,6 +303,7 @@ skills:
       - Bot mitigation
       - API design
       - High availability
+      - Data warehouse (Snowflake)
   - name: Languages and frameworks
     keywords:
       - TypeScript
@@ -309,5 +316,5 @@ skills:
       - '*nix shell'
 
 meta:
-  version: 0.5.0
-  lastModified: '2026-09-17'
+  version: 0.6.0
+  lastModified: '2026-09-18'

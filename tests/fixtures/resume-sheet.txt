@@ -16,11 +16,11 @@ extraction into the text layer an ATS reads, shows up as a diff in these
 lines and nowhere else.
 
 Pages: 3
-Bullet markers: 29
+Bullet markers: 30
 
 --- page 1 of 3 ---
 
-R É S U M É · R Y A N L I N D S E Y R E V 0 . 5 . 0 · 2 0 2 6 - 0 9 - 1 7
+R É S U M É · R Y A N L I N D S E Y R E V 0 . 6 . 0 · 2 0 2 6 - 0 9 - 1 8
 Ryan Lindsey
 S E N I O R E N G I N E E R I N G M A N A G E R , A G E N T I C E N G I N E E R I N G
 BASED Laguna Niguel, CA
@@ -39,35 +39,38 @@ Weedmaps IRVINE, CA MAR 2016 — PRESENT
 Senior Engineering Manager FEB 2021 — PRESENT
 Own incident management for the entire engineering organization since 2024 and coach fellow engineering managers,
 while leading 8 engineers across 2 teams. Platform: AWS, Ruby on Rails, Node.js, GraphQL, React, Next.js, Terraform,
-Kubernetes, Docker, Fastly.
+Kubernetes, Docker, Fastly, Snowflake.
 • Designed and built a delivery-forecasting toolchain for engineering managers, beginning as a set of Claude Skills and
 migrating to an internal MCP server as adoption outgrew that packaging. Adopted by >80% of engineering managers
 and absorbed into the org-wide roadmapping and reporting process.
 • The incident process I own now runs on agentic investigation: incident commanders use agents and connected MCP
 servers over live telemetry, which has raised root-cause-analysis quality and sharply reduced the time to produce one.
-• That ownership covers the process itself, the communication strategy, service integrations, data reporting, and training.
-Data Engineering and InfoSec run their own incident processes on the same tooling. Accountable for the area's OKRs
-and report on them to the executive team monthly. Risky changes go through a change advisory board with
-documented rollback plans, and post-incident review is blameless with linked action items.
+• That ownership covers the process itself, the communication strategy, service integrations with third-party systems of
+record including Salesforce, data reporting, and training. Data Engineering and InfoSec run their own incident
+processes on the same tooling. Accountable for the area's OKRs and report on them to the executive team monthly.
+Risky changes go through a change advisory board with documented rollback plans, and post-incident review is
+blameless with linked action items.
 • Measured the inherited process before changing it, and found response and resolution times were already at or better
 than industry standard, a reading corroborated independently by a vendor in the space. The real weakness was time to
 detect, so that became the focus: a service-level observability initiative run with DevOps and SRE now surfaces issues
 before customers report them, across both web and native applications.
 • Publish agentic tooling as Claude Skills in a shared repository open to every engineering manager, running on scheduled
 cloud routines, including a daily digest covering incident-response concerns.
+• Day-to-day software and product development runs through Snowflake's MCP servers, so querying the system of record
+is part of the agentic toolchain rather than a separate reporting step.
 • Took on an advertising technology platform to raise its engineering rigor: documented its critical paths, built a test
 coverage strategy integrated with CI and improved it over time, moved it to blue/green deployments for zero downtime
 with DevOps, and added bot mitigation and payload verification with InfoSec to protect metric integrity against junk
 traffic.
-• Delivered an off-marketplace e-commerce platform for cannabis retailers, still in production and contributing to platform
-GMV, built to meet marketplace regulatory requirements across the United States and Canada.
+• Built an off-marketplace e-commerce platform from nothing with a team, to meet marketplace regulatory requirements
+across the United States and Canada. Still in production and contributing to platform GMV.
 Case study: ryanlindsey.me/work/delivery-forecasting
-Engineering Manager SEP 2017 — FEB 2021
-• Managed up to 19 engineers, from junior through staff level, across several cross-functional product delivery teams on a
-consumer platform used by millions of people every month. Reports spanned backend, front-end, iOS, and Android.
 
 --- page 2 of 3 ---
 
+Engineering Manager SEP 2017 — FEB 2021
+• Managed up to 19 engineers, from junior through staff level, across several cross-functional product delivery teams on a
+consumer platform used by millions of people every month. Reports spanned backend, front-end, iOS, and Android.
 • Decoupled deployment from feature release, so the product and go-to-market teams could control launch timing
 independently of engineering deploys. This removed a standing coupling between shipping software and announcing it.
 • Introduced global edge caching across the primary web applications on both client and server, through a Fastly CDN
@@ -109,13 +112,13 @@ Y&R Brands / Wunderman IRVINE, CA JUN 2007 — FEB 2011
 Front End Developer
 • Delivered interactive work for Land Rover, Southwest Airlines, Toshiba, and Hilton, recognized with Lester Wunderman
 awards (2008, 2009) and a 38th Annual Creativity Award (2008).
+
+--- page 3 of 3 ---
+
 Freelance ORANGE COUNTY, CA JAN 2001 — JUN 2007
 Web design & development
 • Ran every part of the business: client relationships, project management, design, and development. Built marketing sites,
 online communities, and custom content management systems for local businesses, independent films, and bands.
-
---- page 3 of 3 ---
-
 P R O J E C T S
 Pixelsonly Racing FOUNDER · JUN 2026 — PRESENT PIXELSONLY.RACING
 A sim racing coaching platform that turns telemetry into driver development goals, with a personal AI race engineer for
@@ -144,13 +147,14 @@ S K I L L S
 AGENTIC ENGINEERING MCP servers (Model Context Protocol), Claude Code and Claude Skills, Agent design and tool
 use, Spec-driven agentic development, LLM evals (property-based, LLM-as-judge), Retrieval-
 augmented generation (RAG), Human-in-the-loop controls, AI governance (acceptable use,
-risk register, audit trail), Prompt-injection defenses, LLM cost controls and gateways
+risk register, audit trail), Prompt-injection defenses, LLM cost controls and gateways, Agent
+access to systems of record (MCP over Snowflake)
 ENGINEERING LEADERSHIP Incident management, Change management (CAB, rollback plans), Observability, OKRs and
 executive reporting, Hiring and team growth, Coaching engineering managers, Engineering
 enablement, Cross-functional partnership, Performance management
 PLATFORM AND DELIVERY Edge compute and caching (Fastly, Cloudflare Workers), Serverless (Durable Objects,
 Workflows, Queues), Kubernetes and Docker, AWS and Terraform, CI/CD and automated
 testing, Blue/green, zero-downtime deployment, Release management, Bot mitigation, API
-design, High availability
+design, High availability, Data warehouse (Snowflake)
 LANGUAGES AND FRAMEWORKS TypeScript, JavaScript, Node.js, React and Next.js, Ruby on Rails, SQL (SQLite, D1), GraphQL,
 *nix shell
