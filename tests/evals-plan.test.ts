@@ -48,6 +48,32 @@ test('suitesForCron: the corpus cron asks for no eval suite', () => {
   expect(suitesForCron(CORPUS_CRON)).toEqual([]);
 });
 
+/** `m h * * ?` as minutes past midnight. Only the two fields these crons vary. */
+function minutesPastMidnight(cron: string): number {
+  const [minute, hour] = cron.split(' ');
+  const parsed = Number(minute) + Number(hour) * 60;
+  expect(Number.isFinite(parsed), `${cron} is not a fixed minute-and-hour expression`).toBe(true);
+  return parsed;
+}
+
+test('the weekly evals cron leaves the corpus refresh a wide gap', () => {
+  // WHAT THE GAP IS FOR. `fit` and `chat` are graded against the Vectorize
+  // index that `CORPUS_CRON` re-embeds and upserts that same morning.
+  // src/lib/corpus.ts is incremental, so most Mondays that refresh is nearly
+  // instant -- but the Monday after content lands is the one where it is not,
+  // and that is exactly the Monday this schedule exists for. A Vectorize
+  // `upsert` returns a mutation id and the index reflects it some time later,
+  // so a `chat` case with a `min_sources` expectation can query a
+  // still-applying index and go red with no regression behind it.
+  //
+  // NINETY-FIVE MINUTES IS SLACK, NOT MEASUREMENT, and the constant's own
+  // comment in src/lib/evals/plan.ts says so at length. This test pins the
+  // slack rather than the number: 90 is the floor, and moving the weekly cron
+  // back toward the refresh is the change that has to argue with it.
+  const gap = minutesPastMidnight(EVALS_WEEKLY_CRON) - minutesPastMidnight(CORPUS_CRON);
+  expect(gap).toBeGreaterThanOrEqual(90);
+});
+
 test('suitesForCron: an unknown expression asks for none', () => {
   expect(suitesForCron('0 0 * * *')).toEqual([]);
 });

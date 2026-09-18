@@ -11,6 +11,7 @@ import {
 } from '../../../src/lib/chat/engine';
 import type { ChatErrorCode } from '../../../src/lib/chat/errors';
 import { parseModelSse, sseFrame } from '../../../src/lib/chat/protocol';
+import { EVALS_AGENT, EVALS_SURFACE } from '../../../src/lib/evals/plan';
 import { checkGlobalLimit, checkLimit } from '../../../src/lib/mcp/limits';
 import { resolveGrant } from '../../../src/lib/tier/grant';
 import { verifyTurnstile } from '../../../src/lib/turnstile';
@@ -37,10 +38,13 @@ import type { McpEnv } from './env';
 //      forwards and does not verify, and reversing either half breaks the
 //      other. (/fit is unchanged and still verifies at the site: it serves that
 //      form. One verification per form, not one per repo.)
-//   2. A grant carrying the `evals` scope, for evals/run.mjs, which cannot
-//      solve a challenge. A grant is already a credential, already limited and
-//      already revocable, and `resolveGrant` is already the single place a
-//      token is verified in this system.
+//   2. A grant carrying the `evals` scope, for either eval runner: evals/run.mjs
+//      on the owner's machine, and since issue #291 this Worker's own scheduled
+//      run, which arrives over `SELF` holding a token it minted itself. Neither
+//      can solve a challenge. A grant is already a credential, already limited
+//      and already revocable, and `resolveGrant` is already the single place a
+//      token is verified in this system -- which is the reason the scheduled
+//      run presents one at all rather than being waved through for being local.
 //
 // The version this replaces left the endpoint open and leaned on the per-IP
 // limiter. That is written down rather than forgotten because the reasoning
@@ -115,7 +119,17 @@ interface TranscriptRow {
   invalid: number;
   outcome: 'ok' | 'refused' | 'error';
   durationMs: number;
-  surface: 'site' | 'direct';
+  /**
+   * Which caller this turn came from (migrations/0004). `'evals'` joined
+   * `'site'` and `'direct'` in issue #291 and is the ONE of the three that is
+   * not a person: it is this Worker's own scheduled run, reaching `/chat` over
+   * `SELF`. src/lib/ops/metrics.ts excludes it in SQL, which is what keeps a
+   * weekly twelve unsessioned turns out of the figures /ops publishes.
+   *
+   * `'direct'` still covers the MANUAL harness, deliberately -- see the ruling
+   * recorded on `chatHighIntentEvent` below.
+   */
+  surface: 'site' | 'direct' | typeof EVALS_SURFACE;
 }
 
 async function writeTranscript(env: McpEnv, row: TranscriptRow): Promise<void> {
@@ -297,9 +311,24 @@ export async function handleChat(
   // Told apart because they are different audiences with different costs, not
   // because one is trusted more -- nothing here branches on it except the
   // transcript column.
-  const surface = request.headers.get('user-agent')?.startsWith('ryanlindsey-me-chat')
+  //
+  // THE THIRD VALUE IS THIS WORKER'S OWN SCHEDULED RUN (issue #291), and it is
+  // the only one of the three that is not a person at the other end. It arrives
+  // over `SELF` from workers/mcp/src/evals-client.ts, which sets
+  // `EVALS_USER_AGENT` on every request it makes, and src/lib/ops/metrics.ts
+  // excludes this value in SQL so twelve unsessioned turns a week do not become
+  // a permanent floor under a figure headed "Chat sessions".
+  //
+  // IT DOES NOT CATCH THE MANUAL HARNESS AND MUST NOT. `evals/run.mjs` sets no
+  // user agent of this repository's, so it stays `'direct'` and stays counted,
+  // which is the ruling `chatHighIntentEvent` records below: a run somebody
+  // chose to start is traffic this site really served.
+  const agent = request.headers.get('user-agent') ?? '';
+  const surface = agent.startsWith('ryanlindsey-me-chat')
     ? ('site' as const)
-    : ('direct' as const);
+    : agent.startsWith(EVALS_AGENT)
+      ? EVALS_SURFACE
+      : ('direct' as const);
 
   const refuse = (code: ChatErrorCode, outcome: 'refused' | 'error' = 'refused') => {
     // Hoisted (task-13a-findings-final.md item 9): computed once so the
@@ -370,10 +399,28 @@ export async function handleChat(
   // Vectorize query no more than it costs a Sonnet call.
   //
   // `null` grant is passed even when one exists, deliberately: an `evals` token
-  // is the eval harness, and keying its bucket by `jti` would give the harness
-  // an allowance separate from everyone else's on the one endpoint where the
-  // point of the limit is the total. The address is the right key here for both
-  // kinds of caller.
+  // is an eval runner, and keying its bucket by `jti` would give it an
+  // allowance separate from everyone else's on the one endpoint where the point
+  // of the limit is the total.
+  //
+  // THERE ARE NOW THREE KINDS OF CALLER AND ONLY TWO OF THEM HAVE AN ADDRESS.
+  // This comment used to end "the address is the right key here for both kinds
+  // of caller", which was true when the two were a browser and evals/run.mjs.
+  // Issue #291 added a third: the scheduled run reaches `/chat` over `SELF`, a
+  // service-binding dispatch that never traverses Cloudflare's edge, so no
+  // `CF-Connecting-IP` is added and `limitKeyFor` (src/lib/mcp/limits.ts) falls
+  // to its `'unknown'` default. That run keys `chat:unknown` -- a bucket of its
+  // own, which is the outcome the sentence above says passing `null` avoids.
+  // The full accounting is beside `LIMITS.conversation`, and the short version
+  // is that twelve calls a week fit in a bucket of thirty per five minutes with
+  // room to spare either way.
+  //
+  // DO NOT "FIX" THIS TO `grant`. It would not put the scheduled run back in
+  // the shared bucket; it would key it `chat:g:<jti>` on a `jti` that is minted
+  // fresh every run, so every run would start with a full, private allowance --
+  // strictly further from the property this line exists to protect than
+  // `chat:unknown` is, and it would give the same private allowance to the
+  // manual harness, which really does arrive from a real address.
   if (!(await checkLimit(env, 'conversation', request, 'chat', null))) {
     return refuse('rate-limited');
   }

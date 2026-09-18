@@ -5,6 +5,47 @@
 // Worker's scheduled runner in Task 4 -- read the same numbers rather than
 // each tuning its own, because a quota measured once should not need
 // re-discovering twice.
+//
+// IT ALSO HOLDS THE TWO STRINGS THE SCHEDULED RUN IDENTIFIES ITSELF BY, which
+// are constants of the same kind and belong here for the same reason: three
+// modules in two Workers have to agree on them, and none of the three is a
+// sensible home for the other two to import from. See `EVALS_USER_AGENT`.
+
+/**
+ * What every request the SCHEDULED runner makes says it is.
+ *
+ * WHY ANY OF THIS EXISTS. The scheduled run is deliberately indistinguishable
+ * from a stranger in every way that matters to authorization: the `tier` suite
+ * calls anonymously because that is what it asserts, and the `/chat` turns
+ * present a grant exactly as any other client would. That is the design and it
+ * stays. The consequence is that its traffic lands in the same tables /ops
+ * publishes as a visitor's, and a header is the only thing that can tell them
+ * apart afterwards.
+ *
+ * The precedent is src/pages/chat/send.ts's `ryanlindsey-me-chat/1` and
+ * src/lib/fit/client.ts's `ryanlindsey-me-fit/1`, both set so the transcript
+ * and /ops can tell one caller from another, and this follows their naming.
+ *
+ * THREE MODULES READ THESE. workers/mcp/src/evals-client.ts sets the header on
+ * every request; workers/mcp/src/chat.ts maps it to the `chat_turns.surface`
+ * value below; src/lib/ops/metrics.ts excludes both in SQL. A request that
+ * arrives without this header is published as visitor traffic, which is the
+ * failure the whole arrangement exists to prevent.
+ */
+export const EVALS_AGENT = 'ryanlindsey-me-evals';
+export const EVALS_USER_AGENT = `${EVALS_AGENT}/1`;
+
+/**
+ * The `chat_turns.surface` value a scheduled run's turn is stored under
+ * (migrations/0004). A THIRD VALUE OF AN EXISTING COLUMN rather than a new
+ * column: `surface` already exists to say which caller a turn came from, and
+ * `'site'` and `'direct'` were already two answers to that question.
+ *
+ * The version prefix is deliberately NOT in it. `EVALS_USER_AGENT` carries one
+ * because a user agent conventionally does; a stored discriminator a query
+ * matches on should not change the day the client's version does.
+ */
+export const EVALS_SURFACE = 'evals';
 
 /**
  * ONE client retry, and the number is small because it is not the first one.
@@ -12,7 +53,10 @@
  * WHAT IS BEING RETRIED, measured 2026-09-10: the AI Gateway answers `2018:
  * Invalid User Credentials` when a rate limit is hit -- an auth error's wording
  * on a rate-limit fault, recorded in 10 §5 -- and `handleChat` maps it to the
- * `unreachable` code, which is the one `TRANSIENT` matches. The gateway
+ * `unreachable` code, which is the one code the `TRANSIENT` set matches. That
+ * set is spelled twice, once in evals/run.mjs and once in
+ * workers/mcp/src/evals-client.ts, and both are named here because neither
+ * file's name is guessable from a constant in this one. The gateway
  * dashboard attributed 19 HTTP 429s to that afternoon's runs, so it is rate
  * limiting rather than a broken credential, whatever the message says.
  *
@@ -63,17 +107,29 @@ export const BACKOFF_MS = 10_000;
  * already takes. MEASURED, 2026-09-10: at 5s, three of eight leak probes died to
  * `2018: Invalid User Credentials`; at 25s, all eight got real answers.
  *
- * TWELVE GAPS, NOT THIRTEEN MINUTES. `runFit` and `runChat` each skip the first
- * case of their suite via a flag; `runLeak` skips the first probe of each case
- * file it loads via `index > 0`, which is the same thing only because
- * `evals/cases/leak/` holds exactly one file today. So the paced gap count is
- * `cases - 1` summed: 2 from 3 fit cases, 3 from 4 chat cases, 7 from 8 leak
- * probes -- twelve. Twelve gaps cost exactly one minute at the old 5s (matching
- * the "about a minute" evals/run.mjs used to gain) and five minutes at 25s, not the
- * thirteen minutes Day 1's 25-30s estimate implied. `--suite <name>` is the
- * iteration path when the full run's five minutes is too slow to run on every
- * change -- that is what keeps the full run a gate people still run rather than
- * one they route around.
+ * TWELVE GAPS, NOT THIRTEEN MINUTES. The count is `cases - 1` summed: 2 from 3
+ * fit cases, 3 from 4 chat cases, 7 from 8 leak probes -- twelve. Twelve gaps
+ * cost exactly one minute at the old 5s (matching the "about a minute"
+ * evals/run.mjs used to gain) and five minutes at 25s, not the thirteen minutes
+ * Day 1's 25-30s estimate implied.
+ *
+ * TWO RUNNERS IMPLEMENT THAT "MINUS ONE", and neither is THE mechanism. This
+ * paragraph described one of them as though it were, which was true until issue
+ * #291 and is now a sentence a reader cannot place. In evals/run.mjs, `runFit`
+ * and `runChat` each skip the first case of their suite with a flag, and
+ * `runLeak` skips the first probe of each case FILE it loads with an
+ * `index > 0` test. In the Worker, `runPaced`
+ * (workers/mcp/src/evals-workflow.ts) has a single `index > 0` test that serves
+ * all three, and `runSuite` restarts it per leak case file so the two runners
+ * agree. Per file and per suite are the same thing only because
+ * `evals/cases/leak/` holds exactly one file today, which is why both spell it
+ * the same way rather than either one simplifying.
+ *
+ * `--suite <name>`, which is evals/run.mjs's own flag, is the iteration path
+ * when the full run's five minutes is too slow to run on every change -- that
+ * is what keeps the full run a gate people still run rather than one they route
+ * around. The scheduled runner has no equivalent and needs none: which suites
+ * it runs is decided by which cron fired, through `suitesForCron` below.
  *
  * PACING IS THE REAL FIX and the retry above is the fallback, not the other way
  * round. Fewer requests is the only thing that helps a quota; see `RETRIES`.
@@ -92,6 +148,22 @@ export const PACE_MS = 25000;
  */
 export const SUITE_ORDER = ['tier', 'fit', 'chat', 'leak'] as const;
 export type SuiteName = (typeof SUITE_ORDER)[number];
+
+/**
+ * Type guard for `SuiteName`, the same shape and the same reason as `isScope`
+ * in src/lib/tier/token.ts: a caller holding an `unknown` value can narrow it
+ * against `SUITE_ORDER` without repeating the cast `Array.prototype.includes`
+ * otherwise forces on a `readonly SuiteName[]`.
+ *
+ * ITS CALLER IS A TRUST BOUNDARY, which is why a guard exists rather than a
+ * cast at the one call site. `EvalsWorkflow` (workers/mcp/src/evals-workflow.ts)
+ * is handed its suites as workflow params, and `wrangler workflows trigger`
+ * will pass whatever JSON it is given: the TypeScript type on the params says
+ * what a caller SHOULD send and enforces nothing at runtime.
+ */
+export function isSuiteName(value: unknown): value is SuiteName {
+  return (SUITE_ORDER as readonly unknown[]).includes(value);
+}
 
 /**
  * The corpus refresh's own cron (workers/mcp/wrangler.jsonc's `triggers`),
@@ -114,8 +186,29 @@ export const EVALS_DAILY_CRON = '52 5 * * *';
  * `RLME_EVAL_TOKEN`-equivalent access, run less often for the same reason
  * evals/README.md paces cases twenty-five seconds apart -- fewer requests is
  * what a shared quota actually wants.
+ *
+ * NINETY-FIVE MINUTES BEHIND `CORPUS_CRON`, AND THAT NUMBER IS SLACK RATHER
+ * THAN MEASUREMENT. Two of these three suites are graded against the Vectorize
+ * index the corpus job re-embeds and upserts the same morning, and a Vectorize
+ * `upsert` is asynchronous: it returns a mutation id and the index reflects the
+ * change some time afterwards. A `chat` case carrying a `min_sources`
+ * expectation that queries a still-applying index goes red with no regression
+ * behind it, on the one Monday of the year when the answer matters.
+ *
+ * src/lib/corpus.ts is incremental, so most Mondays the refresh is close to
+ * instant and any gap would do. The Monday after content lands is the one where
+ * it is not, and that is exactly the Monday this schedule exists for.
+ *
+ * WHAT IS NOT KNOWN, said plainly because the gap was 35 minutes until issue
+ * #291's review and 35 was no more measured than 95 is: nothing in this
+ * repository records how long a non-trivial refresh takes, or how long
+ * Vectorize takes to reflect one. WHAT WOULD SETTLE IT: time a refresh that
+ * embeds a real batch of new documents, then poll the index for the last
+ * upserted id until it answers, and record both numbers here with their date.
+ * Until somebody does that, the honest move is a wide gap rather than a precise
+ * one.
  */
-export const EVALS_WEEKLY_CRON = '7 6 * * 1';
+export const EVALS_WEEKLY_CRON = '7 7 * * 1';
 
 /**
  * The suites a cron expression asks for, in run order, or `[]` for one that

@@ -8,11 +8,44 @@
 // while a page that receives everything and filters on render leaks the first
 // time somebody adds a "recent activity" list.
 //
+// THE SCHEDULED EVAL RUN'S OWN TRAFFIC IS EXCLUDED HERE, AND IN SQL FOR THE
+// SAME REASON THE TIER FILTER IS (issue #291). The run calls this system the
+// way a client does, on purpose, so its calls are ordinary rows: the daily
+// `tier` suite asks every no-required-argument PUBLIC tool for its output --
+// about 150 rows a month, roughly 30 of them naming `request_private_access`,
+// which workers/mcp/src/tools.ts calls a high-intent event worth a
+// notification -- and the weekly run adds twelve `POST /chat` turns, each sent
+// with no `sessionId`, so `handleChat` mints a session per turn and the page
+// gains a floor of about 52 sessions and 52 turns per window that nobody
+// produced. Issue #291 was opened while auditing exactly these figures, so a
+// scheduled run that inflated them would corrupt the instrument that found the
+// problem.
+//
+// WHAT THIS DOES NOT CONTRADICT. workers/mcp/src/chat.ts records a ruling that
+// deliberately keeps the MANUAL harness visible here, and that ruling stands:
+// `npm run evals` runs because a person decided to run it, from a real machine
+// over the public internet, and its turns are traffic this site really served.
+// An unattended schedule is a different thing -- nobody asked for it, it runs
+// whether or not anyone is looking, and its volume is a property of a cron
+// expression rather than of interest in this site. The two filters below name
+// the scheduled runner's own marker (`EVALS_USER_AGENT`, `EVALS_SURFACE` in
+// src/lib/evals/plan.ts) and nothing broader, which is what keeps the manual
+// runner counted: it sets no user agent of ours and files as `'direct'`.
+//
+// TWO FILTERS AND NOT THREE, checked rather than assumed. `fit_reports` is
+// written by src/pages/fit/run.ts and by nothing else: `analyze_fit` returns a
+// report and stores none, so a run that reaches the tool over `/mcp` -- which
+// is what both eval runners do -- produces no row in that table at all. The
+// gated tool calls the weekly run makes are `tier = 'private'` besides, so the
+// allowlist above has already excluded them.
+//
 // Deliberately NOT imported here: `GATED_TOOL_NAMES`. Excluding gated tools by
 // NAME would be a denylist -- correct today, wrong the first time a tool is
 // added -- and it would put the list of gated tool names into the module that
 // renders a public page. `tier = 'public'` is an allowlist on the property that
 // actually matters, and `migrations/0001` guarantees the column is never NULL.
+
+import { EVALS_AGENT, EVALS_SURFACE } from '../evals/plan';
 
 export interface EvalRunRow {
   ranAt: string;
@@ -60,20 +93,38 @@ export async function readOpsMetrics(
   const since = new Date(now.getTime() - windowDays * 86_400_000).toISOString();
   const until = now.toISOString();
 
+  // `LIKE` rather than equality on the tool-call side, and the asymmetry is
+  // deliberate. `user_agent` holds what a client sent, verbatim and versioned,
+  // so a prefix is what survives `EVALS_USER_AGENT` becoming `/2`; `surface` is
+  // a value this Worker chose from a closed set when it wrote the row, so
+  // equality is exactly right there. Neither pattern contains a `%` or a `_`,
+  // so there is nothing to escape.
+  //
+  // `user_agent IS NULL OR` IS NOT DEFENSIVE PADDING. That column is
+  // nullable (migrations/0001) and a caller sending no user agent at all is
+  // ordinary, but `NULL NOT LIKE '...'` evaluates to NULL rather than to true
+  // in SQLite -- so without the first clause this filter would silently drop
+  // every anonymous call that named no client, which is a large share of the
+  // figure it is meant to leave alone. `surface` is NOT NULL (migrations/0004)
+  // and needs no such clause.
+  const agentPrefix = `${EVALS_AGENT}%`;
+
   const [tools, chat, fit, evals] = await db.batch([
     db
       .prepare(
         `SELECT tool, COUNT(*) AS calls FROM mcp_tool_calls
           WHERE tier = 'public' AND called_at >= ? AND called_at <= ?
+            AND (user_agent IS NULL OR user_agent NOT LIKE ?)
           GROUP BY tool ORDER BY calls DESC, tool ASC`,
       )
-      .bind(since, until),
+      .bind(since, until, agentPrefix),
     db
       .prepare(
         `SELECT COUNT(DISTINCT session_id) AS sessions, COUNT(*) AS turns
-           FROM chat_turns WHERE created_at >= ? AND created_at <= ?`,
+           FROM chat_turns WHERE created_at >= ? AND created_at <= ?
+             AND surface <> ?`,
       )
-      .bind(since, until),
+      .bind(since, until, EVALS_SURFACE),
     db
       .prepare(`SELECT COUNT(*) AS runs FROM fit_reports WHERE created_at >= ? AND created_at <= ?`)
       .bind(since, until),

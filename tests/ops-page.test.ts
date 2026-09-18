@@ -21,7 +21,7 @@ import { BANNED_PATTERNS } from './candidacy-patterns';
  * that renders every column of an empty table.
  *
  * THE ORDER ALSO PINS THE CACHE. /ops caches each of its three reads under its
- * OWN KV key for 60 seconds (`ops:metrics:v1`, `ops:traffic:v1`,
+ * OWN KV key for 60 seconds (`ops:metrics:v2`, `ops:traffic:v1`,
  * `ops:spend:v1`), so if the failed metrics read had been stored, the second
  * fetch would still be showing "could not be read" a minute later -- a
  * transient D1 blip pinned as a state. It is not stored because `cached`
@@ -39,18 +39,21 @@ const server = createTestHarness({ workers: SITE_HARNESS_WORKERS });
 let degraded: string;
 /** The render every other test reads. */
 let html: string;
+/** The page's own cache, so the version test below can plant a stale entry in it. */
+let kv: KVNamespace;
 
 beforeAll(async () => {
   await server.listen();
   // The type argument goes on `getWorker`, not on `getEnv` -- `getEnv()` takes
   // none (wrangler-dist/cli.d.ts). Same note as tests/ops-metrics.test.ts.
-  const site = server.getWorker<{ DB: D1Database }>();
+  const site = server.getWorker<{ DB: D1Database; KV_CACHE: KVNamespace }>();
 
   // FIRST, while `mcp_tool_calls` and friends still do not exist.
   degraded = await (await server.fetch('/ops')).text();
 
   await site.applyD1Migrations('DB');
   const db = (await site.getEnv()).DB;
+  kv = (await site.getEnv()).KV_CACHE;
   // A private-tier row, planted so the assertions below are testing a filter
   // that had something to filter. Without it they pass vacuously.
   await db
@@ -452,5 +455,42 @@ describe('/ops', () => {
     expect(note).toContain('/resume.md');
     expect(note).toContain('/.well-known/mcp.json');
     expect(note).not.toMatch(/every agent-signal route[^.]*is\./i);
+  });
+
+  test('an entry written under the previous cache version is not served', async () => {
+    // WHAT WOULD HAVE SHIPPED WITHOUT THE BUMP. `OpsMetrics` gained `status`
+    // (migrations/0005), and for up to `CACHE_TTL_SECONDS` after a deploy the
+    // page would have read an entry written by the previous build, whose eval
+    // rows carry no `status` at all. `run.status === 'ran'` is false for
+    // `undefined`, so EVERY suite would have rendered "did not run" -- the page
+    // reporting a broken pipeline because its own cache was a minute old.
+    //
+    // THE SAME LESSON THIS REPOSITORY HAS ALREADY LEARNED ONCE. `CLAUDE.md`
+    // records it about `SEARCH_CACHE_VERSION`: when what an entry holds
+    // changes, the key has to change too, or entries written before the change
+    // keep being served for a full TTL.
+    //
+    // The planted value is the OLD shape, and the tool-call figure is what the
+    // assertion reads: a number that exists nowhere in D1, so finding it on the
+    // page can only mean the old key was read.
+    await kv.put(
+      'ops:metrics:v1',
+      JSON.stringify({
+        windowDays: 30,
+        toolCalls: [{ tool: 'get_resume', calls: 4242 }],
+        chatSessions: 0,
+        chatTurns: 0,
+        fitRuns: 0,
+        evalRuns: [
+          { ranAt: '2026-09-01T00:00:00.000Z', suite: 'tier', total: 3, passed: 3, failed: 0 },
+        ],
+      }),
+      { expirationTtl: 60 },
+    );
+
+    const after = await (await server.fetch('/ops')).text();
+    expect(after, 'the page served an entry written under the old cache key').not.toContain(
+      '4,242',
+    );
   });
 });

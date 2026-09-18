@@ -102,6 +102,13 @@ export interface McpEnv {
    * address. That is a bucket of its own rather than a shared one, it has room
    * to spare, and the reasoning is written out beside `LIMITS.conversation`
    * where the shared-bucket claim used to stand unqualified.
+   *
+   * AND ONE THING IT NEVER EXERCISES, which is worth writing down rather than
+   * claiming parity with a real client: a dispatch over this binding never
+   * reaches Cloudflare's edge, so it tests neither the `routes` entry in
+   * workers/mcp/wrangler.jsonc nor DNS. If `mcp.ryanlindsey.me` stopped
+   * resolving to this Worker tomorrow, every scheduled suite would still be
+   * green.
    */
   SELF: Fetcher;
   /**
@@ -248,11 +255,11 @@ export interface McpEnv {
  * The same list as runtime data, for the drift test. `CORPUS_REFRESH`,
  * `MCP_SEARCH_EMBEDDER`, `RLME_TOKEN_KEY_SOURCE`, `FIT_ENGINE`,
  * `RLME_TURNSTILE_MODE`, `CHAT_ENGINE`, `JUDGE_ENGINE`, `SEARCH_ENGINE` and
- * `EVALS_RUNNER` are excluded deliberately: they are
- * test-only vars that no deployed environment and no config declares, so
- * `wrangler types` will never emit them. This list is the CONFIG's bindings,
- * and tests/mcp-env.test.ts fails in both directions if it drifts -- so adding
- * a seam here would break that test rather than document the seam.
+ * `EVALS_RUNNER` are excluded deliberately: they are test-only vars that no
+ * deployed environment and no config declares, so `wrangler types` will never
+ * emit them. This list is the CONFIG's bindings, and tests/mcp-env.test.ts
+ * fails in both directions if it drifts -- so adding a seam here would break
+ * that test rather than document the seam.
  *
  * `RLME_TURNSTILE_SECRET_KEY` IS here, because it is a real binding day 6 added
  * to workers/mcp/wrangler.jsonc rather than a seam.

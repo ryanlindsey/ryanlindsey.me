@@ -52,14 +52,19 @@
 
   "ai_search": [{ "binding": "AI_SEARCH", "instance_name": "ryanlindsey-me-search" }],
 
-  // 05:32 refreshes the Vectorize corpus. 05:52 daily and 06:07 on Mondays run
+  // 05:32 refreshes the Vectorize corpus. 05:52 daily and 07:07 on Mondays run
   // the eval suites (issue #291): `tier` daily, because it is the cheapest and
   // needs no grant, and `fit`/`chat`/`leak` weekly, because they spend
   // inference through a shared quota. The three expressions are also spelled
   // in src/lib/evals/plan.ts as CORPUS_CRON, EVALS_DAILY_CRON and
   // EVALS_WEEKLY_CRON, which is what `suitesForCron` maps; tests/evals-schedule.test.ts
   // fails if this list and those constants drift either way.
-  "triggers": { "crons": ["32 5 * * *", "52 5 * * *", "7 6 * * 1"] },
+  //
+  // THE MONDAY GAP IS 95 MINUTES AND IT IS SLACK, NOT A MEASUREMENT: `fit` and
+  // `chat` are graded against the index the 05:32 job upserts, Vectorize
+  // applies an upsert asynchronously, and nothing here has timed either. The
+  // constant's comment in src/lib/evals/plan.ts says what would settle it.
+  "triggers": { "crons": ["32 5 * * *", "52 5 * * *", "7 7 * * 1"] },
 
   // The scheduled eval run. A Workflow rather than work done in `scheduled()`
   // because a weekly run is fifteen inference calls paced twenty-five seconds

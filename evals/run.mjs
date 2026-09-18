@@ -449,10 +449,22 @@ function report(suite, results) {
     // it deliberately does not escape, because the Worker runner (Task 4)
     // binds parameters instead and needs none -- so escaping stays here.
     const notes = redactedNotes(results).replace(/'/g, "''");
-    // `status` is always 'ran' from here: a suite this function was called
-    // for produced results, and migrations/0005_eval_run_status.sql's
-    // 'incomplete' is for a suite that could not run at all, which never
-    // reaches `report()` -- see the SKIP handling below instead.
+    // `status` is always 'ran' from here, and THIS RUNNER NEVER WRITES ANY
+    // OTHER VALUE. An earlier version of this comment pointed at "the SKIP
+    // handling below" for the 'incomplete' case, which was wrong: that handling
+    // writes no row at all, calls no `incompleteRow`, and never has.
+    //
+    // THAT IS DELIBERATE AND IT IS WHERE THE TWO RUNNERS DIFFER ON PURPOSE. A
+    // scheduled run that could not run is news, because the only thing that
+    // stopped it is something broken -- a mint that failed, a suite that threw
+    // -- and nobody was watching, so the row is the only way anyone finds out.
+    // A skip here is the operator's own choice in the operator's own shell: it
+    // means `RLME_EVAL_TOKEN` was not exported, the SKIP line is already on
+    // their terminal, and the exit code is already 2. Writing that to
+    // `eval_runs` would replace a real older result on a PUBLIC page with "did
+    // not run", caused by an unset variable in one person's shell. A stale pass
+    // is a worse thing to publish than a genuine one, and an unset variable is
+    // not evidence that anything is wrong with the deployed system.
     const sql = `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, status, notes)
        VALUES ('${new Date().toISOString()}', '${suite}', NULL, ${results.length}, ${passed},
                ${results.length - passed}, 'ran', '${notes}')`;

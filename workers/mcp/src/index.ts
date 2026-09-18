@@ -329,7 +329,7 @@ export default {
 
   /**
    * This Worker's cron jobs (`triggers.crons` in wrangler.jsonc): the corpus
-   * refresh at 05:32, and the eval suites at 05:52 daily and 06:07 on Mondays.
+   * refresh at 05:32, and the eval suites at 05:52 daily and 07:07 on Mondays.
    *
    * IT BRANCHES ON `controller.cron` NOW, AND THAT IS A REAL CHANGE TO AN
    * EXISTING PATH. Until issue #291 this handler ran the corpus refresh for

@@ -25,9 +25,12 @@
 // `CHAT_ENGINE`, `FIT_ENGINE` and `JUDGE_ENGINE` are all `'off'` besides. The
 // `EVALS_RUNNER` seam keeps `scheduled()` from starting an instance at all
 // (tests/workers.ts), for that reason and because a run spends frontier-model
-// calls through AI Gateway. tests/evals-schedule.test.ts drives the one
-// instance this harness can complete: `suites: []`, which mints, iterates
-// nothing and revokes.
+// calls through AI Gateway. tests/evals-schedule.test.ts drives the two
+// instances this harness can complete: `suites: []`, which mints, iterates
+// nothing and revokes, and `suites: ['tier']`, which completes for the reason
+// `runSuite` gives below -- `tier` spends no inference at all, so it is the one
+// suite whose cases run here. It also drives two that deliberately do not
+// complete, to pin what a malformed payload does.
 
 import {
   WorkflowEntrypoint,
@@ -35,7 +38,7 @@ import {
   type WorkflowStep,
   type WorkflowStepConfig,
 } from 'cloudflare:workers';
-import { PACE_MS, type SuiteName } from '../../../src/lib/evals/plan';
+import { isSuiteName, PACE_MS, type SuiteName } from '../../../src/lib/evals/plan';
 import {
   incompleteRow,
   summarize,
@@ -161,7 +164,7 @@ export class EvalsWorkflow extends WorkflowEntrypoint<McpEnv, EvalsRunParams> {
    */
   async run(event: Readonly<WorkflowEvent<EvalsRunParams>>, step: WorkflowStep): Promise<void> {
     const env = this.env;
-    const { suites } = event.payload;
+    const suites = suitesOf(event.payload);
 
     const issuedAt = Math.floor(Date.now() / 1000);
     const claims: TokenClaims = {
@@ -173,6 +176,26 @@ export class EvalsWorkflow extends WorkflowEntrypoint<McpEnv, EvalsRunParams> {
       exp: issuedAt + TOKEN_TTL_SECONDS,
     };
 
+    // THE MINT SITS OUTSIDE THE `try/finally` THAT REVOKES, SO A `mintToken`
+    // THAT SUCCEEDS FOLLOWED BY A `recordIssue` THAT THROWS RETURNS WITHOUT
+    // REVOKING. That is written down rather than fixed, because the obvious fix
+    // is worse and the thing it would be fixing costs nothing.
+    //
+    // WHY IT COSTS NOTHING. `resolveGrant` (src/lib/tier/grant.ts) resolves a
+    // verified token against the registry and answers `refusal: 'unknown'` for
+    // a `jti` with no `access_tokens` row. A minted-but-unregistered token
+    // therefore grants exactly nothing: it opens no gated tool, and `POST
+    // /chat` refuses it like any other caller with no grant. Not revoking a
+    // credential that cannot authorize anything is not an exposure, and it
+    // expires inside `TOKEN_TTL_SECONDS` regardless.
+    //
+    // WHY MOVING `recordIssue` INSIDE THE OUTER `try` WOULD BE WORSE. The
+    // suites would then run holding a token whose registry row does not exist,
+    // which is the case above: `resolveGrant` would refuse every call, every
+    // gated tool would be unlisted, and every `/chat` turn would be turned
+    // away. One bookkeeping failure would become a fully red run against a
+    // system that is working, which is the most expensive kind of false alarm
+    // this schedule can produce.
     let token: string;
     try {
       token = await mintToken(await signingKey(env), claims);
@@ -232,6 +255,29 @@ export class EvalsWorkflow extends WorkflowEntrypoint<McpEnv, EvalsRunParams> {
         // high-intent events (06 §3), and an eval failure is not one: issue
         // #291 says so, and a notification channel that also carries
         // housekeeping stops being read.
+        //
+        // SO WHAT A RED RUN ACTUALLY DOES, END TO END, because the sentence
+        // above says what it does not do and the branch was missing the one
+        // that says what it does. It writes this line to Workers observability
+        // and one `eval_runs` row, /ops renders that row's count in a warn tone
+        // under "Latest run per suite", and `notes` is deliberately not
+        // rendered there. Nothing is pushed anywhere. An operator is expected
+        // to read /ops.
+        //
+        // WHAT CHANGED IS THAT THE RED IS NOW CURRENT RATHER THAN STALE, and
+        // that is the whole of the improvement. This is the same channel that
+        // let `leak` sit red from 2026-09-12 to 2026-09-18 unnoticed, which is
+        // the observation that opened issue #291 -- but what made those six
+        // days bad was not that nobody was paged. It was that the page was
+        // publishing a six-day-old failure as the current state of a gate,
+        // beside a `fit` row that had been repaired twenty-two hours after it
+        // was recorded and never re-run. A red row that is at most a week old,
+        // and a `tier` row at most a day old, is a figure worth reading.
+        //
+        // THIS IS THE WEAKEST PART OF THE ANSWER, said plainly. It still
+        // depends on somebody looking, and a schedule exists precisely because
+        // people stop looking. The honest claim is narrow: this branch makes
+        // the information true, and does not make anyone read it.
         if (suite === 'leak') {
           const failed = results.filter((result) => !result.ok).length;
           if (failed > 0) {
@@ -261,6 +307,78 @@ export class EvalsWorkflow extends WorkflowEntrypoint<McpEnv, EvalsRunParams> {
  */
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The suites a payload asks for, or a thrown error naming what arrived.
+ *
+ * `EvalsRunParams` IS A PROMISE THE CALLER MAKES AND NOTHING ENFORCES.
+ * `scheduled()` always passes `suitesForCron`'s output and is fine; the caller
+ * this exists for is a person. `wrangler workflows trigger rlme-evals` takes
+ * its params as an optional POSITIONAL JSON string, so omitting them is both
+ * easy and valid at the CLI, and it is exactly what somebody reaches for after
+ * a red Monday -- it hands `run()` an undefined `suites`. evals/README.md has
+ * the command with its params in place.
+ *
+ * WHAT THAT USED TO DO, MEASURED 2026-09-18 under the test harness. The
+ * undefined reached `suites.join` inside the mint's own `try`, the catch then
+ * re-threw on `for (const suite of suites)`, and the instance errored with
+ * `TypeError: suites is not iterable` -- having minted a credential, recorded
+ * no registry row for it, and said nothing an operator could act on. An
+ * unrecognized name was worse: it fell through `runSuite`'s switch, which
+ * returned `undefined`, and `summarize` threw on `results.filter` OUTSIDE the
+ * per-suite catch, taking down suites that had already produced results.
+ *
+ * IT THROWS RATHER THAN RECORDING A ROW, and that is the deliberate half. A
+ * thrown error leaves the instance `errored` with a message `wrangler workflows
+ * instances describe` prints, which is where the person who typed the command
+ * is already looking. An `eval_runs` row would be worse than useless: `suite`
+ * is TEXT and /ops renders the latest row per suite on a PUBLIC page, so a
+ * mistyped name would publish "chatt -- did not run" under a heading reading
+ * "Latest run per suite", permanently, with nothing that ever writes to that
+ * suite again to displace it.
+ *
+ * ONE UNRECOGNIZED NAME FAILS THE WHOLE PAYLOAD rather than being dropped from
+ * it. A run that quietly executes two of the three suites somebody asked for,
+ * and reports green, is the same shape of lie this branch's `tier` drift test
+ * exists to prevent.
+ *
+ * AN EMPTY ARRAY IS VALID and asks for nothing: it mints, iterates nothing and
+ * revokes. tests/evals-schedule.test.ts uses it as the one instance that harness
+ * can complete, and a run with no suite in it is a coherent thing to request.
+ */
+function suitesOf(payload: EvalsRunParams | undefined): SuiteName[] {
+  const requested: unknown = payload?.suites;
+  if (!Array.isArray(requested)) {
+    throw refuse(
+      `the scheduled run was given no suite list (payload.suites was ${typeof requested})`,
+    );
+  }
+  const unknown = requested.filter((name) => !isSuiteName(name));
+  if (unknown.length > 0) {
+    // Truncated because the payload is arbitrary JSON and this string reaches
+    // both the log and the instance's error, neither of which is a place for an
+    // unbounded value somebody pasted.
+    const named = unknown
+      .map((name) => String(name))
+      .join(', ')
+      .slice(0, 200);
+    throw refuse(`the scheduled run was asked for a suite that does not exist: ${named}`);
+  }
+  return requested as SuiteName[];
+}
+
+/**
+ * Logs a refusal and returns the error to throw.
+ *
+ * BOTH, rather than one: the throw is what an operator running `wrangler
+ * workflows instances describe` reads, and the log line is what puts this
+ * beside every other `evals:` message from the same Worker for somebody
+ * grepping observability after the fact. Neither channel reaches the other.
+ */
+function refuse(reason: string): Error {
+  console.error(`evals: ${reason}`);
+  return new Error(`evals: ${reason}`);
 }
 
 /**

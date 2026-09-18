@@ -120,6 +120,15 @@ async function latestRevokedAt(): Promise<string | null> {
  * green and worthless. A positive reading ends the wait immediately; a
  * negative one costs the whole timeout, which is why the negatives get a short
  * one and the control gets a generous one.
+ *
+ * THE 1000 ms ON THE NEGATIVES IS SET AGAINST A MEASURED NUMBER, which the
+ * budget itself does not say. The positive control -- a `suites: []` instance,
+ * which mints, iterates nothing and revokes -- took 38 ms on 2026-09-18. A
+ * second is therefore about twenty-five times the whole round trip this is
+ * waiting to NOT see, which is the margin that makes "nothing started" a real
+ * reading rather than a race won. It is not free: each negative assertion
+ * spends its full second, because a negative never ends early, and there are
+ * three of them in this file.
  */
 async function until<T>(
   read: () => Promise<T>,
@@ -298,6 +307,89 @@ test('every step.do in the workflow carries one of the two step configs', async 
   // If a second Workflow class is ever added to this Worker, widening this
   // read to every file that defines one is what keeps it honest; today
   // evals-workflow.ts is the only one.
+});
+
+/** What `instance.status()` answers with, narrowed to the two fields read here. */
+interface InstanceStatus {
+  status: string;
+  error?: { message?: string } | null;
+}
+
+/**
+ * The status of the instance `create` returned, once it stops moving.
+ *
+ * A workflow instance is asynchronous, so the status the moment after `create`
+ * is `queued` whatever it is about to do. `errored` and `complete` are the two
+ * terminal readings this file distinguishes.
+ *
+ * IT RETURNS THE ERROR AND NOT ONLY THE STATE, because the state alone cannot
+ * tell the two payload tests below apart from the defect they exist to pin: a
+ * malformed payload errored the instance BEFORE this change too, on a
+ * `TypeError` deep inside the mint's own catch ("suites is not iterable"), and
+ * on `summarize` reading `.filter` of undefined for an unknown suite name.
+ * Both were measured on 2026-09-18. The improvement is entirely in what the
+ * instance says happened, so that is what is asserted.
+ */
+async function settled(instance: {
+  status: () => Promise<InstanceStatus>;
+}): Promise<InstanceStatus> {
+  const deadline = Date.now() + 20_000;
+  let seen = await instance.status();
+  while (seen.status !== 'errored' && seen.status !== 'complete' && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    seen = await instance.status();
+  }
+  return seen;
+}
+
+test('a payload naming no suite list fails loudly and mints nothing', async () => {
+  // NOT REACHABLE WITHOUT ACCOUNT ACCESS, and reachable by exactly the person
+  // most likely to be there: `wrangler workflows trigger rlme-evals` with no
+  // `--params` is what an operator reaches for after a red Monday, and it
+  // hands `run()` an undefined `suites`.
+  //
+  // WHAT IT USED TO DO. `suites.join` threw inside the mint's own `try`, and
+  // the catch's `for (const suite of suites)` threw again on the same
+  // undefined -- so the instance errored on a `TypeError` about a property of
+  // undefined, having recorded nothing and said nothing an operator could act
+  // on. What it does now is refuse before the mint, naming what arrived.
+  const before = await tokenRows();
+  const instance = await env.EVALS_WORKFLOW.create({
+    params: {} as unknown as { suites: never[] },
+  });
+  const seen = await settled(instance);
+  expect(seen.status).toBe('errored');
+  expect(seen.error?.message, 'the instance errored without naming the payload').toContain(
+    'no suite list',
+  );
+  // NOTHING MINTED. The refusal is ahead of the mint deliberately: a run that
+  // cannot say what it is running has no reason to sign a credential first.
+  expect(await tokenRows()).toBe(before);
+});
+
+test('an unrecognised suite name is refused and writes no row under that name', async () => {
+  // THE SECOND HALF OF THE SAME PAYLOAD BUG. An unknown name fell through
+  // `runSuite`'s switch, which returned `undefined`, and `summarize` then threw
+  // on `results.filter` OUTSIDE the per-suite catch -- taking down the whole
+  // run, including suites that had already produced results.
+  //
+  // AND NO ROW UNDER THE UNKNOWN NAME, which is the part worth asserting
+  // rather than assuming. `eval_runs.suite` is TEXT and /ops renders the latest
+  // row per suite on a PUBLIC page, so recording an `incomplete` row for a
+  // mistyped name would publish "chatt — did not run" under a heading reading
+  // "Latest run per suite", permanently, with nothing that ever writes to that
+  // suite again to displace it.
+  const instance = await env.EVALS_WORKFLOW.create({
+    params: { suites: ['chatt'] } as unknown as { suites: never[] },
+  });
+  const seen = await settled(instance);
+  expect(seen.status).toBe('errored');
+  expect(seen.error?.message, 'the instance errored without naming the suite').toContain('chatt');
+
+  const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM eval_runs WHERE suite = ?')
+    .bind('chatt')
+    .first<{ n: number }>();
+  expect(row?.n).toBe(0);
 });
 
 test('the corpus cron starts no evals instance', async () => {

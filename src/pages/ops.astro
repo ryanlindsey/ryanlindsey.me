@@ -112,7 +112,21 @@ async function readOrNull<T>(key: string, read: () => Promise<T>): Promise<T | n
 const now = new Date();
 const [metrics, traffic, spend]: [OpsMetrics | null, AgentTraffic | null, GatewaySpend | null] =
   await Promise.all([
-    readOrNull('ops:metrics:v1', () => readOpsMetrics(env.DB, now, WINDOW_DAYS)),
+    // `v2` SINCE ISSUE #291, AND THE BUMP IS THE POINT RATHER THAN THE NUMBER.
+    // `OpsMetrics` gained `status` (migrations/0005), and an entry written by
+    // the previous build has no such field: `run.status === 'ran'` is false for
+    // `undefined`, so every suite in the table would have rendered "did not
+    // run" for the whole `CACHE_TTL_SECONDS` after the deploy. The page would
+    // have been reporting a broken eval pipeline, from its own cache.
+    //
+    // THE SAME LESSON, ALREADY LEARNED ONCE HERE. CLAUDE.md records it about
+    // `SEARCH_CACHE_VERSION`: `searchCacheKey` is built from the query alone,
+    // so nothing in an entry names the shape or the index it came from, and
+    // changing what an entry holds without changing the key keeps serving the
+    // old one for a full TTL. This key has the same property and the same
+    // remedy. tests/ops-page.test.ts plants an entry under `ops:metrics:v1` and
+    // fails if the page serves it.
+    readOrNull('ops:metrics:v2', () => readOpsMetrics(env.DB, now, WINDOW_DAYS)),
     readOrNull('ops:traffic:v1', () => readAnalytics(env, now, WINDOW_DAYS)),
     readOrNull('ops:spend:v1', () => readSpend(env, now, WINDOW_DAYS)),
   ]);
@@ -490,6 +504,21 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
           Live metrics
         </h2>
       </div>
+      {/*
+          THE PAGE SAYS WHAT IT LEAVES OUT, which is the other half of the
+          exclusion in src/lib/ops/metrics.ts. The suites run on a cron inside
+          the MCP Worker and call the public tools and the chat endpoint the way
+          any client does, so their rows are real rows; filtering them out
+          without saying so would make this page under-report as quietly as
+          leaving them in would make it over-report. The manual run is still
+          counted and this sentence is careful not to claim otherwise: it names
+          the SCHEDULED run, because that is what is excluded.
+        */}
+      <p class="text-small text-ink-muted">
+        These figures exclude this site's own scheduled eval runs, which reach the public tools and
+        the chat endpoint the way any other client does, because a cron's traffic counted as a
+        reader's is a number nobody can use.
+      </p>
     </div>
     {/*
         TEN CELLS OVER FIVE COLUMNS, and the count is arithmetic rather than

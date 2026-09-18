@@ -2,6 +2,7 @@ import { createTestHarness } from 'wrangler';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { SITE_HARNESS_WORKERS } from './workers';
 import { readOpsMetrics } from '../src/lib/ops/metrics';
+import { EVALS_SURFACE, EVALS_USER_AGENT } from '../src/lib/evals/plan';
 
 /**
  * The D1 half of /ops (06 §1), against a REAL D1 rather than a stub.
@@ -61,6 +62,44 @@ beforeAll(async () => {
        VALUES (?, 'get_resume', 'h', 'public', NULL, 'ok', 12)`,
       )
       .bind(old),
+    // THE SCHEDULED EVAL RUN'S OWN TRAFFIC, seeded here because it is
+    // indistinguishable from a visitor's in every column but this one. The
+    // daily `tier` suite calls every no-required-argument public tool
+    // anonymously, which is the suite's whole point, so each call lands in
+    // `mcp_tool_calls` with `tier = 'public'` -- roughly 150 rows a month, and
+    // about 30 of them naming `request_private_access`, which is the tool on
+    // that page a reader treats as most meaningful. `user_agent` is the only
+    // thing that tells them apart.
+    db
+      .prepare(
+        `INSERT INTO mcp_tool_calls (called_at, tool, args_hash, tier, audience, user_agent, outcome, duration_ms)
+       VALUES (?, 'request_private_access', 'h', 'public', NULL, ?, 'ok', 8)`,
+      )
+      .bind(now, EVALS_USER_AGENT),
+    // And the weekly half: twelve `POST /chat` turns per run, each sent with no
+    // `sessionId`, so `handleChat` mints a fresh session for every one of them
+    // and `chat_turns` gains twelve sessions and twelve turns that no human
+    // produced. Two here is enough to fail a query that counts them.
+    ...['e1', 'e2'].map((id) =>
+      db
+        .prepare(
+          `INSERT INTO chat_turns (id, session_id, created_at, question, answer, model,
+                                   sources_json, cited, invalid_citations, outcome, duration_ms, surface)
+           VALUES (?, ?, ?, 'an-eval-probe', 'an-answer', 'm', '[]', 0, 0, 'ok', 10, ?)`,
+        )
+        .bind(id, `eval-session-${id}`, '2026-09-09T09:30:00.000Z', EVALS_SURFACE),
+    ),
+    // THE MANUAL HARNESS, WHICH IS STILL COUNTED. `evals/run.mjs` posts to
+    // `/chat` from the operator's own shell and sets no `user-agent` of this
+    // repository's, so `handleChat` files it under `'direct'` exactly as it
+    // always has. workers/mcp/src/chat.ts records the ruling that keeps it
+    // visible on /ops, and the exclusion below must not quietly widen to cover
+    // it: a person chose to run that one.
+    db.prepare(
+      `INSERT INTO chat_turns (id, session_id, created_at, question, answer, model,
+                                 sources_json, cited, invalid_citations, outcome, duration_ms, surface)
+         VALUES ('d1', 'manual-session', '2026-09-09T09:40:00.000Z', 'q', 'a', 'm', '[]', 0, 0, 'ok', 10, 'direct')`,
+    ),
     // Two turns in one session and one in another, so `chatSessions` and
     // `chatTurns` differ and a query counting rows for both would fail.
     ...['a', 'b', 'c'].map((id, index) =>
@@ -160,12 +199,46 @@ describe('readOpsMetrics', () => {
 
   test('chat sessions are distinct sessions, and turns are turns', async () => {
     const metrics = await readOpsMetrics(db, new Date('2026-09-09T12:00:00.000Z'), 30);
-    expect(metrics.chatSessions).toBe(2);
-    expect(metrics.chatTurns).toBe(3);
+    // Three sessions and four turns: two `'site'` sessions carrying three turns
+    // between them, plus the manual harness's one `'direct'` turn. The two
+    // `'evals'` turns are the scheduled run's and are excluded in SQL.
+    expect(metrics.chatSessions).toBe(3);
+    expect(metrics.chatTurns).toBe(4);
     // What a visitor typed is in the table and must not be in the result.
     const rendered = JSON.stringify(metrics);
     expect(rendered).not.toContain('what-a-visitor-typed');
     expect(rendered).not.toContain('an-answer');
+  });
+
+  test('the scheduled eval run publishes none of its own traffic as a visitor figure', async () => {
+    // WHY THIS IS IN SQL AND NOT IN THE TEMPLATE, which is the same argument
+    // src/lib/ops/metrics.ts's own header makes about the public-tier filter: a
+    // page that receives only the right rows cannot get this wrong by
+    // forgetting a condition, and /ops grows sections.
+    //
+    // WHAT IT IS EXCLUDING. The daily `tier` suite calls every
+    // no-required-argument public tool anonymously, so its calls are
+    // `tier = 'public'` rows and are exactly the ones this page publishes --
+    // about 150 a month, roughly 30 of them `request_private_access`. The
+    // weekly run adds twelve unsessioned `/chat` turns, each minting its own
+    // session, which is a permanent floor of about 52 sessions and 52 turns per
+    // window that nobody produced. Issue #291 was opened while auditing these
+    // figures, so a scheduled run that corrupted them would break the
+    // instrument that found the problem.
+    const metrics = await readOpsMetrics(db, new Date('2026-09-09T12:00:00.000Z'), 30);
+    expect(metrics.toolCalls.map((row) => row.tool)).not.toContain('request_private_access');
+    expect(JSON.stringify(metrics)).not.toContain('eval-session');
+  });
+
+  test('the MANUAL harness is still counted, deliberately', async () => {
+    // The other half of the ruling, and the one a wider exclusion would lose.
+    // workers/mcp/src/chat.ts keeps `npm run evals` visible on /ops on the
+    // grounds that a person chose to run it; the schedule is the thing that is
+    // unattended. The manual runner sets no `user-agent` of this repository's,
+    // so its turns are `'direct'`, and a `surface <> 'site'` exclusion would
+    // silently take them out along with the scheduled run's.
+    const metrics = await readOpsMetrics(db, new Date('2026-09-09T12:00:00.000Z'), 30);
+    expect(metrics.chatTurns).toBeGreaterThanOrEqual(4);
   });
 
   test('eval runs are the LATEST run per suite, not every run', async () => {

@@ -13,8 +13,18 @@
 // workers/mcp/wrangler.jsonc for the measurement that chose it over a global
 // fetch to this Worker's own custom domain, and workers/mcp/src/index.ts for
 // the 522 that an unmeasured same-hostname fetch cost in issue #28.
+//
+// EVERY REQUEST IT MAKES NAMES ITSELF, and that is not cosmetic. These calls
+// are deliberately indistinguishable from a stranger's to everything that
+// decides what they may do -- `tier` is anonymous because that is what it
+// asserts, and the rest present a grant like any other client -- so the
+// `user-agent` is the only thing left that can tell them apart afterwards.
+// `recordToolCall` stores it, `handleChat` maps it to a `chat_turns.surface`,
+// and src/lib/ops/metrics.ts excludes both in SQL so a public page does not
+// publish this Worker's own housekeeping as visitor traffic. The constant and
+// the full reasoning are in src/lib/evals/plan.ts.
 
-import { BACKOFF_MS, RETRIES } from '../../../src/lib/evals/plan';
+import { BACKOFF_MS, EVALS_USER_AGENT, RETRIES } from '../../../src/lib/evals/plan';
 import { MCP_ORIGIN } from './origin';
 
 /**
@@ -80,6 +90,7 @@ export async function rpc(
     headers: {
       'content-type': 'application/json',
       accept: 'application/json, text/event-stream',
+      'user-agent': EVALS_USER_AGENT,
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify({ jsonrpc: '2.0', id: rpcId++, method, params }),
@@ -153,6 +164,7 @@ export async function askOnce(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
+      'user-agent': EVALS_USER_AGENT,
       authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ question }),

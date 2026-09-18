@@ -97,9 +97,22 @@ export function summarize(suite: string, results: CaseResult[], ranAt: string): 
 }
 
 /**
- * The row for a suite that could not run at all (no token, in evals/run.mjs's
- * case). Zeroed counts rather than omission: a suite that could not run must
- * be visible in whatever reads `eval_runs`, not merely absent from it.
+ * The row for a suite that could not run at all. Zeroed counts rather than
+ * omission: a suite that could not run must be visible in whatever reads
+ * `eval_runs`, not merely absent from it.
+ *
+ * ONLY THE SCHEDULED RUNNER CALLS THIS. An earlier version of this comment
+ * offered "no token, in evals/run.mjs's case" as the example, and that case
+ * does not exist: evals/run.mjs skips a suite with no token, writes no row for
+ * it, and never calls this function. The two callers of `eval_runs` differ here
+ * deliberately, and each one's reason is the other's refusal.
+ *
+ * A scheduled run that could not run is news: something is broken, nobody was
+ * watching, and this row is how anyone finds out. A manual skip is the
+ * operator's own choice in their own shell, already on their own terminal and
+ * already in the exit code, and recording it would replace a real older result
+ * on a public page with "did not run" because a variable was not exported. See
+ * `report()` in evals/run.mjs, which says the same thing from the other side.
  */
 export function incompleteRow(suite: string, reason: string, ranAt: string): EvalRunRecord {
   return { ranAt, suite, total: 0, passed: 0, failed: 0, notes: reason, status: 'incomplete' };

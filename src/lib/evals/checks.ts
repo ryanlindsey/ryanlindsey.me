@@ -20,6 +20,13 @@ import type { ChatCase, FitCase, LeakCase, TierCase } from './cases';
  * string the caller collected -- the handshake's instructions, the tool and
  * resource listings, and the output of every no-argument tool -- searched as
  * one set rather than reported per-surface, matching `runTier`.
+ *
+ * ONE BANNED PATTERN MATCHING THREE SURFACES IS THREE PROBLEMS, not one. The
+ * inner loop has no `break`, exactly as `runTier` in evals/run.mjs has none, so
+ * the returned list carries one entry per (pattern, surface) hit and the
+ * repeated `public surface matched /.../` lines in a failure are the count of
+ * places it leaked rather than a duplicate. The entries do not name WHICH
+ * surface, so the repetition is the only signal of spread there is.
  */
 export function tierProblems(
   testCase: TierCase,
