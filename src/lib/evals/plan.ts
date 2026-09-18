@@ -37,7 +37,7 @@
  * rather than inside it.
  *
  * The real remedy is `PACE_MS` below. Fewer requests is the only thing that
- * helps a quota; see `RETRIES`.
+ * helps a quota, and unlike the above that is true whatever the counting is.
  */
 export const RETRIES = 1;
 export const BACKOFF_MS = 10_000;
@@ -69,7 +69,7 @@ export const BACKOFF_MS = 10_000;
  * `evals/cases/leak/` holds exactly one file today. So the paced gap count is
  * `cases - 1` summed: 2 from 3 fit cases, 3 from 4 chat cases, 7 from 8 leak
  * probes -- twelve. Twelve gaps cost exactly one minute at the old 5s (matching
- * the "about a minute" this file used to gain) and five minutes at 25s, not the
+ * the "about a minute" evals/run.mjs used to gain) and five minutes at 25s, not the
  * thirteen minutes Day 1's 25-30s estimate implied. `--suite <name>` is the
  * iteration path when the full run's five minutes is too slow to run on every
  * change -- that is what keeps the full run a gate people still run rather than

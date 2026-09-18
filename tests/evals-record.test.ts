@@ -104,6 +104,24 @@ test('summarize: a passing local case still counts toward total and passed', () 
   expect(row.notes).toBe('');
 });
 
+test('summarize: a failing local case is redacted from notes but still counted in failed, alongside a failing non-local case that is not', () => {
+  // The redaction contract's two halves must hold AT ONCE: a local failure's
+  // real id and notes never reach the recorded row, but the row's counts are
+  // exactly as if it had. Neither half is provable from a case that only
+  // exercises the other -- a local PASS proves counting without touching
+  // redaction, and a non-local FAIL proves redaction without touching a local
+  // case's counts.
+  const results: CaseResult[] = [
+    fail('leak/probes[3]', 'the answer matches /hire/i', true),
+    fail('chat/absent', 'the judge did not run', false),
+  ];
+  const row = summarize('leak', results, '2026-09-18T00:00:00.000Z');
+  expect(row.total).toBe(2);
+  expect(row.passed).toBe(0);
+  expect(row.failed).toBe(2);
+  expect(row.notes).toBe('<local case, redacted> | chat/absent: the judge did not run');
+});
+
 // --- incompleteRow ------------------------------------------------------
 
 test('incompleteRow: zeroed counts, the reason in notes, and status "incomplete"', () => {
