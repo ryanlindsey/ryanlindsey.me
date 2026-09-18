@@ -947,6 +947,10 @@ test('the granted instructions and tools/list agree, scope by scope', async () =
   // an endpoint rather than a registration, and the test immediately below this
   // one ('a grant that opens no tool is told so without a dangling colon')
   // shows the server already treats a toolless grant as a supported state.
+  // Epic 263's `authoring` went further and gates nothing here at all, which
+  // is what makes the union form load-bearing rather than merely tidier: the
+  // per-scope form would now fail on a scope that is behaving exactly as
+  // designed.
   //
   // The union is also the stronger check: it proves the loop actually exercised
   // EVERY gated tool, which the per-scope form never did. A tool no scope opens
@@ -1005,18 +1009,27 @@ test('a grant that opens no tool is told so without a dangling colon', async () 
   // (the token WAS accepted, which is worth confirming); the promise of a list
   // does not.
   //
-  // Reached through a SCOPELESS grant, which is a real state rather than a
-  // contrived one and is the only one left. Until Task 11 this test used a
-  // `fit`-only token, because the `fit` scope opened no tool yet; every scope
-  // opens one now, so that door is shut. A grant carries the scopes of its
-  // REGISTRY ROW rather than of its claim (src/lib/tier/grant.ts), so
+  // Reached two ways, and both are asserted because they arrive from opposite
+  // directions.
+  //
+  // A SCOPELESS grant is the operator's route: a grant carries the scopes of
+  // its REGISTRY ROW rather than of its claim (src/lib/tier/grant.ts), so
   // narrowing a live token to nothing is one operator edit away -- a soft
   // revoke that leaves the token valid and gives it nothing to do.
-  const instructions = await instructionsFor(await tokenFor([]));
-  expect(instructions).toContain(`scoped token for the audience "${AUDIENCE}"`);
-  expect(instructions).not.toContain('It also has:');
-  expect(instructions.trimEnd()).toBe(instructions);
-  expect(instructions.endsWith(':')).toBe(false);
+  //
+  // An `authoring`-only grant is the design's route. Until Task 11 this test
+  // used a `fit`-only token, because the `fit` scope opened no tool yet; this
+  // comment then read "every scope opens one now, so that door is shut", which
+  // epic 263 reopened by adding a scope whose tool lands a separate issue
+  // later. A scope that opens no tool is a supported state here, not a broken
+  // intermediate, and this is where that claim is paid for.
+  for (const scopes of [[], ['authoring'] as Scope[]]) {
+    const instructions = await instructionsFor(await tokenFor(scopes));
+    expect(instructions).toContain(`scoped token for the audience "${AUDIENCE}"`);
+    expect(instructions).not.toContain('It also has:');
+    expect(instructions.trimEnd()).toBe(instructions);
+    expect(instructions.endsWith(':')).toBe(false);
+  }
 });
 
 test('no gated tool NAME or DESCRIPTION carries search language', async () => {
@@ -1095,8 +1108,12 @@ test('no tool a grant can see ever refuses that same grant for scope', async () 
     }
   }
   // Not vacuous, and it pins the pairing as well: each gated tool is reachable
-  // by exactly one single-scope grant, so these four listings between them
-  // account for all six and no tool is registered under two scopes.
+  // by exactly one single-scope grant, so these listings between them account
+  // for every gated tool and no tool is registered under two scopes. Asserted
+  // against `GATED` rather than against a count, which is why this survived
+  // both the scope and the tool arriving since it was written -- an earlier
+  // version of this comment said "these four listings" and "all six", and both
+  // numbers were stale long before anyone noticed.
   expect(seen.sort()).toEqual([...GATED].sort());
 });
 

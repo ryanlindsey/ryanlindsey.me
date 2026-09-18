@@ -29,12 +29,17 @@ A closed set, and a token carries only what its reader needs.
 | `documents` | `get_case_study_details`                                              |
 | `narrative` | `get_application_narrative`                                           |
 | `evals`     | `judge_answer`, and admission to `POST /chat` without a bot challenge |
+| `authoring` | nothing yet: the owner's drafting client, whose tool has not landed   |
 
 A link for a reader who will use the browser form needs `fit` alone. A token for an agent usually wants `fit,profile,documents,narrative`.
 
-`evals` never travels on a reader's token. It belongs to the eval harness, whose own token is not this document's business: it carries `evals,fit`, it lasts a day rather than thirty because it is a frontier-model credential, and `evals/README.md` gives the command with the reasoning attached. Mint it from there.
+Two of these never travel on a reader's token, and they are the two withheld from public metadata, so a reader has no way to learn they exist and no reason to be handed one.
 
-Pass `--scopes` on every mint. Omitting it defaults to the whole set, `evals` included, which hands an ordinary reader the harness's own scope.
+`evals` belongs to the eval harness, whose own token is not this document's business: it carries `evals,fit`, it lasts a day rather than thirty because it is a frontier-model credential, and `evals/README.md` gives the command with the reasoning attached. Mint it from there.
+
+`authoring` belongs to the owner's drafting client, which reaches `mcp.ryanlindsey.me` and nothing else of ours and so will read the brief that governs a narrative document over HTTP. It opens nothing today: the scope landed one issue ahead of the tool it is for, so a token minted with it unlocks no more than a token minted without it. That is the expected state rather than a broken mint. It is deliberately not `evals` reused: an eval-harness token that also unlocked authoring material would be exactly the merge the scope list exists to prevent.
+
+Pass `--scopes` on every mint. Omitting it defaults to the whole set, `evals` and `authoring` included, which hands an ordinary reader the harness's own scope and the owner's.
 
 ## Mint
 
