@@ -287,7 +287,7 @@ async function askOnce(question, token) {
     // this runner and as no error at all in the Worker's -- the one place in
     // the port where the same frame produced two different results, which is
     // exactly the property one home for the judging logic exists to protect.
-    // `null` is the better of the two behaviours: an error frame without a
+    // `null` is the better of the two behaviors: an error frame without a
     // code says nothing a reader can act on, and reporting `refused with
     // "undefined"` sends somebody after a code that was never sent.
     else if (name === 'error') error = data.code ?? null;

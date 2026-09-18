@@ -124,6 +124,18 @@ evals: incomplete run -- fit did not execute (exit 2)
 and exits `2` — `tier` genuinely passed, but the run as a whole did not cover
 the fit suite, and the exit code says so rather than reading as a clean `0`.
 
+## The scheduled run
+
+The MCP Worker also runs these suites on a Cloudflare schedule (issue #291), inside a Workflow rather than by a person at a keyboard. `tier` runs daily, at 05:52 UTC. `fit`, `chat` and `leak` run weekly, Mondays at 06:07 UTC. The split exists because the two halves cost differently: `tier` needs no token and spends no inference, so a daily run costs nothing beyond one D1 write, while `fit`, `chat` and `leak` are fifteen paced, inference-backed calls through AI Gateway, and running that set every day would spend real money against a corpus and a set of models that do not move on a daily rhythm.
+
+This schedule exists to catch drift, not regression. A prompt in `prompts/` only changes by pull request, but the Vectorize corpus it is graded against refreshes on its own cron, and a provider can change how a model answers a question this repository never touched. Neither of those has a commit behind it, so nothing in this repository's history would otherwise show the day an answer started reading differently. The scheduled run is what notices, between the pull requests that would otherwise be the only occasion to look.
+
+It does not replace the pre-merge run. `npm run evals` before merge is what gates a change to a prompt, and a green schedule from three days ago says nothing about the prompt in the diff open right now. Running the schedule is not a substitute for running the suite yourself before merging, and it must never become the reason that step gets skipped.
+
+The run mints its own token rather than reading one from anywhere. `EvalsWorkflow` (`workers/mcp/src/evals-workflow.ts`) signs a short-lived credential, scoped to `evals` and `fit`, from the same `RLME_TOKEN_SIGNING_KEY` Secrets Store secret this Worker already reads to verify every other token it sees, and revokes it once the run ends, whatever the suites' results. That is not a new credential: nothing is stored, nothing is injected from outside the Worker, and nothing new reaches this repository or CI. The run then presents that token to `/mcp` and `/chat` over `SELF`, a service binding the MCP Worker holds to itself, so it crosses the same authorization check any other client crosses rather than skipping it.
+
+`eval_runs` carries a `status` column now, `ran` or `incomplete`. A row that could not run at all, because the mint failed or a suite threw before finishing, records `incomplete` rather than going unwritten, and `/ops` reads it that way: its Pass column reads "did not run" and its Fail column reads "not recorded," in place of numbers that would otherwise read as a real pass rate. `EVALS_RUNNER` is the override variable that turns the scheduled run off; it joins the list named in `CLAUDE.md`'s Tests section, off only in the test harness and never in a deployed config.
+
 ## The golden cases
 
 `cases/fit/*.json` are invented, generic descriptions. They name no company and

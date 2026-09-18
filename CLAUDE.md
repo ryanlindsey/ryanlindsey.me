@@ -43,11 +43,13 @@ CI's `checks` workflow is the gate that matters on a pull request. A red Cloudfl
 
 `ryanlindsey-me` (root `wrangler.jsonc`) serves the site: static assets, the on-demand routes, the queue consumer, and one daily cron at 05:47 UTC for the retention sweep. A second cron at 05:17 UTC refreshed the résumé PDF until issue 06 (#186) moved that render into GitHub Actions.
 
-`ryanlindsey-me-mcp` (`workers/mcp/wrangler.jsonc`) serves the MCP protocol, the chat endpoint, the fit engine, the LLM judge, the rate limiter Durable Object, and a 05:32 UTC cron that refreshes the Vectorize corpus.
+`ryanlindsey-me-mcp` (`workers/mcp/wrangler.jsonc`) serves the MCP protocol, the chat endpoint, the fit engine, the LLM judge, the rate limiter Durable Object, and three crons: 05:32 UTC refreshes the Vectorize corpus, 05:52 UTC runs the `tier` eval suite daily, and 06:07 UTC on Mondays runs `fit`, `chat` and `leak`, the three suites that spend inference (issue #291). `scheduled()` branches on which cron fired, so the corpus refresh now runs only for its own expression, a change from running for every trigger when this Worker had only one.
 
 The `ai`, `vectorize` and `ai_search` bindings live on the MCP Worker because an `ai` binding in the site's config makes `astro build` open a remote proxy session that credential-free CI cannot authenticate. That is the reason the split exists. Do not move any of them back. `ai_search` was added by issue 01 (#144), which measured that wrangler classifies it exactly as it classifies `ai`: no local emulator, remote no matter what `remote` says, and a failure at boot rather than at the call.
 
 The two Workers name each other: the site's `MCP` service binding forwards `/mcp`, `/fit` and `/chat` work, and the MCP Worker's `SITE` binding reads published documents back. The cycle is deliberate and legal, because a service binding resolves when it is called rather than when the Worker is defined. Its practical consequence is that any test harness booting one Worker must list the other, or workerd refuses to start.
+
+The MCP Worker also binds itself: `SELF`, a service binding pointing at `ryanlindsey-me-mcp`, so the scheduled eval run reaches `/mcp` and `/chat` the way any other client does, through this Worker's whole `fetch` handler and the one `resolveGrant` check rather than skipping either. This is a deliberate re-entrant dispatch, not an accident of naming, and it rests on a measurement taken 2026-09-18: a request over the binding carrying a deliberately bad bearer answered `200` with the public tool list, meaning the bad token was refused and the caller was served the public tier, which is exactly `resolveGrant`'s designed behavior toward a caller it does not trust.
 
 ### Static first
 
@@ -116,13 +118,15 @@ Three things follow, and the third is the one that bites.
 
 Vitest plus `createTestHarness` from wrangler, booting real Workers inside workerd. `tests/workers.ts` holds the shared worker lists and the reasoning behind each override; read it before adding a suite. The site Worker boots from the adapter's build output rather than from the source config, so the tests exercise the artifact that ships.
 
-No test in this repo may reach Workers AI, Vectorize, Browser Rendering, `api.cloudflare.com` or a real secret. The mechanism is a set of override variables that no deployed config sets, where an unrecognized value throws and the only accepted value is the one `tests/workers.ts` passes: `RLME_TURNSTILE_MODE`, `RLME_NOTIFY_MODE`, `RLME_ANALYTICS_MODE`, `CORPUS_REFRESH`, `MCP_SEARCH_EMBEDDER`, `RLME_TOKEN_KEY_SOURCE`, `FIT_ENGINE`, `CHAT_ENGINE`, `JUDGE_ENGINE` and `SEARCH_ENGINE`. Bindings with no local emulator resolve to the test-only Workers in `workers/mock-ai` and `workers/mock-ae`. `RESUME_PDF_RENDERER` and `workers/mock-browser` were a variable of the same shape and a third mock until issue 06 (#186) deleted the renderer they stood in front of; the `BROWSER` binding is still declared, and nothing calls it.
+No test in this repo may reach Workers AI, Vectorize, Browser Rendering, `api.cloudflare.com` or a real secret. The mechanism is a set of override variables that no deployed config sets, where an unrecognized value throws and the only accepted value is the one `tests/workers.ts` passes: `RLME_TURNSTILE_MODE`, `RLME_NOTIFY_MODE`, `RLME_ANALYTICS_MODE`, `CORPUS_REFRESH`, `MCP_SEARCH_EMBEDDER`, `RLME_TOKEN_KEY_SOURCE`, `FIT_ENGINE`, `CHAT_ENGINE`, `JUDGE_ENGINE`, `SEARCH_ENGINE` and `EVALS_RUNNER`. Bindings with no local emulator resolve to the test-only Workers in `workers/mock-ai` and `workers/mock-ae`. `RESUME_PDF_RENDERER` and `workers/mock-browser` were a variable of the same shape and a third mock until issue 06 (#186) deleted the renderer they stood in front of; the `BROWSER` binding is still declared, and nothing calls it.
 
 Adding a feature that spends money or calls a remote service means adding a variable of the same shape, off by default in the harness and never declared in a deployed config.
 
 ## Evals
 
 `npm run evals` scores the prompts in `prompts/` against golden cases in `evals/cases/`. It runs locally against a deployed endpoint, before merge, because CI holds no inference credential. Read `evals/README.md` before running it: minting and running must happen in one shell invocation, cases are paced twenty-five seconds apart to stay under AI Gateway's unpublished wholesale rate limit, and exit code 2 means a suite could not run rather than that everything passed.
+
+The same suites also run on a Cloudflare schedule inside the MCP Worker, in `EvalsWorkflow` (`workers/mcp/src/evals-workflow.ts`): `tier` daily and `fit`, `chat` and `leak` weekly, each run minting its own short-lived token scoped to `evals` and `fit` from the Secrets Store signing key rather than holding a credential anywhere. `eval_runs` now carries a `status` column, `ran` or `incomplete`, and `/ops` renders a non-`'ran'` row as "did not run" instead of publishing an older pass. See `evals/README.md`'s section on the schedule for what the schedule does not replace.
 
 Prompts are code. They change by pull request and this suite is what gates them.
 
