@@ -22,12 +22,79 @@ const GRANT_URL = 'https://mcp.ryanlindsey.me/grant';
 
 let nextId = 1;
 
+/**
+ * The JSON-RPC message answering `id`, out of an SSE body, or `null`.
+ *
+ * A REAL FRAME WALK rather than a line search, and the measurement below is
+ * why. What stood
+ * here read the body's FIRST BYTES to decide it was SSE and then took the
+ * FIRST `data:` line in the whole stream, which is correct for exactly one
+ * shape: a single frame, arriving alone. Two things break it, and production
+ * hit both.
+ *
+ * KEEP-ALIVES. @modelcontextprotocol/sdk arms
+ * `armSseKeepAlive(options.keepAliveMs ?? DEFAULT_SSE_KEEP_ALIVE_MS)` on the
+ * POST response stream (server/webStandardStreamableHttp.js), the default is
+ * 15,000 ms, and each tick writes `': keepalive\n\n'` -- an SSE COMMENT, which
+ * is the one frame type carrying no `data:` at all. A call answering in under
+ * fifteen seconds opens `event: message`; a call taking longer opens
+ * `: keepalive`, failed the old `startsWith` check, and had the entire stream
+ * handed to `JSON.parse`.
+ *
+ * NOTIFICATIONS. A frame before the response is still `event: message` with a
+ * `data:` line, so a reader taking the first one gets a message with no
+ * `result` -- which `callAnalyzeFit` answers as `unreachable` and does not log.
+ * Matching on `id` is what makes that frame skippable rather than fatal.
+ *
+ * MEASURED, and this is the cost of the two together: `analyze_fit` is the only
+ * call the site makes that runs past one keep-alive tick, so it is the only one
+ * that ever failed -- `tools/list`, `/grant` and every document tool answer in
+ * milliseconds and parsed fine throughout. `fit_reports` held ZERO rows from
+ * #37 until this fix, against 28 recorded `analyze_fit` calls, while the engine
+ * itself was working: trace 77c557ab4623b2fa059f29c7f75053b2 on 2026-09-18 ran
+ * 78,222 ms, recorded `outcome: 'ok'`, and ended `mcp: unparseable response
+ * (200)` on this side.
+ *
+ * A frame carrying no `data:` line, or one whose data is not JSON, is SKIPPED
+ * rather than refused: a comment is a legal frame and an unparseable one is not
+ * ours to fail on. A stream with no frame answering `id` returns `null`, and
+ * the caller turns that into the same error as an unreadable body -- silently
+ * taking the wrong frame would be worse than saying nothing was found.
+ */
+function sseMessage(text: string, id: number): Record<string, unknown> | null {
+  // Frames are separated by a blank line, and a frame's `data:` lines are
+  // joined with newlines -- both per the SSE grammar rather than per what this
+  // server happens to emit today, because the reader is the half that has to
+  // survive the server changing.
+  for (const frame of text.split(/\r?\n\r?\n/)) {
+    const data = frame
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trim())
+      .join('\n');
+    if (data === '') continue;
+    let message: unknown;
+    try {
+      message = JSON.parse(data);
+    } catch {
+      continue;
+    }
+    if (typeof message !== 'object' || message === null) continue;
+    if ((message as { id?: unknown }).id === id) return message as Record<string, unknown>;
+  }
+  return null;
+}
+
 async function rpc(
   env: McpClientEnv,
   token: string,
   method: string,
   params: object,
 ): Promise<Record<string, unknown>> {
+  // HOISTED out of the body below, because the response has to be matched
+  // against it: an SSE stream may carry frames that are not the answer to this
+  // call, and `id` is the only thing that tells them apart.
+  const id = nextId++;
   const response = await env.MCP.fetch(MCP_URL, {
     method: 'POST',
     headers: {
@@ -40,19 +107,36 @@ async function rpc(
       // apart.
       'user-agent': 'ryanlindsey-me-fit/1',
     },
-    body: JSON.stringify({ jsonrpc: '2.0', id: nextId++, method, params }),
+    body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
   });
 
   const text = await response.text();
-  // Streamable HTTP may answer as JSON or as one SSE frame.
-  const payload =
-    text.startsWith('event:') || text.startsWith('data:')
-      ? (text.split('\n').find((line) => line.startsWith('data:')) ?? '{}').slice(5).trim()
-      : text;
+  // The CONTENT TYPE picks the ORDER, not the only attempt. Streamable HTTP
+  // defines exactly two response modes and names the one it used in this
+  // header, so reading it is reading the contract rather than sniffing the
+  // first bytes -- which is what made a leading `: keepalive` look like JSON.
+  //
+  // Both are still tried, and that is a regression guard rather than
+  // belt-and-braces: the reader this replaced decided by content alone, so it
+  // read SSE whatever the header said, and keying on the header ALONE would
+  // have quietly dropped a working case to fix a broken one. The two modes
+  // cannot be confused for each other -- an SSE body is never valid JSON, and a
+  // JSON body has no frames -- so trying the second costs nothing but the call.
+  const sse = (response.headers.get('content-type') ?? '').includes('text/event-stream');
+  const message = sse
+    ? (sseMessage(text, id) ?? parseJson(text))
+    : (parseJson(text) ?? sseMessage(text, id));
+  if (message === null) throw new Error(`mcp: unparseable response (${response.status})`);
+  return message;
+}
+
+/** The whole body as one JSON-RPC message, or `null` if it is not JSON. */
+function parseJson(text: string): Record<string, unknown> | null {
   try {
-    return JSON.parse(payload) as Record<string, unknown>;
+    const value: unknown = JSON.parse(text);
+    return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
   } catch {
-    throw new Error(`mcp: unparseable response (${response.status})`);
+    return null;
   }
 }
 
