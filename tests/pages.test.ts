@@ -506,6 +506,44 @@ test('the footer is the five-column colophon, and the demoted nav items live in 
   expect(markup).not.toContain('href="/chat"');
 });
 
+test('the footer portrait ships sized, and unnamed on purpose', async () => {
+  // Three separate decisions, and each one is the sort that gets tidied away
+  // by someone who cannot see why it was made.
+  //
+  // `alt=""` is the one most likely to be "fixed". An empty alt on a portrait
+  // looks like an oversight, and a linter will say so, but the name is the
+  // very next element in this cell -- filling it in makes a screen reader
+  // announce "Ryan Lindsey" twice in a row for an image carrying nothing the
+  // text beside it does not. This asserts the empty attribute IS PRESENT,
+  // which is also what distinguishes the decision from a missing one.
+  //
+  // The dimensions are asserted because a portrait without them reserves no
+  // box, and the four link columns below it reflow when the bytes land.
+  const markup = await footerMarkup();
+  const img = /<img[^>]*ryan-lindsey[^>]*>/.exec(markup);
+  expect(img, 'no portrait in the site footer').not.toBeNull();
+  expect(img![0], 'the portrait was given a redundant alt').toContain('alt=""');
+  expect(img![0]).toMatch(/\bwidth="\d+"/);
+  expect(img![0]).toMatch(/\bheight="\d+"/);
+  // The circle, which is the only rounded corner on a site whose rule is
+  // square -- so it reads as a deletion candidate to anyone enforcing that
+  // rule, and this is where the exception is written down.
+  expect(img![0]).toContain('rounded-full');
+  // `object-cover`, so a replacement photo that is not square is centre-cropped
+  // rather than squashed. Today's file is 1:1 and would pass without it.
+  expect(img![0]).toContain('object-cover');
+});
+
+test('the portrait is one asset the whole site shares', async () => {
+  // The home page bio block renders the same file at a smaller size. Two
+  // files would mean a photo swap that updates one surface and silently
+  // leaves the other showing the old face.
+  const home = await html('/');
+  const sources = [...home.matchAll(/<img[^>]*src="([^"]*ryan-lindsey[^"]*)"/g)].map((m) => m[1]);
+  expect(sources.length, 'expected the portrait in both the bio block and the footer').toBe(2);
+  expect(new Set(sources).size, 'the two portraits are different files').toBe(1);
+});
+
 test('the footer column headings are not page headings', async () => {
   // Not in the issue's test list. Added after tests/case-studies.test.ts was
   // read, rather than after it went red: `sectionHeadings()` there scans the

@@ -106,6 +106,38 @@ const isExternal = (href: string) => href.startsWith('http');
     -->
     <div class="grid gap-9 sm:grid-cols-2 lg:grid-cols-[1.7fr_repeat(4,minmax(0,1fr))]">
       <div>
+        {/*
+          THE ONE CIRCLE ON THE SITE, and the only rounded corner in a design
+          whose rule is square. It is a portrait, so the shape is the
+          convention rather than a decoration reached for; everything else in
+          this footer keeps its corners.
+
+          `alt=""` is deliberate and is not a forgotten alt attribute. The
+          name is the very next element, so a described portrait makes a
+          screen reader announce "Ryan Lindsey" twice in a row. The image
+          carries no information the text beside it does not.
+
+          Served from public/ rather than through `astro:assets`, which would
+          give a content-hashed filename and immutable caching. The hash is
+          worth less than the risk it buys: this is the first image in the
+          repo, so an `<Image>` here makes `astro build` newly depend on sharp
+          resolving in Workers Builds, and the failure mode is a red deploy
+          rather than a missing optimisation. 256px for a 72px slot covers 3x
+          density; the file is 8 KB.
+
+          Width and height are set as attributes as well as classes so the
+          box is reserved before the bytes arrive and the footer does not
+          shift as it loads.
+        */}
+        <img
+          src="/ryan-lindsey.webp"
+          alt=""
+          width="72"
+          height="72"
+          loading="lazy"
+          decoding="async"
+          class="mb-4 h-[72px] w-[72px] rounded-full border border-rule object-cover"
+        />
         <p class="font-display text-subheading text-ink">Ryan Lindsey</p>
         <!--
           Deliberately role-agnostic: no employer, no title, so it does not
