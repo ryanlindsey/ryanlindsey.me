@@ -60,6 +60,18 @@ beforeAll(async () => {
     )
     .bind(new Date().toISOString())
     .run();
+  // One INCOMPLETE eval run (migrations/0005), so the Evals section renders a
+  // suite that could not run rather than only ever exercising the empty "No
+  // runs recorded yet" state. `leak` is a real suite name (evals/README.md);
+  // the row carries no model, matching src/lib/evals/record.ts's
+  // `incompleteRow()`, which sets none.
+  await db
+    .prepare(
+      `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, status)
+       VALUES (?, 'leak', NULL, 0, 0, 0, 'incomplete')`,
+    )
+    .bind(new Date().toISOString())
+    .run();
   html = await (await server.fetch('/ops')).text();
 });
 
@@ -111,6 +123,34 @@ describe('/ops', () => {
     ]) {
       expect(html).toContain(heading);
     }
+  });
+
+  test('an incomplete eval run renders as words in text-warn, never a dash or a zero', () => {
+    // The ruling this task shipped against its own brief's contradictory
+    // sentence: an 'incomplete' row (migrations/0005) renders Pass as "did
+    // not run" and Fail as "not recorded", both in `text-warn`. No em dash and
+    // no lone glyph -- every other cell in these two columns is a number, and
+    // a bare dash there would read as a value.
+    const section = /<section aria-labelledby="evals"[\s\S]*?<\/section>/.exec(html);
+    expect(section, 'no evals section').not.toBeNull();
+    const evals = section![0];
+    // Scoped to the table body: the section's own intro paragraph now contains
+    // the substring "did not run" too (it says a row CAN say that), so
+    // searching the whole section would find that prose first.
+    const tbodyAt = evals.indexOf('<tbody');
+    expect(tbodyAt, 'no table body').toBeGreaterThan(-1);
+
+    const passAt = evals.indexOf('did not run', tbodyAt);
+    expect(passAt, 'Pass cell must say did not run').toBeGreaterThan(-1);
+    expect(evals.slice(evals.lastIndexOf('<td', passAt), passAt)).toContain('text-warn');
+
+    const failAt = evals.indexOf('not recorded', tbodyAt);
+    expect(failAt, 'Fail cell must say not recorded').toBeGreaterThan(-1);
+    expect(evals.slice(evals.lastIndexOf('<td', failAt), failAt)).toContain('text-warn');
+
+    // The Ran column keeps its date: when a suite could not run is exactly
+    // the fact this row exists to carry.
+    expect(evals).toContain(new Date().toISOString().slice(0, 10));
   });
 
   test('no gated tool name and no audience label reaches the page', () => {

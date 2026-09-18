@@ -20,6 +20,15 @@ export interface EvalRunRow {
   total: number;
   passed: number;
   failed: number;
+  /**
+   * 'ran' or 'incomplete' (migrations/0005, src/lib/evals/record.ts's
+   * `EvalRunStatus`). Kept as `string` rather than importing that union: this
+   * file reads the table back for a public page, and /ops has to render
+   * whatever value is actually stored, including one written by a future
+   * status this type has not been told about, rather than narrow a value
+   * SQLite already accepted.
+   */
+  status: string;
 }
 
 export interface OpsMetrics {
@@ -91,7 +100,7 @@ export async function readOpsMetrics(
     // timestamps actually happened in. `id` is `INTEGER PRIMARY KEY
     // AUTOINCREMENT` (migrations/0002), so it is never reused and never NULL.
     db.prepare(
-      `SELECT ran_at, suite, total, passed, failed FROM eval_runs
+      `SELECT ran_at, suite, total, passed, failed, status FROM eval_runs
         WHERE id = (SELECT id FROM eval_runs AS latest
                      WHERE latest.suite = eval_runs.suite
                      ORDER BY latest.ran_at DESC, latest.id DESC
@@ -115,6 +124,7 @@ export async function readOpsMetrics(
       total: Number(row.total),
       passed: Number(row.passed),
       failed: Number(row.failed),
+      status: String(row.status),
     })),
   };
 }

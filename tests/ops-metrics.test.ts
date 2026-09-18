@@ -104,6 +104,20 @@ beforeAll(async () => {
       `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed)
          VALUES ('2026-09-06T00:00:00.000Z', 'bisect', 'm', 6, 6, 0)`,
     ),
+    // An older RAN row and a newer INCOMPLETE row for the same suite
+    // (migrations/0005). This is the regression the "latest per suite" picker
+    // has to survive: it selects on `ran_at`/`id` alone and never on `status`,
+    // so a suite that stops running must still displace its own last pass.
+    // Explicit `status` on both -- the default only covers a row that omits
+    // the column, which every OTHER seeded row in this file deliberately does.
+    db.prepare(
+      `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, status)
+         VALUES ('2026-09-02T00:00:00.000Z', 'fit', 'm', 8, 8, 0, 'ran')`,
+    ),
+    db.prepare(
+      `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, status)
+         VALUES ('2026-09-08T12:00:00.000Z', 'fit', NULL, 0, 0, 0, 'incomplete')`,
+    ),
   ]);
 });
 
@@ -155,14 +169,67 @@ describe('readOpsMetrics', () => {
   });
 
   test('eval runs are the LATEST run per suite, not every run', async () => {
-    // Five seeded rows across three suites: the older `chat` run must not appear
-    // at all, and `bisect`'s two tied rows must appear as one.
+    // Seven seeded rows across four suites: the older `chat` run must not
+    // appear at all, `bisect`'s two tied rows must appear as one, and `fit`'s
+    // latest row is the INCOMPLETE one that displaces its own older pass.
     const metrics = await readOpsMetrics(db, new Date('2026-09-09T12:00:00.000Z'), 30);
     expect(metrics.evalRuns).toEqual([
-      { ranAt: '2026-09-06T00:00:00.000Z', suite: 'bisect', total: 6, passed: 6, failed: 0 },
-      { ranAt: '2026-09-08T00:00:00.000Z', suite: 'chat', total: 10, passed: 9, failed: 1 },
-      { ranAt: '2026-09-07T00:00:00.000Z', suite: 'tier', total: 4, passed: 4, failed: 0 },
+      {
+        ranAt: '2026-09-06T00:00:00.000Z',
+        suite: 'bisect',
+        total: 6,
+        passed: 6,
+        failed: 0,
+        status: 'ran',
+      },
+      {
+        ranAt: '2026-09-08T00:00:00.000Z',
+        suite: 'chat',
+        total: 10,
+        passed: 9,
+        failed: 1,
+        status: 'ran',
+      },
+      {
+        ranAt: '2026-09-08T12:00:00.000Z',
+        suite: 'fit',
+        total: 0,
+        passed: 0,
+        failed: 0,
+        status: 'incomplete',
+      },
+      {
+        ranAt: '2026-09-07T00:00:00.000Z',
+        suite: 'tier',
+        total: 4,
+        passed: 4,
+        failed: 0,
+        status: 'ran',
+      },
     ]);
+  });
+
+  test('an incomplete row carries its status and beats an older ran row for the same suite', async () => {
+    // The regression this column exists to prevent: the "latest per suite"
+    // picker (src/lib/ops/metrics.ts) orders by `ran_at DESC, id DESC` alone,
+    // never by `status`, so a suite that stops running must still displace its
+    // own last recorded pass rather than let /ops keep publishing it. `fit`
+    // here has an older 'ran' row (2026-09-02, 8/8) and a newer 'incomplete'
+    // one (2026-09-08T12:00, zeroed) -- if a query change ever narrowed the
+    // correlated subquery to `status = 'ran'`, this suite would silently go
+    // back to reporting the stale pass, which is exactly the failure /ops
+    // published before this column existed.
+    const metrics = await readOpsMetrics(db, new Date('2026-09-09T12:00:00.000Z'), 30);
+    const fit = metrics.evalRuns.filter((run) => run.suite === 'fit');
+    expect(fit).toHaveLength(1);
+    expect(fit[0]).toEqual({
+      ranAt: '2026-09-08T12:00:00.000Z',
+      suite: 'fit',
+      total: 0,
+      passed: 0,
+      failed: 0,
+      status: 'incomplete',
+    });
   });
 
   test('two runs of one suite at the SAME timestamp yield one row, deterministically', async () => {
@@ -185,6 +252,7 @@ describe('readOpsMetrics', () => {
       total: 6,
       passed: 6,
       failed: 0,
+      status: 'ran',
     });
   });
 
@@ -197,6 +265,6 @@ describe('readOpsMetrics', () => {
     const narrow = await readOpsMetrics(db, new Date('2026-09-20T00:00:00.000Z'), 1);
     expect(narrow.toolCalls).toEqual([]);
     expect(narrow.chatTurns).toBe(0);
-    expect(narrow.evalRuns.map((run) => run.suite)).toEqual(['bisect', 'chat', 'tier']);
+    expect(narrow.evalRuns.map((run) => run.suite)).toEqual(['bisect', 'chat', 'fit', 'tier']);
   });
 });
