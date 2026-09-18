@@ -8,7 +8,12 @@ import { TEST_SIGNING_KEY, type Grant } from '../src/lib/tier/grant';
 import { PROFILE_KEYS } from '../src/lib/tier/private-docs';
 import { CAMPAIGN_PREFIX } from '../src/lib/tier/campaigns';
 import { defineTool, ToolError, type ToolContext } from '../workers/mcp/src/define';
-import { fitEnvelope, fitToolError, GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
+import {
+  fitEnvelope,
+  fitToolError,
+  GATED_TOOL_NAMES,
+  resolveNarrativeKey,
+} from '../workers/mcp/src/gated';
 import { FitUnavailable, type FitResult } from '../src/lib/fit/engine';
 import type { McpEnv } from '../workers/mcp/src/env';
 import { LIMITS, limitKeyFor, type ToolCost } from '../src/lib/mcp/limits';
@@ -495,6 +500,57 @@ describe('with a grant', () => {
     }
     throw new Error('no audit row for this call to get_availability');
   });
+});
+
+/**
+ * The resolver, called directly rather than through the tool.
+ *
+ * The three tool tests above already walk these branches, but only from the
+ * READING end -- they observe which document came back, which is exactly the
+ * evidence a second caller does not have. `ryanlindsey.me#266` registers a
+ * tool that has to name the same key from the AUTHORING end, where nothing is
+ * read and a wrong key produces a document that deploys cleanly and is served
+ * by nothing. Pinning the resolver itself is what makes the two ends provably
+ * the same expression rather than two that happen to agree today.
+ */
+test('resolveNarrativeKey answers the key get_application_narrative will read', async () => {
+  // Configured and inside the namespace: the configured key wins, and the
+  // convention key for this same audience (`narrative/fixture-audience.md`)
+  // is NOT what comes back.
+  expect(await resolveNarrativeKey(env, AUDIENCE)).toEqual({
+    key: CONFIGURED_NARRATIVE,
+    configured: CONFIGURED_NARRATIVE,
+  });
+
+  // Not configured: no campaign entry names this audience, so the convention
+  // key is built and `configured` reports the empty string the absent field
+  // parses as.
+  expect(await resolveNarrativeKey(env, FALLBACK_AUDIENCE)).toEqual({
+    key: `narrative/${FALLBACK_AUDIENCE}.md`,
+    configured: '',
+  });
+
+  // Configured and OUTSIDE the namespace: no key, and the offending value
+  // carried back. Both halves matter. A bare `null` cannot tell an operator
+  // surface whether the mint was malformed or the campaign entry is, and the
+  // `console.warn` is the only signal that exists today -- so it stays inside
+  // the resolver, where both readers get it, rather than in the handler.
+  const logged: string[] = [];
+  const spy = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+    logged.push(args.map(String).join(' '));
+  });
+  try {
+    expect(await resolveNarrativeKey(env, CROSSING_AUDIENCE)).toEqual({
+      key: null,
+      configured: PROFILE_KEYS.compensation,
+    });
+  } finally {
+    spy.mockRestore();
+  }
+  expect(
+    logged.some((entry) => entry.includes(CROSSING_AUDIENCE) && entry.includes('narrative/')),
+    'the operator signal must name the audience and the namespace it left',
+  ).toBe(true);
 });
 
 /**

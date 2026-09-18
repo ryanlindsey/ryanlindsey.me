@@ -6,7 +6,7 @@ import {
   type FitEnv,
   type FitResult,
 } from '../../../src/lib/fit/engine';
-import { readCampaignForAudience } from '../../../src/lib/tier/campaigns';
+import { readCampaignForAudience, type CampaignEnv } from '../../../src/lib/tier/campaigns';
 import type { Grant } from '../../../src/lib/tier/grant';
 import {
   caseStudyDetailKey,
@@ -235,6 +235,73 @@ function narrativeKeyFromConfig(configured: string): string | null {
 }
 
 /**
+ * What `get_application_narrative` will read for one audience.
+ *
+ * `configured` is returned alongside `key` because a `null` key has two
+ * causes that need different answers. An audience that cannot build a key at
+ * all is a malformed mint; a configured value outside the namespace is a
+ * campaign entry to fix, and the operator surface has to be able to say which
+ * one happened without resolving the key a second time.
+ */
+export interface NarrativeResolution {
+  /** The key both readers use, or `null` when nothing valid could be built. */
+  key: string | null;
+  /** The campaign's configured value, `''` when the campaign set none. */
+  configured: string;
+}
+
+/**
+ * ONE EXPRESSION, because there is about to be a second reader.
+ *
+ * This resolution lived inside `get_application_narrative`'s handler until
+ * ryanlindsey.me#264, where nothing else could reach it. An authoring tool
+ * that computed `narrativeKey(audience)` instead would name
+ * `narrative/<audience>.md` while the reader followed whatever the campaign
+ * configured: the document would deploy successfully, be found by nothing,
+ * and raise no error anywhere. That is the failure
+ * `narrativeKeyFromConfig`'s comment describes, arriving from the authoring
+ * end -- and it is the same argument that comment makes for validating by
+ * reconstruction rather than by a second regex. There is no third shape to
+ * keep in step.
+ *
+ * Takes `CampaignEnv`, not `McpEnv`: resolving a key has no business holding
+ * `R2_PRIVATE`, which is the rule `fitEnv` and `judgeEnv` below already
+ * follow.
+ *
+ * The `console.warn` stays HERE rather than in either caller, because it is
+ * the operator's only signal that a campaign entry is wrong and both readers
+ * want it fired exactly once, on the resolution that found the problem.
+ */
+export async function resolveNarrativeKey(
+  env: CampaignEnv,
+  audience: string,
+): Promise<NarrativeResolution> {
+  // Configuration first: 00 §5 gives a campaign an explicit
+  // `gated_narrative_doc`, and honouring it means a document can be renamed
+  // without re-minting tokens. The convention key is the fallback, not the
+  // rule -- an entry that omits the field parses as `''` and takes the
+  // fallback, which is why this tests for the empty string rather than for
+  // the campaign's presence.
+  const campaign = await readCampaignForAudience(env, audience);
+  const configured = campaign?.gatedNarrativeDoc ?? '';
+  if (configured === '') {
+    return { key: narrativeKey(audience), configured };
+  }
+  const key = narrativeKeyFromConfig(configured);
+  if (key === null) {
+    // Named in the log because this is a deployment mistake an operator has
+    // to be able to find -- and NOT named to the caller of
+    // `get_application_narrative`, who gets the same `NOT_DEPLOYED` sentence
+    // a missing document gets. A refusal that quoted the key back would turn
+    // a misconfiguration into a listing of what is in the bucket.
+    console.warn(
+      `mcp/gated: the narrative document configured for audience "${audience}" is outside the ${NARRATIVE_PREFIX} namespace and was refused: ${configured}`,
+    );
+  }
+  return { key, configured };
+}
+
+/**
  * The fit engine's view of this Worker, assembled EXPLICITLY rather than
  * spread from `env` -- the same rule `corpusEnv` (src/index.ts) and
  * `documentsEnv` (./tools.ts) follow, and for the same reason: the fit engine
@@ -440,31 +507,11 @@ const GATED_TOOLS: readonly GatedTool[] = [
           // is passed -- but the non-null-ness is then carried by the type
           // checker instead of asserted past it, so the guarantee is provable
           // rather than promised.
-          const audience = grant.audience;
-          // Configuration first: 00 §5 gives a campaign an explicit
-          // `gated_narrative_doc`, and honouring it means a document can be
-          // renamed without re-minting tokens. The convention key is the
-          // fallback, not the rule -- an entry that omits the field parses as
-          // `''` and takes the fallback, which is why this tests for the empty
-          // string rather than for the campaign's presence.
-          const campaign = await readCampaignForAudience(tc.env, audience);
-          const configured = campaign?.gatedNarrativeDoc ?? '';
-          let key: string | null;
-          if (configured === '') {
-            key = narrativeKey(audience);
-          } else {
-            key = narrativeKeyFromConfig(configured);
-            if (key === null) {
-              // Named in the log because this is a deployment mistake an
-              // operator has to be able to find -- and NOT named to the
-              // caller, who gets the same `NOT_DEPLOYED` sentence a missing
-              // document gets. A refusal that quoted the key back would turn a
-              // misconfiguration into a listing of what is in the bucket.
-              console.warn(
-                `mcp/gated: the narrative document configured for audience "${audience}" is outside the ${NARRATIVE_PREFIX} namespace and was refused: ${configured}`,
-              );
-            }
-          }
+
+          // Config-first, convention-fallback, and why: `resolveNarrativeKey`
+          // above. It lives there rather than here because the authoring side
+          // has to name the same key (ryanlindsey.me#266).
+          const { key } = await resolveNarrativeKey(tc.env, grant.audience);
           if (key === null) throw new ToolError(NOT_DEPLOYED);
           const text = await readPrivateDoc(tc.env, key);
           if (text === null) throw new ToolError(NOT_DEPLOYED);
