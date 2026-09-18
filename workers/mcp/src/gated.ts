@@ -265,8 +265,14 @@ export interface NarrativeResolution {
  * keep in step.
  *
  * Takes `CampaignEnv`, not `McpEnv`: resolving a key has no business holding
- * `R2_PRIVATE`, which is the rule `fitEnv` and `judgeEnv` below already
- * follow.
+ * `R2_PRIVATE`. Note what kind of guarantee that is. `fitEnv` and `judgeEnv`
+ * below BUILD a new object carrying only what the callee needs, so the callee
+ * cannot reach the rest at runtime; this is a type-level narrowing of the very
+ * `tc.env` the handler holds, the same one `readCampaignForAudience` has
+ * always taken. It stops a reader and a future edit from reaching for
+ * `R2_PRIVATE` here, and a cast would defeat it. Worth the weaker form anyway:
+ * the value-level version would mean assembling an object on every narrative
+ * read to protect a function whose whole body is one KV lookup.
  *
  * The `console.warn` stays HERE rather than in either caller, because it is
  * the operator's only signal that a campaign entry is wrong and both readers
@@ -507,10 +513,11 @@ const GATED_TOOLS: readonly GatedTool[] = [
           // is passed -- but the non-null-ness is then carried by the type
           // checker instead of asserted past it, so the guarantee is provable
           // rather than promised.
-
-          // Config-first, convention-fallback, and why: `resolveNarrativeKey`
-          // above. It lives there rather than here because the authoring side
-          // has to name the same key (ryanlindsey.me#266).
+          //
+          // Config-first, convention-fallback, and why the rule is not spelled
+          // out here: `resolveNarrativeKey` above. It lives there rather than
+          // in this closure because the authoring side has to name the same
+          // key (ryanlindsey.me#266).
           const { key } = await resolveNarrativeKey(tc.env, grant.audience);
           if (key === null) throw new ToolError(NOT_DEPLOYED);
           const text = await readPrivateDoc(tc.env, key);

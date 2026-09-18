@@ -547,10 +547,31 @@ test('resolveNarrativeKey answers the key get_application_narrative will read', 
   } finally {
     spy.mockRestore();
   }
+  // Filtered rather than counted off `logged` directly, because
+  // `walkCampaigns` warns into the same array for an unparseable entry --
+  // neither fixture is one today, and a test that would break when one is
+  // added is testing the wrong thing.
+  const refusals = logged.filter((entry) => entry.startsWith('mcp/gated:'));
   expect(
-    logged.some((entry) => entry.includes(CROSSING_AUDIENCE) && entry.includes('narrative/')),
-    'the operator signal must name the audience and the namespace it left',
-  ).toBe(true);
+    refusals,
+    'exactly one refusal, for the one resolution that found the problem',
+  ).toHaveLength(1);
+  expect(refusals[0]).toContain(CROSSING_AUDIENCE);
+  // The REFUSED KEY, not merely the namespace it left. It is the single most
+  // useful thing the operator gets from this line, and asserting only on
+  // `narrative/` leaves `: ${configured}` free to be deleted while this stays
+  // green.
+  expect(refusals[0]).toContain(PROFILE_KEYS.compensation);
+
+  // The OTHER cause of a `null` key, and the reason `configured` is returned
+  // beside it: an audience that cannot build a key at all is a malformed
+  // mint, and it reports `''` rather than an offending value because there is
+  // none. Nothing else in this suite reaches `narrativeKey`'s `null` -- the
+  // tool-level "a missing document is a sentence" test uses a well-formed
+  // audience whose document was deleted -- so this is also what stops
+  // `narrativeKey` being "simplified" to a template literal, which is the
+  // exact mistake `safeSegment` exists to catch.
+  expect(await resolveNarrativeKey(env, '../evil')).toEqual({ key: null, configured: '' });
 });
 
 /**
