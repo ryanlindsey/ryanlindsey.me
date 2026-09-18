@@ -87,11 +87,21 @@ function onKeydown(event: KeyboardEvent): void {
    * that makes a module untestable, because a suite that resets its fixture
    * between tests leaves the handler pointing at detached elements. Two
    * `querySelector` calls per ⌘K is not a cost worth that.
+   *
+   * THE VISIBLE FIELD OR NOTHING, with no falling back to the other one. An
+   * earlier version read `desktop ? (header ?? nav) : (nav ?? header)`, and a
+   * review of issue #149 showed both arms failing worse than doing nothing:
+   * below `lg` with no overlay field it swallowed the key and focused a
+   * `display: none` input, and at desktop with no header field it clicked an
+   * `lg:hidden` toggle, putting the scroll lock on and `aria-expanded="true"`
+   * on an invisible toggle over an invisible overlay. Both need a component to
+   * stop rendering its form, so neither is likely -- but when the field a
+   * visitor can see is missing, handing the key back to the browser is the only
+   * honest answer, and returning before `preventDefault` is what does that.
    */
   const desktop = window.matchMedia?.(DESKTOP)?.matches ?? true;
-  const header = headerField();
   const nav = navField();
-  const target = desktop ? (header ?? nav) : (nav ?? header);
+  const target = desktop ? headerField() : nav;
   if (!target) return;
 
   event.preventDefault();
@@ -104,10 +114,14 @@ function onKeydown(event: KeyboardEvent): void {
    *
    * That file passes `preventScroll: true` because it is returning focus to a
    * toggle the visitor already knows about, and scrolling the page back to it
-   * would rewind their reading. Here the field is the thing being asked for:
-   * the header is sticky on article routes only, so on every other page a
-   * visitor who has scrolled down would be typing into a box that is off
-   * screen unless the browser brings it back. Scrolling is the feature.
+   * would rewind their reading -- `html { scroll-behavior: smooth }` in
+   * global.css makes that an animated ride rather than a jump, which is what
+   * made it so obvious there. Here the field is the thing being asked for: the
+   * header is sticky on article routes only, so on every other page a visitor
+   * who has scrolled down would be typing into a box that is off screen unless
+   * the browser brings it back. The same animated scroll is the feature, and
+   * global.css already answers `prefers-reduced-motion` for anyone who has
+   * asked not to have it.
    */
   target.focus();
   // SELECTED, so the next keystroke replaces rather than appends. On /search

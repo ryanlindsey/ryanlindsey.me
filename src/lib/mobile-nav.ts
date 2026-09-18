@@ -38,8 +38,20 @@
  * document order, on the arms where the trap does not intervene. This makes the
  * set honest rather than fixing a reachability bug, and it is what keeps that
  * true the day the field moves to an end of the overlay.
+ *
+ * `[type="hidden"]` IS EXCLUDED BECAUSE `input` ALONE MATCHES IT, which is the
+ * one way this selector can be wrong while looking right. Nothing in the
+ * overlay is hidden today; the way one would arrive is a `type` filter carried
+ * into the search form as a hidden field, and if one ever landed last in
+ * document order `last.focus()` would fail silently and Shift+Tab would escape
+ * the trap.
+ *
+ * EXPORTED so tests/mobile-nav-behavior.test.ts imports it rather than retyping
+ * it. That suite computes the same set to find `first` and `last`, and a copy
+ * kept in step by hand is a copy that eventually is not.
  */
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled])';
+export const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"])';
 
 /**
  * The breakpoint the rule bar returns at. `64rem` is Tailwind's `lg`, which is

@@ -229,6 +229,30 @@ export function normalizeQuery(raw: string | null): string {
 }
 
 /**
+ * What the site chrome's search field starts with, given the page being served.
+ *
+ * ONE RULE FOR TWO FIELDS (issue #149). src/components/SiteHeader.astro and
+ * src/components/MobileNav.astro render the same search form at two widths, and
+ * both prefill on `/search` so that refining a search does not mean retyping
+ * it. Having two fields is deliberate -- below `lg` the header's is not on the
+ * page at all -- but having two copies of this expression was not, and a review
+ * of #149 caught it: if one of them ever stopped calling `normalizeQuery`, the
+ * two fields would disagree about what the visitor searched for and nothing
+ * would say so.
+ *
+ * NORMALISED RATHER THAN ECHOED RAW, which is the load-bearing half. The string
+ * these fields show has to be the string src/pages/search.astro put in its
+ * heading, and that page normalises before it searches.
+ *
+ * GUARDED ON THE PATH because `/search` is the only route on this site that is
+ * not prerendered. Everywhere else `url` carries no query string at all, so
+ * this would be dead work on every page of the build.
+ */
+export function prefilledQuery(url: URL): string {
+  return url.pathname === '/search' ? normalizeQuery(url.searchParams.get('q')) : '';
+}
+
+/**
  * The `type` filter a request asked for: one of the closed set, `null` for a
  * request that asked for no filter, or `UNKNOWN_SEARCH_TYPE`.
  *

@@ -384,6 +384,23 @@ const summary =
     : state === 'unavailable'
       ? unavailable
       : `${shown.length} ${shown.length === 1 ? 'result' : 'results'}`;
+
+/**
+ * What this page's own search form is called, and why it is not called what the
+ * header's is called.
+ *
+ * ISSUE #149 PUT A SECOND SEARCH LANDMARK ON EVERY PAGE, the site chrome's, and
+ * it is named "Search this site". Two landmarks sharing one name is a list
+ * somebody navigating by landmark cannot choose from, so this one takes a
+ * different name.
+ *
+ * IT DEPENDS ON THE STATE BECAUSE A FIXED NAME LIES IN ONE OF THEM, which a
+ * review of #149 caught: this form was named "Refine this search" outright, and
+ * the landing state renders the same form with nothing to refine. The page
+ * already decides four states a few lines up; the name follows the only
+ * distinction that matters to it, which is whether anything was searched for.
+ */
+const formName = query === '' ? 'Search everything published here' : 'Refine this search';
 ---
 
 <Shell
@@ -446,22 +463,10 @@ const summary =
     way -- the attribute only stops the browser sending what will be cut.
   */}
   <div class="mx-auto max-w-[1440px] px-5 pb-10 lg:px-10">
-    {/*
-      NAMED, AND THE NAME IS NOT "Search this site". Issue #149 gave the header
-      a search form of its own, so this page now renders two search landmarks
-      and the header's carries that exact label. Two landmarks with one name
-      between them is a list a screen-reader user cannot choose from, and this
-      one is the page's own field rather than the site-wide one in the chrome.
-    */}
-    <form
-      data-search-form
-      method="get"
-      action="/search"
-      role="search"
-      aria-label="Refine this search"
-    >
+    {/* Named, and named per state -- see `formName` above for both halves of why. */}
+    <form data-search-form method="get" action="/search" role="search" aria-label={formName}>
       <label class="sr-only" for="q">
-        Refine this search
+        {formName}
       </label>
       <div class="flex items-center gap-[14px] border border-rule px-[18px] py-4">
         <input

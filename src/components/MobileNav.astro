@@ -1,7 +1,7 @@
 ---
 import ThemeToggle from './ThemeToggle.astro';
 import { NAV_LINKS, SYSTEM_LINKS, AGENT_LINKS } from '../lib/nav';
-import { MAX_QUERY_CHARS, normalizeQuery } from '../lib/search/engine';
+import { MAX_QUERY_CHARS, prefilledQuery } from '../lib/search/engine';
 
 /**
  * The mobile navigation takeover (issue #101, design 1c). Rendered inside
@@ -39,13 +39,14 @@ const demotedLinks = [...SYSTEM_LINKS.filter((link) => !link.href.includes('#'))
 const isExternal = (href: string) => href.startsWith('http');
 
 /**
- * The search field's starting value, read the way SiteHeader.astro reads it and
- * for the reason stated there. Repeated rather than shared because this overlay
- * and that row render the same field at two widths, and a visitor refining a
- * search on a phone should no more have to retype it than one on a laptop.
+ * The search field's starting value, from the same function SiteHeader.astro
+ * calls. TWO FIELDS, ONE RULE: this overlay and that row render the same form
+ * at two widths, and a visitor refining a search on a phone should no more have
+ * to retype it than one on a laptop -- but the expression deciding what to
+ * prefill lives once, beside `normalizeQuery`, because a review of issue #149
+ * found it written out here a second time.
  */
-const searchQuery =
-  Astro.url.pathname === '/search' ? normalizeQuery(Astro.url.searchParams.get('q')) : '';
+const searchQuery = prefilledQuery(Astro.url);
 ---
 
 <!--
@@ -153,7 +154,7 @@ const searchQuery =
     </form>
 
     <!--
-      The theme control, directly under the search placeholder because that is
+      The theme control, directly under the search form because that is
       where it sits on the desktop: SiteHeader's right cluster is search and
       theme side by side, and below `lg` that cluster is hidden, so the overlay
       repeats the pair stacked rather than inventing a new home for half of it.

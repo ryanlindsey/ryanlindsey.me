@@ -2,7 +2,7 @@
 import ThemeToggle from './ThemeToggle.astro';
 import MobileNav from './MobileNav.astro';
 import { NAV_LINKS } from '../lib/nav';
-import { MAX_QUERY_CHARS, normalizeQuery } from '../lib/search/engine';
+import { MAX_QUERY_CHARS, prefilledQuery } from '../lib/search/engine';
 
 interface Props {
   // Sticky only for the two article routes (writing/[...slug], work/[...slug]
@@ -22,19 +22,11 @@ const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`)
  * READ FROM THE URL RATHER THAN THREADED DOWN AS A PROP. Passing it would mean
  * a prop on Shell.astro and on ArticleLayout.astro that exactly one route ever
  * sets, and `Astro.url` is already how this component knows which nav item is
- * current two lines up. src/components/MobileNav.astro does the same, because
- * the overlay's field is the same field below `lg`.
- *
- * NORMALISED WITH THE HANDLER'S OWN FUNCTION, not trimmed here. The string
- * this field shows has to be the string src/pages/search.astro put in its
- * heading, and that page normalises before it searches; a second set of rules
- * here would show a visitor a query subtly unlike the one that was run.
- *
- * Guarded on the path because every other route on this site is prerendered,
- * where `Astro.url` carries no query string at all and this would be dead work
- * on every page of the build.
+ * current two lines up. src/components/MobileNav.astro calls the same function,
+ * because the overlay's field is this field below `lg`; the rule itself lives
+ * beside `normalizeQuery` so the two cannot drift.
  */
-const searchQuery = path === '/search' ? normalizeQuery(Astro.url.searchParams.get('q')) : '';
+const searchQuery = prefilledQuery(Astro.url);
 ---
 
 <!--
@@ -124,9 +116,18 @@ const searchQuery = path === '/search' ? normalizeQuery(Astro.url.searchParams.g
         A GET FORM, WHICH IS THE WHOLE ARGUMENT FOR A RESULTS PAGE OVER AN
         OVERLAY. Enter submits and the browser navigates to `/search?q=...`,
         an address somebody can link, reload and share. Nothing here calls
-        preventDefault, fetches, or opens a dropdown, so the search works with
+        preventDefault, fetches, or opens a dropdown, so THIS form works with
         scripting off -- src/lib/search-shortcut.ts adds the ⌘K convenience on
         top and removing it would cost nothing but the chip.
+
+        FROM `lg` UP, and a review of #149 was right to make that explicit. The
+        other copy of this form lives in MobileNav.astro, inside an overlay only
+        JavaScript can open, and src/lib/nav.ts lists no `/search` anywhere --
+        so below `lg` a visitor without scripting has no path to the results
+        page at all. That is inherited from the overlay rather than caused here
+        (every nav link below `lg` has the same property), and the fix is a
+        `/search` entry in SYSTEM_LINKS, which changes the footer and is not
+        this issue's to make.
 
         The 260px box, the border and the type scale are the placeholder's,
         unchanged. What replaced the label span is an <input> in the same
@@ -137,7 +138,16 @@ const searchQuery = path === '/search' ? normalizeQuery(Astro.url.searchParams.g
 
         `role="search"` AND A NAME, because this is not the only one. On
         /search that page renders its own search landmark, and two unnamed ones
-        are indistinguishable to anybody navigating by landmark.
+        are indistinguishable to anybody navigating by landmark. That page's
+        form takes a different name for it (`formName` there, which also changes
+        with the state so it does not claim to refine a search nobody has run).
+
+        MobileNav.astro's form carries this EXACT name, and that is safe only
+        because the two are never in the accessibility tree together: this
+        cluster is `hidden lg:flex` and that overlay is `lg:hidden` plus the
+        `hidden` attribute until it is opened, so at any width exactly one of
+        them is displayed. Anything that gives either of them a second life at
+        the other's breakpoint has to rename one of them too.
       -->
       <form
         data-header-search

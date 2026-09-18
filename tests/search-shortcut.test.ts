@@ -92,6 +92,23 @@ test('⌘K puts the cursor in the header field and takes the key off the browser
   expect(event.defaultPrevented).toBe(true);
 });
 
+test('⌘K opens nothing at a width where the header field is already there', () => {
+  // The issue's words are "it does not open anything else", and the epic
+  // rejects the command palette this key is borrowed from. The overlay is the
+  // only thing on this page that could be opened, so it is the thing to pin.
+  press('k', { metaKey: true });
+  expect(overlay().hasAttribute('hidden')).toBe(true);
+});
+
+test('the shortcut reaches a screen reader as a property of the field', () => {
+  // The ⌘K chip is `aria-hidden` decoration, so this attribute is the ONLY way
+  // the binding is announced. Without it the chip's claim is visual-only, which
+  // is the half-fixed version of the lie #149 set out to end.
+  for (const field of [headerInput(), navInput()]) {
+    expect(field.getAttribute('aria-keyshortcuts')).toBe('Meta+K Control+K');
+  }
+});
+
 test('Ctrl+K does the same, because not every visitor is on a Mac', () => {
   press('k', { ctrlKey: true });
   expect(document.activeElement).toBe(headerInput());

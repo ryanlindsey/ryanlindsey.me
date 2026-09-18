@@ -28,20 +28,18 @@
  */
 import { beforeEach, expect, test } from 'vitest';
 import { builtHeaderMarkup } from './markup';
-import { initMobileNav } from '../src/lib/mobile-nav';
+import { FOCUSABLE, initMobileNav } from '../src/lib/mobile-nav';
 
 const headerMarkup = builtHeaderMarkup();
 
 const toggle = () => document.querySelector<HTMLButtonElement>('[aria-controls="rl-mobile-menu"]')!;
 const overlay = () => document.getElementById('rl-mobile-menu')!;
 const closeButton = () => document.querySelector<HTMLButtonElement>('[aria-label="Close menu"]')!;
-// Kept in step with FOCUSABLE in src/lib/mobile-nav.ts, which grew `input` in
-// issue #149 when the overlay's search label became a real field.
-const focusables = () => [
-  ...overlay().querySelectorAll<HTMLElement>(
-    'a[href], button:not([disabled]), input:not([disabled])',
-  ),
-];
+// IMPORTED, NOT RETYPED. The selector grew `input` in issue #149, when the
+// overlay's search label became a real field, and this suite's copy of it is
+// what decides `first` and `last` below -- so a copy that drifts from the
+// module's would assert the trap against a set the trap does not use.
+const focusables = () => [...overlay().querySelectorAll<HTMLElement>(FOCUSABLE)];
 
 /**
  * A document whose content box grows by `gutter` when its overflow is hidden,

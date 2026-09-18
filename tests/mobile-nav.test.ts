@@ -92,6 +92,18 @@ test('the overlay search is a real GET form, so a phone is not sent to the deskt
   expect(/<input[^>]*>/.exec(form)![0]).not.toContain('aria-hidden');
 });
 
+test('the overlay search prefills on /search, so a phone refines without retyping', async () => {
+  // The header's half of this is in tests/pages.test.ts. Asserted separately
+  // rather than trusted to the shared `prefilledQuery`, because what this pins
+  // is that the COMPONENT calls it: below `lg` the header's field is not on the
+  // page, so this is the only one a phone can refine in.
+  const overlay = overlayOf(await html('/search?q=armature'));
+  expect(elementWith(overlay, 'form', 'data-nav-search')).toMatch(/<input[^>]*value="armature"/);
+
+  const home = overlayOf(await html('/'));
+  expect(elementWith(home, 'form', 'data-nav-search')).not.toMatch(/<input[^>]*value="[^"]/);
+});
+
 test('the overlay search input carries its own id, because /search renders one named q', async () => {
   // Two inputs with the same id on one page is a broken label, and `/search`
   // labels its own field `for="q"`. Asserted here because the collision is
