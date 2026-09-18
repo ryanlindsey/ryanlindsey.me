@@ -190,6 +190,116 @@ test('a real suite runs its case step and its record step under the step configs
   expect(row?.model).toBeNull();
 });
 
+/**
+ * The CODE of a TypeScript source, with its comments removed.
+ *
+ * Both halves are load-bearing for the scan below. Block comments go first
+ * because `EvalsWorkflow.run`'s own doc deliberately writes out
+ * `step.do('mint', ...)` in order to forbid it -- the same situation
+ * tests/candidacy-patterns.ts's `SCAN_EXCEPTIONS` records, where a rule that
+ * cannot name what it prohibits cannot be read by the next person to edit it.
+ * Counting that sentence as a call site would make this test permanently red
+ * against a comment that is doing its job.
+ *
+ * Whole-line `//` comments go too, which is also what keeps a stray bracket in
+ * prose out of the bracket matcher. `https://` mid-line survives, because only
+ * a line that STARTS with `//` is dropped.
+ */
+function codeOf(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('//'))
+    .join('\n');
+}
+
+/**
+ * The top-level arguments of the call whose opening `(` sits at `open`.
+ *
+ * A bracket matcher rather than a regex, because two of the three call sites
+ * span several lines and one passes an arrow function whose body contains
+ * commas, parentheses and a template literal. Only a comma at depth 1 splits.
+ *
+ * It fails LOUDLY rather than silently if it ever loses track -- a mismatched
+ * bracket yields garbage in `args[1]`, and garbage is not one of the two
+ * constant names the test demands. There is no reading of a corrupted scan
+ * that passes.
+ */
+function argumentsAt(source: string, open: number): string[] {
+  const args: string[] = [];
+  let depth = 0;
+  let start = open + 1;
+  for (let index = open; index < source.length; index += 1) {
+    const char = source[index]!;
+    if (char === '(' || char === '[' || char === '{') depth += 1;
+    else if (char === ')' || char === ']' || char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        args.push(source.slice(start, index));
+        return args;
+      }
+    } else if (char === ',' && depth === 1) {
+      args.push(source.slice(start, index));
+      start = index + 1;
+    }
+  }
+  return args;
+}
+
+test('every step.do in the workflow carries one of the two step configs', async () => {
+  // WHAT THIS PREVENTS, AND WHAT IT COSTS. A `step.do` with no config gets
+  // Cloudflare's default retry policy -- five retries, ten seconds apart,
+  // exponential backoff. On a case step that is five more `analyze_fit` calls
+  // per failure, each an Opus call over the whole corpus, each doing its own
+  // `RETRIES = 1` client retry, each of those fanning out at the gateway up to
+  // four times. `CASE_STEP` and `RECORD_STEP` in
+  // workers/mcp/src/evals-workflow.ts exist to stop that, and its own comment
+  // explains the composition.
+  //
+  // THE HAZARD IS DRIFT, NOT THE CODE AS WRITTEN. The end-to-end `tier` test
+  // above proves the two configs this branch wrote are ACCEPTED by workerd; it
+  // cannot prove that a fourth `step.do` added later carries one, and an
+  // unconfigured step reinstates the whole problem silently, with every other
+  // test in this file still green. This repository pins that class of hazard
+  // structurally rather than trusting the next edit to remember:
+  // tests/mcp-env.test.ts regenerates the binding list, tests/site-crons.test.ts
+  // compares two spellings of the cron list, tests/tier-invisibility.test.ts
+  // fails on a word appearing in the code of three named files. This is the
+  // same shape.
+  //
+  // THE DIRECTION IT FAILS IN is a call site without a config, which is the one
+  // that costs money. It deliberately does NOT count call sites against a
+  // number: a count goes stale the first time a step is legitimately added, and
+  // a test that has to be edited to add a step is a test that gets edited
+  // without being read.
+  const code = codeOf(await readFile('workers/mcp/src/evals-workflow.ts', 'utf8'));
+
+  const opens: number[] = [];
+  for (const match of code.matchAll(/\bstep\.do\(/g)) {
+    opens.push(match.index + match[0].length - 1);
+  }
+  // The one way this could go green while proving nothing: a pattern that
+  // matches no call at all.
+  expect(opens.length, 'no step.do call sites found').toBeGreaterThan(0);
+
+  for (const open of opens) {
+    const args = argumentsAt(code, open);
+    const config = args[1]?.trim();
+    // STRICTER THAN "has a second argument", deliberately. Requiring one of the
+    // two NAMED constants keeps the reasoning in one place: a step needing a
+    // third policy should add a third constant carrying its own argument, not
+    // an inline object literal that says what it does and never why.
+    expect(
+      config,
+      `a step.do near "${args[0]?.trim()}" does not pass CASE_STEP or RECORD_STEP`,
+    ).toMatch(/^(CASE_STEP|RECORD_STEP)$/);
+  }
+
+  // If a second Workflow class is ever added to this Worker, widening this
+  // read to every file that defines one is what keeps it honest; today
+  // evals-workflow.ts is the only one.
+});
+
 test('the corpus cron starts no evals instance', async () => {
   const before = await tokenRows();
   await mcp.scheduled({ cron: CORPUS_CRON, scheduledTime: new Date() });
