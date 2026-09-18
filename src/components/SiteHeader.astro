@@ -2,6 +2,7 @@
 import ThemeToggle from './ThemeToggle.astro';
 import MobileNav from './MobileNav.astro';
 import { NAV_LINKS } from '../lib/nav';
+import { MAX_QUERY_CHARS, normalizeQuery } from '../lib/search/engine';
 
 interface Props {
   // Sticky only for the two article routes (writing/[...slug], work/[...slug]
@@ -14,6 +15,26 @@ interface Props {
 const { sticky = false } = Astro.props;
 const path = Astro.url.pathname;
 const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`);
+
+/**
+ * What the search field starts with, which is empty everywhere but `/search`.
+ *
+ * READ FROM THE URL RATHER THAN THREADED DOWN AS A PROP. Passing it would mean
+ * a prop on Shell.astro and on ArticleLayout.astro that exactly one route ever
+ * sets, and `Astro.url` is already how this component knows which nav item is
+ * current two lines up. src/components/MobileNav.astro does the same, because
+ * the overlay's field is the same field below `lg`.
+ *
+ * NORMALISED WITH THE HANDLER'S OWN FUNCTION, not trimmed here. The string
+ * this field shows has to be the string src/pages/search.astro put in its
+ * heading, and that page normalises before it searches; a second set of rules
+ * here would show a visitor a query subtly unlike the one that was run.
+ *
+ * Guarded on the path because every other route on this site is prerendered,
+ * where `Astro.url` carries no query string at all and this would be dead work
+ * on every page of the build.
+ */
+const searchQuery = path === '/search' ? normalizeQuery(Astro.url.searchParams.get('q')) : '';
 ---
 
 <!--
@@ -91,24 +112,73 @@ const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`)
 
     <div class="ml-auto hidden items-center gap-[14px] lg:flex">
       <!--
-        A placeholder, not a control. Site search is not built -- no overlay,
-        no results page, no empty state, and none of those should be
-        invented here. A focusable element that does nothing is worse than a
-        label, and a screen reader should not be told there is a search on
-        this page, so this is a non-interactive <span> (aria-hidden), not a
-        <button> or an <input>, and no keyboard handler is bound anywhere in
-        this file for the shortcut the chip below advertises.
+        A CONTROL NOW, and until issue #149 this was deliberately not one. The
+        note that stood here said site search was not built -- "no overlay, no
+        results page, no empty state, and none of those should be invented
+        here" -- so it rendered a non-interactive <span>, aria-hidden, holding
+        no input and no button, and nothing anywhere bound the shortcut the
+        chip advertises. Epic #143 built the results page, so every clause of
+        that reasoning has expired: the element is in the accessibility tree,
+        it takes focus, and the chip describes a real binding.
+
+        A GET FORM, WHICH IS THE WHOLE ARGUMENT FOR A RESULTS PAGE OVER AN
+        OVERLAY. Enter submits and the browser navigates to `/search?q=...`,
+        an address somebody can link, reload and share. Nothing here calls
+        preventDefault, fetches, or opens a dropdown, so the search works with
+        scripting off -- src/lib/search-shortcut.ts adds the ⌘K convenience on
+        top and removing it would cost nothing but the chip.
+
+        The 260px box, the border and the type scale are the placeholder's,
+        unchanged. What replaced the label span is an <input> in the same
+        geometry, and the <label> is present and not shown for the reason
+        src/pages/search.astro states about its own field: a placeholder is not
+        a label, since it disappears the moment anybody types and is not
+        reliably announced.
+
+        `role="search"` AND A NAME, because this is not the only one. On
+        /search that page renders its own search landmark, and two unnamed ones
+        are indistinguishable to anybody navigating by landmark.
       -->
-      <span
-        data-search-placeholder
-        aria-hidden="true"
+      <form
+        data-header-search
+        role="search"
+        action="/search"
+        method="get"
+        aria-label="Search this site"
         class="flex w-[260px] items-center gap-2.5 border border-rule px-3 py-2"
       >
-        <span class="text-small font-mono text-ink-muted">Search</span>
-        <span class="ml-auto border border-rule px-[5px] py-px text-micro font-mono text-ink-muted">
+        <label class="sr-only" for="rl-header-search">
+          Search this site
+        </label>
+        <!--
+          NOT id="q", which is what src/pages/search.astro calls its own field.
+          This header renders on that page too, so the obvious name would be a
+          duplicate id and a label pointing at whichever element the browser
+          found first.
+        -->
+        <input
+          id="rl-header-search"
+          name="q"
+          type="search"
+          value={searchQuery}
+          maxlength={MAX_QUERY_CHARS}
+          autocomplete="off"
+          placeholder="Search"
+          aria-keyshortcuts="Meta+K Control+K"
+          class="w-full min-w-0 border-0 bg-transparent p-0 font-mono text-small text-ink placeholder:text-ink-muted"
+        />
+        <!--
+          The chip is decoration to a screen reader and the shortcut is not, so
+          the fact moves onto the control as `aria-keyshortcuts` rather than
+          being read out as the characters "⌘K" after the field's name.
+        -->
+        <span
+          aria-hidden="true"
+          class="ml-auto shrink-0 border border-rule px-[5px] py-px text-micro font-mono text-ink-muted"
+        >
           ⌘K
         </span>
-      </span>
+      </form>
       <ThemeToggle />
     </div>
 

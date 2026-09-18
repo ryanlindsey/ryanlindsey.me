@@ -4,6 +4,7 @@ import { env } from 'cloudflare:workers';
 import Shell from '../layouts/Shell.astro';
 import { readingTimeFor } from '../lib/reading-time';
 import {
+  MAX_QUERY_CHARS,
   normalizeQuery,
   parseSearchType,
   UNKNOWN_SEARCH_TYPE,
@@ -436,11 +437,31 @@ const summary =
     The label is present and not shown, for the reason that file states: a
     placeholder is not a label, since it disappears the moment anybody types
     and is not reliably announced.
+
+    `maxlength` IS THE CONSTANT RATHER THAN THE NUMBER, since issue #149. It
+    was `maxlength="100"`, which agreed with `MAX_QUERY_CHARS` by coincidence
+    rather than by construction; #149 added two more copies of this field to
+    the site chrome, and three hand-typed hundreds is a drift waiting to
+    happen. The cap that matters is `normalizeQuery`'s on the far side either
+    way -- the attribute only stops the browser sending what will be cut.
   */}
   <div class="mx-auto max-w-[1440px] px-5 pb-10 lg:px-10">
-    <form data-search-form method="get" action="/search" role="search">
+    {/*
+      NAMED, AND THE NAME IS NOT "Search this site". Issue #149 gave the header
+      a search form of its own, so this page now renders two search landmarks
+      and the header's carries that exact label. Two landmarks with one name
+      between them is a list a screen-reader user cannot choose from, and this
+      one is the page's own field rather than the site-wide one in the chrome.
+    */}
+    <form
+      data-search-form
+      method="get"
+      action="/search"
+      role="search"
+      aria-label="Refine this search"
+    >
       <label class="sr-only" for="q">
-        Search this site
+        Refine this search
       </label>
       <div class="flex items-center gap-[14px] border border-rule px-[18px] py-4">
         <input
@@ -448,7 +469,7 @@ const summary =
           name="q"
           type="search"
           value={query}
-          maxlength="100"
+          maxlength={MAX_QUERY_CHARS}
           autocomplete="off"
           class="w-full border-0 bg-transparent text-body text-ink placeholder:text-ink-muted"
           placeholder="A word, a title, a product name"

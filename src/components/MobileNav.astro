@@ -1,6 +1,7 @@
 ---
 import ThemeToggle from './ThemeToggle.astro';
 import { NAV_LINKS, SYSTEM_LINKS, AGENT_LINKS } from '../lib/nav';
+import { MAX_QUERY_CHARS, normalizeQuery } from '../lib/search/engine';
 
 /**
  * The mobile navigation takeover (issue #101, design 1c). Rendered inside
@@ -36,6 +37,15 @@ const demotedLinks = [...SYSTEM_LINKS.filter((link) => !link.href.includes('#'))
 // Same rule as the footer's: anything that leaves the site opens in a new tab
 // and carries rel="noopener". Only the MCP endpoint does, here.
 const isExternal = (href: string) => href.startsWith('http');
+
+/**
+ * The search field's starting value, read the way SiteHeader.astro reads it and
+ * for the reason stated there. Repeated rather than shared because this overlay
+ * and that row render the same field at two widths, and a visitor refining a
+ * search on a phone should no more have to retype it than one on a laptop.
+ */
+const searchQuery =
+  Astro.url.pathname === '/search' ? normalizeQuery(Astro.url.searchParams.get('q')) : '';
 ---
 
 <!--
@@ -97,21 +107,50 @@ const isExternal = (href: string) => href.startsWith('http');
     </nav>
 
     <!--
-      The header's search placeholder, repeated full width, under the same rule
-      it follows up there: site search is not built, so this is a label and not
-      a control. A non-interactive <span>, aria-hidden, nothing focusable in
-      it, and no handler anywhere for the shortcut the chip advertises.
+      The header's search form, repeated full width, under the same rule it
+      follows up there. Until issue #149 the note here said site search was not
+      built, so this was "a label and not a control -- a non-interactive
+      <span>, aria-hidden, nothing focusable in it, and no handler anywhere for
+      the shortcut the chip advertises". Epic #143 built `/search`, so this is
+      now a real GET form and every clause of that sentence is false.
+
+      THIS IS SITE SEARCH ON A PHONE, not a convenience copy of it.
+      SiteHeader.astro's right cluster is `hidden lg:flex`, so below `lg` its
+      field is not on the page at all and this one is the only one there is.
+      That is the same argument that put a theme toggle down here, and it is
+      why src/lib/search-shortcut.ts opens this overlay rather than focusing a
+      field nobody can see.
     -->
-    <span
-      data-search-placeholder
-      aria-hidden="true"
+    <form
+      data-nav-search
+      role="search"
+      action="/search"
+      method="get"
+      aria-label="Search this site"
       class="mt-6 flex items-center gap-2.5 border border-rule p-3.5"
     >
-      <span class="font-mono text-small text-ink-muted">Search</span>
-      <span class="ml-auto border border-rule px-[5px] py-px font-mono text-micro text-ink-muted">
+      <label class="sr-only" for="rl-nav-search">
+        Search this site
+      </label>
+      <!-- Its own id, for the reason SiteHeader.astro gives: /search calls its field `q`. -->
+      <input
+        id="rl-nav-search"
+        name="q"
+        type="search"
+        value={searchQuery}
+        maxlength={MAX_QUERY_CHARS}
+        autocomplete="off"
+        placeholder="Search"
+        aria-keyshortcuts="Meta+K Control+K"
+        class="w-full min-w-0 border-0 bg-transparent p-0 font-mono text-small text-ink placeholder:text-ink-muted"
+      />
+      <span
+        aria-hidden="true"
+        class="ml-auto shrink-0 border border-rule px-[5px] py-px font-mono text-micro text-ink-muted"
+      >
         ⌘K
       </span>
-    </span>
+    </form>
 
     <!--
       The theme control, directly under the search placeholder because that is
@@ -155,6 +194,13 @@ const isExternal = (href: string) => href.startsWith('http');
 
 <script>
   import { initMobileNav } from '../lib/mobile-nav';
+  import { initSearchShortcut } from '../lib/search-shortcut';
 
   initMobileNav();
+  // Wired from here rather than from SiteHeader.astro, because the shortcut
+  // reaches BOTH fields and the mobile branch needs this overlay to exist and
+  // to have been initialised first -- it opens the nav by clicking the toggle
+  // that initMobileNav just bound. Astro bundles both modules into one script,
+  // so a visitor still gets a single request.
+  initSearchShortcut();
 </script>

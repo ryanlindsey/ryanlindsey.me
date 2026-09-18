@@ -35,8 +35,12 @@ const headerMarkup = builtHeaderMarkup();
 const toggle = () => document.querySelector<HTMLButtonElement>('[aria-controls="rl-mobile-menu"]')!;
 const overlay = () => document.getElementById('rl-mobile-menu')!;
 const closeButton = () => document.querySelector<HTMLButtonElement>('[aria-label="Close menu"]')!;
+// Kept in step with FOCUSABLE in src/lib/mobile-nav.ts, which grew `input` in
+// issue #149 when the overlay's search label became a real field.
 const focusables = () => [
-  ...overlay().querySelectorAll<HTMLElement>('a[href], button:not([disabled])'),
+  ...overlay().querySelectorAll<HTMLElement>(
+    'a[href], button:not([disabled]), input:not([disabled])',
+  ),
 ];
 
 /**
