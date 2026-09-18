@@ -10,4 +10,4 @@
  * markers are safe only because that test exists; delete it and they become
  * two things to remember.
  */
-export const DISCOVERY_VERSION = '1.26.2'; // x-release-please-version
+export const DISCOVERY_VERSION = '1.26.3'; // x-release-please-version

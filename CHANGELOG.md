@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.26.3](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.26.2...ryanlindsey-me-v1.26.3) (2026-09-18)
+
+
+### Bug Fixes
+
+* **fit:** read the whole SSE stream so a long run's report is not discarded ([#278](https://github.com/ryanlindsey/ryanlindsey.me/issues/278)) ([310c94c](https://github.com/ryanlindsey/ryanlindsey.me/commit/310c94c1c014b54c4e56a1c174544b145f08e7cb))
+
 ## [1.26.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.26.1...ryanlindsey-me-v1.26.2) (2026-09-18)
 
 
