@@ -149,21 +149,36 @@ describe('the pure half: normalization and the cache key', () => {
     expect(SEARCH_CACHE_TTL_SECONDS).toBe(86_400);
   });
 
-  test('the cache namespace moved off v1, so pre-reranking answers are unreadable', async () => {
-    // #249 turned reranking on, which changes the CONTENT of a cached value
-    // under an unchanged shape. The key is built from the query alone, so
-    // without this bump every query anybody had already run would keep serving
-    // its pre-reranking results for up to twenty-four hours, and the by-hand
-    // verification that issue asks for would read as a failure. Observed
-    // directly on #148: `/search?q=turnstile` served pre-reranking results
-    // after the instance flag flipped.
+  test('the cache namespace moved off v2, so boilerplate-era answers are unreadable', async () => {
+    // Twice now for the same reason, which is why this test is named after the
+    // namespace rather than after either change.
+    //
+    // #249 turned reranking on. #250 put a content selector on the instance,
+    // so a chunk is a page's `<main>` rather than the whole document: the skip
+    // link stops reaching the index, every chunk boundary behind it moves, and
+    // the scores, the URLs and the excerpts a query answers with move with
+    // them. (The skip link alone -- the header and the footer were never in a
+    // chunk, which src/lib/search/engine.ts records.) Both are changes to the
+    // CONTENT of a cached value under an unchanged shape, and `searchCacheKey`
+    // is built from the query alone -- nothing in it names the index, the
+    // instance configuration or the retrieval options. Without the bump every
+    // query anybody had already run keeps serving its old answer for up to
+    // twenty-four hours, and the by-hand verification both issues ask for
+    // reads as a failure.
+    //
+    // ORDER THE TWO HALVES, because only one direction is clean. The instance
+    // change and this deploy are separate acts, and #250 applies the selector
+    // FIRST, waiting for the sync it triggers to finish: entries written
+    // before that point are v2 and this bump discards them. Deploying first
+    // inverts it -- v3 entries written before the new chunks exist come from
+    // the old index and survive it by up to a day.
     //
     // PINNED TO A LITERAL, and going red on the next legitimate bump is the
     // point rather than a defect: this repo pins `SEARCH_CACHE_TTL_SECONDS`
     // the same way. Whoever bumps it updates this line and reads the comment
     // above while doing so. The key prefix derives from the constant, so only
     // this one line carries the number.
-    expect(SEARCH_CACHE_VERSION).toBe(2);
+    expect(SEARCH_CACHE_VERSION).toBe(3);
     expect(await searchCacheKey('turnstile')).toMatch(
       new RegExp(`^search:v${SEARCH_CACHE_VERSION}:`),
     );

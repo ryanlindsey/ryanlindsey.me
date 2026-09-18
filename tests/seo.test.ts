@@ -1,12 +1,20 @@
 /**
- * The invariants every page's `<head>` carries, asserted across the whole site
- * at once (issue #151, epic #150).
+ * The invariants every page carries for the machines that read it, asserted
+ * across the whole site at once (issue #151, epic #150).
+ *
+ * `<head>` WAS THE WHOLE SCOPE UNTIL #250, and the widening is one rule rather
+ * than a new axis: the last test in this file is about `<body>` structure,
+ * because the AI Search crawler's content selector reads the body and a page
+ * that stops matching it leaves the index silently. Same question either way
+ * -- what does this site guarantee to something that fetches every page? --
+ * so it belongs beside the canonical, robots and sitemap sweeps rather than in
+ * a file of its own.
  *
  * WHY THIS IS NOT MORE OF tests/pages.test.ts. That file is organised by page --
  * this page has this header, that page has that footer -- which is the right
  * axis for what it asserts. These run the other way: one rule, every page. A
- * reader asking "what does this site guarantee about every `<head>`?" should
- * find one file that answers it rather than a grep across two thousand lines.
+ * reader asking "what does this site guarantee about every page?" should find
+ * one file that answers it rather than a grep across two thousand lines.
  *
  * Every assertion here runs against RENDERED OUTPUT fetched through the
  * harness, never against the source of `src/layouts/Base.astro`. A test that
@@ -25,7 +33,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { SITE_HARNESS_WORKERS } from './workers';
-import { stripComments } from './markup';
+import { elementWith, stripComments } from './markup';
 import { isUnindexed } from '../src/lib/unindexed-routes.mjs';
 
 // See ./workers.ts for why the site Worker is booted from the build output and
@@ -633,4 +641,111 @@ test('every dated URL in the sitemap carries a lastmod traceable to its own cont
   expect(problems, `sitemap lastmod values disagree with content:\n${problems.join('\n')}`).toEqual(
     [],
   );
+});
+
+/**
+ * The markup the AI Search content selector stands on (issue #250, epic #143),
+ * asserted here rather than in tests/search-page.test.ts because this is a
+ * fact about what a crawler is served rather than about what `/search` does
+ * with it.
+ *
+ * The instance carries one content selector entry -- path `**`, selector
+ * `main` -- so what is indexed from a crawled page is that page's `<main>`
+ * element and nothing else.
+ *
+ * WHAT THAT ACTUALLY BUYS IS THE SKIP LINK, and the first draft of this
+ * comment claimed the header and the footer with it. They were already gone:
+ * Cloudflare's default pipeline removes `<header>`, `<footer>` and `<head>`
+ * before converting, and #145 measured exactly that against this instance --
+ * "the header nav and the whole footer are absent from every chunk". The skip
+ * link survived because it is a bare `<a>` sitting in `<body>` ahead of the
+ * header, which no default rule names. So the selector's delta is that one
+ * line plus anything else a layout ever puts outside `<main>` that is not
+ * header, footer or head.
+ *
+ * ONE LINE IS WORTH A SELECTOR BECAUSE OF WHAT RERANKING DOES TO IT. Measured
+ * against the live instance on 2026-09-17: `skip to content` returned ten
+ * pages scoring 0.8565 to 0.9545. #250 and #148 both record eight, and both
+ * are right for when they were written -- #249 raised `max_num_results` from
+ * ten to twenty in between, so more of the same answer comes back now. The
+ * score range is identical to four decimals either way. Chrome present in
+ * every document matching confidently against every document is the shape,
+ * and the count is how much of it fits in a response.
+ *
+ * WHAT MAKES THE CONFIGURATION FRAGILE is not the selector, which is one
+ * word. It is that a page whose markup stops matching it is not an error
+ * anybody sees. Cloudflare's own documentation is explicit: "If a CSS
+ * selector does not match any elements on a page, the resulting Markdown is
+ * empty and AI Search marks the item as errored." So a layout change that
+ * renamed `<main>` would break no build, no test and no deploy -- it would
+ * quietly empty that page out of the index. #145 already measured that the
+ * job log cannot see this class of failure either: it reported
+ * `Batch: 12 fetched, 12 queued, 0 errored, 0 skipped` and `12 files seen`
+ * on runs where a file failed to embed, and the dashboard's Items tab was the
+ * only place it showed.
+ *
+ * SCOPED TO THE SITEMAP rather than to `ALL_PAGES`, because the sitemap IS
+ * the crawler's input (`parse_type: sitemap`) and therefore exactly the set
+ * the selector has to hold for. That is also the only scope that passes:
+ * `/resume.print/` bypasses Shell.astro deliberately (see its own header) and
+ * renders no `<main>` at all, so an `ALL_PAGES` sweep would fail today on a
+ * page no crawler is ever offered.
+ *
+ * FOUR ASSERTIONS RATHER THAN ONE, because three of the four ways this breaks
+ * leave the fourth green:
+ *
+ *   - EXACTLY ONE `<main>`, not at least one, for the reason the canonical
+ *     sweep above gives about its own tag: a second one matches the selector
+ *     too and the crawler would index both.
+ *   - THE PAGE'S `<h1>` INSIDE IT, which is what makes this about content
+ *     rather than about a tag. An empty `<main>` next to a redesign that moved
+ *     the page body out of it satisfies every structural check here and
+ *     indexes nothing, which is the same silent emptying the paragraph above
+ *     is about.
+ *   - THE SKIP LINK PRESENT, spelled exactly. A pure absence check passes
+ *     against a link that was deleted or relabelled, and that is not a
+ *     hypothetical blind spot: `excerptFrom` in src/lib/search/results.ts
+ *     keeps a rule matching this literal for an instance rebuilt without the
+ *     selector, and nothing else in the repo pins the words --
+ *     tests/pages.test.ts anchors on `href="#main"` and its own comment
+ *     records the same trap from the other side.
+ *   - AND OUTSIDE `<main>`, which is the position the selector relies on.
+ */
+test('every page the sitemap lists carries the markup the content selector needs', async () => {
+  // COLLECTED AND ASSERTED ONCE, like the two sitemap sweeps above rather than
+  // like the older `ALL_PAGES` ones: a rule about the whole crawled set wants
+  // an answer about the whole crawled set. A per-page `expect` reports the
+  // first page a redesign broke and hides whether it broke one or all twelve,
+  // which is the difference between a typo and a layout change.
+  const problems: string[] = [];
+
+  for (const path of await sitemapPaths()) {
+    const html = await page(path);
+
+    const opens = [...html.matchAll(/<main\b/g)].length;
+    if (opens !== 1) {
+      problems.push(`${path} renders ${opens} <main> elements, want exactly 1`);
+      // Nothing below can be read off a page with no main or two of them, and
+      // `elementWith` would throw rather than report the path.
+      continue;
+    }
+
+    const main = elementWith(html, 'main', 'id="main"');
+
+    const headings = [...main.matchAll(/<h1\b/g)].length;
+    if (headings !== 1) {
+      problems.push(`${path} renders ${headings} <h1> inside <main>, want exactly 1`);
+    }
+
+    if (!html.includes('Skip to content')) {
+      problems.push(`${path} renders no "Skip to content" link`);
+    } else if (main.includes('Skip to content')) {
+      problems.push(`${path} carries the skip link inside <main>, where the selector keeps it`);
+    }
+  }
+
+  expect(
+    problems,
+    `the content selector's markup contract is broken:\n${problems.join('\n')}`,
+  ).toEqual([]);
 });

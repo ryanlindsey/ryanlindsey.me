@@ -90,6 +90,27 @@ The `ryanlindsey.me` zone carries two DNS-AID entrypoint records, added by hand 
 
 Neither record names its own path, and not by choice. The draft defines a `well-known` service parameter for exactly that job, and Cloudflare rejects it: the parameter has no assigned IANA key number, and an unknown key fails validation. So each record carries `alpn` and `port`, and the path lives one fetch away in the document its target serves. Moving or renaming either document breaks a DNS record that no test in this repository can see.
 
+### The AI Search instance, which this repository also does not manage
+
+`/search` reads `ryanlindsey-me-search`, and six of its settings are decisions this code depends on and cannot see. They are set in the Cloudflare dashboard, `wrangler ai-search update` exposes flags for only some of them, and `wrangler ai-search get` serves a cached copy, so `wrangler ai-search list` is how you read one back after a write.
+
+| Setting            | Value           | What breaks without it                                                                                    |
+| ------------------ | --------------- | --------------------------------------------------------------------------------------------------------- |
+| `parse_type`       | `sitemap`       | the sitemap stops being the allowlist, and `src/lib/unindexed-routes.mjs` stops governing what is indexed |
+| path filter        | excludes `/fit` | the second of the epic's three gates keeping `/fit/r/<id>` tokens out of the index                        |
+| `content_selector` | `**` to `main`  | the skip link returns to every chunk, and reranking makes it win queries (#250)                           |
+| `sync_interval`    | `86400`         | `SEARCH_CACHE_TTL_SECONDS` is matched to this number and has to follow it down                            |
+| `reranking`        | `true`          | `durable objects` returns nothing, on five pages that carry the phrase (#148)                             |
+| `max_num_results`  | `20`            | the handler asks for twenty and is served the instance's number instead (#249)                            |
+
+Three things follow, and the third is the one that bites.
+
+**A content selector matching nothing is not an error anybody sees.** Cloudflare marks the item errored, the job log still reports a clean batch, and only the dashboard's Items tab says otherwise, so the page leaves the index in silence. `tests/seo.test.ts` holds the site's half of that contract: every page the sitemap lists renders exactly one `<main>`, with its `<h1>` inside it and the skip link outside.
+
+**A selector reaches the body only, so it is not a general answer to crawled boilerplate.** Cloudflare's HTML pipeline extracts the meta tags and the JSON-LD before the selector runs, and both land in the markdown regardless: every chunk set still opens with a synthesised frontmatter fence and closes with a fenced JSON-LD block. `excerptFrom` in `src/lib/search/results.ts` is the only thing that removes the first and nothing removes the second.
+
+**Changing what the index holds means changing `SEARCH_CACHE_VERSION` too, and in that order.** `searchCacheKey` is built from the query alone, so nothing in a cached entry names the index or the instance configuration. Apply the instance change, wait for the sync it triggers to finish, then deploy the bump: entries written before that point are discarded. Deploying first writes entries from the old index and keeps each for a full day.
+
 ## Tests
 
 Vitest plus `createTestHarness` from wrangler, booting real Workers inside workerd. `tests/workers.ts` holds the shared worker lists and the reasoning behind each override; read it before adding a suite. The site Worker boots from the adapter's build output rather than from the source config, so the tests exercise the artifact that ships.

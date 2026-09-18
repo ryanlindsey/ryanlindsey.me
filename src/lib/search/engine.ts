@@ -115,17 +115,60 @@ export const SEARCH_CACHE_TTL_SECONDS = 86_400;
  * them, and different scores -- roughly 0.53 to 0.99 where the cosine scores
  * v1 cached sit between 0.40 and 0.56.
  *
+ * v2 -> v3 (#250): the instance grew a content selector -- path `**`,
+ * selector `main` -- so a chunk is a page's `<main>` rather than its whole
+ * document. Same fields again; the chunk text loses the skip link, and every
+ * chunk boundary behind it moves, so the scores and the URLs move with it.
+ *
+ * THE SKIP LINK, AND NOT THE HEADER OR THE FOOTER, and an earlier draft of
+ * this line claimed all three. Cloudflare's default pipeline already removes
+ * `<header>`, `<footer>` and `<head>` before converting, and #145 measured
+ * that against this instance: "the header nav and the whole footer are absent
+ * from every chunk". What survived was a bare `<a>` in `<body>` ahead of the
+ * header, which no default rule names. Worth keeping straight, because the
+ * overstated version is what would send the next reader after a selector for
+ * a problem the default already solves.
+ *
+ * THIS ONE IS THE CASE THE PARAGRAPH BELOW SAYS CANNOT BE COVERED, AND IT IS
+ * COVERED ONLY BECAUSE OF WHEN IT HAPPENS. A content selector is instance
+ * configuration: nothing in this repository forces the bump, and a later
+ * change to it will not. What makes v3 honest is that #250 applies the
+ * selector BEFORE this deploys, so every entry written against the old chunks
+ * is a v2 entry and this bump discards all of them. Reversing the order would
+ * not work -- v3 entries written in the gap would come from the old index and
+ * outlive the selector by up to `SEARCH_CACHE_TTL_SECONDS`.
+ *
+ * "BEFORE THIS DEPLOYS" MEANS AFTER THE SYNC IT TRIGGERS HAS FINISHED, which
+ * is the narrower condition and the one to hold. Saving a content selector
+ * starts a sync immediately, and until it completes the index still holds old
+ * chunks, so a deploy landing mid-sync writes v3 entries built from them and
+ * keeps each for a full TTL. Twelve pages makes that window small rather than
+ * absent, and #145 watched a single file stall in the retry queue across
+ * successive syncs, so "small" is not "over when the job log says so".
+ *
+ * IT WAS AN UPDATE RATHER THAN A REBUILD, which matters to whoever changes it
+ * next, because #250 and #148 both say it cannot be. They rest on #145's
+ * finding that `source_params` is settable at create time and not by
+ * `update` -- true of the path filter, and not true of this field:
+ * Cloudflare documents content selectors as configured "when creating or
+ * updating an AI Search instance", with an update triggering an immediate
+ * sync. `wrangler ai-search update` still exposes no flag for it, so the
+ * dashboard is the only way in either case. The distinction is worth the
+ * sentence: a rebuild would also have to re-enter `sync_interval: 86400`, the
+ * path filter excluding `/fit`, `reranking` and `max_num_results: 20` by
+ * hand, and the second of those is one of the epic's three gates.
+ *
  * WHAT THIS CANNOT COVER is the instance moving underneath a deploy that
  * changes no file here: `reranking_model`, `embedding_model`, the crawl's
- * chunking, or simply the index's contents after a sync. Each changes what a
- * query answers and `wrangler ai-search update` leaves nothing in this
- * repository to bump. Not `reranking` itself, which is the one that used to
- * belong on this list and no longer does: #249 pins it in the request, and the
- * request value wins. That lag is the one above, bounded by the TTL, and the
- * epic's alternative was a cache keyed on a version the instance does not
- * publish.
+ * chunking, the content selector once it is set, or simply the index's
+ * contents after a sync. Each changes what a query answers and
+ * `wrangler ai-search update` leaves nothing in this repository to bump. Not
+ * `reranking` itself, which is the one that used to belong on this list and no
+ * longer does: #249 pins it in the request, and the request value wins. That
+ * lag is the one above, bounded by the TTL, and the epic's alternative was a
+ * cache keyed on a version the instance does not publish.
  */
-export const SEARCH_CACHE_VERSION = 2;
+export const SEARCH_CACHE_VERSION = 3;
 
 /** One result, flat, with nothing in it that was not measured or crawled. */
 export interface SearchResult {
@@ -425,6 +468,17 @@ export function searchEngineMode(env: SearchEngineEnv): 'live' | 'stub' {
  * configured in the Cloudflare dashboard, which this repository neither sets
  * nor can read. So the exclusion holds today and rests on something no test
  * here can see.
+ *
+ * #250 ADDED A THIRD DASHBOARD-ONLY SETTING THAT CAN CHANGE THAT SET, which is
+ * the one to know about because it shrinks the index rather than growing it. A
+ * content selector -- path `**`, selector `main` -- narrows each page to its
+ * own `<main>`, and Cloudflare's documentation says a selector matching
+ * nothing leaves empty markdown and marks the item errored. So a layout that
+ * stopped rendering `<main>` would drop that page out of the index with no
+ * build, test or deploy going red, and #145 measured that the job log reports
+ * a clean batch through exactly this kind of per-item failure. That half IS
+ * testable from here and tests/seo.test.ts now holds it: every page the
+ * sitemap lists renders exactly one `<main>`.
  *
  * WHICH IS WHY THE JOIN IS THE AUTHORITATIVE GATE, as the epic says in its own
  * words. This endpoint is a public GET on its own origin and it applies no
