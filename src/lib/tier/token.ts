@@ -13,7 +13,7 @@
 // audience-specific meaning arrives as runtime data, never as code.
 
 /** What a grant may reach. A closed set: an unknown scope is a malformed token. */
-export type Scope = 'fit' | 'profile' | 'documents' | 'narrative' | 'evals';
+export type Scope = 'fit' | 'profile' | 'documents' | 'narrative' | 'evals' | 'authoring';
 
 /**
  * Every scope, in the order `scripts/token.mjs` prints them.
@@ -39,21 +39,43 @@ export const SCOPES = [
    * exposing something without publishing that it exists.
    */
   'evals',
+  /**
+   * The owner's own authoring client, and the same argument `evals` above
+   * makes. Drafting happens in a Claude Cowork project that can reach
+   * `mcp.ryanlindsey.me` and nothing else of ours, so the brief that governs
+   * a narrative document has to be reachable over HTTP. It is NOT `evals`
+   * reused: an eval-harness token would then also unlock authoring material,
+   * which is the split this list exists to draw.
+   */
+  'authoring',
 ] as const satisfies readonly Scope[];
 
 /**
- * `SCOPES` with `evals` withheld -- the epic's highest-stakes invariant
- * (global-constraints.md: "`evals` never appears in public metadata"), and
- * derived here once rather than written out as `SCOPES.filter((scope) =>
- * scope !== 'evals')` at each call site. `evals`'s own comment above explains
- * why the scope must not be named to an anonymous caller; until the
- * epic-165 follow-up review, that reasoning was expressed as the same filter
- * written out independently in src/lib/discovery/protected-resource.ts and
- * src/lib/discovery/auth-doc.ts, with nothing tying the two together --
- * deleting the filter in either one would have been a silent leak with no
- * structural obstacle. Both now import this constant instead.
+ * The scopes withheld from public metadata: named to nobody who has not
+ * already been handed one. `evals` was the first and the reason this idea
+ * exists (its own comment above explains why an anonymous caller must not
+ * learn that a scoring endpoint is reachable), and `authoring` joined it in
+ * epic 263 for the same reason about a different client. A LIST rather than
+ * the single `scope !== 'evals'` inequality it used to be, because a third
+ * withheld scope should be one entry here rather than a second clause spliced
+ * into a filter.
  */
-export const PUBLIC_SCOPES: readonly Scope[] = SCOPES.filter((scope) => scope !== 'evals');
+const WITHHELD_SCOPES: readonly Scope[] = ['evals', 'authoring'];
+
+/**
+ * `SCOPES` minus the withheld ones -- the epic's highest-stakes invariant
+ * (global-constraints.md: "`evals` never appears in public metadata", and now
+ * one scope more than that), derived here once rather than written out at
+ * each call site. Until the epic-165 follow-up review that reasoning was
+ * expressed as the same filter written out independently in
+ * src/lib/discovery/protected-resource.ts and src/lib/discovery/auth-doc.ts,
+ * with nothing tying the two together -- deleting the filter in either one
+ * would have been a silent leak with no structural obstacle. Both now import
+ * this constant instead.
+ */
+export const PUBLIC_SCOPES: readonly Scope[] = SCOPES.filter(
+  (scope) => !WITHHELD_SCOPES.includes(scope),
+);
 
 /**
  * Type guard for `Scope`, so a caller holding an `unknown`/`string` value can

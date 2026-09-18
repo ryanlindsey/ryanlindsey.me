@@ -90,11 +90,13 @@ export function buildInstructions(grant: Grant | null, refusal: GrantRefusal | n
   const granted = gatedToolLines(grant);
   const header = `This connection carries a scoped token for the audience "${grant.audience}".`;
   // A grant that opens NO tool still gets the header, and gets it without the
-  // colon. Every scope opens a tool in this build, so the state is now reached
-  // by a grant carrying NO scope -- which is not hypothetical: a grant's scopes
-  // come from its REGISTRY ROW rather than from its claim (src/lib/tier/grant.ts),
-  // so narrowing a live token to nothing is one operator edit away, and it is
-  // the natural shape of a soft revoke. Such a caller would otherwise be sent
+  // colon. Two things reach that state, and neither is hypothetical. A grant
+  // carrying NO scope: a grant's scopes come from its REGISTRY ROW rather than
+  // from its claim (src/lib/tier/grant.ts), so narrowing a live token to
+  // nothing is one operator edit away, and it is the natural shape of a soft
+  // revoke. And a grant carrying only `authoring`, which opens no tool at all
+  // -- this comment said "every scope opens a tool in this build" until epic
+  // 263 added one that does not. Such a caller would otherwise be sent
   // "It also has:" followed by nothing at all -- a dangling colon that reads as
   // a broken server rather than as a shut door. The header itself is kept
   // because it is true and useful: it confirms the token WAS accepted, which is

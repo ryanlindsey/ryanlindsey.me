@@ -32,15 +32,23 @@ const PRIVATE_ACCESS_TEXT =
  * authorization server, only that there is not one).
  *
  * The scope list is DERIVED from `PUBLIC_SCOPES` (../tier/token.ts), same
- * discipline as ./protected-resource.ts and for the same reason: `evals` must
- * not appear in a document served to anonymous callers (see that scope's own
- * comment in ../tier/token.ts), and deriving rather than typing the names out
- * means a sixth scope added to the closed set cannot silently go unlisted
- * here while `evals` cannot silently leak in. `PUBLIC_SCOPES` used to be a
- * filter written out independently in this file and in
+ * discipline as ./protected-resource.ts and for the same reason: a withheld
+ * scope must not appear in a document served to anonymous callers (see those
+ * scopes' own comments in ../tier/token.ts), and deriving rather than typing
+ * the names out means a scope added to the closed set cannot silently go
+ * unlisted here while a withheld one cannot silently leak in. `PUBLIC_SCOPES`
+ * used to be a filter written out independently in this file and in
  * ./protected-resource.ts -- two copies of the epic's highest-stakes
  * invariant with nothing tying them together. It is now derived once, there,
  * and both files import it.
+ *
+ * An earlier version of this comment promised that "a sixth scope added to
+ * the closed set cannot silently go unlisted here", which epic 263 falsified
+ * by adding a sixth scope that is unlisted here ON PURPOSE. The guarantee is
+ * narrower than it was written: what cannot happen silently is a PUBLIC scope
+ * going unlisted, or a WITHHELD one being listed. Which side a new scope falls
+ * on is a decision recorded in `WITHHELD_SCOPES`, not something this file
+ * derives.
  */
 export function buildAuthDoc(): string {
   const scopeList = PUBLIC_SCOPES.map((scope) => `- \`${scope}\``).join('\n');

@@ -43,14 +43,16 @@ export interface ProtectedResourceMetadata {
 export function buildProtectedResource(origin: string): ProtectedResourceMetadata {
   return {
     resource: `${origin}/mcp`,
-    // PUBLIC_SCOPES (../tier/token.ts) rather than SCOPES, so a scope added to
-    // the closed set cannot quietly skip this document. `evals` is withheld:
-    // its own comment in ../tier/token.ts says a scoped grant is this repo's
-    // mechanism for exposing something without publishing that it exists, and
-    // naming it to anonymous callers would undo that. That withholding used to
-    // be a filter written out here AND, independently, in ./auth-doc.ts -- two
-    // expressions of the epic's highest-stakes invariant with nothing tying
-    // them together. PUBLIC_SCOPES is now the one place either can drift from.
+    // PUBLIC_SCOPES (../tier/token.ts) rather than SCOPES, so a PUBLIC scope
+    // added to the closed set cannot quietly skip this document. Two scopes are
+    // withheld rather than one (`evals` since day 6, `authoring` since epic
+    // 263): each one's comment in ../tier/token.ts makes the same argument,
+    // that a scoped grant is this repo's mechanism for exposing something
+    // without publishing that it exists, and naming it to anonymous callers
+    // would undo that. That withholding used to be a filter written out here
+    // AND, independently, in ./auth-doc.ts -- two expressions of the epic's
+    // highest-stakes invariant with nothing tying them together. PUBLIC_SCOPES
+    // is now the one place either can drift from.
     scopes_supported: PUBLIC_SCOPES,
     bearer_methods_supported: ['header'],
     resource_documentation: 'https://ryanlindsey.me/auth.md',

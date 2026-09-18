@@ -6,10 +6,19 @@ import { SCOPES } from '../src/lib/tier/token';
 import { buildMcpDiscovery } from '../src/lib/mcp/discovery';
 import { SITE_HARNESS_WORKERS } from './workers';
 
-test('the document names every scope except evals, derived rather than typed', () => {
+// The withheld scopes, RESTATED here rather than imported from
+// src/lib/tier/token.ts, and that restatement is the whole value of the
+// assertions below. A test that imported `PUBLIC_SCOPES` would agree with any
+// change made to it, including the change that widens it; this list has to be
+// edited by a second hand before a scope can start appearing in public
+// metadata. It was one literal `!== 'evals'` in each place until epic 263
+// added a second withheld scope.
+const WITHHELD = ['evals', 'authoring'];
+
+test('the document names every scope except the withheld ones, derived rather than typed', () => {
   const doc = buildProtectedResource('https://mcp.ryanlindsey.me');
-  expect(doc.scopes_supported).toEqual(SCOPES.filter((s) => s !== 'evals'));
-  expect(doc.scopes_supported).not.toContain('evals');
+  expect(doc.scopes_supported).toEqual(SCOPES.filter((s) => !WITHHELD.includes(s)));
+  for (const scope of WITHHELD) expect(doc.scopes_supported).not.toContain(scope);
 });
 
 test('no authorization server is named, because none exists', () => {
@@ -66,15 +75,17 @@ test('auth.md claims no OAuth flow it cannot perform', () => {
   }
 });
 
-// Epic-165 follow-up review, finding 5: `evals` withholding is structural on
-// the JSON side (buildProtectedResource's `scopes_supported` is derived from
+// Epic-165 follow-up review, finding 5: withholding is structural on the JSON
+// side (buildProtectedResource's `scopes_supported` is derived from
 // PUBLIC_SCOPES, a typo cannot silently widen an array nothing hand-writes),
 // but auth.md is prose -- a reviewer or an editor typing a sentence that
-// names the scope would pass every other assertion in this file, because
-// none of them scans the WHOLE document for the literal word. This is that
-// scan.
-test('auth.md never names the evals scope', () => {
-  expect(buildAuthDoc()).not.toContain('evals');
+// names a withheld scope would pass every other assertion in this file,
+// because none of them scans the WHOLE document for the literal word. This is
+// that scan, and it loops because there are now two words to look for rather
+// than the one `evals` it was written for.
+test('auth.md never names a withheld scope', () => {
+  const doc = buildAuthDoc();
+  for (const scope of WITHHELD) expect(doc).not.toContain(scope);
 });
 
 // Served-response coverage for both new site routes, the same discipline
@@ -108,7 +119,7 @@ test('the deployed protected-resource document ships the declared Content-Type',
   // finding B) a production scan caught: this document is served FROM
   // ryanlindsey.me, so RFC 9728 §2 requires it to name ryanlindsey.me.
   expect(doc.resource).toBe('https://ryanlindsey.me/mcp');
-  expect(doc.scopes_supported).toEqual(SCOPES.filter((s) => s !== 'evals'));
+  expect(doc.scopes_supported).toEqual(SCOPES.filter((s) => !WITHHELD.includes(s)));
 });
 
 test('the deployed auth.md ships the declared Content-Type', async () => {
