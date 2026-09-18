@@ -102,7 +102,7 @@
 // deployed one. `mint` writes to it too.
 
 import { execFileSync } from 'node:child_process';
-import { newJti, SCOPES, isScope, mintToken } from '../src/lib/tier/token.ts';
+import { newJti, isScope, mintToken } from '../src/lib/tier/token.ts';
 
 // The Secrets Store id and the signing key's name are GONE from this file, and
 // their absence is the point: this script no longer reaches for a value it
@@ -283,12 +283,38 @@ async function mint() {
   const audience = arg('audience');
   const days = Number(arg('days', '30'));
   const note = arg('note', null);
-  const scopes = String(arg('scopes', SCOPES.join(',')))
-    .split(',')
-    .map((s) => s.trim());
+  // NO DEFAULT, AND ITS ABSENCE IS THE POINT. This fell back to
+  // `SCOPES.join(',')` until 2026-09-17, so a mint that forgot the flag issued
+  // every scope there is -- both withheld ones included, and by then both of
+  // them opened something. The failure was silent in the only direction that
+  // matters: `isScope` below makes a TYPO loud, while an omitted flag produced
+  // a working token, an honored `POST /grant`, and a `minted` line an operator
+  // had already read as a success. Nothing downstream could tell a deliberate
+  // wide token from a forgotten flag.
+  //
+  // `PUBLIC_SCOPES` was considered as the default instead and rejected. It is
+  // less wrong -- it is exactly `SCOPES` minus the withheld two -- but it is
+  // still four content scopes handed to a reader who, per the mint skill,
+  // usually needs `fit` alone, and it keeps the shape of the problem: the set
+  // silence hands over would grow again with the next scope that is neither
+  // withheld nor wanted by default. Requiring the flag is the only form that
+  // does not go wrong again on its own. The cost is one error message on a
+  // command that is run by hand, from a skill that supplies the flag.
+  //
+  // An empty `--scopes ''` is refused by the same check, deliberately: a token
+  // carrying no scope unlocks nothing, so asking for one is a mistake too.
+  const requested = arg('scopes');
 
   if (!audience) throw new Error('--audience is required');
+  if (!requested) {
+    throw new Error(
+      '--scopes is required; there is no safe default. See ' +
+        '.claude/skills/mint-scoped-token/SKILL.md for what each scope opens.',
+    );
+  }
   if (!Number.isFinite(days) || days <= 0) throw new Error('--days must be a positive number');
+
+  const scopes = requested.split(',').map((s) => s.trim());
   const unknown = scopes.filter((s) => !isScope(s));
   if (unknown.length > 0) throw new Error(`unknown scopes: ${unknown.join(', ')}`);
 
