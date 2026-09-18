@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.27.0...ryanlindsey-me-v1.28.0) (2026-09-18)
+
+
+### Features
+
+* **home:** add a portrait and fix the small-viewport flow ([#287](https://github.com/ryanlindsey/ryanlindsey.me/issues/287)) ([e15d4d1](https://github.com/ryanlindsey/ryanlindsey.me/commit/e15d4d1d972b763d97851d6105134f856b4f7711))
+
 ## [1.27.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.26.3...ryanlindsey-me-v1.27.0) (2026-09-18)
 
 
