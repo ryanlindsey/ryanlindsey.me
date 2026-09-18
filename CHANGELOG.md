@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.26.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.26.0...ryanlindsey-me-v1.26.1) (2026-09-18)
+
+
+### Documentation
+
+* **skills:** repair the invalid YAML in two skill descriptions ([4fe1da0](https://github.com/ryanlindsey/ryanlindsey.me/commit/4fe1da0eab1eeeb789d62570fb0f4568a300d8ef))
+
 ## [1.26.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.25.0...ryanlindsey-me-v1.26.0) (2026-09-18)
 
 
