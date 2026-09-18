@@ -131,7 +131,7 @@ export function buildInstructions(grant: Grant | null, refusal: GrantRefusal | n
  */
 export function createServer(tc: ToolContext, refusal: GrantRefusal | null = null): McpServer {
   const server = new McpServer(
-    { name: 'ryanlindsey-me', version: '1.26.3' }, // x-release-please-version
+    { name: 'ryanlindsey-me', version: '1.27.0' }, // x-release-please-version
     { instructions: buildInstructions(tc.grant, refusal) },
   );
 

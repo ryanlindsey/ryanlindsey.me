@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.27.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.26.3...ryanlindsey-me-v1.27.0) (2026-09-18)
+
+
+### Features
+
+* **mcp:** serve the narrative brief over MCP ([#283](https://github.com/ryanlindsey/ryanlindsey.me/issues/283)) ([f5e5312](https://github.com/ryanlindsey/ryanlindsey.me/commit/f5e53125f2d660768a64c2d88faa9caaf39f6bd0))
+* **tier:** add the owner-only authoring scope ([#281](https://github.com/ryanlindsey/ryanlindsey.me/issues/281)) ([e3b3f11](https://github.com/ryanlindsey/ryanlindsey.me/commit/e3b3f1155561b746001eddc1511dc8c4d58741dd)), closes [#265](https://github.com/ryanlindsey/ryanlindsey.me/issues/265)
+* **tier:** let the private-doc script deploy an authoring document ([#285](https://github.com/ryanlindsey/ryanlindsey.me/issues/285)) ([61c5e76](https://github.com/ryanlindsey/ryanlindsey.me/commit/61c5e76b5bb3ee3404b2d369206787c9f99ad822)), closes [#267](https://github.com/ryanlindsey/ryanlindsey.me/issues/267)
+
+
+### Bug Fixes
+
+* **token:** require --scopes on mint instead of defaulting to the whole set ([#286](https://github.com/ryanlindsey/ryanlindsey.me/issues/286)) ([51750c4](https://github.com/ryanlindsey/ryanlindsey.me/commit/51750c45e0c46ace877827ca4fb21729ada86210)), closes [#284](https://github.com/ryanlindsey/ryanlindsey.me/issues/284)
+
 ## [1.26.3](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.26.2...ryanlindsey-me-v1.26.3) (2026-09-18)
 
 
