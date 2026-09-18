@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { MCP_HARNESS_WORKERS } from './workers';
 import {
+  AUTHORING_KEYS,
   caseStudyDetailKey,
   narrativeKey,
   PROFILE_KEYS,
@@ -35,6 +36,7 @@ test('every key lives under a known prefix', () => {
   // The prefixes ARE the partition's vocabulary. A key outside them means a
   // caller invented a namespace, which is how a bucket stops being auditable.
   expect(Object.values(PROFILE_KEYS).every((key) => key.startsWith('profile/'))).toBe(true);
+  expect(Object.values(AUTHORING_KEYS).every((key) => key.startsWith('authoring/'))).toBe(true);
   expect(caseStudyDetailKey('silent-failure')).toBe('case-study/silent-failure.md');
   expect(narrativeKey('fixture-audience')).toBe('narrative/fixture-audience.md');
 });

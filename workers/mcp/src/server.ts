@@ -90,17 +90,23 @@ export function buildInstructions(grant: Grant | null, refusal: GrantRefusal | n
   const granted = gatedToolLines(grant);
   const header = `This connection carries a scoped token for the audience "${grant.audience}".`;
   // A grant that opens NO tool still gets the header, and gets it without the
-  // colon. Two things reach that state, and neither is hypothetical. A grant
-  // carrying NO scope: a grant's scopes come from its REGISTRY ROW rather than
-  // from its claim (src/lib/tier/grant.ts), so narrowing a live token to
-  // nothing is one operator edit away, and it is the natural shape of a soft
-  // revoke. And a grant carrying only `authoring`, which opens no tool at all
-  // -- this comment said "every scope opens a tool in this build" until epic
-  // 263 added one that does not. Such a caller would otherwise be sent
-  // "It also has:" followed by nothing at all -- a dangling colon that reads as
-  // a broken server rather than as a shut door. The header itself is kept
-  // because it is true and useful: it confirms the token WAS accepted, which is
-  // the other half of what the refusal line above says.
+  // colon. The state is reached by a grant carrying NO scope, which is not
+  // hypothetical: a grant's scopes come from its REGISTRY ROW rather than from
+  // its claim (src/lib/tier/grant.ts), so narrowing a live token to nothing is
+  // one operator edit away, and it is the natural shape of a soft revoke.
+  //
+  // THE OTHER ROUTE HAS CLOSED TWICE, which is why this does not depend on
+  // one existing. This comment said "every scope opens a tool in this build"
+  // until epic 263 added `authoring`, which opened none; then said a grant
+  // carrying only `authoring` reaches it, until ryanlindsey.me#266 gave that
+  // scope `get_narrative_brief`. Every scope opens a tool again today, and
+  // the scopeless grant is what this branch is actually for.
+  //
+  // Such a caller would otherwise be sent "It also has:" followed by nothing
+  // at all -- a dangling colon that reads as a broken server rather than as a
+  // shut door. The header itself is kept because it is true and useful: it
+  // confirms the token WAS accepted, which is the other half of what the
+  // refusal line above says.
   if (granted.length === 0) return [PUBLIC_INSTRUCTIONS, '', header].join('\n');
   return [PUBLIC_INSTRUCTIONS, '', `${header} It also has:`, '', ...granted].join('\n');
 }

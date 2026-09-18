@@ -34,6 +34,25 @@ export const PROFILE_KEYS = {
 } as const;
 
 /**
+ * The brief that governs how a narrative document is written.
+ *
+ * Fixed rather than parameterised for the same reason `PROFILE_KEYS` above
+ * is: there is exactly one of it, and a tool that took a key argument would
+ * be a general-purpose read primitive on the private bucket -- which is
+ * precisely the shape this partition exists to avoid handing to a caller.
+ * The tool that serves this one (`get_narrative_brief`, workers/mcp/src/
+ * gated.ts) takes an AUDIENCE and returns a key; it never accepts one.
+ *
+ * It is a document rather than a constant in this file because a brief
+ * describing how a gated pitch is written is audience-specific meaning, and
+ * 09 §2 keeps that out of source files. It is authored and deployed exactly
+ * the way the narrative documents it governs are.
+ */
+export const AUTHORING_KEYS = {
+  narrativeBrief: 'authoring/narrative-brief.md',
+} as const;
+
+/**
  * One path segment: letters, digits, hyphens, underscores and dots, but never
  * a leading dot and never `.` or `..` entire.
  *

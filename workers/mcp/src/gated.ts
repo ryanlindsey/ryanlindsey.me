@@ -9,6 +9,7 @@ import {
 import { readCampaignForAudience, type CampaignEnv } from '../../../src/lib/tier/campaigns';
 import type { Grant } from '../../../src/lib/tier/grant';
 import {
+  AUTHORING_KEYS,
   caseStudyDetailKey,
   narrativeKey,
   PROFILE_KEYS,
@@ -26,13 +27,19 @@ import { JUDGE_INPUT } from './judge-schema';
 // and `tools/call` answers the SDK's own unknown-tool error, which enumerates
 // nothing.
 //
-// Five of the six tools here are a document read. There is no query interface,
-// no key parameter, and no listing: a general-purpose read primitive over the
-// private bucket is exactly the shape the partition
+// Six of the eight tools here are a document read. There is no query
+// interface, no key parameter, and no listing: a general-purpose read
+// primitive over the private bucket is exactly the shape the partition
 // (src/lib/tier/private-docs.ts) exists to avoid handing to a caller, however
-// well scoped their token is. The sixth, `analyze_fit`, reads no private
-// document at all -- it is the fit engine's MCP frontend, and everything it
-// sees is published.
+// well scoped their token is. `get_narrative_brief` is the one that hands a
+// KEY back, which is the opposite direction and is argued for at its handler.
+// The other two read no private document at all: `analyze_fit` is the fit
+// engine's MCP frontend and everything it sees is published, and
+// `judge_answer` scores text the caller supplies.
+//
+// THESE COUNTS HAVE BEEN WRONG BEFORE -- this said "five of the six" and "the
+// sixth" from day 5 through `judge_answer` and on past it, so keep them in
+// step with the table below or say "every" and drop the arithmetic.
 //
 // Vocabulary (09 §2): these names and descriptions are code, and code is a
 // public surface -- a granted caller can screenshot `tools/list`. They say
@@ -76,10 +83,16 @@ interface GatedTool {
    * written for an agent about to call the tool, and the map is a one-line
    * index of what a token opened.
    *
-   * tests/mcp-gated.test.ts asserts the WHOLE granted block verbatim for a
-   * grant carrying every scope, so an edit to any of these six is an edit to a
-   * test as well. That is the point of the field: a name can be derived, prose
-   * cannot, so the prose is reviewed instead.
+   * tests/mcp-gated.test.ts asserts the WHOLE granted block verbatim for one
+   * fixed set of scopes, so an edit to a summary inside that set is an edit to
+   * a test as well. That is the point of the field: a name can be derived,
+   * prose cannot, so the prose is reviewed instead. The set is NOT every scope
+   * -- `evals` and `authoring` are outside it, so `judge_answer`'s summary and
+   * `get_narrative_brief`'s are pinned by NOTHING. The scope-by-scope test
+   * below covers their name-to-line pairing and says nothing about the prose,
+   * and the static vocabulary scan only refuses banned words; a human reviewer
+   * is the rest of it. An earlier version of this comment claimed "every scope"
+   * and "these six", and both were stale before anyone read them.
    */
   summary: string;
   /**
@@ -187,6 +200,35 @@ const FIT_INPUT = z.object({
     .min(200, 'Paste the full description; a few lines is not enough to analyse.')
     .max(60_000)
     .describe('The full text of the description to compare against.'),
+});
+
+/**
+ * `get_narrative_brief`'s one argument, and it is an AUDIENCE rather than a
+ * key on purpose: src/lib/tier/private-docs.ts's rule is that no tool accepts
+ * a key, because one that did would be a general-purpose read primitive on
+ * the private bucket. This tool hands a key BACK, which is a different thing
+ * -- see the handler.
+ *
+ * Not read off the grant, the way `get_application_narrative` reads its
+ * audience. That tool answers with a document written FOR its caller, so
+ * taking an argument would let one audience ask for another's. This one
+ * answers with a key and a brief, and its caller is the owner's own client
+ * writing a document for somebody else's audience -- so the audience is the
+ * question rather than the identity.
+ */
+const BRIEF_INPUT = z.object({
+  audience: z.string().describe('The token audience whose narrative document is being written.'),
+});
+
+/**
+ * Both halves, in one answer. `defineTool` passes a string handler result
+ * through verbatim and serialises anything else as JSON, so an object gives
+ * the caller one readable pair; declaring the schema also puts it in
+ * `structuredContent`.
+ */
+const BRIEF_OUTPUT = z.object({
+  key: z.string().describe("The R2_PRIVATE key this audience's document must be written to."),
+  brief: z.string().describe('The brief, verbatim.'),
 });
 
 /** The namespace a configured narrative document is confined to. */
@@ -617,6 +659,63 @@ const GATED_TOOLS: readonly GatedTool[] = [
             console.error('judge_answer failed', error);
             throw new ToolError('The judge could not score that. The error was logged.');
           }
+        },
+      ),
+  },
+  {
+    scope: 'authoring',
+    name: 'get_narrative_brief',
+    title: 'Narrative brief',
+    description:
+      "The brief for writing an audience narrative, and the key this audience's document belongs at.",
+    summary: 'the brief for writing an audience narrative, and where it belongs.',
+    register: (server, tc, tool) =>
+      defineTool<z.infer<typeof BRIEF_INPUT>>(
+        server,
+        tc,
+        {
+          ...specOf(tool),
+          // One KV lookup and one R2 read, the same shape as every document
+          // tool above. Nothing here reaches a model.
+          cost: 'cheap',
+          inputSchema: BRIEF_INPUT,
+          outputSchema: BRIEF_OUTPUT,
+        },
+        async ({ audience }, tc) => {
+          // THIS TOOL NAMES THE KEY BACK TO ITS CALLER, which
+          // `get_application_narrative` deliberately never does: a refusal
+          // that quoted the key would turn a misconfiguration into a listing
+          // of what is in the bucket. The asymmetry IS the scope. Only the
+          // owner's own authoring client holds `authoring`, and an operator
+          // who cannot be told which key to write to cannot write anything.
+          //
+          // Resolved through `resolveNarrativeKey` rather than through
+          // `narrativeKey`, and that is the whole reason ryanlindsey.me#264
+          // extracted it: computing the convention key here would tell the
+          // author to write `narrative/<audience>.md` while the reader
+          // followed whatever the campaign configured. The document would
+          // deploy cleanly, be served by nothing, and log nothing.
+          const { key, configured } = await resolveNarrativeKey(tc.env, audience);
+          if (key === null) {
+            throw new ToolError(
+              configured === ''
+                ? `"${audience}" cannot build a document key. Check the audience spelling.`
+                : // NOT "outside the namespace", which is what the `console.warn`
+                  // in `resolveNarrativeKey` says and what this said first.
+                  // `narrativeKeyFromConfig` also refuses values that ARE under
+                  // `narrative/` and fail the segment check --
+                  // `narrative/a/b.md`, `narrative/.hidden.md` -- and telling an
+                  // operator those are outside a namespace they are plainly
+                  // inside sends them to fix the wrong half of the string. The
+                  // warn line can afford the looser wording because it is read
+                  // beside the value; this is the sentence the one person who
+                  // can fix it reads on its own.
+                  `The campaign for "${audience}" configures ${configured}, which is not a valid narrative document key. Fix the campaign entry before writing the document.`,
+            );
+          }
+          const brief = await readPrivateDoc(tc.env, AUTHORING_KEYS.narrativeBrief);
+          if (brief === null) throw new ToolError(NOT_DEPLOYED);
+          return { key, brief };
         },
       ),
   },

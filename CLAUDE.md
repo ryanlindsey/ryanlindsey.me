@@ -56,7 +56,7 @@ The two Workers name each other: the site's `MCP` service binding forwards `/mcp
 
 `src/lib/tier/grant.ts` resolves a request into a grant, and it runs on the MCP Worker only. Site routes treat the token as an opaque string and ask the MCP Worker over the service binding what it unlocks. Do not add a second verification on the site: one implementation of the boundary is the design, and a second copy that agrees with the first proves nothing.
 
-`src/lib/tier/token.ts` answers whether a signature is real, `registry.ts` answers whether the credential is still live, and they are separate on purpose. Scopes are a closed set (`fit`, `profile`, `documents`, `narrative`, `evals`, `authoring`); an unknown scope is a malformed token. The last two are withheld from public metadata, and `authoring` is the one member that opens no tool.
+`src/lib/tier/token.ts` answers whether a signature is real, `registry.ts` answers whether the credential is still live, and they are separate on purpose. Scopes are a closed set (`fit`, `profile`, `documents`, `narrative`, `evals`, `authoring`); an unknown scope is a malformed token. The last two are withheld from public metadata: `evals` opens `judge_answer` and admission to `POST /chat`, and `authoring` opens `get_narrative_brief`.
 
 The private tier is a partition rather than a filter. `R2_ASSETS` holds what the site publishes and `R2_PRIVATE` holds what a grant unlocks, `src/lib/tier/private-docs.ts` is the only reader of the second, and the public document layer's env interface does not name that bucket at all. `tests/tier-private-docs.test.ts` asserts it at the type level. A public code path cannot leak a private document by forgetting a filter, because it has no reference to the bucket.
 
