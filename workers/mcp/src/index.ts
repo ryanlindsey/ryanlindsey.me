@@ -1,5 +1,6 @@
 import { createMcpHandler } from 'agents/mcp/server';
 import { corpusRefreshEnabled, refreshCorpus, type CorpusEnv } from '../../../src/lib/corpus';
+import { CORPUS_CRON, evalsRunEnabled, suitesForCron } from '../../../src/lib/evals/plan';
 import { buildMcpDiscovery, buildMcpRobotsTxt } from '../../../src/lib/mcp/discovery';
 import { buildMcpServerCard } from '../../../src/lib/discovery/server-card';
 import { buildProtectedResource } from '../../../src/lib/discovery/protected-resource';
@@ -8,6 +9,7 @@ import { handleGrantContext } from './grant-context';
 import { handleSiteSearch } from './search';
 import { resolveGrant } from '../../../src/lib/tier/grant';
 import { type McpEnv } from './env';
+import { MCP_ORIGIN } from './origin';
 import { createServer } from './server';
 
 // The rate limiter's Durable Object (03 §3), re-exported from this module
@@ -18,6 +20,14 @@ import { createServer } from './server';
 // RateLimiter not found", which is at least loud; the quiet failure it
 // replaces is #29's, so see that file for why the limiter is an object at all.
 export { RateLimiter } from './rate-limiter';
+
+// The scheduled eval run's Workflow class (issue #291), re-exported for
+// exactly the reason the Durable Object above is: `class_name` in
+// wrangler.jsonc's `workflows` entry is looked up on the module `main` names,
+// not on the file that defines the class. Defining it in ./evals-workflow.ts
+// and forgetting this line deploys a Worker whose weekly cron cannot start
+// anything.
+export { EvalsWorkflow } from './evals-workflow';
 
 /**
  * The corpus job's view of this Worker, assembled explicitly rather than spread
@@ -119,19 +129,6 @@ const HANDLER_OPTIONS = {
     maxAge: 86400,
   },
 } as const;
-
-/**
- * This Worker's own vanity domain (workers/mcp/wrangler.jsonc's `routes`
- * entry), a literal for the same reason src/pages/llms.txt.ts's own
- * `MCP_ENDPOINT` is one: this Worker has no var naming its own hostname
- * (`SITE_ORIGIN` in McpEnv names the SITE's origin, for the corpus job's
- * fetches, not this one), and `request.url` reads as the test harness's
- * loopback address under `createTestHarness` rather than the real custom
- * domain (tests/workers.ts's own note on `inferOriginFromRoutes`) -- deriving
- * this from the request would silently answer with the wrong endpoint under
- * every suite that boots this Worker.
- */
-const MCP_ORIGIN = 'https://mcp.ryanlindsey.me';
 
 /**
  * Issue #170 (epic #165, "agent readiness"): this origin's own `Link` header,
@@ -331,8 +328,25 @@ export default {
   },
 
   /**
-   * The publishing corpus's embedding refresh (Task 15), on this Worker's own
-   * daily cron (`triggers.crons` in wrangler.jsonc).
+   * This Worker's cron jobs (`triggers.crons` in wrangler.jsonc): the corpus
+   * refresh at 05:32, and the eval suites at 05:52 daily and 07:07 on Mondays.
+   *
+   * IT BRANCHES ON `controller.cron` NOW, AND THAT IS A REAL CHANGE TO AN
+   * EXISTING PATH. Until issue #291 this handler ran the corpus refresh for
+   * EVERY trigger, which was correct only because there was one -- and which
+   * would have quietly re-embedded the whole corpus twice more a week the
+   * moment a second expression was declared. tests/site-crons.test.ts's own
+   * comment named this Worker as the one that did not need a cron switch "the
+   * day it gains a second trigger", and this is that day;
+   * tests/evals-schedule.test.ts pins the pair from both ends.
+   *
+   * The mapping from an expression to the suites it asks for lives in
+   * src/lib/evals/plan.ts rather than here, because evals/run.mjs's own
+   * ordering (`leak` last, deliberately) and the cron constants are the same
+   * facts, and a second copy of either would be a second thing to keep in step.
+   *
+   * The publishing corpus's embedding refresh (Task 15), below, is unchanged
+   * apart from the guard that now precedes it.
    *
    * It is here rather than on the site Worker because the `ai` binding it runs
    * on is always-remote to @cloudflare/vite-plugin, and its presence in the
@@ -351,8 +365,28 @@ export default {
    * it at a stub -- short version, the harness's Vectorize is a local simulation
    * and a green run against one would prove nothing.
    */
-  scheduled(_controller, env, ctx) {
-    const corpus = corpusEnv(env);
-    if (corpusRefreshEnabled(corpus)) ctx.waitUntil(refreshCorpus(corpus));
+  scheduled(controller, env, ctx) {
+    if (controller.cron === CORPUS_CRON) {
+      const corpus = corpusEnv(env);
+      if (corpusRefreshEnabled(corpus)) ctx.waitUntil(refreshCorpus(corpus));
+      return;
+    }
+
+    const suites = suitesForCron(controller.cron);
+    if (suites.length === 0) {
+      // The same arm src/worker.ts's cron switch carries, and for the same
+      // reason: a trigger that fires with no job registered is a deploy that
+      // succeeded and does nothing, which is otherwise silent forever.
+      console.error(`scheduled: no job is registered for the cron "${controller.cron}"`);
+      return;
+    }
+
+    // ORDER MATTERS: `evalsRunEnabled` THROWS on an unrecognised value, so it
+    // is asked only once a cron has actually asked for a suite. A typo in the
+    // seam should surface on the trigger it disables, not on the corpus
+    // refresh that has nothing to do with it.
+    if (evalsRunEnabled(env)) {
+      ctx.waitUntil(env.EVALS_WORKFLOW.create({ params: { suites } }));
+    }
   },
 } satisfies ExportedHandler<McpEnv>;

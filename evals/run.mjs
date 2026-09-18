@@ -23,6 +23,20 @@ import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FitReport } from '../src/lib/fit/schema.ts';
+// The judging logic below (the per-suite problem lists, the pacing constants,
+// and the `pass`/`fail` case shape) is shared with the MCP Worker's scheduled
+// runner (Task 4), so it lives in src/lib/evals/ rather than here -- see
+// checks.ts, plan.ts and record.ts for the reasoning behind each check and
+// each measured number.
+import {
+  chatProblems,
+  fitProblems,
+  judgeProblems,
+  leakProblems,
+  tierProblems,
+} from '../src/lib/evals/checks.ts';
+import { BACKOFF_MS, PACE_MS, RETRIES } from '../src/lib/evals/plan.ts';
+import { fail, localCount, pass, redactedNotes } from '../src/lib/evals/record.ts';
 
 const CASES = new URL('./cases/', import.meta.url).pathname;
 const DB = 'ryanlindsey-me-db';
@@ -109,20 +123,11 @@ const load = (suite) =>
       local: name.endsWith('.local.json'),
     }));
 
-/** One case's outcome. `notes` is what an operator reads when it fails. */
-const pass = (id, local) => ({ id, ok: true, notes: '', local });
-const fail = (id, notes, local) => ({ id, ok: false, notes, local });
-
 async function runTier() {
   const results = [];
   for (const testCase of load('tier')) {
-    const problems = [];
-
     const listed = await rpc('tools/list', {});
     const names = listed.result.tools.map((tool) => tool.name);
-    for (const hidden of testCase.hidden_tools) {
-      if (names.includes(hidden)) problems.push(`${hidden} is listed to an anonymous caller`);
-    }
 
     // Everything the public tier says, in one string: the handshake's
     // instructions, the tool metadata, the resource listings, and the output of
@@ -140,13 +145,7 @@ async function runTier() {
       surfaces.push(JSON.stringify((await rpc('tools/call', { name: tool.name })).result));
     }
 
-    for (const source of testCase.banned_patterns) {
-      const pattern = new RegExp(source, 'i');
-      for (const surface of surfaces) {
-        if (pattern.test(surface)) problems.push(`public surface matched /${source}/`);
-      }
-    }
-
+    const problems = tierProblems(testCase, names, surfaces);
     results.push(
       problems.length === 0
         ? pass(testCase.id, testCase.local)
@@ -216,37 +215,7 @@ async function runFit() {
     }
 
     const report = parsed.data;
-    const expect = testCase.expect;
-    const strong = report.requirement_map.filter((entry) => entry.strength === 'strong').length;
-    const problems = [];
-
-    if (report.requirement_map.length < (expect.min_requirements ?? 0)) {
-      problems.push(
-        `${report.requirement_map.length} requirements, expected >= ${expect.min_requirements}`,
-      );
-    }
-    if (expect.min_gaps !== undefined && report.gaps.length < expect.min_gaps) {
-      // The honesty contract (03 §4), as a check: a partial or mismatched
-      // description that produces no gaps is a flattering engine, and this is
-      // the cheapest place to catch one.
-      problems.push(`${report.gaps.length} gaps, expected >= ${expect.min_gaps}`);
-    }
-    if (expect.min_strong !== undefined && strong < expect.min_strong) {
-      problems.push(`${strong} strong ratings, expected >= ${expect.min_strong}`);
-    }
-    if (expect.max_strong !== undefined && strong > expect.max_strong) {
-      problems.push(`${strong} strong ratings, expected <= ${expect.max_strong}`);
-    }
-    if ((payload.citations_dropped ?? 0) > (expect.max_dropped_citations ?? 0)) {
-      problems.push(`${payload.citations_dropped} citations dropped as unresolvable`);
-    }
-    // Every surviving citation resolved against the live corpus, because
-    // `enforceCitations` already dropped the ones that did not -- so this
-    // asserts the engine's own check ran rather than re-doing it.
-    const uncited = report.requirement_map.filter(
-      (entry) => entry.strength !== 'none' && entry.evidence.length === 0,
-    );
-    if (uncited.length > 0) problems.push(`${uncited.length} rated requirements carry no evidence`);
+    const problems = fitProblems(testCase, report, payload.citations_dropped ?? 0);
 
     results.push(
       problems.length === 0
@@ -261,83 +230,11 @@ async function runFit() {
 
 const CHAT_SKIP_REASON = 'RLME_EVAL_TOKEN is not set in this shell';
 
-/**
- * ONE client retry, and the number is small because it is not the first one.
- *
- * WHAT IS BEING RETRIED, measured 2026-09-10: the AI Gateway answers `2018:
- * Invalid User Credentials` when a rate limit is hit -- an auth error's wording
- * on a rate-limit fault, recorded in 10 §5 -- and `handleChat` maps it to the
- * `unreachable` code, which is the one `TRANSIENT` (below) matches. The gateway
- * dashboard attributed 19 HTTP 429s to that afternoon's runs, so it is rate
- * limiting rather than a broken credential, whatever the message says.
- *
- * THE GATEWAY ALREADY RETRIES. The `ryanlindsey-me` gateway has a retry rule --
- * up to 4 attempts, 2s delay, exponential backoff -- so a single call from here
- * is already up to FIVE upstream requests spread over ~30 seconds, and a failure
- * that reaches this process is one the gateway has already given up on.
- *
- * Retries compose rather than add: at the four client retries this file briefly
- * had, one failing case was up to 5 x 5 = 25 upstream attempts. Whether those
- * attempts each count against the wholesale rate limit is NOT DOCUMENTED --
- * Cloudflare's request-handling page specifies the knobs (`cf-aig-max-attempts`,
- * capped at 5) and says nothing about what triggers a retry, how a retried
- * request is counted, or whether retry runs before or after rate limiting. So
- * the cost of a high client retry count is known to be latency and unknown to be
- * quota.
- *
- * One retry is chosen on the part that does NOT depend on that unknown: the
- * gateway already implements this, a failure reaching here is one it has already
- * given up on, and a second mechanism at a second layer is harder to reason
- * about than either alone. Ten seconds so the attempt lands past the window
- * rather than inside it.
- *
- * The real remedy is `PACE_MS` below. Fewer requests is the only thing that
- * helps a quota, and unlike the above that is true whatever the counting is.
- */
-const RETRIES = 1;
-const BACKOFF_MS = 10_000;
-
-/**
- * How long to wait between CASES.
- *
- * THE CEILING IS CLOUDFLARE'S, NOT OURS, and that is why this exists instead of
- * a bigger number in the gateway settings. The 429s say:
- *
- *   Wholesale rate limit exceeded for this gateway.
- *   Please reduce request rate or use BYOK.
- *
- * "Wholesale" is the platform's own limit on Unified Billing, separate from the
- * per-gateway rate limit in the dashboard -- which is why failures appeared at
- * roughly six requests a minute against a fifty-a-minute setting, and why
- * raising that setting to three hundred did not clear them. Cloudflare does not
- * publish the wholesale number, so this is tuned by observation rather than
- * derived: the failures cluster at the TAIL of a run, which is the shape of a
- * sliding window filling up.
- *
- * Twenty-five seconds between cases, on top of the seconds each streamed answer
- * already takes. MEASURED, 2026-09-10: at 5s, three of eight leak probes died to
- * `2018: Invalid User Credentials`; at 25s, all eight got real answers.
- *
- * TWELVE GAPS, NOT THIRTEEN MINUTES. `runFit` and `runChat` each skip the first
- * case of their suite via a flag; `runLeak` skips the first probe of each case
- * file it loads via `index > 0`, which is the same thing only because
- * `evals/cases/leak/` holds exactly one file today. So the paced gap count is
- * `cases - 1` summed: 2 from 3 fit cases, 3 from 4 chat cases, 7 from 8 leak
- * probes -- twelve. Twelve gaps cost exactly one minute at the old 5s (matching
- * the "about a minute" this file used to gain) and five minutes at 25s, not the
- * thirteen minutes Day 1's 25-30s estimate implied. `--suite <name>` is the
- * iteration path when the full run's five minutes is too slow to run on every
- * change -- that is what keeps the full run a gate people still run rather than
- * one they route around.
- *
- * PACING IS THE REAL FIX and the retry above is the fallback, not the other way
- * round. Fewer requests is the only thing that helps a quota; see `RETRIES`.
- *
- * NOT paced: the judge call that follows each answer. It is the second half of
- * one case, and separating it would double the wall clock to buy back a request
- * the retry already covers.
- */
-const PACE_MS = 25000;
+// RETRIES, BACKOFF_MS and PACE_MS (imported above from src/lib/evals/plan.ts)
+// used to be defined here, each with a long measured comment; that reasoning
+// -- the AI Gateway's wholesale rate limit, the 2026-09-10 pacing
+// measurements, and why one client retry rather than more -- now lives in
+// plan.ts, shared with the MCP Worker's scheduled runner (Task 4).
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -383,7 +280,17 @@ async function askOnce(question, token) {
     if (name === 'sources') sources = data.sources ?? [];
     else if (name === 'delta') answer += data.text ?? '';
     else if (name === 'done') cited = data.cited ?? [];
-    else if (name === 'error') error = data.code;
+    // `?? null` ON BOTH SIDES, changed here in Task 4 (issue #291) so that the
+    // two runners describe one wire event identically. `chatProblems` and
+    // `leakProblems` (src/lib/evals/checks.ts) test `error !== null`, so an
+    // error frame carrying no `code` used to read as the string "undefined" in
+    // this runner and as no error at all in the Worker's -- the one place in
+    // the port where the same frame produced two different results, which is
+    // exactly the property one home for the judging logic exists to protect.
+    // `null` is the better of the two behaviors: an error frame without a
+    // code says nothing a reader can act on, and reporting `refused with
+    // "undefined"` sends somebody after a code that was never sent.
+    else if (name === 'error') error = data.code ?? null;
   }
   return { sources, answer, cited, error };
 }
@@ -443,16 +350,6 @@ async function askJudge(criteria, subject, token) {
   }
 }
 
-/** Which `[n]` markers in an answer name a source that does not exist. */
-const invalidCitations = (answer, sourceCount) => {
-  const invalid = new Set();
-  for (const match of answer.matchAll(/\[(\d+)\]/g)) {
-    const n = Number(match[1]);
-    if (n < 1 || n > sourceCount) invalid.add(n);
-  }
-  return [...invalid];
-};
-
 async function runChat() {
   const token = process.env.RLME_EVAL_TOKEN;
   if (!token) {
@@ -466,36 +363,15 @@ async function runChat() {
     if (!first) await sleep(PACE_MS);
     first = false;
     const expect = testCase.expect ?? {};
-    const { sources, answer, cited, error } = await ask(testCase.question, token);
-    const problems = [];
-
-    if (error !== null) problems.push(`the endpoint refused with "${error}"`);
-    if (expect.min_sources !== undefined && sources.length < expect.min_sources) {
-      problems.push(`retrieved ${sources.length} sources, expected at least ${expect.min_sources}`);
-    }
-    if (expect.min_cited !== undefined && cited.length < expect.min_cited) {
-      problems.push(`cited ${cited.length} sources, expected at least ${expect.min_cited}`);
-    }
-    const invalid = invalidCitations(answer, sources.length);
-    if (
-      expect.max_invalid_citations !== undefined &&
-      invalid.length > expect.max_invalid_citations
-    ) {
-      problems.push(`cited ${invalid.length} source(s) that do not exist: ${invalid.join(', ')}`);
-    }
-    for (const banned of expect.banned_substrings ?? []) {
-      if (answer.includes(banned)) problems.push(`the answer contains "${banned}"`);
-    }
+    const answer = await ask(testCase.question, token);
+    const problems = chatProblems(testCase, answer);
 
     // The judge runs LAST and only on an answer that survived the deterministic
     // checks. Scoring an answer we already know is wrong spends a model call to
     // learn nothing.
     if (problems.length === 0 && expect.judge) {
-      const verdict = await askJudge(expect.judge.criteria, answer, token);
-      if (verdict === null) problems.push('the judge did not run');
-      else if (verdict.verdict !== 'pass') {
-        problems.push(`judge: ${verdict.reasons.join('; ')} (score ${verdict.score})`);
-      }
+      const verdict = await askJudge(expect.judge.criteria, answer.answer, token);
+      problems.push(...judgeProblems(verdict));
     }
 
     results.push(
@@ -525,23 +401,14 @@ async function runLeak() {
 
   const results = [];
   for (const testCase of load('leak')) {
-    const banned = (testCase.banned_patterns ?? []).map((source) => new RegExp(source, 'i'));
     for (const [index, question] of (testCase.questions ?? []).entries()) {
       if (index > 0) await sleep(PACE_MS);
       const id = `${testCase.id}[${index}]`;
-      const { answer, error } = await ask(question, token);
-      const problems = [];
-
-      if (error !== null) problems.push(`the endpoint refused with "${error}"`);
-      for (const pattern of banned) {
-        if (pattern.test(answer)) problems.push(`the answer matches ${pattern}`);
-      }
+      const answer = await ask(question, token);
+      const problems = leakProblems(testCase, answer);
       if (problems.length === 0 && testCase.judge) {
-        const verdict = await askJudge(testCase.judge.criteria, answer, token);
-        if (verdict === null) problems.push('the judge did not run');
-        else if (verdict.verdict !== 'pass') {
-          problems.push(`judge: ${verdict.reasons.join('; ')} (score ${verdict.score})`);
-        }
+        const verdict = await askJudge(testCase.judge.criteria, answer.answer, token);
+        problems.push(...judgeProblems(verdict));
       }
 
       results.push(
@@ -562,10 +429,10 @@ function report(suite, results) {
   process.stdout.write(`${suite}: ${passed}/${results.length}\n`);
 
   if (record) {
-    const localCount = results.filter((r) => r.local).length;
-    if (localCount > 0) {
+    const local = localCount(results);
+    if (local > 0) {
       process.stdout.write(
-        `${suite}: ${localCount} local case(s) redacted from the remote eval_runs row\n`,
+        `${suite}: ${local} local case(s) redacted from the remote eval_runs row\n`,
       );
     }
     // A `local` case (README: an owner's real, ungitignored description) may
@@ -574,18 +441,33 @@ function report(suite, results) {
     // this operator's own terminal. `eval_runs` is remote, so a local case
     // contributes to the counts below (a number leaks nothing) and nothing
     // else: its id and notes never leave this process.
-    const notes = results
-      .filter((r) => !r.ok)
-      .map((r) => (r.local ? '<local case, redacted>' : `${r.id}: ${r.notes}`))
-      // Truncate the RAW string first, then escape: escaping first can leave
-      // a cut land inside a doubled `''` pair, dropping one of the two quotes
-      // and unterminating the SQL literal that follows.
-      .join(' | ')
-      .slice(0, 900)
-      .replace(/'/g, "''");
-    const sql = `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, notes)
+    //
+    // Truncate the RAW string first, then escape: escaping first can leave
+    // a cut land inside a doubled `''` pair, dropping one of the two quotes
+    // and unterminating the SQL literal that follows. `redactedNotes`
+    // (src/lib/evals/record.ts) does the filtering, redaction and truncation;
+    // it deliberately does not escape, because the Worker runner (Task 4)
+    // binds parameters instead and needs none -- so escaping stays here.
+    const notes = redactedNotes(results).replace(/'/g, "''");
+    // `status` is always 'ran' from here, and THIS RUNNER NEVER WRITES ANY
+    // OTHER VALUE. An earlier version of this comment pointed at "the SKIP
+    // handling below" for the 'incomplete' case, which was wrong: that handling
+    // writes no row at all, calls no `incompleteRow`, and never has.
+    //
+    // THAT IS DELIBERATE AND IT IS WHERE THE TWO RUNNERS DIFFER ON PURPOSE. A
+    // scheduled run that could not run is news, because the only thing that
+    // stopped it is something broken -- a mint that failed, a suite that threw
+    // -- and nobody was watching, so the row is the only way anyone finds out.
+    // A skip here is the operator's own choice in the operator's own shell: it
+    // means `RLME_EVAL_TOKEN` was not exported, the SKIP line is already on
+    // their terminal, and the exit code is already 2. Writing that to
+    // `eval_runs` would replace a real older result on a PUBLIC page with "did
+    // not run", caused by an unset variable in one person's shell. A stale pass
+    // is a worse thing to publish than a genuine one, and an unset variable is
+    // not evidence that anything is wrong with the deployed system.
+    const sql = `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, status, notes)
        VALUES ('${new Date().toISOString()}', '${suite}', NULL, ${results.length}, ${passed},
-               ${results.length - passed}, '${notes}')`;
+               ${results.length - passed}, 'ran', '${notes}')`;
     // SWALLOWED AFTER LOGGING, and the results above are already on stdout by
     // the time this runs -- which is the whole point of the ordering.
     //

@@ -29,14 +29,33 @@ export const SCOPES = [
   'documents',
   'narrative',
   /**
-   * Day 6. The eval harness's own scope. It opens two things, and neither is
+   * Day 6. The eval runners' scope. It opens two things, and neither is
    * content: admission to `POST /chat` for a caller that cannot solve a bot
    * challenge, and the `judge_answer` tool that 04 §4's LLM-judge scoring runs
-   * through. The harness is a Node script on the owner's machine holding no
+   * through.
+   *
+   * TWO HOLDERS, WHICH IS WHAT THIS ENTRY EXISTS TO SAY. This is the canonical
+   * statement of who holds a withheld scope, and until issue #291 it described
+   * only the first of them.
+   *
+   * The MANUAL harness is a Node script on the owner's machine holding no
    * inference credential -- the Anthropic key lives in AI Gateway and never
    * leaves Cloudflare (10 §3.1) -- so everything it needs has to be reachable
-   * over HTTP, and a scoped grant is this repo's existing mechanism for
-   * exposing something without publishing that it exists.
+   * over HTTP. It is handed a token minted by hand, one day at a time.
+   *
+   * The SCHEDULED runner is the opposite arrangement in every respect but the
+   * scope. It runs INSIDE the Worker that holds the inference credential, so it
+   * needs no HTTP hop to reach a model at all; it reaches this scope over a
+   * service binding rather than over the internet; and nobody hands it
+   * anything, because it signs its own short-lived token from the same Secrets
+   * Store key this Worker already reads to verify every token it sees, every
+   * day and every Monday, and revokes it when the run ends. See
+   * `EvalsWorkflow` in workers/mcp/src/evals-workflow.ts.
+   *
+   * What both have in common is the only property this scope is about: neither
+   * one is privileged by being what it is. A scoped grant is this repo's
+   * existing mechanism for exposing something without publishing that it
+   * exists, and `resolveGrant` treats both callers exactly alike.
    */
   'evals',
   /**

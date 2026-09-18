@@ -75,6 +75,6 @@ ${scopeList}
 
 ## No self-service registration
 
-There is no authorization server behind this endpoint and no self-service registration endpoint. A token is minted by hand, after the email above, and handed to one person; nothing here issues one automatically. The machine-readable description of what this endpoint accepts lives at \`/.well-known/oauth-protected-resource\`, on this origin and on the MCP endpoint's own origin.
+There is no authorization server behind this endpoint and no self-service registration endpoint. A token is minted by hand, after the email above, and handed to one person; nothing here issues one to a caller that asks. The one exception is internal and reaches nobody outside: the scheduled test runs on this site's own infrastructure sign a short-lived token for themselves and revoke it when the run ends. The machine-readable description of what this endpoint accepts lives at \`/.well-known/oauth-protected-resource\`, on this origin and on the MCP endpoint's own origin.
 `;
 }

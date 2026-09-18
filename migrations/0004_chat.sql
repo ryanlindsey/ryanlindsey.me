@@ -40,6 +40,15 @@ CREATE TABLE chat_turns (
   -- 'site' for a browser through /chat, 'direct' for a caller that posted to
   -- the endpoint itself. Worth telling apart for the same reason the fit client
   -- sets its own user agent: they are different audiences with different costs.
+  --
+  -- 'evals' JOINED THEM IN ISSUE #291, without a schema change: this column was
+  -- already the answer to "which caller", and the scheduled eval run inside the
+  -- MCP Worker is a third one. It is the only value of the three with no person
+  -- at the other end, which is why src/lib/ops/metrics.ts excludes it from what
+  -- /ops publishes while still counting the other two -- the manual harness
+  -- included, which files as 'direct'. The values are a closed set in
+  -- TypeScript (`TranscriptRow.surface` in workers/mcp/src/chat.ts) rather than
+  -- in the schema, the same choice `mcp_tool_calls.tier` (0001) made.
   surface           TEXT    NOT NULL
 );
 

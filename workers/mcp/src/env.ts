@@ -1,4 +1,5 @@
 import type { RateLimiterObject } from '../../../src/lib/mcp/limits';
+import type { EvalsRunParams } from './evals-workflow';
 
 /**
  * The bindings THIS Worker declares, from workers/mcp/wrangler.jsonc.
@@ -75,6 +76,50 @@ export interface McpEnv {
    * consumers narrow it to `Pick<Fetcher, 'fetch'>` themselves.
    */
   SITE: Fetcher;
+  /**
+   * THIS WORKER, over a service binding to itself -- how the scheduled eval
+   * run reaches `/mcp` and `/chat` (issue #291).
+   *
+   * MEASURED 2026-09-18, before the design was written: with
+   * `{ "binding": "SELF", "service": "ryanlindsey-me-mcp" }` declared, this
+   * Worker boots and `env.SELF.fetch('https://mcp.ryanlindsey.me/mcp', ...)`
+   * carrying a deliberately bad bearer answered `200` with a real SSE
+   * `event: message` frame holding the PUBLIC tool list. The bad token was
+   * refused and the caller served the public tier, which is `resolveGrant`'s
+   * designed behaviour -- so the request went through this Worker's whole
+   * `fetch` handler and through the one authorization check.
+   *
+   * That is the point of the binding rather than an incidental property of it:
+   * the scheduled run is not privileged and must not be. It presents a bearer
+   * like any other client, and `src/lib/tier/grant.ts` stays the only place a
+   * token is verified. See workers/mcp/wrangler.jsonc for why this is a
+   * service binding and not a global fetch to this Worker's own custom domain.
+   *
+   * ONE THING IT IS NOT: a stranger's request in every respect. A dispatch over
+   * this binding never traverses Cloudflare's edge, so it carries no
+   * `CF-Connecting-IP`, and `limitKeyFor` (src/lib/mcp/limits.ts) therefore
+   * keys the scheduled run's `/chat` calls `chat:unknown` rather than to an
+   * address. That is a bucket of its own rather than a shared one, it has room
+   * to spare, and the reasoning is written out beside `LIMITS.conversation`
+   * where the shared-bucket claim used to stand unqualified.
+   *
+   * AND ONE THING IT NEVER EXERCISES, which is worth writing down rather than
+   * claiming parity with a real client: a dispatch over this binding never
+   * reaches Cloudflare's edge, so it tests neither the `routes` entry in
+   * workers/mcp/wrangler.jsonc nor DNS. If `mcp.ryanlindsey.me` stopped
+   * resolving to this Worker tomorrow, every scheduled suite would still be
+   * green.
+   */
+  SELF: Fetcher;
+  /**
+   * The scheduled eval run (issue #291), a Cloudflare Workflow because a full
+   * weekly run is minutes of paced waiting that no single invocation should
+   * hold open. `Workflow<PARAMS>` is the global type `wrangler types` emits
+   * for a `workflows` binding; the parameter is what `create({ params })`
+   * accepts, which is `EvalsRunParams` -- the suites one cron asked for.
+   * ./evals-workflow.ts holds the class and the reasoning.
+   */
+  EVALS_WORKFLOW: Workflow<EvalsRunParams>;
   RLME_AI_GATEWAY_ID: string;
   SITE_ORIGIN: string;
   /** Test-only seam; see `CorpusEnv.CORPUS_REFRESH` in src/lib/corpus.ts. */
@@ -185,16 +230,36 @@ export interface McpEnv {
    * executable path through `/search` in any test at all.
    */
   SEARCH_ENGINE?: string;
+
+  /**
+   * Test-only seam, the ninth declared on this Worker; see `evalsRunEnabled`
+   * in src/lib/evals/plan.ts, where the accepted values and the reasoning are
+   * written down. ABSENT starts the scheduled eval run (the deployed
+   * behaviour, which comes from the var being absent rather than from a
+   * default branch); `'off'` makes `scheduled()` start no workflow instance;
+   * anything else throws rather than guessing.
+   *
+   * `'off'` is set on this Worker by tests/workers.ts for two reasons, and the
+   * second is the one that makes this seam mandatory rather than thrifty. A
+   * run spends frontier-model calls through AI Gateway, so a test suite must
+   * not be one edit away from spending real money. And it could not complete
+   * here in any case: `AI` is overridden to a service Worker, so `env.AI.run()`
+   * is a TypeError, and `FIT_ENGINE`, `CHAT_ENGINE` and `JUDGE_ENGINE` are all
+   * already `'off'` -- so an instance started under the harness would produce a
+   * suite of refusals and record them as a red run.
+   */
+  EVALS_RUNNER?: string;
 }
 
 /**
  * The same list as runtime data, for the drift test. `CORPUS_REFRESH`,
  * `MCP_SEARCH_EMBEDDER`, `RLME_TOKEN_KEY_SOURCE`, `FIT_ENGINE`,
- * `RLME_TURNSTILE_MODE`, `CHAT_ENGINE`, `JUDGE_ENGINE` and `SEARCH_ENGINE` are excluded deliberately: they are
- * test-only vars that no deployed environment and no config declares, so
- * `wrangler types` will never emit them. This list is the CONFIG's bindings,
- * and tests/mcp-env.test.ts fails in both directions if it drifts -- so adding
- * a seam here would break that test rather than document the seam.
+ * `RLME_TURNSTILE_MODE`, `CHAT_ENGINE`, `JUDGE_ENGINE`, `SEARCH_ENGINE` and
+ * `EVALS_RUNNER` are excluded deliberately: they are test-only vars that no
+ * deployed environment and no config declares, so `wrangler types` will never
+ * emit them. This list is the CONFIG's bindings, and tests/mcp-env.test.ts
+ * fails in both directions if it drifts -- so adding a seam here would break
+ * that test rather than document the seam.
  *
  * `RLME_TURNSTILE_SECRET_KEY` IS here, because it is a real binding day 6 added
  * to workers/mcp/wrangler.jsonc rather than a seam.
@@ -213,6 +278,8 @@ export const MCP_BINDING_NAMES = [
   'RATE_LIMITER',
   'RLME_TOKEN_SIGNING_KEY',
   'SITE',
+  'SELF',
+  'EVALS_WORKFLOW',
   'RLME_AI_GATEWAY_ID',
   'SITE_ORIGIN',
   'RLME_TURNSTILE_SECRET_KEY',

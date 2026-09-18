@@ -80,6 +80,30 @@ export const LIMITS: Record<ToolCost, { limit: number; periodSeconds: number }> 
    * needs and a visitor's are answered by one number; if the suite keeps
    * growing, the right fix is to give an `evals` grant its own bucket rather
    * than to keep raising this.
+   *
+   * THE PARAGRAPH ABOVE IS TRUE OF `npm run evals` AND NOT OF THE SCHEDULED
+   * RUN, and issue #291 is what split them. It was written when there was one
+   * runner, and that one runs from the owner's machine over the public
+   * internet, so its twelve calls really do come out of some real address's
+   * bucket. The scheduled runner inside the MCP Worker reaches `/chat` over
+   * `env.SELF.fetch()` (workers/mcp/src/evals-client.ts), a service-binding
+   * dispatch that never traverses Cloudflare's edge -- which is where
+   * `CF-Connecting-IP` is added -- and the client sets its headers explicitly
+   * and does not set that one. So `limitKeyFor` below falls to its `'unknown'`
+   * default and the scheduled suite keys `chat:unknown`, sharing no visitor's
+   * bucket at all.
+   *
+   * COMMENT ACCURACY RATHER THAN A BEHAVIOUR PROBLEM, and worth saying which:
+   * nothing needs to change for it. A weekly run makes the same twelve `POST
+   * /chat` calls inside one five-minute window against a limit of thirty, and
+   * twelve a week against `GLOBAL_LIMITS.chat`'s five hundred a day. Both fit
+   * with room to spare in a bucket of their own, exactly as they fit in a
+   * shared one. What would have been wrong is leaving a reader to believe one
+   * number still answers for both runners when it no longer does.
+   *
+   * The gated tools the same run calls -- `analyze_fit` and `judge_answer` --
+   * are not in this position: those requests carry the run's grant, so
+   * `limitKeyFor` keys them `<tool>:g:<jti>`, and the jti is fresh every run.
    */
   conversation: { limit: 30, periodSeconds: 300 },
 };

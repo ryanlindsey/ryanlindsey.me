@@ -1,0 +1,27 @@
+-- eval_runs gains a status column (04 §4, day-6 scheduled-evals plan, task 3).
+-- Like 0001, 0002 and 0004, this schema is a published governance artifact
+-- (06 §2): treat a change here as a change to a public document.
+--
+-- `eval_runs` already carried `total`, `passed` and `failed`, and had no way
+-- to say "this suite did not run at all" -- so a suite that could not run
+-- wrote no row, and /ops kept publishing the previous run's numbers under a
+-- heading reading "Latest run per suite". That is indistinguishable from a
+-- suite that is still passing. The scheduled runner inside the MCP Worker
+-- (task 4) has no exit code anybody reads the way evals/run.mjs's operator
+-- reads a terminal, so it needs a row that SAYS a suite could not run rather
+-- than relying on its absence to be noticed. That is the equivalent of
+-- evals/run.mjs's exit code 2: a requested suite could not run, nothing
+-- failed, but the run proves less than a bare 0 would suggest.
+--
+-- DEFAULT 'ran', so every row already in this table, and every row a caller
+-- writes without naming this column, keeps meaning what it meant before this
+-- migration existed. `src/lib/evals/record.ts`'s `summarize()` sets it
+-- explicitly for a suite that ran; `incompleteRow()` sets it to 'incomplete'
+-- with `total`, `passed` and `failed` all zero.
+--
+-- Plain TEXT rather than an enum or a CHECK constraint, the same choice
+-- `mcp_tool_calls.tier` (0001) and `access_tokens.audience` (0002) already
+-- made: SQLite has no enum type, and the two values this column takes today
+-- are a closed set in TypeScript (`EvalRunStatus` in
+-- src/lib/evals/record.ts) rather than in the schema.
+ALTER TABLE eval_runs ADD COLUMN status TEXT NOT NULL DEFAULT 'ran';
