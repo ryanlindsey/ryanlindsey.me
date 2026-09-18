@@ -46,10 +46,10 @@ and absorbed into the org-wide roadmapping and reporting process.
 • The incident process I own now runs on agentic investigation: incident commanders use agents and connected MCP
 servers over live telemetry, which has raised root-cause-analysis quality and sharply reduced the time to produce one.
 • That ownership covers the process itself, the communication strategy, service integrations with third-party systems of
-record including Salesforce, data reporting, and training. Data Engineering and InfoSec run their own incident
-processes on the same tooling. Accountable for the area's OKRs and report on them to the executive team monthly.
-Risky changes go through a change advisory board with documented rollback plans, and post-incident review is
-blameless with linked action items.
+record including Salesforce, data reporting, and training. Data Engineering and InfoSec run their own incident processes
+on the same tooling. Accountable for the area's OKRs and report on them to the executive team monthly. Risky changes
+go through a change advisory board with documented rollback plans, and post-incident review is blameless with linked
+action items.
 • Measured the inherited process before changing it, and found response and resolution times were already at or better
 than industry standard, a reading corroborated independently by a vendor in the space. The real weakness was time to
 detect, so that became the focus: a service-level observability initiative run with DevOps and SRE now surfaces issues
