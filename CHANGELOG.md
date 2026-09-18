@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.26.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.26.1...ryanlindsey-me-v1.26.2) (2026-09-18)
+
+
+### Bug Fixes
+
+* **fit:** send strict-origin so the form's POST carries an Origin ([#261](https://github.com/ryanlindsey/ryanlindsey.me/issues/261)) ([f8aca12](https://github.com/ryanlindsey/ryanlindsey.me/commit/f8aca1267f098f47470878ec4b18b787b19cd593))
+
 ## [1.26.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.26.0...ryanlindsey-me-v1.26.1) (2026-09-18)
 
 
