@@ -5,7 +5,7 @@ import { MCP_WORKER, SITE_HARNESS_WORKERS } from './workers';
 import { mintToken, newJti, SCOPES, type Scope, type TokenClaims } from '../src/lib/tier/token';
 import { recordIssue } from '../src/lib/tier/registry';
 import { TEST_SIGNING_KEY, type Grant } from '../src/lib/tier/grant';
-import { PROFILE_KEYS } from '../src/lib/tier/private-docs';
+import { AUTHORING_KEYS, PROFILE_KEYS } from '../src/lib/tier/private-docs';
 import { CAMPAIGN_PREFIX } from '../src/lib/tier/campaigns';
 import { defineTool, ToolError, type ToolContext } from '../workers/mcp/src/define';
 import {
@@ -34,6 +34,18 @@ const CONFIGURED_NARRATIVE = 'narrative/fixture-renamed.md';
 const FALLBACK_AUDIENCE = 'fallback-audience';
 /** An audience whose campaign entry names a document in another scope's namespace. */
 const CROSSING_AUDIENCE = 'crossing-audience';
+
+// The authoring side's own audiences, DISTINCT from the four above and never
+// sharing a narrative key with them. The agreement test below writes a marker
+// to whatever key `get_narrative_brief` reports, so a key any other test also
+// reads would make this file order-dependent -- and the two tests that
+// distinguish the configured branch from the fallback one are exactly the
+// ones a clobbered fixture would silently stop distinguishing.
+/** An audience whose campaign configures a narrative key that is not the convention one. */
+const BRIEF_AUDIENCE = 'brief-audience';
+const BRIEF_CONFIGURED_NARRATIVE = 'narrative/brief-renamed.md';
+/** An audience with no campaign entry, so the convention key is what the brief reports. */
+const BRIEF_FALLBACK_AUDIENCE = 'brief-fallback-audience';
 
 beforeAll(async () => {
   const { url } = await server.listen();
@@ -75,6 +87,17 @@ beforeAll(async () => {
     '# Narrative\n\nFixture fallback narrative.\n',
   );
 
+  // The brief itself, at the ONE fixed key `AUTHORING_KEYS` names. Generic
+  // like every other fixture here: what is under test is that the document at
+  // that key reaches an `authoring` grant and no one else, and the content is
+  // irrelevant to that.
+  await env.R2_PRIVATE.put(AUTHORING_KEYS.narrativeBrief, '# Brief\n\nFixture narrative brief.\n');
+
+  // NO narrative document is written for either brief audience here, on
+  // purpose. The agreement test puts one at the key the tool reports, which is
+  // the only arrangement under which a reported key that nothing reads can
+  // fail.
+
   await env.KV_CONFIG.put(
     `${CAMPAIGN_PREFIX}fixture`,
     JSON.stringify({
@@ -104,6 +127,20 @@ beforeAll(async () => {
       hero_line: 'A generic line.',
       token_audience: CROSSING_AUDIENCE,
       gated_narrative_doc: PROFILE_KEYS.compensation,
+    }),
+  );
+
+  await env.KV_CONFIG.put(
+    `${CAMPAIGN_PREFIX}brief`,
+    JSON.stringify({
+      id: 'brief',
+      company: 'Fixture Company',
+      status: 'staged',
+      jd_text: 'A description supplied at runtime.',
+      referrer_domains: ['fixture.example'],
+      hero_line: 'A generic line.',
+      token_audience: BRIEF_AUDIENCE,
+      gated_narrative_doc: BRIEF_CONFIGURED_NARRATIVE,
     }),
   );
 });
@@ -575,6 +612,80 @@ test('resolveNarrativeKey answers the key get_application_narrative will read', 
 });
 
 /**
+ * THE AGREEMENT, at the transport both ends actually use, and the one test
+ * `get_narrative_brief` exists to be held to.
+ *
+ * `resolveNarrativeKey`'s test above pins the resolver; this pins the PAIR.
+ * Asserting that the two tools return equal strings would pass with both of
+ * them wrong, so the marker is written to the key the brief REPORTED and then
+ * read back through `get_application_narrative`. Nothing else can catch a
+ * disagreement: a document deployed to the wrong key deploys cleanly, is
+ * served by nothing, and logs nothing.
+ *
+ * Three resolutions, because the failure this guards has three shapes and
+ * only the first two round-trip.
+ */
+test('the brief reports the key the narrative tool actually reads', async () => {
+  const authoring = await tokenFor(['authoring']);
+
+  for (const [audience, expected, marker] of [
+    // Configured and inside the namespace: the brief names the CONFIGURED key
+    // rather than `narrative/brief-audience.md`. Asserting the literal is what
+    // keeps the two cases distinguishable -- a brief that always computed the
+    // convention key would round-trip below just as happily.
+    [BRIEF_AUDIENCE, BRIEF_CONFIGURED_NARRATIVE, '# Narrative\n\nWritten where the brief said.\n'],
+    // Not configured: the convention key, which is the fallback the config
+    // path is optional against.
+    [
+      BRIEF_FALLBACK_AUDIENCE,
+      `narrative/${BRIEF_FALLBACK_AUDIENCE}.md`,
+      '# Narrative\n\nWritten to the convention key.\n',
+    ],
+  ] as const) {
+    const answer = await callTool('get_narrative_brief', { audience }, authoring);
+    expect(answer.result.isError, `${audience} must resolve to a key`).toBeFalsy();
+    const structured = answer.result.structuredContent as { key: string; brief: string };
+    expect(structured.key, `${audience} must be told the key the reader will use`).toBe(expected);
+    expect(structured.brief).toContain('Fixture narrative brief');
+
+    // The two steps that make this worth writing. The marker goes to the key
+    // the TOOL named, not to one this test knows, and it comes back through
+    // the reader that never saw the brief.
+    await env.R2_PRIVATE.put(structured.key, marker);
+    const served = await callTool(
+      'get_application_narrative',
+      undefined,
+      await tokenFor(['narrative'], { aud: audience }),
+    );
+    expect(served.result.content[0].text, `${audience} must read back what was written`).toBe(
+      marker,
+    );
+  }
+
+  // The third resolution, and THE ASYMMETRY IS THE SCOPE. A campaign entry
+  // outside the namespace builds no key, and the two tools answer that
+  // differently on purpose: the brief names the offending value, because an
+  // operator who cannot be told what to fix cannot fix it and only the owner's
+  // own client holds `authoring`; the reader answers the same undifferentiated
+  // sentence a missing document gets, because a refusal quoting the key to a
+  // stranger's agent would turn a misconfiguration into a listing of what is
+  // in the bucket.
+  const refused = await callTool('get_narrative_brief', { audience: CROSSING_AUDIENCE }, authoring);
+  expect(refused.result.isError).toBe(true);
+  expect(refused.result.content[0].text).toContain(CROSSING_AUDIENCE);
+  expect(refused.result.content[0].text).toContain(PROFILE_KEYS.compensation);
+
+  const reader = await callTool(
+    'get_application_narrative',
+    undefined,
+    await tokenFor(['narrative'], { aud: CROSSING_AUDIENCE }),
+  );
+  expect(reader.result.isError).toBe(true);
+  expect(reader.result.content[0].text).toBe('That document is not available on this tier yet.');
+  expect(reader.result.content[0].text).not.toContain(PROFILE_KEYS.compensation);
+});
+
+/**
  * MECHANISM 2, tested at the only level where it is reachable -- and the fact
  * that this test cannot be an HTTP round trip is the point rather than a
  * shortcut.
@@ -884,7 +995,7 @@ test('the granted instructions map exactly the scopes the grant carries', async 
   }
 });
 
-test('every granted line is pinned verbatim, for a grant carrying every scope', async () => {
+test('every granted line is pinned verbatim, for the scopes this block covers', async () => {
   /**
    * THE REVIEW GATE on the map's prose, and the reason `summary` is a field of
    * its own rather than the tool's `description`.
@@ -902,6 +1013,15 @@ test('every granted line is pinned verbatim, for a grant carrying every scope', 
    * nothing else is appended after the last line. The public half is left to
    * tests/mcp.smoke.test.ts, which owns it -- this slices from the header on,
    * so the two tests do not both have to be edited when the public copy moves.
+   *
+   * NOT "every scope", which this test's name and this comment both claimed
+   * until ryanlindsey.me#266. The token below carries four of the six, so
+   * `judge_answer` has always been absent from the block -- `evals` is not in
+   * the list -- and `get_narrative_brief` is absent for exactly the same
+   * reason rather than because anything was missed. That is why adding a tool
+   * under a withheld scope does not edit this test. The summaries outside the
+   * four are reviewed by the scope-by-scope agreement test below instead,
+   * which pins the name-to-line pairing without pinning the prose.
    */
   const instructions = await instructionsFor(
     await tokenFor(['fit', 'profile', 'documents', 'narrative']),
@@ -947,10 +1067,13 @@ test('the granted instructions and tools/list agree, scope by scope', async () =
   // an endpoint rather than a registration, and the test immediately below this
   // one ('a grant that opens no tool is told so without a dangling colon')
   // shows the server already treats a toolless grant as a supported state.
-  // Epic 263's `authoring` went further and gates nothing here at all, which
-  // is what makes the union form load-bearing rather than merely tidier: the
-  // per-scope form would now fail on a scope that is behaving exactly as
-  // designed.
+  // Epic 263's `authoring` went further and for one issue gated nothing here
+  // at all, under which the per-scope form would have failed on a scope
+  // behaving exactly as designed. ryanlindsey.me#266 gave it
+  // `get_narrative_brief`, so every scope opens a tool again -- which is
+  // precisely why the union form is kept rather than reverted. The condition
+  // that broke the per-scope check is one issue away from returning, and the
+  // union form does not care.
   //
   // The union is also the stronger check: it proves the loop actually exercised
   // EVERY gated tool, which the per-scope form never did. A tool no scope opens
@@ -999,7 +1122,7 @@ test('an anonymous tools/list cannot see judge_answer at all', async () => {
   expect(names).not.toContain('judge_answer');
 });
 
-test('GATED_TOOL_NAMES stays derived, so a seventh tool cannot be missed', () => {
+test('GATED_TOOL_NAMES stays derived, so a new tool cannot be missed', () => {
   expect(GATED).toContain('judge_answer');
 });
 
@@ -1017,19 +1140,20 @@ test('a grant that opens no tool is told so without a dangling colon', async () 
   // narrowing a live token to nothing is one operator edit away -- a soft
   // revoke that leaves the token valid and gives it nothing to do.
   //
-  // An `authoring`-only grant is the design's route. Until Task 11 this test
-  // used a `fit`-only token, because the `fit` scope opened no tool yet; this
-  // comment then read "every scope opens one now, so that door is shut", which
-  // epic 263 reopened by adding a scope whose tool lands a separate issue
-  // later. A scope that opens no tool is a supported state here, not a broken
-  // intermediate, and this is where that claim is paid for.
-  for (const scopes of [[], ['authoring'] as Scope[]]) {
-    const instructions = await instructionsFor(await tokenFor(scopes));
-    expect(instructions).toContain(`scoped token for the audience "${AUDIENCE}"`);
-    expect(instructions).not.toContain('It also has:');
-    expect(instructions.trimEnd()).toBe(instructions);
-    expect(instructions.endsWith(':')).toBe(false);
-  }
+  // THE SECOND ROUTE HAS BEEN OPEN AND SHUT TWICE, and the history is worth
+  // keeping because it is what stops this test being deleted the next time
+  // somebody notices every scope opens a tool. Until Task 11 it used a
+  // `fit`-only token, because `fit` opened none; this comment then read
+  // "every scope opens one now, so that door is shut", which epic 263
+  // reopened with `authoring`; and ryanlindsey.me#266 shut it again by giving
+  // that scope `get_narrative_brief`. So the scopeless grant is the only
+  // route today, and it is the durable one: it does not depend on which
+  // scopes happen to open tools in this build.
+  const instructions = await instructionsFor(await tokenFor([]));
+  expect(instructions).toContain(`scoped token for the audience "${AUDIENCE}"`);
+  expect(instructions).not.toContain('It also has:');
+  expect(instructions.trimEnd()).toBe(instructions);
+  expect(instructions.endsWith(':')).toBe(false);
 });
 
 test('no gated tool NAME or DESCRIPTION carries search language', async () => {
