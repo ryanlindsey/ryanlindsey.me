@@ -1,6 +1,6 @@
 ---
 name: mint-scoped-token
-description: Use when minting, listing or revoking a scoped token for an audience: issuing a private-tier link, giving an agent access to gated MCP tools, ending an audience's access, or checking what is outstanding. Handles the campaign lookup, the command, the verification and the link to hand over.
+description: Use when minting, listing or revoking a scoped token for an audience. That covers issuing a private-tier link, giving an agent access to gated MCP tools, ending an audience's access, or checking what is outstanding. Handles the campaign lookup, the command, the verification and the link to hand over.
 ---
 
 # Minting a scoped token
