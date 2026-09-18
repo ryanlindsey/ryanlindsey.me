@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.30.0...ryanlindsey-me-v1.31.0) (2026-09-18)
+
+
+### Features
+
+* **resume:** evidence the systems of record and the team behind the zero-to-one build ([#294](https://github.com/ryanlindsey/ryanlindsey.me/issues/294)) ([455347e](https://github.com/ryanlindsey/ryanlindsey.me/commit/455347e16004ce925653c65d7107676a730bfbce))
+
 ## [1.30.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.29.0...ryanlindsey-me-v1.30.0) (2026-09-18)
 
 
