@@ -96,8 +96,8 @@ export function narrativeKey(audience: string): string | null {
  * One document, or `null` if it is not there.
  *
  * `null` rather than a throw for a miss: a private tier whose documents are
- * deployed separately (scripts/private-doc.mjs, run from the private repo)
- * will routinely have a key that has not been written yet, and that is an
+ * deployed separately (scripts/private-doc.mjs, run from wherever the document
+ * is) will routinely have a key that has not been written yet, and that is an
  * ordinary state for a tool to report rather than an error to log.
  */
 export async function readPrivateDoc(env: PrivateDocsEnv, key: string): Promise<string | null> {

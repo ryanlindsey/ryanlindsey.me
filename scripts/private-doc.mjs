@@ -1,20 +1,29 @@
 #!/usr/bin/env node
 // Put one document into the private tier's R2 bucket (09 §3 item 3: "doc
-// authored in this repo, pushed to R2/D1 by the local script, and confirmed
-// absent from the public repo's history").
+// authored outside every repository, pushed to R2/D1 by the local script, and
+// confirmed absent from the history of both").
 //
 // THIS SCRIPT LIVES IN THE PUBLIC REPO AND THE DOCUMENTS DO NOT. That is the
 // whole shape: the mechanism is generic and carries no audience-specific
 // semantics -- it puts a file at a key -- while every document it deploys is
-// authored in the private planning repo and is passed in by path. Nothing it
-// writes ever enters this repo's history, and 10 §2.3 is satisfied by WHERE
-// it is invoked from rather than by where it is stored.
+// authored outside every repository and is passed in by path. Nothing it
+// writes enters ANY repo's history, and 10 §2.3 is satisfied by WHERE it is
+// invoked from rather than by where it is stored.
 //
-// Usage, from the private repo:
-//   node ../ryanlindsey.me/scripts/private-doc.mjs put \
-//     --key profile/availability.md --file docs/private/availability.md
-//   node ../ryanlindsey.me/scripts/private-doc.mjs check --key profile/availability.md
-//   node ../ryanlindsey.me/scripts/private-doc.mjs delete --key narrative/foo.md
+// CORRECTED when the authoring moved out, in the epic that also added the
+// `authoring/` namespace below. The quotation above used to read "doc authored
+// in this repo", and the paragraph after it said the documents were authored
+// in the private planning repo and that nothing written here entered THIS
+// repo's history -- which undersold it, because absence from one history is
+// now absence from both. 09 §3 item 3 was rewritten on 2026-09-17 and is
+// quoted here in its current words; that plan item is the authority and this
+// script is its implementation, so a paraphrase here is how the two drift.
+//
+// Usage, from the directory holding the document:
+//   node /path/to/ryanlindsey.me/scripts/private-doc.mjs put \
+//     --key profile/availability.md --file availability.md
+//   node /path/to/ryanlindsey.me/scripts/private-doc.mjs check --key profile/availability.md
+//   node /path/to/ryanlindsey.me/scripts/private-doc.mjs delete --key narrative/foo.md
 //
 // Keys must match what src/lib/tier/private-docs.ts builds. The script
 // re-checks the shape rather than trusting the caller, because a typo here
@@ -49,13 +58,16 @@ const BUCKET = 'ryanlindsey-me-private';
 // in this public repo. It is hardcoded rather than left for wrangler to
 // discover because this login resolves two Cloudflare accounts and wrangler
 // then refuses to guess non-interactively ("More than one account
-// available"), and because this script's documented invocation runs from a
-// DIFFERENT repo's cwd -- so neither `--config` nor cwd-relative config
-// discovery would reach this file's account_id anyway. Set into every child
+// available"), and because this script's documented invocation runs from a cwd
+// outside this repo -- so neither `--config` nor cwd-relative config discovery
+// would reach this file's account_id anyway. That second reason got STRONGER
+// when the authoring moved out and this line was corrected with the header
+// above: it used to say "a DIFFERENT repo's cwd", and the cwd is now reliably
+// not a repo at all, so there is certainly no wrangler.jsonc beside it. Set into every child
 // process's own environment below, so the caller's shell need not export it.
 const ACCOUNT_ID = '1b764d090899bf1ee61a8d1e87c10710';
 
-const KEY_PATTERN = /^(profile|case-study|narrative)\/[A-Za-z0-9][A-Za-z0-9._-]*\.md$/;
+const KEY_PATTERN = /^(profile|case-study|narrative|authoring)\/[A-Za-z0-9][A-Za-z0-9._-]*\.md$/;
 
 function wrangler(args) {
   return execFileSync('npx', ['wrangler', ...args], {
@@ -75,7 +87,7 @@ function requireKey() {
   if (!key) throw new Error('--key is required');
   if (!KEY_PATTERN.test(key)) {
     throw new Error(
-      `key must be <profile|case-study|narrative>/<name>.md -- got ${JSON.stringify(key)}`,
+      `key must be <profile|case-study|narrative|authoring>/<name>.md -- got ${JSON.stringify(key)}`,
     );
   }
   return key;
