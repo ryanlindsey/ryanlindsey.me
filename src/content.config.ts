@@ -115,8 +115,8 @@ const isoDate = z
  *
  * ONE SOURCE FOR FOUR FORMATS. HTML, Markdown, JSON and the PDF all render from
  * this one file, so one commit to it updates all four. Nothing in it should
- * exist only for one format's benefit -- src/content/now/now.yaml's header
- * quotes that rule as its own reason for being a separate file.
+ * exist only for one format's benefit, which is why the home page's Now strip
+ * is its own collection in src/content/now/ rather than a field here.
  *
  * 00 §5: THE RÉSUMÉ NAMES THE EMPLOYER IN `work`, POSITIONING SURFACES DO NOT.
  * `basics.summary` carries no company name, and neither does the home page bio
