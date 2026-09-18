@@ -65,15 +65,63 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
     class="bg-ink text-bg dark:border-b dark:border-rule dark:bg-surface-raised dark:text-ink"
     data-now-strip
   >
-    <div class="mx-auto flex max-w-[1440px] items-baseline gap-3 px-5 py-4 lg:px-10">
-      <span class="bg-accent-ground px-[7px] py-[3px] font-mono text-micro text-accent-on">
+    {/*
+      THE JOIN IS THE PROBLEM ON A PHONE, NOT THE BAND. Measured at 390px
+      before this change: three clauses joined with a middot is about 150
+      characters, which wraps to five lines of 14px text, and the separators
+      land mid-line where they stop reading as separators at all. Worse,
+      `items-baseline` on a flex row pins the NOW chip to the FIRST line of
+      that five-line block, so the label floats at the top left of a
+      paragraph it is supposed to introduce.
+
+      So below `sm` the row becomes a column, the chip sits on its own line at
+      its own width, and each clause takes a line. From `sm` up the design is
+      exactly what it was: one row, one line, middots between the items.
+    */}
+    <div class="mx-auto flex max-w-[1440px] flex-col gap-2 px-5 py-4 sm:flex-row sm:items-baseline sm:gap-3 lg:px-10">
+      <span class="w-fit shrink-0 bg-accent-ground px-[7px] py-[3px] font-mono text-micro text-accent-on">
         NOW
       </span>
-      <!--
+      {/*
         Edited in src/content/now/now.yaml, often, and expected to go stale
         between edits. See that file's header for what it may and may not say.
-      -->
-      <p class="text-small">{nowItems.join(' · ')}</p>
+
+        ONE COPY OF THE CONTENT, which rules out the obvious alternative of a
+        stacked list for small viewports beside a joined line for large ones.
+        Every clause would then be in the DOM twice, and the things that read
+        this page as text -- the AI Search index, an agent fetching the HTML,
+        `excerptFrom` in src/lib/search/results.ts -- would see each one
+        repeated with no way to tell which copy was displayed. The separators
+        are in the markup at every width for the same reason and are hidden
+        with CSS, so extracted text still reads `a · b · c` on a phone.
+      */}
+      <p class="text-small">
+        {nowItems.map((item, index) => (
+          <Fragment>
+            {index > 0 && (
+              <span aria-hidden="true" class="hidden sm:inline">
+                {' · '}
+              </span>
+            )}
+            {/*
+              MEASURED at 390px after the stack landed: the second clause is
+              long enough to wrap, and with no space between clauses its
+              continuation line is indistinguishable from a fourth item. The
+              stack fixed the middots and introduced a quieter version of the
+              same ambiguity.
+
+              `first:mt-0` targets the first ITEM because the separators are
+              emitted after each item rather than before -- the item spans are
+              children 1, 3 and 5 of this paragraph, so the first child is an
+              item. Reversing that order silently gives the strip a 6px space
+              above its first line.
+            */}
+            <span data-now-item class="mt-1.5 block first:mt-0 sm:mt-0 sm:inline">
+              {item}
+            </span>
+          </Fragment>
+        ))}
+      </p>
     </div>
   </section>
 
@@ -106,9 +154,29 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
       </p>
     )}
 
-    <div class="lg:border-l lg:border-rule lg:pl-10">
+    {/*
+      THE DIVIDER BETWEEN THE LEAD STORY AND THIS COLUMN IS `lg:border-l`,
+      which means there is no divider at all on a phone. That is the whole of
+      why the two blocks blend together when they stack: 40px of grid gap is
+      the only thing between the end of the lead story's meta line and the
+      start of the bio, and every rule elsewhere on this site says a boundary
+      is a hairline.
+
+      So the rule turns horizontal below `lg` rather than disappearing. Same
+      token, same 1px, rotated to match the axis the content is stacked on,
+      and switched off again at `lg` where the vertical one takes over.
+    */}
+    <div class="border-t border-rule pt-10 lg:border-l lg:border-t-0 lg:border-rule lg:pl-10 lg:pt-0">
       <div data-bio>
-        <p class="font-mono text-micro uppercase text-ink-muted">Who is writing</p>
+        {/*
+          "About", not "Who is writing". The original line was written to
+          answer a question an agent would ask of a document, and it read that
+          way to the person it also had to serve. This surface has both
+          audiences and the markdown twin (src/pages/index.md.ts) carries the
+          same heading, so the two change together or the page and its export
+          start describing themselves differently.
+        */}
+        <p class="font-mono text-micro uppercase text-ink-muted">About</p>
         {/*
           A `{...}` COMMENT, NOT AN HTML ONE, AND THAT IS THE POINT. Astro
           ships `<!-- -->` to the client; this form is evaluated away at build.
@@ -134,8 +202,36 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
           it was written under this same constraint, which is why it names no
           employer for this page to have to strip.
         */}
-        <p class="mt-3 text-body text-ink">
-          <strong class="font-semibold">{basics.name}</strong>, {basics.label}.
+        {/*
+          THE PORTRAIT IS INSIDE THIS <p>, NOT IN A WRAPPER <div>, and that is
+          a constraint the test suite imposes rather than a styling preference.
+          tests/pages.test.ts matches this block with `/data-bio[\s\S]*?<\/div>/`
+          -- LAZY, so it stops at the FIRST closing div -- and asserts the
+          résumé's `label` falls inside that window. A wrapper div around the
+          image and the name would close before `basics.summary`, quietly
+          shrinking what that assertion covers. src/components/WritingIndex.astro
+          carries the same note about the same idiom.
+
+          An <img> is phrasing content, so it is valid inside a <p>, and
+          flexing the paragraph costs no element. The name and label move into
+          a <span> for the same reason: the flex container needs the text to be
+          one item rather than two text nodes.
+
+          Same file as the footer's 72px slot, at 48px here. One asset, two
+          sizes, and the browser has it cached by the time the footer asks.
+        */}
+        <p class="mt-3 flex items-center gap-3 text-body text-ink">
+          <img
+            src="/ryan-lindsey.webp"
+            alt=""
+            width="48"
+            height="48"
+            decoding="async"
+            class="h-12 w-12 shrink-0 rounded-full border border-rule object-cover"
+          />
+          <span>
+            <strong class="font-semibold">{basics.name}</strong>, {basics.label}.
+          </span>
         </p>
         <p class="mt-3 text-small text-ink-muted">{basics.summary}</p>
       </div>
@@ -183,7 +279,42 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
               {PILLAR_LABELS[post.data.pillar] ?? post.data.pillar}
             </p>
             <h3 class="mt-3 font-display text-heading text-ink">{post.data.title}</h3>
-            <p class="mt-3 text-small text-ink-muted">{post.data.description}</p>
+            {/*
+              `lg:` SCOPED, AND THAT IS THE WHOLE DECISION. Below `lg` this
+              grid is one column, so every card is its own row and sizes to its
+              own content -- MEASURED at 500px: heights 319/403/290 and zero
+              slack in all three. Clamping there would truncate a description
+              to fix a problem that viewport does not have.
+
+              From `lg` up the cards share a row, a grid row is as tall as its
+              tallest cell, and these descriptions are full post descriptions
+              rather than card teasers: MEASURED at 1024px, the three run 8, 14
+              and 8 lines in a 308px column. The row took the 14 and the other
+              two carried 172px of dead space between their last line and the
+              reading-time line `mt-auto` pins to the bottom. At 1440px it was
+              63px and 92px.
+
+              Equal heights are not negotiable here, which is why the fix is on
+              the content and not on the box. `hairline-grid` draws the
+              dividers as a 1px gap over a rule-coloured ground, so a cell that
+              does not fill its row leaves that ground showing through as a
+              grey block -- the same failure the COLUMNS comment at the top of
+              this file describes for a missing third card.
+
+              Four lines was measured against five and six. All three give the
+              SAME residual slack, because once every description is clamped to
+              one number the leftover variance is the title wrapping to three
+              lines instead of two, plus a kicker that wraps at this width.
+              Four is the compact one, and the design's `min-h-[210px]` says
+              compact is what these cards are.
+
+              NOTHING IS REMOVED FROM THE DOCUMENT. `line-clamp` is overflow,
+              so the full description is still in the HTML for the AI Search
+              index, for an agent reading the page, and for a screen reader.
+              This hides text from a sighted reader on a card, and from nobody
+              else.
+            */}
+            <p class="mt-3 text-small text-ink-muted lg:line-clamp-4">{post.data.description}</p>
             <p class="mt-auto pt-6 font-mono text-micro uppercase text-accent">
               {readingTimeFor(post.body).minutes} min &rarr;
             </p>

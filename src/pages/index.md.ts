@@ -39,9 +39,15 @@ function renderNow(items: readonly string[]): string {
   return `## Now\n\n${escapeMarkdown(items.join(' · '))}`;
 }
 
+// The heading matches the kicker src/pages/index.astro renders over the same
+// block, and has to: this document is that page, exported. It read "Who is
+// writing" in both places until this change, which was a line written for a
+// reader parsing a document rather than for the person the page also serves.
+// Change one and the page and its own export start describing themselves
+// differently.
 function renderBio(basics: Resume['basics']): string {
   return (
-    '## Who is writing\n\n' +
+    '## About\n\n' +
     `**${escapeMarkdown(basics.name)}**, ${escapeMarkdown(basics.label)}.\n\n` +
     escapeMarkdown(basics.summary)
   );

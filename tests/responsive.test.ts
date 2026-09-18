@@ -202,3 +202,179 @@ test('each arrow pair shows at exactly one of the two arrangements', async () =>
   expect(gutter![0]).toMatch(/@3xl:hidden/);
   expect(gutter![0]).toMatch(/@3xl:(inline|flex|block)/);
 });
+
+/* ------------------------------------------- 4. The home page on a phone */
+
+test('the Now strip stacks below sm and is a row above it', async () => {
+  // MEASURED at 390px before this change: the three clauses joined with a
+  // middot are about 150 characters, which wraps to five lines of 14px text.
+  // `items-baseline` on a flex row then pins the NOW chip to the baseline of
+  // the FIRST of those five lines, so the label floats at the top left of the
+  // paragraph it introduces rather than sitting beside it.
+  //
+  // Both halves are asserted. A container that stacked at every width would
+  // pass a `flex-col` check alone while quietly deleting the design the strip
+  // was drawn as.
+  const page = await html('/');
+  const container = /data-now-strip[^>]*>\s*<div class="([^"]+)"/.exec(page);
+  expect(container, 'no Now strip container').not.toBeNull();
+  expect(container![1]).toContain('flex-col');
+  expect(container![1]).toContain('sm:flex-row');
+  expect(container![1]).toContain('sm:items-baseline');
+  // Without `w-fit` the chip stretches to the full width of a stacked column,
+  // which turns a label into a band.
+  const chip = /<span class="([^"]*bg-accent-ground[^"]*)"[^>]*>\s*NOW/.exec(page);
+  expect(chip, 'no NOW chip').not.toBeNull();
+  expect(chip![1]).toContain('w-fit');
+});
+
+test('the Now items are one copy of the content, separators included', async () => {
+  // THE CONSTRAINT THAT RULES OUT THE OBVIOUS IMPLEMENTATION. A stacked list
+  // for small viewports beside a joined line for large ones is the natural way
+  // to build this, and it puts every clause in the DOM twice -- where the AI
+  // Search index, an agent fetching the HTML, and `excerptFrom` in
+  // src/lib/search/results.ts all see each one repeated with no way to tell
+  // which copy a visitor was shown.
+  //
+  // So the separators are in the markup at every width and hidden with CSS,
+  // and extracted text still reads `a · b · c` on a phone. Counting is what
+  // makes the duplicate version fail: it renders each clause twice.
+  const page = await html('/');
+  const strip = /data-now-strip[\s\S]*?<\/section>/.exec(page);
+  expect(strip, 'no Now strip').not.toBeNull();
+  // Matched on the data attribute rather than on the class string. The first
+  // version of this test keyed on `class="block sm:inline"` and went red the
+  // moment a spacing utility was added to the same span -- a test that fails
+  // for a change it does not care about is one the next person deletes.
+  const items = [...strip![0].matchAll(/<span data-now-item\b/g)];
+  expect(items.length, 'expected the Now clauses rendered once each').toBeGreaterThan(1);
+  const separators = [...strip![0].matchAll(/aria-hidden="true"[^>]*>\s*·/g)];
+  expect(separators.length, 'a separator per gap, hidden by CSS rather than absent').toBe(
+    items.length - 1,
+  );
+  // READ OFF THE CLASS ATTRIBUTE, NOT THE WHOLE TAG, and the reason is a bug
+  // this test shipped with for about ten minutes. It asserted
+  // `expect(tag).toContain('hidden')` against the entire `<span ...>` string --
+  // which always passes, because `aria-hidden="true"` is in that string. A
+  // mutation run that stripped `hidden` from the class list was served a green
+  // test. An assertion that cannot fail is not a check.
+  for (const [, classes] of strip![0].matchAll(
+    /<span[^>]*aria-hidden="true"[^>]*class="([^"]*)"/g,
+  )) {
+    const utilities = classes.split(/\s+/);
+    expect(utilities, 'a separator that reaches a phone is a middot mid-sentence').toContain(
+      'hidden',
+    );
+    expect(utilities).toContain('sm:inline');
+  }
+});
+
+test('the bio column keeps a rule where the vertical one cannot reach', async () => {
+  // The divider between the lead story and the bio is `lg:border-l`, so below
+  // `lg` -- where the two blocks stack -- there is no divider at all, and 40px
+  // of grid gap is the only thing between the end of one and the start of the
+  // other. That is the whole of why they read as one jumbled block on a phone.
+  //
+  // Asserted as the pairing rather than as the presence of `border-t`: the
+  // horizontal rule has to switch OFF again at `lg`, or the column gains a
+  // stray hairline across the top of the layout the design did draw.
+  const page = await html('/');
+  //
+  // SPLIT INTO UTILITIES RATHER THAN SUBSTRING-MATCHED, for the same reason the
+  // separator test above carries. `toContain('border-t')` on the raw class
+  // string is satisfied by `lg:border-t-0`, so deleting the mobile rule while
+  // leaving its desktop switch-off behind passed a test written to catch
+  // exactly that.
+  const column = /<div class="([^"]*lg:border-l[^"]*)"/.exec(page);
+  expect(column, 'no bio column').not.toBeNull();
+  const utilities = column![1].split(/\s+/);
+  expect(utilities, 'the stacked columns lost their divider').toContain('border-t');
+  expect(utilities, 'the horizontal rule never switches off at lg').toContain('lg:border-t-0');
+});
+
+test('the bio kicker speaks to a person, not only to a parser', async () => {
+  // "Who is writing" was written to answer a question a document gets asked,
+  // and it read that way to the person the home page also serves. The markdown
+  // twin carries the same heading over the same block, so this asserts both:
+  // the page and its own export describing themselves differently is the
+  // failure this pins.
+  const page = await html('/');
+  const bio = /data-bio[\s\S]*?<\/p>/.exec(page);
+  expect(bio, 'no bio block').not.toBeNull();
+  expect(bio![0]).toContain('About');
+  expect(bio![0]).not.toContain('Who is writing');
+
+  const markdown = await (await server.fetch('/index.md')).text();
+  expect(markdown).toContain('## About');
+  expect(markdown).not.toContain('## Who is writing');
+});
+
+test('the more-writing descriptions are clamped only where the cards share a row', async () => {
+  // MEASURED at 1024px before this change: the three descriptions run 8, 14
+  // and 8 lines in a 308px column, the grid row takes the tallest, and the two
+  // short cards carry 172px of dead space above the reading-time line that
+  // `mt-auto` pins to the bottom. At 1440px it was 63px and 92px.
+  //
+  // The clamp cannot be unconditional, and that is what this test guards.
+  // Below `lg` the grid is one column, so each card is its own row and sizes
+  // to its own content -- measured at 500px: 319/403/290 and no slack
+  // anywhere. An unprefixed `line-clamp-4` would truncate three descriptions
+  // on every phone to fix a problem phones do not have, and it would look
+  // deliberate rather than broken, so nothing else would catch it.
+  const page = await html('/');
+  const section = /data-more-writing[\s\S]*?<\/section>/.exec(page);
+  expect(section, 'no more-writing section').not.toBeNull();
+
+  const descriptions = [...section![0].matchAll(/<p class="([^"]*text-ink-muted[^"]*)">/g)]
+    .map((match) => match[1])
+    .filter((classes) => classes.includes('line-clamp'));
+  expect(descriptions.length, 'no clamped description in the card grid').toBeGreaterThan(0);
+  for (const classes of descriptions) {
+    const utilities = classes.split(/\s+/);
+    expect(utilities, 'the clamp reaches the one-column layout').not.toContain('line-clamp-4');
+    expect(utilities, 'the clamp is not scoped to the shared row').toContain('lg:line-clamp-4');
+  }
+});
+
+test('a clamped description is still whole in the document', async () => {
+  // `line-clamp` is overflow, not truncation: the text stays in the HTML for
+  // the AI Search index, for an agent reading the page and for a screen
+  // reader, and is hidden only from a sighted reader looking at the card. A
+  // template that sliced the string instead would look IDENTICAL in a browser
+  // and break all three of those at once, which is why this is asserted.
+  //
+  // ASSERTED AS EQUALITY, AND THE FIRST VERSION WAS NOT. It read
+  // `expect(markdown).toContain(rendered)`, which a sliced description passes
+  // trivially -- a prefix is always contained in the whole. A mutation run
+  // that replaced the field with `description.slice(0, 120)` was served a
+  // green test. This is the third assertion in this file to have failed that
+  // way; `toContain` against a superset is the shape to distrust.
+  //
+  // Checked against /index.md rather than the frontmatter on disk: the
+  // markdown twin renders the same collection field whole, so the two are two
+  // renderings of one record, and no frontmatter parser has to be duplicated
+  // into this file.
+  const page = await html('/');
+  const markdown = await (await server.fetch('/index.md')).text();
+  const section = /data-more-writing[\s\S]*?<\/section>/.exec(page);
+  expect(section, 'no more-writing section').not.toBeNull();
+
+  const rendered = [...section![0].matchAll(/<p class="[^"]*line-clamp[^"]*">([^<]+)<\/p>/g)].map(
+    (match) =>
+      match[1].replaceAll('&#39;', "'").replaceAll('&quot;', '"').replaceAll('&amp;', '&').trim(),
+  );
+  expect(rendered.length, 'no clamped descriptions to check').toBeGreaterThan(0);
+
+  // The twin's "More writing" section is heading/description pairs joined by
+  // blank lines; the descriptions are the blocks that are not a heading line.
+  const more = /## More writing\n\n([\s\S]*)$/.exec(markdown);
+  expect(more, 'no more-writing section in the markdown twin').not.toBeNull();
+  const recorded = more![1]
+    .split('\n\n')
+    .map((block) => block.trim().replaceAll('\\|', '|'))
+    .filter((block) => block.length > 0 && !block.startsWith('**['));
+
+  expect(rendered, 'the cards and the markdown twin disagree about the descriptions').toEqual(
+    recorded,
+  );
+});
