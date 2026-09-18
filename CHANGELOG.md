@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.28.0...ryanlindsey-me-v1.29.0) (2026-09-18)
+
+
+### Features
+
+* **fit:** render the fit pages inside the global layout ([#289](https://github.com/ryanlindsey/ryanlindsey.me/issues/289)) ([001baeb](https://github.com/ryanlindsey/ryanlindsey.me/commit/001baebf775e32365994ba9459d27a9308b27a5f))
+
 ## [1.28.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.27.0...ryanlindsey-me-v1.28.0) (2026-09-18)
 
 
