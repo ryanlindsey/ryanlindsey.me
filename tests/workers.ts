@@ -337,6 +337,33 @@ export const MCP_WORKER = {
      * which is what #145's baselines exist for.
      */
     SEARCH_ENGINE: 'stub',
+    /**
+     * Issue #291's scheduled eval run (src/lib/evals/plan.ts's
+     * `evalsRunEnabled`), off. The ninth seam of this shape on this Worker: no
+     * deployed config declares it, an unrecognised value throws, and `'off'` is
+     * the only accepted value here.
+     *
+     * TWO REASONS, and they are independent -- either alone would be enough.
+     *
+     * The run SPENDS: `fit`, `chat` and `leak` are fifteen frontier-model
+     * calls through AI Gateway, on top of the judge call each one can trigger.
+     * A test suite must not be one edit away from spending real money, which
+     * is the same sentence `FIT_ENGINE` above already earns its place with.
+     *
+     * And it could not COMPLETE here anyway. The `AI` override below is a
+     * service binding, so `env.AI.run()` is a TypeError, and `FIT_ENGINE`,
+     * `CHAT_ENGINE` and `JUDGE_ENGINE` are all already `'off'` -- so every
+     * case an instance started here could reach would be refused at a seam,
+     * and the run would write a red `eval_runs` row about a suite that never
+     * ran. That is the failure this repo keeps naming: a result that proves
+     * nothing, recorded where somebody will later read it as one that does.
+     *
+     * The one instance this harness CAN complete is driven directly rather
+     * than by a cron: tests/evals-schedule.test.ts creates one with `suites:
+     * []`, which mints, iterates nothing and revokes, and is what makes the
+     * "no instance started" assertions there mean something.
+     */
+    EVALS_RUNNER: 'off',
   },
   bindingOverrides: { AI: 'mock-ai', AI_SEARCH: 'mock-ai' },
 };

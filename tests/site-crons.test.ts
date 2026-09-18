@@ -22,10 +22,14 @@ import { expect, test } from 'vitest';
  * whether two files agree, so this reads both files and boots nothing: no
  * harness, no Worker, no credential.
  *
- * THE MCP WORKER IS DELIBERATELY NOT COVERED. Its `scheduled()`
- * (workers/mcp/src/index.ts) dispatches no switch -- one trigger, one job, and
- * `controller.cron` is not read at all -- so it has no second spelling to
- * drift from. The day it gains a second trigger is the day it needs this.
+ * THE MCP WORKER IS COVERED ELSEWHERE, and this paragraph used to say it was
+ * not covered at all. What it said was true when written: that Worker's
+ * `scheduled()` had one trigger and one job, never read `controller.cron`, and
+ * so had no second spelling to drift from -- "the day it gains a second
+ * trigger is the day it needs this". Issue #291 was that day. It now has three
+ * crons and branches on all of them, and tests/evals-schedule.test.ts pins the
+ * pair from both ends the way this file does, against the constants in
+ * src/lib/evals/plan.ts rather than against a `case` list.
  */
 
 /**

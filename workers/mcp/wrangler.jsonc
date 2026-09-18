@@ -52,7 +52,25 @@
 
   "ai_search": [{ "binding": "AI_SEARCH", "instance_name": "ryanlindsey-me-search" }],
 
-  "triggers": { "crons": ["32 5 * * *"] },
+  // 05:32 refreshes the Vectorize corpus. 05:52 daily and 06:07 on Mondays run
+  // the eval suites (issue #291): `tier` daily, because it is the cheapest and
+  // needs no grant, and `fit`/`chat`/`leak` weekly, because they spend
+  // inference through a shared quota. The three expressions are also spelled
+  // in src/lib/evals/plan.ts as CORPUS_CRON, EVALS_DAILY_CRON and
+  // EVALS_WEEKLY_CRON, which is what `suitesForCron` maps; tests/evals-schedule.test.ts
+  // fails if this list and those constants drift either way.
+  "triggers": { "crons": ["32 5 * * *", "52 5 * * *", "7 6 * * 1"] },
+
+  // The scheduled eval run. A Workflow rather than work done in `scheduled()`
+  // because a weekly run is fifteen inference calls paced twenty-five seconds
+  // apart: `step.sleep` suspends the instance instead of holding an invocation
+  // open, and `step.do` persists each case so a restart replays rather than
+  // re-pays. workers/mcp/src/evals-workflow.ts records the 2026-09-18
+  // measurement that this binding, unlike `ai` and `ai_search`, boots and
+  // creates instances under the test harness.
+  "workflows": [
+    { "name": "rlme-evals", "binding": "EVALS_WORKFLOW", "class_name": "EvalsWorkflow" },
+  ],
 
   "durable_objects": {
     "bindings": [{ "name": "RATE_LIMITER", "class_name": "RateLimiter" }],
@@ -74,7 +92,32 @@
 
   "rules": [{ "type": "Text", "globs": ["**/prompts/*.md?raw"], "fallthrough": true }],
 
-  "services": [{ "binding": "SITE", "service": "ryanlindsey-me" }],
+  "services": [
+    { "binding": "SITE", "service": "ryanlindsey-me" },
+    // THIS WORKER, BOUND TO ITSELF (issue #291), so the scheduled eval run
+    // reaches `/mcp` and `/chat` the way a client does.
+    //
+    // WHY A SERVICE BINDING AND NOT A GLOBAL FETCH to mcp.ryanlindsey.me. A
+    // service-binding dispatch re-enters this Worker's own `fetch` handler, so
+    // the scheduled run crosses the same boundary and the same `resolveGrant`
+    // a real client crosses. MEASURED 2026-09-18: with this binding declared,
+    // `env.SELF.fetch('https://mcp.ryanlindsey.me/mcp', ...)` carrying a
+    // deliberately bad bearer answered 200 with a real SSE `event: message`
+    // frame holding the public tool list -- the token refused, the caller
+    // served the public tier, which is exactly what `resolveGrant` is designed
+    // to do.
+    //
+    // The alternative, a global `fetch` to this Worker's own custom domain,
+    // was not chosen because nothing here has measured it, and the last
+    // unmeasured same-hostname fetch in this repository cost issue #28's 522 --
+    // workers/mcp/src/index.ts carries that story at length. A service binding
+    // never reaches Cloudflare's edge, so it has no hostname to collide with.
+    //
+    // This is not a lesser transport either: src/pages/chat/send.ts already
+    // reaches `POST /chat` over `env.MCP.fetch`, so a service-binding dispatch
+    // is how every real browser chat turn arrives.
+    { "binding": "SELF", "service": "ryanlindsey-me-mcp" },
+  ],
 
   "vars": {
     "RLME_AI_GATEWAY_ID": "ryanlindsey-me",
