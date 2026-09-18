@@ -27,13 +27,19 @@ import { JUDGE_INPUT } from './judge-schema';
 // and `tools/call` answers the SDK's own unknown-tool error, which enumerates
 // nothing.
 //
-// Five of the six tools here are a document read. There is no query interface,
-// no key parameter, and no listing: a general-purpose read primitive over the
-// private bucket is exactly the shape the partition
+// Six of the eight tools here are a document read. There is no query
+// interface, no key parameter, and no listing: a general-purpose read
+// primitive over the private bucket is exactly the shape the partition
 // (src/lib/tier/private-docs.ts) exists to avoid handing to a caller, however
-// well scoped their token is. The sixth, `analyze_fit`, reads no private
-// document at all -- it is the fit engine's MCP frontend, and everything it
-// sees is published.
+// well scoped their token is. `get_narrative_brief` is the one that hands a
+// KEY back, which is the opposite direction and is argued for at its handler.
+// The other two read no private document at all: `analyze_fit` is the fit
+// engine's MCP frontend and everything it sees is published, and
+// `judge_answer` scores text the caller supplies.
+//
+// THESE COUNTS HAVE BEEN WRONG BEFORE -- this said "five of the six" and "the
+// sixth" from day 5 through `judge_answer` and on past it, so keep them in
+// step with the table below or say "every" and drop the arithmetic.
 //
 // Vocabulary (09 §2): these names and descriptions are code, and code is a
 // public surface -- a granted caller can screenshot `tools/list`. They say
@@ -82,10 +88,11 @@ interface GatedTool {
    * a test as well. That is the point of the field: a name can be derived,
    * prose cannot, so the prose is reviewed instead. The set is NOT every scope
    * -- `evals` and `authoring` are outside it, so `judge_answer`'s summary and
-   * `get_narrative_brief`'s are reviewed by the scope-by-scope agreement test
-   * instead of pinned verbatim. An earlier version of this comment claimed
-   * "every scope" and "these six", and both were stale before anyone read
-   * them.
+   * `get_narrative_brief`'s are pinned by NOTHING. The scope-by-scope test
+   * below covers their name-to-line pairing and says nothing about the prose,
+   * and the static vocabulary scan only refuses banned words; a human reviewer
+   * is the rest of it. An earlier version of this comment claimed "every scope"
+   * and "these six", and both were stale before anyone read them.
    */
   summary: string;
   /**
@@ -693,7 +700,17 @@ const GATED_TOOLS: readonly GatedTool[] = [
             throw new ToolError(
               configured === ''
                 ? `"${audience}" cannot build a document key. Check the audience spelling.`
-                : `The campaign for "${audience}" configures ${configured}, outside the ${NARRATIVE_PREFIX} namespace. Fix the campaign entry before writing the document.`,
+                : // NOT "outside the namespace", which is what the `console.warn`
+                  // in `resolveNarrativeKey` says and what this said first.
+                  // `narrativeKeyFromConfig` also refuses values that ARE under
+                  // `narrative/` and fail the segment check --
+                  // `narrative/a/b.md`, `narrative/.hidden.md` -- and telling an
+                  // operator those are outside a namespace they are plainly
+                  // inside sends them to fix the wrong half of the string. The
+                  // warn line can afford the looser wording because it is read
+                  // beside the value; this is the sentence the one person who
+                  // can fix it reads on its own.
+                  `The campaign for "${audience}" configures ${configured}, which is not a valid narrative document key. Fix the campaign entry before writing the document.`,
             );
           }
           const brief = await readPrivateDoc(tc.env, AUTHORING_KEYS.narrativeBrief);

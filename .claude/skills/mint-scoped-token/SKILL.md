@@ -39,7 +39,7 @@ Two of these never travel on a reader's token, and they are the two withheld fro
 
 `authoring` belongs to the owner's drafting client, which reaches `mcp.ryanlindsey.me` and nothing else of ours and so reads the brief that governs a narrative document over HTTP. `get_narrative_brief` answers with that brief and with the key the audience's document belongs at, which is the one thing a writer outside every repository cannot work out for itself. The scope landed one issue ahead of the tool, so a token minted before that unlocked nothing; both are in place now. It is deliberately not `evals` reused: an eval-harness token that also unlocked authoring material would be exactly the merge the scope list exists to prevent.
 
-Pass `--scopes` on every mint. Omitting it defaults to the whole set, `evals` and `authoring` included, which hands an ordinary reader the harness's own scope and the owner's.
+Pass `--scopes` on every mint. Omitting it defaults to the whole set, `evals` and `authoring` included, and both of those now open something: a reader handed that token gets the harness's judge and the owner's brief, which also names any audience's private-tier key back to whoever asks. The default was harmless while `authoring` opened nothing and stopped being harmless the day `get_narrative_brief` landed, so treat a mint without the flag as a mint to revoke rather than as a wide token.
 
 ## Mint
 
