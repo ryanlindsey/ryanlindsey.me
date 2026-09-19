@@ -244,17 +244,34 @@ test('the form preloads the campaign the TOKEN belongs to, not a global one', as
 // exactly that value, not a second status check this page does not have.
 
 test('the band renders the audience campaign line for a granted, active campaign', async () => {
+  // A LINE NO OTHER FIXTURE IN THIS FILE SEEDS, deliberately. It read 'A
+  // generic line.' until 2026-09-18, which is the same string `alpha` and
+  // `beta` above already seed on two other active campaigns -- so the
+  // assertion passed under a regression that rendered the FIRST active
+  // campaign's line for every audience, which is precisely the pre-#232
+  // `activeCampaign()` bug this band's cross-audience property most needs
+  // pinned. The permalink tests further down already seed a distinct line for
+  // the same reason.
   await kvPutCampaign('band-active', {
     company: 'Gamma',
     status: 'active',
-    hero_line: 'A generic line.',
+    hero_line: 'A generic line for the granted form.',
     token_audience: 'band-active-audience',
   });
   const html = await (
     await server.fetch(`/fit?t=${await grant(['fit'], 'band-active-audience')}`)
   ).text();
   expect(html).toContain('data-campaign-hero');
-  expect(html).toContain('A generic line.');
+  expect(html).toContain('A generic line for the granted form.');
+  // THE CLASS LIST, PINNED EXACTLY. `[data-campaign-hero]` carries no CSS of
+  // its own, so these three utilities are the band's entire visual contract,
+  // and `src/lib/tier/hero-band.ts` builds the same opening tag as a string
+  // kept in step by hand. Every other assertion on either side checks the
+  // hook and the line alone, which would let the two drift silently. Astro
+  // emits attributes in source order, so the substring is stable.
+  expect(html).toContain(
+    '<section data-campaign-hero class="border-b border-rule bg-accent-ground/10">',
+  );
 });
 
 test('the band is absent for an audience with no campaign entry', async () => {

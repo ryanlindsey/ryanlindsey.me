@@ -144,27 +144,46 @@ const generated = dateLabel(row.created_at);
  * that produced this report was made.
  *
  * `status === 'active'` IS GATED HERE, not inside `readCampaignForAudience`
- * (src/lib/tier/campaigns.ts): that function's own docblock explains at
- * length why it reads `status` nowhere -- it also resolves the preload and the
- * gated narrative document, and a `retired` campaign is meant to keep serving
- * those. This call site wants only the hero line, so it applies the same gate
- * `grant-context.ts` applies on the token-bearing surfaces, matching their
- * behavior rather than reaching into a function that deliberately does not
- * apply it itself.
+ * (src/lib/tier/campaigns.ts): that function returns an entry of any `status`
+ * by design, and its own docblock now says so in one sentence -- "IT RETURNS
+ * AN ENTRY OF ANY `status`, BY DESIGN" -- naming this call site and
+ * `grant-context.ts` as the two that gate and `gated.ts` as the one that
+ * deliberately does not. The reasoning behind the design lives one docblock
+ * up, on `parseCampaign`. This call site wants only the hero line, so it
+ * applies the same gate `grant-context.ts` applies on the token-bearing
+ * surfaces, matching their behavior rather than reaching into a function that
+ * deliberately does not apply it itself. CORRECTED 2026-09-18: this paragraph
+ * said `readCampaignForAudience`'s docblock "explains at length why it reads
+ * `status` nowhere", and it did not -- that docblock covered the audience
+ * match, the caller count and the `list` residual, while the `status`
+ * reasoning sat on `parseCampaign` with nothing pointing at it. The fix was
+ * to state the contract on the function a new caller opens rather than to
+ * repoint this citation, because a third caller getting this wrong is exactly
+ * what the missing sentence would cause.
  *
  * SHOWN TO A STRANGER, BY DESIGN, AND THAT IS ACCEPTABLE (recorded
  * 2026-09-18). This permalink carries no token and is built to be forwarded
  * past the reader who first received it (see the docblock at the top of this
  * file) -- so whatever the band shows here reaches people this feature never
- * authenticated at all. That is the same audience `withCampaignHero`
- * (src/lib/tier/hero-band.ts) already renders one off an attacker-forgeable
- * `Referer` -- a value trivially forged by whoever sends the request -- and
- * it is acceptable here for the identical reason: 09 §1 requires a
- * `hero_line` to carry no company name, which is what makes the string
- * harmless to a stranger rather than a disclosure. This page adds no
- * separate check for that property -- there is nothing to add, since the
- * property already has to hold for the referrer-matched band to be safe, and
- * the same stored string is what both surfaces render.
+ * authenticated at all. What makes that acceptable is a property of the field
+ * itself: 09 §1 requires a `hero_line` to carry no company name, so the
+ * string is harmless to a stranger rather than a disclosure. This page adds
+ * no separate check for it -- there is nothing to add, since the requirement
+ * is on what an operator may author, not on what a renderer may show.
+ *
+ * `withCampaignHero` (src/lib/tier/hero-band.ts) relies on the same property
+ * for the referrer-matched band it renders off an attacker-forgeable
+ * `Referer`, which is the closest precedent this repo has. It is a precedent
+ * and not a parity claim, and the difference was overstated here until
+ * 2026-09-18: this comment said the permalink shows "the same string"
+ * `withCampaignHero` already shows a stranger. That holds only for a campaign
+ * configuring `referrer_domains`, because `buildHeroIndex`
+ * (src/lib/tier/hero-index.ts) emits one index entry per domain and none at
+ * all for an entry with an empty list -- the shape every fixture in this repo
+ * uses, and a plausible one for a token-only campaign. For such a campaign
+ * this permalink is the FIRST surface to show its line to an unauthenticated
+ * reader. The conclusion is unchanged, because it never rested on the
+ * comparison.
  *
  * GUARDED, FIXED 2026-09-18 (review finding). `readCampaignForAudience` ->
  * `walkCampaigns` (src/lib/tier/campaigns.ts) calls `env.KV_CONFIG.list(...)`
@@ -177,7 +196,7 @@ const generated = dateLabel(row.created_at);
  * for its reader. `parseStoredReport`'s own docblock above states almost this
  * exact rule for `JSON.parse`, and `dateLabel` applies the same discipline
  * for `new Date(...).toISOString()`; this call is the one remote read on this
- * page that had not yet followed it. The shape matches this repo's existing
+ * page that had not yet followed it. The shape follows this repo's existing
  * precedent for a failed KV read on the SAME feature -- `readHeroIndex`
  * (src/lib/tier/hero-index.ts) catches, warns and returns the empty index
  * rather than letting a caller crash, and `withCampaignHero`
@@ -187,6 +206,31 @@ const generated = dateLabel(row.created_at);
  * this one read cannot answer, so the catch falls through to `campaign =
  * null` rather than re-throwing or returning early.
  *
+ * THE MESSAGE DIVERGES FROM THAT PRECEDENT DELIBERATELY, corrected
+ * 2026-09-18 after it was first written to copy it. `readHeroIndex` catches
+ * exactly one reachable cause -- `get(..., 'json')` on a value that is not
+ * valid JSON -- so a fixed sentence there IS the whole diagnosis. This catch
+ * spans three: a `list()` that fails, a per-key `get()` that fails, and a
+ * missing or misconfigured `KV_CONFIG` binding. A fixed sentence here names
+ * none of them, and the bound `error` is the only thing that can. It is
+ * interpolated into the message rather than passed as a second argument
+ * because a Worker log renders `console.warn(msg, err)` as the stack alone
+ * and drops the message text.
+ *
+ * THIS BRANCH IS ASSERTED BY NOTHING, and that is recorded rather than
+ * assumed covered (2026-09-18). No test in this repo makes `KV_CONFIG.list`
+ * reject during a `/fit/r/<id>` fetch: `createTestHarness`'s only override
+ * lever is for service bindings, the `KVNamespace` a suite holds is a
+ * separate handle rather than the object this Worker calls, and the `prefix`
+ * this walk passes is a fixed constant no input can make invalid. The
+ * alternative was a seam in production code, refused for the usual reason.
+ * `src/lib/tier/hero-band.ts`'s module header records the OPPOSITE resolution
+ * for a comparable unreachable branch -- `withCampaignHero` was extracted
+ * into a module so a unit test could build the `Response` by hand and reach
+ * its `304` path -- and that trick does not transfer here, because this
+ * branch is page frontmatter: there is no function to import and no argument
+ * to forge, only a route the harness can fetch.
+ *
  * `workers/mcp/src/grant-context.ts` calls the same function unguarded too,
  * on the OTHER Worker, and is intentionally NOT touched here -- a different
  * failure surface (a grant resolution, not a page render) that is out of this
@@ -195,8 +239,10 @@ const generated = dateLabel(row.created_at);
 let campaign: CampaignConfig | null = null;
 try {
   campaign = await readCampaignForAudience(env, row.audience);
-} catch {
-  console.warn('fit/r: readCampaignForAudience failed; rendering no band');
+} catch (error) {
+  console.warn(
+    `fit/r: the campaign read failed; rendering no band: ${error instanceof Error ? error.message : String(error)}`,
+  );
 }
 const heroLine = campaign?.status === 'active' ? campaign.heroLine : '';
 ---

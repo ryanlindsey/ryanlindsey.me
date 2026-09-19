@@ -39,13 +39,18 @@ export interface GrantContext {
    * The campaign's configured hero line, or '' when there is none or it is
    * not `active`.
    *
-   * GATED HERE, NOT INSIDE `readCampaignForAudience`. That function reads
-   * `status` nowhere on purpose (see its own docblock in
-   * src/lib/tier/campaigns.ts): it also resolves `preload` and the gated
-   * narrative document, and a filter inside it would take both of those out
-   * along with the hero line. `preload`, declared just above, is deliberately
-   * NOT gated on `status` -- it keeps its existing ungated behavior, and this
-   * field must not change that.
+   * GATED HERE, NOT INSIDE `readCampaignForAudience`. That function returns
+   * an entry of any `status` on purpose, which its own docblock states in one
+   * sentence ("IT RETURNS AN ENTRY OF ANY `status`, BY DESIGN",
+   * src/lib/tier/campaigns.ts) and `parseCampaign`'s docblock one above it
+   * explains: the same call resolves `preload` and the gated narrative
+   * document, and a filter inside it would take both of those out along with
+   * the hero line. `preload`, declared just above, is deliberately NOT gated
+   * on `status` -- it keeps its existing ungated behavior, and this field
+   * must not change that. CORRECTED 2026-09-18: the citation here pointed at
+   * `readCampaignForAudience`'s docblock for a `status` explanation it did
+   * not contain, and the sentence quoted above was added there in the same
+   * pass -- the function a caller opens is where its contract belongs.
    */
   heroLine: string;
 }

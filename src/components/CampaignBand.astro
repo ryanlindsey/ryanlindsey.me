@@ -22,6 +22,18 @@
  * what `{line}` below is, so an equivalent call here would double-escape the
  * line rather than protect it. One line is operator-typed into KV either
  * way; the two renderers just protect it through different mechanisms.
+ *
+ * NO `Vary` AND NO `no-store` ON EITHER FIT SURFACE, and the reason is not
+ * that these responses happen to go uncached. The band here is a
+ * deterministic function of the URL: `/fit` carries the token in its query
+ * string and the permalink carries the report id in its path, so a cache
+ * keyed on the URL cannot serve one audience's band to another. That is
+ * exactly what `withCampaignHero`'s own `no-store` paragraph is about on the
+ * home page, where the band varies on `Referer` -- a request header that is
+ * not in the cache key, which is what makes an intermediary able to hand one
+ * visitor's band to the next. A reader arriving here from that paragraph
+ * asks this question immediately, so it is answered here rather than left to
+ * the inference that the surfaces are merely uncached today.
  */
 interface Props {
   line: string;
