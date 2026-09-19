@@ -131,7 +131,7 @@ const SITE_LINKS: LlmsLink[] = [
       'A grounded chat over everything published here: it answers from the résumé, the case studies and the posts, and cites the page each claim comes from.',
   },
   {
-    title: 'How this site runs',
+    title: 'Ops dashboard',
     url: `${SITE_ORIGIN}/ops`,
     description:
       'Live operations: what this site has served over the last 30 days, which models it spends on, how it degrades, and what shipped -- every figure labelled with the system it was read from.',

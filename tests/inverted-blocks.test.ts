@@ -11,18 +11,25 @@ const layout = readFileSync(new URL('../src/layouts/ArticleLayout.astro', import
  *
  * MEASURED 2026-09-13 over CDP at 1280px, in all three theme states, by
  * walking every element on every page and collecting the ones whose computed
- * background or border resolved to --rl-ink. Two of them are filled:
+ * background or border resolved to --rl-ink. Two of them were filled:
  *
  *   - the home page's Now strip, 1280x56, resolved when it was built;
  *   - the case-study masthead, 1280x456, which was left rendering the tokens
  *     mechanically for this pass to look at, and does read as glare.
  *
- * The writing index's active filter chip is the third filled block and is
- * deliberately NOT here: at 62x29 the inversion is what makes it read as
+ * THE /ops MASTHEAD PANEL IS THE THIRD, added in the 2026-09 masthead change
+ * rather than found by that walk. It is the case-study treatment applied to
+ * another page, so it arrived already knowing what it owed: the entry below is
+ * what makes the debt checkable, and a filled block that never reaches this
+ * list is one nobody finds until a reader on a dark OS with JavaScript off
+ * opens the page.
+ *
+ * The writing index's active filter chip is filled as well and is deliberately
+ * NOT here: at 62x29 the inversion is what makes it read as
  * selected, and it was checked in dark rather than assumed. Everything else
  * that touches --rl-ink does so as a border, which flips correctly on its own.
  */
-const DE_INVERTED = ['[data-now-strip]', "[data-masthead='case-study']"];
+const DE_INVERTED = ['[data-now-strip]', '[data-ops-panel]', "[data-masthead='case-study']"];
 
 const escapeForRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 

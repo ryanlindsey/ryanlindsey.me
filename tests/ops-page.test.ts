@@ -358,6 +358,33 @@ describe('/ops', () => {
     for (const value of values) expect(value).not.toBe('');
   });
 
+  test('every link in the masthead index reaches a section this page renders', () => {
+    // The index replaced the masthead's explanatory paragraph, and it is
+    // hand-written: SECTIONS in the page names an anchor per row, and nothing
+    // in Astro checks that the anchor exists. A dead entry is the failure this
+    // construction actually has, and it is silent -- the link renders, the
+    // click does nothing, and the page looks correct in every screenshot.
+    //
+    // By the declared `data-ops-index` hook rather than by slicing on the nav
+    // element, for the reason `hooked` above gives: an assertion keyed on
+    // markup that is free to change starts passing vacuously the first time it
+    // does.
+    const nav = /<nav[^>]*data-ops-index[\s\S]*?<\/nav>/.exec(html);
+    expect(nav, 'no masthead index').not.toBeNull();
+
+    const targets = [...nav![0].matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
+    // Six, and the count is load-bearing rather than incidental: the index is a
+    // `hairline-grid` running two and three columns, and six is what divides
+    // both. A seventh entry leaves a short row, which in that idiom paints as a
+    // block of rule colour rather than as whitespace.
+    expect(targets).toHaveLength(6);
+    for (const id of targets) {
+      expect(html, `the index links to #${id}, which this page does not render`).toContain(
+        `id="${id}"`,
+      );
+    }
+  });
+
   test('all six sections survive the restyle', () => {
     // Unchanged assertion, restated against the ids because the handoff's
     // design shows four sections. It is a restyle, not a re-scope -- the

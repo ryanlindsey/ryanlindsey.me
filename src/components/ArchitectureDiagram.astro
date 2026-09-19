@@ -102,17 +102,15 @@
  * markup it finds: MEASURED before the class went on, the route rows rendered
  * with accent bullets and a hanging indent inside the Worker boxes, which /ops
  * never showed because nothing there is prose. Every element below is styled by
- * utility and token already, so opting the subtree out is the whole fix, and it
- * has the second effect of making the caption's `<code>` read the same on both
- * pages instead of picking up `--tw-prose-code` on one of them.
+ * utility and token already, so opting the subtree out is the whole fix.
  *
  * THE ACCESSIBLE NAME AND DESCRIPTION ARE ELEMENTS NOW, not `<title>`/`<desc>`.
  * The SVG carried `role="img"` so a screen reader read those two strings and
  * skipped the 40-odd shapes underneath. There are no shapes to skip any more,
  * and the box text is real text worth reading, so the figure keeps the same two
- * strings as visually-hidden elements: `aria-labelledby` for the title, which is
- * what makes the figure announce as "How this site is deployed" rather than as
- * its provenance caption, and `aria-describedby` for the prose. The connectors
+ * strings as visually-hidden elements: `aria-labelledby` for the title, so the
+ * figure announces as "How this site is deployed", and `aria-describedby` for
+ * the prose. The connectors
  * and the arrow glyphs are `aria-hidden`: they are how the layout says "calls",
  * and the description already says it in words.
  *
@@ -349,24 +347,4 @@ const FLOW = '@3xl:grid-cols-[minmax(0,1fr)_168px_minmax(0,1fr)]';
       </div>
     ))}
   </div>
-
-  {/*
-      The independent-sinks note is on the page rather than only in the header
-      comment, because it is the correction a reader is most likely to need: the
-      two sinks sit side by side in the panel above and nothing in that layout
-      says they are unrelated.
-
-      The em dash pair the SVG's caption used is a comma pair now. House style
-      targets zero em dashes in published prose and this is an appositive, which
-      is the case the style's own table sends to commas.
-    */}
-  <figcaption class="mt-4 max-w-prose text-small text-ink-muted">
-    Analytics Engine and the queue are independent sinks; neither feeds the other. Drawn from the
-    deployed configuration, the two <code class="font-mono">wrangler.jsonc</code> files and the two
-    Worker entries in{' '}
-    <a class="text-accent" href="https://github.com/ryanlindsey/ryanlindsey.me">
-      the repository
-    </a>
-    , rather than from a sketch, so it can be checked against what is running.
-  </figcaption>
 </figure>
