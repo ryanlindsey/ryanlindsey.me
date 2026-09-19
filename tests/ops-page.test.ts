@@ -265,9 +265,15 @@ describe('/ops', () => {
   });
 
   test('the changelog shows dates and never a time', () => {
-    const changelog = html.slice(html.indexOf('Changelog'));
-    expect(changelog).toMatch(/\d{4}-\d{2}-\d{2}/);
-    expect(changelog).not.toMatch(/\d{2}:\d{2}/);
+    // Sliced from the section's anchor rather than from its heading. The
+    // heading was "Changelog" and is "Release history" now, and the old slice
+    // followed that word to the only place it still appears, which is the
+    // footer -- where there is no date to find and the test failed for a
+    // reason that had nothing to do with dates. The `id` is what a link into
+    // this page depends on, so it is the stable thing to key on.
+    const releases = html.slice(html.indexOf('id="releases"'));
+    expect(releases).toMatch(/\d{4}-\d{2}-\d{2}/);
+    expect(releases).not.toMatch(/\d{2}:\d{2}/);
   });
 
   test('every model in use is named, from the constants rather than by hand', () => {
@@ -358,6 +364,33 @@ describe('/ops', () => {
     for (const value of values) expect(value).not.toBe('');
   });
 
+  test('every link in the masthead index reaches a section this page renders', () => {
+    // The index replaced the masthead's explanatory paragraph, and it is
+    // hand-written: SECTIONS in the page names an anchor per row, and nothing
+    // in Astro checks that the anchor exists. A dead entry is the failure this
+    // construction actually has, and it is silent -- the link renders, the
+    // click does nothing, and the page looks correct in every screenshot.
+    //
+    // By the declared `data-ops-index` hook rather than by slicing on the nav
+    // element, for the reason `hooked` above gives: an assertion keyed on
+    // markup that is free to change starts passing vacuously the first time it
+    // does.
+    const nav = /<nav[^>]*data-ops-index[\s\S]*?<\/nav>/.exec(html);
+    expect(nav, 'no masthead index').not.toBeNull();
+
+    const targets = [...nav![0].matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
+    // Six, and the count is load-bearing rather than incidental: the index is a
+    // `hairline-grid` running two and three columns, and six is what divides
+    // both. A seventh entry leaves a short row, which in that idiom paints as a
+    // block of rule colour rather than as whitespace.
+    expect(targets).toHaveLength(6);
+    for (const id of targets) {
+      expect(html, `the index links to #${id}, which this page does not render`).toContain(
+        `id="${id}"`,
+      );
+    }
+  });
+
   test('all six sections survive the restyle', () => {
     // Unchanged assertion, restated against the ids because the handoff's
     // design shows four sections. It is a restyle, not a re-scope -- the
@@ -425,37 +458,19 @@ describe('/ops', () => {
     expect(html).not.toContain('the metrics store could not be read');
   });
 
-  /**
-   * 06 §1's headline figure is partial by construction: the home page and every
-   * static sub-resource are served without a Worker invocation, so they are not
-   * in it. The label is the fix (wrangler.jsonc's `run_worker_first` comment
-   * makes the same argument from the other end), so the label has to be there.
+  /*
+   * TWO TESTS STOOD HERE AND GUARDED THE REQUESTS TILE'S NOTE, which the page
+   * no longer carries: one asserted the note named the home page and the static
+   * sub-resources served without a Worker invocation, the other that it named
+   * `/resume.md` and `/.well-known/mcp.json`, the two prerendered files
+   * `run_worker_first` does not list. The `note` prop is empty now, by a copy
+   * decision, so both were pinning a sentence rather than a property and are
+   * gone rather than weakened into assertions that cannot fail.
+   *
+   * The figure is still partial by construction. Nothing in this suite can see
+   * that any more, and wrangler.jsonc's `run_worker_first` comment is the one
+   * place the reasoning survives.
    */
-  test('the requests figure says what it does not count', () => {
-    // Case-insensitive only because the label renders in the page's sentence
-    // case and the requirement quotes it in running prose; the words and their
-    // order are what this pins.
-    expect(html).toMatch(/requests that reached the Worker/i);
-    expect(html).toMatch(/home page/i);
-  });
-
-  test('the requests note names the two agent-signal routes that are NOT counted', () => {
-    // The sentence this replaces claimed "Every agent-signal route ... is"
-    // counted, and two are not: `/resume.md` and `/.well-known/mcp.json` are
-    // prerendered files, `run_worker_first` lists neither, and a request served
-    // by the Asset Worker never reaches src/worker.ts to be classified.
-    //
-    // THIS IS THE ONLY GUARD ON THAT SENTENCE and it is a weak one by nature --
-    // it pins the copy, not the config. Nothing here can prove a request
-    // reached the Worker (tests/pages.test.ts records why), so the failure this
-    // catches is the copy drifting back to the confident version, not the
-    // config drifting away from the copy. If `/resume.md` is ever added to
-    // `run_worker_first`, this test is what says the note must change with it.
-    const note = tile('Requests that reached the Worker');
-    expect(note).toContain('/resume.md');
-    expect(note).toContain('/.well-known/mcp.json');
-    expect(note).not.toMatch(/every agent-signal route[^.]*is\./i);
-  });
 
   test('an entry written under the previous cache version is not served', async () => {
     // WHAT WOULD HAVE SHIPPED WITHOUT THE BUMP. `OpsMetrics` gained `status`

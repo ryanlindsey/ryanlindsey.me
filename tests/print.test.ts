@@ -121,10 +121,11 @@ describe('print rules', () => {
   });
 
   test('pins the blocks that invert to the light design, whatever the reader picked', () => {
-    // The Now strip and the case-study masthead are filled with --rl-ink in
-    // light and drop the inversion in dark (see tests/inverted-blocks.test.ts).
+    // The Now strip, the /ops masthead panel and the case-study masthead are
+    // filled with --rl-ink in light and drop the inversion in dark (see
+    // tests/inverted-blocks.test.ts).
     // Paper is neither theme, and the print palette exists so the sheet does
-    // not depend on what the reader chose -- so both blocks are pinned here to
+    // not depend on what the reader chose -- so all three are pinned here to
     // the one design that was drawn, rather than being left to whichever
     // branch the reader's theme happens to select.
     //
@@ -134,10 +135,11 @@ describe('print rules', () => {
     // and that is the one token the forced-light palette below does not
     // redeclare, so it stayed dark while the ink on it went black. Pinning
     // here rather than adding a token to the print palette, because the fix
-    // belongs to the two blocks that invert and not to every raised surface
+    // belongs to the blocks that invert and not to every raised surface
     // on the site.
     const pinned = selectorsCarrying(printBlock, 'background-color: var(--rl-ink)');
     expect(pinned).toContain('[data-now-strip]');
+    expect(pinned).toContain('[data-ops-panel]');
     expect(pinned).toContain("[data-masthead='case-study']");
   });
 

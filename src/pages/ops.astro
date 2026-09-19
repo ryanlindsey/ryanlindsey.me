@@ -341,27 +341,30 @@ const RETENTION_LABELS: Record<string, string> = {
 const releases = recentReleases(changelog, 5);
 
 /**
- * The status pill in the masthead, DERIVED rather than asserted.
+ * The status line in the masthead, DERIVED rather than asserted.
  *
  * The design draws it as a green square and the words "all systems nominal". A
- * pill hardcoded to that, sitting above a page that says three of its figures
- * could not be read, is worse than no pill at all: it is the same invisible lie
+ * line hardcoded to that, sitting above a page that says three of its figures
+ * could not be read, is worse than no line at all: it is the same invisible lie
  * as a rendered zero, moved to the top of the page and set in the one colour
  * this site reserves for "nothing is wrong".
  *
- * WHAT IT IS A STATEMENT ABOUT, because the design's wording is broader than
- * the evidence behind it. This page performs exactly three reads, and the pill
- * reports whether those three answered. It is not an uptime claim and could not
- * be one: nothing here probes the MCP Worker, the queue or the rate limiter,
- * and a site that was entirely down would not be serving this page to be read.
- * So the non-nominal arm counts reads rather than reaching for the nominal
- * arm's vocabulary, and the pill never claims more than it checked.
+ * BOTH ARMS COUNT READS NOW, AND THE NOMINAL ARM DID NOT. An earlier version of
+ * this comment had the non-nominal arm counting reads "rather than reaching for
+ * the nominal arm's vocabulary", which left the vocabulary in place on the arm
+ * a reader is least able to check: "all systems nominal" is an uptime claim,
+ * and nothing on this page is tied to a monitor. What it performs is exactly
+ * three reads, and what it can honestly report is whether those three answered.
+ * Nothing here probes the MCP Worker, the queue or the rate limiter, and a site
+ * that was entirely down would not be serving this page to be read. So the
+ * nominal arm names its own evidence too, and keeps the colour, because every
+ * source answering is still worth seeing at a glance.
  *
  * AN UNCONFIGURED TOKEN AND A D1 OUTAGE BOTH LAND HERE AS "did not answer", and
  * that flattening is deliberate at this size. They differ in what the owner
  * should DO about them, and the tile that could not be read is where that
- * difference is already spelled out, per system, in words. A pill is four words
- * at the top of a page; it says how many, and the band says which.
+ * difference is already spelled out, per system, in words. This line is five
+ * words at the top of a page; it says how many, and the band says which.
  */
 const READS = [metrics, traffic, spend];
 const unreadCount = READS.filter((read) => read === null).length;
@@ -369,8 +372,8 @@ const status = {
   state: unreadCount === 0 ? 'nominal' : 'degraded',
   label:
     unreadCount === 0
-      ? 'All systems nominal'
-      : `${unreadCount} of ${READS.length} reads unavailable`,
+      ? `${READS.length} of ${READS.length} sources answered`
+      : `${unreadCount} of ${READS.length} sources unavailable`,
 };
 
 /**
@@ -415,6 +418,38 @@ const HEADING = 'font-display text-heading text-ink';
  */
 const PANEL = 'min-w-0 bg-surface px-6 pb-8 pt-[26px]';
 const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
+
+/**
+ * The six sections below, in the order the page renders them. The index in the
+ * masthead is the only thing that reads this.
+ *
+ * SIX CELLS, AND THE COUNT IS ARITHMETIC RATHER THAN TASTE. It is the same rule
+ * the metrics band follows for the same reason: a `hairline-grid` paints
+ * --rl-rule as its own ground and the gaps are where it shows through, so a row
+ * that runs short is a block of grey rather than whitespace. Six divides by two
+ * and by three, which is exactly the column counts this index uses. A seventh
+ * section is a breakpoint decision, not an appended entry.
+ *
+ * THE QUALIFIER IS A SHORTENED ECHO OF EACH SECTION'S OWN KICKER, and not a
+ * second source of truth for it. The kickers are written where the sections
+ * are, this line only has to tell a reader what they will find, and the two
+ * drifting apart in wording costs nothing. The `id` is the load-bearing half:
+ * tests/ops-page.test.ts fails if any entry here names an anchor the page does
+ * not render, which is the failure a hand-written index actually has.
+ */
+const SECTIONS: { number: string; id: string; name: string; qualifier: string }[] = [
+  { number: '01', id: 'architecture', name: 'Architecture', qualifier: 'Deployed shape' },
+  {
+    number: '02',
+    id: 'live-metrics',
+    name: 'Live metrics',
+    qualifier: `Last ${formatWindow(WINDOW_DAYS)}`,
+  },
+  { number: '03', id: 'model-cost', name: 'Model & cost', qualifier: 'Constants in this build' },
+  { number: '04', id: 'evals', name: 'Evals', qualifier: 'Latest run per suite' },
+  { number: '05', id: 'status', name: 'Status & degradation', qualifier: 'When a part fails' },
+  { number: '06', id: 'releases', name: 'Release history', qualifier: 'Latest releases' },
+];
 ---
 
 <Shell
@@ -422,49 +457,130 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
   description="What this site is running, what it has served in the last 30 days, which models it spends, how it degrades, and what shipped: every figure labeled with the system it was read from."
 >
   {/*
-      THE MASTHEAD CLOSES ON A 1px RULE RATHER THAN THE REDESIGN'S 2px INK. The
-      epic's general rule is that ink closes a masthead and this page overrides
-      it, following its own design: ink is near-white in the dark theme, and a
-      2px near-white band across the top of the quiet utility page would be the
-      loudest thing on it. The H1 is `text-title` for the same reason, a step
-      below every editorial page on the site.
+      A FILLED PANEL, WHICH MEANS THE CASE-STUDY MASTHEAD'S WHOLE CONTRACT AND
+      NOT ITS LOOK ALONE. THREE FILES, ONE DECISION, the same three
+      ArticleLayout.astro names: the `dark:` variant below drops the inversion
+      for a visitor running JavaScript, global.css carries the
+      `:root:not([data-theme='light'])` twin for the visitor who never receives
+      the attribute and the `@media print` pin for a medium that is neither
+      theme, and tests/inverted-blocks.test.ts and tests/print.test.ts fail if
+      `data-ops-panel` drifts out of either. Adding a filled block anywhere on
+      this site means all three.
+
+      NO CLOSING RULE IN LIGHT, for the reason the case-study panel gives: the
+      filled block's own edge is what closes it. The `dark:border-b` below is
+      the same exception that template makes, because a de-inverted panel is
+      `--rl-surface-raised` against `--rl-bg`, which is 1.16:1 and closes
+      nothing.
     */}
-  <section data-ops-masthead class="border-b border-rule">
+  <section data-ops-masthead>
+    {/*
+        `data-ops-panel` is BOTH a styling hook and a test hook, and it has to
+        be: global.css needs a selector for the two rules that reach past the
+        utilities below, and the two contract tests read the same string.
+
+        The kicker is `--rl-accent-ground` rather than `--rl-accent` for the
+        reason ArticleLayout.astro records at length: it is the one accent token
+        that does not flip between themes, so the same pink clears 5.71:1 on the
+        near-black panel in light and 4.91:1 on the raised panel in dark.
+
+        EVERYTHING ELSE ON THE PANEL NAMES NO COLOUR AT ALL, which is the whole
+        trick that makes the index work on both grounds. `text-bg` is declared
+        once, here, and the H1, the status words, the six boxes and their rules
+        are all `currentColor` or an opacity of it. In light that resolves to
+        --rl-bg on near-black; in dark the shell's own `dark:text-ink` resolves
+        it to --rl-ink on the raised panel. Both are the near-white end of their
+        ramp, so one declaration covers two grounds and no child needs a `dark:`
+        variant of its own.
+      */}
     <div
-      class:list={[COLUMN, 'grid gap-x-16 gap-y-7 pb-12 pt-12 lg:grid-cols-[minmax(0,1fr)_360px]']}
+      data-ops-panel
+      class="bg-ink text-bg dark:border-b dark:border-rule dark:bg-surface-raised dark:text-ink"
     >
-      <div>
-        <p class="font-mono text-micro uppercase text-accent">Ops</p>
-        <h1 class="mt-4 font-display text-title text-ink">How this site runs</h1>
-        <p class="mt-6 max-w-[68ch] text-large text-ink-muted">
-          This is a production system rather than a page about one, so here is what it is made of
-          and what it has actually been doing. Every figure below says which system it was read
-          from, and every one that could not be read says that instead of showing a zero. The
-          numbers are read when you load the page and held for sixty seconds.
-        </p>
+      <div class:list={[COLUMN, 'pb-14 pt-14']}>
+        <div class="flex flex-wrap items-baseline justify-between gap-x-10 gap-y-3">
+          <p class="font-mono text-micro uppercase text-accent-ground">Ops dashboard</p>
+          {/*
+              THE STATUS WORDS ARE NOT COLOURED AND THE SQUARE IS, WHICH IS A
+              MEASUREMENT RATHER THAN A PREFERENCE. Against the light panel's
+              own ground, #0a0a0b: `--rl-ok` is 3.63:1 and `--rl-warn` is
+              3.34:1. Both fail AA for 12px text, and both clear the 3:1
+              threshold that governs a non-text indicator, so the colour goes
+              where it is legible and the words take the panel's own near-white.
+              The label states the count in words either way.
+
+              `data-status-pill` and `data-status` are TEST HOOKS, the same
+              declared convention as `data-ops-metric` below. The pair is what
+              lets the test assert that the line HAS a derived state without
+              pinning which one: the harness runs with the analytics reads
+              stubbed and the deployed site does not, so the value legitimately
+              differs between them and only its derivation is a property worth
+              asserting.
+            */}
+          <p
+            data-status-pill
+            data-status={status.state}
+            class="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-micro uppercase"
+          >
+            <span
+              aria-hidden="true"
+              class:list={['h-2 w-2 shrink-0', status.state === 'nominal' ? 'bg-ok' : 'bg-warn']}
+            ></span>
+            <span>{status.label}</span>
+            <span class="opacity-[.7]">· Last {formatWindow(WINDOW_DAYS)}</span>
+          </p>
+        </div>
+        <h1 class="mt-5 font-display text-headline">What's running and what it costs</h1>
+        {/*
+            The index, and it is deliberately built from the same parts as the
+            drawing one section below: the cell is the ingress row's padding,
+            the head is that row's own construction of a muted number beside a
+            mono label. A reader meets the vocabulary here and then reads the
+            diagram in it.
+
+            IT IS NOT A `hairline-grid`, AND IT CANNOT BE. That utility paints
+            --rl-rule as a ground and lets it show through a 1px gap, which
+            needs every cell to be opaque in the panel's own colour -- a colour
+            that is --rl-ink in light and --rl-surface-raised in dark, so each
+            cell would need the same `dark:` variant and the same two global.css
+            rules as the panel itself, for a line nobody would ever see move.
+            Worse, its rule colour is wrong here: #d4d4d8 against near-black is
+            a bright lattice, where the same token against white is the hairline
+            it was chosen to be.
+
+            So the boxes draw their own borders in `currentColor` at 20%, which
+            resolves against whichever ground the panel is carrying. EVERY CELL
+            DRAWS ITS TOP AND LEFT ONLY and the nav closes the frame with its
+            own right and bottom, so each line in the matrix is exactly one
+            border thick. The first version lapped full borders together with
+            `-mr-px -mb-px` instead, which stacks two translucent borders on
+            every inner edge: about 36% against 20% on the outer frame,
+            invisible with an opaque rule and obvious with alpha, and worst at
+            two columns where the inner edges outnumber the outer.
+
+            `data-ops-index` is a TEST HOOK, the same declared convention as the
+            two below it: tests/ops-page.test.ts reads every href out of this
+            nav and fails on one that names an anchor the page does not render.
+          */}
+        <nav
+          data-ops-index
+          aria-label="Sections on this page"
+          class="mt-11 grid grid-cols-2 border-r border-b border-current/20 lg:grid-cols-3"
+        >
+          {SECTIONS.map((section) => (
+            <a
+              href={`#${section.id}`}
+              class="min-w-0 border-t border-l border-current/20 px-[18px] py-3.5 no-underline"
+            >
+              <p class="flex gap-3 font-mono text-micro uppercase">
+                <span class="opacity-[.6]">{section.number}</span>
+                <span>{section.name}</span>
+              </p>
+              <p class="mt-1.5 text-small opacity-[.7]">{section.qualifier}</p>
+            </a>
+          ))}
+        </nav>
       </div>
-      {/*
-          `data-status-pill` and `data-status` are TEST HOOKS, the same declared
-          convention as `data-ops-metric` below. The pair is what lets the test
-          assert that the pill HAS a derived state without pinning which one: the
-          harness runs with the analytics reads stubbed and the deployed site
-          does not, so the value legitimately differs between them and only its
-          derivation is a property worth asserting.
-        */}
-      <p
-        data-status-pill
-        data-status={status.state}
-        class="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-micro uppercase lg:self-end lg:justify-self-end"
-      >
-        <span
-          aria-hidden="true"
-          class:list={['h-2 w-2 shrink-0', status.state === 'nominal' ? 'bg-ok' : 'bg-warn']}
-        ></span>
-        <span class:list={[status.state === 'nominal' ? 'text-ok' : 'text-warn']}>
-          {status.label}
-        </span>
-        <span class="text-ink-muted">· Last {formatWindow(WINDOW_DAYS)}</span>
-      </p>
     </div>
   </section>
 
@@ -478,11 +594,8 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
         </h2>
       </div>
       <p class="text-small text-ink-muted">
-        Two Cloudflare Workers. The site Worker renders the pages and serves the assets; the MCP
-        Worker holds the protocol endpoint and everything that spends inference, because the
-        bindings that call a model cannot live in the configuration the site is built from. They
-        call each other over service bindings in both directions, which is legal and deliberate: a
-        binding resolves when it is called, not when the Worker is defined.
+        One serverless Worker handles the site; the other handles the MCP. Each calls the other
+        directly, with no extra hops.
       </p>
     </div>
     <div class:list={[COLUMN, 'pb-16']}>
@@ -504,21 +617,6 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
           Live metrics
         </h2>
       </div>
-      {/*
-          THE PAGE SAYS WHAT IT LEAVES OUT, which is the other half of the
-          exclusion in src/lib/ops/metrics.ts. The suites run on a cron inside
-          the MCP Worker and call the public tools and the chat endpoint the way
-          any client does, so their rows are real rows; filtering them out
-          without saying so would make this page under-report as quietly as
-          leaving them in would make it over-report. The manual run is still
-          counted and this sentence is careful not to claim otherwise: it names
-          the SCHEDULED run, because that is what is excluded.
-        */}
-      <p class="text-small text-ink-muted">
-        These figures exclude this site's own scheduled eval runs, which reach the public tools and
-        the chat endpoint the way any other client does, because a cron's traffic counted as a
-        reader's is a number nobody can use.
-      </p>
     </div>
     {/*
         TEN CELLS OVER FIVE COLUMNS, and the count is arithmetic rather than
@@ -602,7 +700,7 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
           label="Requests that reached the Worker"
           value={count(traffic?.requests)}
           source="Analytics Engine"
-          note="Static sub-resources and the home page are served without a Worker invocation, so they are not in this figure — and neither are /resume.md or /.well-known/mcp.json, which are prerendered files that wrangler.jsonc's run_worker_first does not list. Every other agent-signal route is counted: /llms.txt, /llms-full.txt, the markdown variants under /writing and /work, both feeds, /robots.txt and /resume.json — along with every on-demand route, which reaches the Worker by having no file behind it."
+          note=""
         />
         <OpsMetric
           label="Requests from agents"
@@ -629,7 +727,7 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
             traffic === null || traffic.p50Ms === null ? null : `${Math.round(traffic.p50Ms)} ms`
           }
           source="Analytics Engine"
-          note="Measured inside the Worker, where the clock advances only while a request is waiting on something else — a database, a cache, a model. It carries no network time, so a request served from memory is 0 ms here and this figure reads low by design."
+          note=""
         />
         {/*
             THE NOTE IS ON THE COST TILE BECAUSE THAT IS THE ONE A READER WILL
@@ -647,7 +745,7 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
           label="Inference spend"
           value={spend === null ? null : `$${spend.costUsd.toFixed(2)}`}
           source="AI Gateway"
-          note="These three cover the calls that name the gateway — chat answers, fit analysis and eval judging. The corpus embedding calls pass no gateway option, so they are billed but not attributed here, and none of these figures is the account's whole inference bill."
+          note="Includes Chat, Fit analysis, and Eval judging. The embedding calls pass no gateway option, so they are billed but not attributed here."
           {...GATEWAY_ABSENT}
         />
         <OpsMetric
@@ -795,12 +893,9 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
           <span class={KICKER}>· Constants in this build</span>
         </div>
         <p class="mt-5 max-w-[70ch] text-small text-ink-muted">
-          Every model this build calls, named from the constant the calling code passes rather than
+          Every model this system calls, named from the constant the calling code passes rather than
           typed out here, so this list cannot describe a model the site has stopped using. Chat
-          answers and eval judging are separate constants that name the same model today; the fit
-          path's documented fallback has no call site, so it is not a model the site runs and is not
-          listed. What these models spent is three tiles up, read from the gateway rather than
-          estimated here.
+          answers and eval judging are separate constants that name the same model today.
         </p>
 
         {/*
@@ -949,11 +1044,11 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
           <h2 id="status" class={PANEL_HEADING}>
             Status &amp; degradation
           </h2>
-          <span class={KICKER}>· What happens when a part fails</span>
+          <span class={KICKER}>· What happens when something fails</span>
         </div>
         <p class="mt-5 max-w-[70ch] text-small text-ink-muted">
-          Everything here degrades rather than disappearing, and says so while it does. This is the
-          ladder, in the order a reader would meet it.
+          This system degrades gracefully and tells you when it does. This is the ladder, in the
+          order a user would meet it.
         </p>
 
         <dl class="mt-6 divide-y divide-rule border-t border-rule">
@@ -964,20 +1059,19 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
           <div class="py-4">
             <dt class="font-mono text-micro uppercase text-ink">A read this page needs fails</dt>
             <dd class="mt-2 text-small text-ink-muted">
-              The figure above it says so and the rest of the page still renders. No section here
-              ever shows a zero standing in for a number nobody could read, because a zero is the
-              one wrong answer a reader has no way to spot.
+              No section here ever shows a zero standing in for a number nobody could read, because
+              a zero is the one wrong answer a reader has no way to spot.
             </dd>
           </div>
           <div class="py-4">
             <dt class="font-mono text-micro uppercase text-ink">Retrieval finds nothing</dt>
             <dd class="mt-2 text-small text-ink-muted">
               The answer says the published work does not cover it rather than filling the gap.
-              Everything published is plain text at
+              Everything published is plain text at{' '}
               <a class="text-accent" href="/llms.txt">
                 /llms.txt
               </a>
-              , and the
+              , and the{' '}
               <a class="text-accent" href="/mcp">
                 MCP endpoint
               </a>{' '}
@@ -997,15 +1091,18 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
             </li>
           ))}
           <li class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
-            <span class="text-small text-ink-muted">Chat, across everyone, before the breaker</span>
+            <span class="text-small text-ink-muted">
+              Chat, across everyone, before the breaker trips
+            </span>
             <span class="font-mono text-small text-ink" data-numeric>
               {GLOBAL_LIMITS.chat.limit} per {per(GLOBAL_LIMITS.chat.periodSeconds)}
             </span>
           </li>
         </ul>
-        <p class="mt-3 font-mono text-micro uppercase text-ink-muted">this build</p>
 
-        <h3 class="mt-9 font-mono text-micro uppercase text-ink">What is kept, and for how long</h3>
+        <h3 class="mt-9 font-mono text-micro uppercase text-ink">
+          What's stored, and for how long
+        </h3>
         <ul class="mt-4 divide-y divide-rule border-t border-rule">
           {RETENTION.map((entry) => (
             <li class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
@@ -1019,7 +1116,7 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
           ))}
         </ul>
         <p class="mt-3 font-mono text-micro text-ink-muted">
-          this build — a daily job enforces these, and the{' '}
+          A daily job enfores these and the{' '}
           <a class="text-accent" href="/ai-policy">
             policy
           </a>{' '}
@@ -1030,14 +1127,9 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
       <section aria-labelledby="releases" class={PANEL}>
         <div class="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
           <h2 id="releases" class={PANEL_HEADING}>
-            Changelog
+            Release history
           </h2>
-          <span class={KICKER}>· Generated from the release history</span>
         </div>
-        <p class="mt-5 max-w-[70ch] text-small text-ink-muted">
-          Read out of the file release-please writes from merged pull request titles, so this list
-          is the deploy history rather than a second one kept by hand. Dates only, never times.
-        </p>
 
         {releases.length === 0 ? (
           <p class="mt-6 text-small text-ink-muted">No releases parsed from this build.</p>
@@ -1055,7 +1147,6 @@ const PANEL_HEADING = 'font-mono text-micro uppercase text-ink';
             ))}
           </ul>
         )}
-        <p class="mt-3 font-mono text-micro uppercase text-ink-muted">this build</p>
       </section>
     </div>
   </div>
