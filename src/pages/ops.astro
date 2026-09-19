@@ -448,7 +448,7 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
   { number: '03', id: 'model-cost', name: 'Model & cost', qualifier: 'Constants in this build' },
   { number: '04', id: 'evals', name: 'Evals', qualifier: 'Latest run per suite' },
   { number: '05', id: 'status', name: 'Status & degradation', qualifier: 'When a part fails' },
-  { number: '06', id: 'releases', name: 'Changelog', qualifier: 'Recent releases' },
+  { number: '06', id: 'releases', name: 'Release history', qualifier: 'Latest releases' },
 ];
 ---
 
@@ -594,8 +594,8 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
         </h2>
       </div>
       <p class="text-small text-ink-muted">
-        One Worker serves what is already written; the other computes what is not. Each calls the
-        other directly, without a hop back through the network.
+        One serverless Worker handles the site; the other handles the MCP. Each calls the other
+        directly, with no extra hops.
       </p>
     </div>
     <div class:list={[COLUMN, 'pb-16']}>
@@ -617,20 +617,6 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
           Live metrics
         </h2>
       </div>
-      {/*
-          THE PAGE SAYS WHAT IT LEAVES OUT, which is the other half of the
-          exclusion in src/lib/ops/metrics.ts. The suites run on a cron inside
-          the MCP Worker and call the public tools and the chat endpoint the way
-          any client does, so their rows are real rows; filtering them out
-          without saying so would make this page under-report as quietly as
-          leaving them in would make it over-report. The manual run is still
-          counted and this sentence is careful not to claim otherwise: it names
-          the SCHEDULED run, because that is what is excluded.
-        */}
-      <p class="text-small text-ink-muted">
-        These figures exclude this site's own scheduled eval runs, which reach the public tools and
-        the chat endpoint the way any other client does.
-      </p>
     </div>
     {/*
         TEN CELLS OVER FIVE COLUMNS, and the count is arithmetic rather than
@@ -714,7 +700,7 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
           label="Requests that reached the Worker"
           value={count(traffic?.requests)}
           source="Analytics Engine"
-          note="Static sub-resources and the home page are served without a Worker invocation, so they are not in this figure — and neither are /resume.md or /.well-known/mcp.json, which are prerendered files that wrangler.jsonc's run_worker_first does not list. Every other agent-signal route is counted: /llms.txt, /llms-full.txt, the markdown variants under /writing and /work, both feeds, /robots.txt and /resume.json — along with every on-demand route, which reaches the Worker by having no file behind it."
+          note=""
         />
         <OpsMetric
           label="Requests from agents"
@@ -741,7 +727,7 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
             traffic === null || traffic.p50Ms === null ? null : `${Math.round(traffic.p50Ms)} ms`
           }
           source="Analytics Engine"
-          note="Measured inside the Worker, where the clock advances only while a request is waiting on something else — a database, a cache, a model. It carries no network time, so a request served from memory is 0 ms here and this figure reads low by design."
+          note=""
         />
         {/*
             THE NOTE IS ON THE COST TILE BECAUSE THAT IS THE ONE A READER WILL
@@ -759,7 +745,7 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
           label="Inference spend"
           value={spend === null ? null : `$${spend.costUsd.toFixed(2)}`}
           source="AI Gateway"
-          note="These three cover the calls that name the gateway — chat answers, fit analysis and eval judging. The corpus embedding calls pass no gateway option, so they are billed but not attributed here, and none of these figures is the account's whole inference bill."
+          note="Includes Chat, Fit analysis, and Eval judging. The embedding calls pass no gateway option, so they are billed but not attributed here."
           {...GATEWAY_ABSENT}
         />
         <OpsMetric
@@ -1062,7 +1048,7 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
         </div>
         <p class="mt-5 max-w-[70ch] text-small text-ink-muted">
           This system degrades gracefully and tells you when it does. This is the ladder, in the
-          order a user would meet it when...
+          order a user would meet it.
         </p>
 
         <dl class="mt-6 divide-y divide-rule border-t border-rule">
@@ -1073,9 +1059,8 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
           <div class="py-4">
             <dt class="font-mono text-micro uppercase text-ink">A read this page needs fails</dt>
             <dd class="mt-2 text-small text-ink-muted">
-              The figure above it says so and the rest of the page still renders. No section here
-              ever shows a zero standing in for a number nobody could read, because a zero is the
-              one wrong answer a reader has no way to spot.
+              No section here ever shows a zero standing in for a number nobody could read, because
+              a zero is the one wrong answer a reader has no way to spot.
             </dd>
           </div>
           <div class="py-4">
