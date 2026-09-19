@@ -330,6 +330,15 @@ export async function withCampaignHero(
   // ESCAPED. `hero_line` is typed by hand into KV, and `{ html: true }` inserts
   // raw markup -- so a stray `<` in an entry would be injection on this site's
   // own home page. Operator-authored is not the same as trusted markup.
+  //
+  // THE SAME MARKUP RENDERS AGAIN IN src/components/CampaignBand.astro, for
+  // the two /fit surfaces (04 §3): same element, same classes, same
+  // `data-campaign-hero` hook, kept in step by hand because nothing here
+  // calls that component or vice versa. That component escapes `line`
+  // through Astro's own expression interpolation instead of `escapeHtml` --
+  // the right mechanism there, since `{ html: true }` is what makes escaping
+  // this function's job in the first place. See its module comment for the
+  // other half of this cross-reference.
   const band =
     `<section data-campaign-hero class="border-b border-rule bg-accent-ground/10">` +
     `<div class="mx-auto max-w-[1440px] px-5 py-4 lg:px-10">` +

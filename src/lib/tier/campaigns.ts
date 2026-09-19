@@ -188,18 +188,36 @@ export async function listCampaigns(env: CampaignEnv): Promise<CampaignConfig[]>
  * differ, so matching on the id would silently resolve the wrong narrative
  * document for any campaign whose audience label was ever renamed.
  *
- * This has TWO runtime callers, counted 2026-09-16: the
- * `get_application_narrative` tool (workers/mcp/src/gated.ts) and
- * `POST /grant` (workers/mcp/src/grant-context.ts). Either way it walks with
+ * IT RETURNS AN ENTRY OF ANY `status`, BY DESIGN, and that sentence belongs
+ * here because this docblock is the one a new caller opens. The reasoning
+ * behind it is `parseCampaign`'s docblock above rather than this one: the
+ * preload and the gated narrative document are resolved through this same
+ * call, and a `retired` campaign is meant to keep serving both. So a caller
+ * rendering campaign-visible copy applies the `active` gate itself --
+ * workers/mcp/src/grant-context.ts does for `heroLine`, and
+ * src/pages/fit/r/[id].astro does for the same line on the permalink --
+ * while workers/mcp/src/gated.ts deliberately does not, because a token that
+ * still resolves has to keep reaching its narrative document after the
+ * campaign retires. Three callers, two behaviors, and which one applies is
+ * the caller's decision rather than this function's. WRITTEN DOWN
+ * 2026-09-18, after both gating call sites were found citing this docblock
+ * for an explanation it did not contain.
+ *
+ * This has THREE runtime callers, counted 2026-09-18: the
+ * `get_application_narrative` tool (workers/mcp/src/gated.ts), `POST /grant`
+ * (workers/mcp/src/grant-context.ts) and the report permalink
+ * (src/pages/fit/r/[id].astro). Every one of them walks with
  * an early-exit `match`: entries after the one wanted are never fetched or
  * parsed, only earlier ones (plus the match itself) pay the get+parse cost.
  * At least one KV `list` call -- the walk's first page -- still happens on
  * every call regardless of where the match falls, and that residual is left
  * alone here. An audience->id index would require the private authoring repo
  * to write a second key per campaign, a change this repo cannot make or
- * verify. DECIDED 2026-09-16 (#233): it stays unbuilt. Both callers
- * are grant-gated and run at single-figure volume, so the residual `list`
- * costs little on a path few callers ever reach. `/grant` is the busier of the
+ * verify. DECIDED 2026-09-16 (#233): it stays unbuilt, on the ground that
+ * "Both callers are grant-gated and run at single-figure volume, so the
+ * residual `list` costs little on a path few callers ever reach" -- half of
+ * which stopped being true on 2026-09-18, in the paragraph after this one.
+ * `/grant` is the busier of those
  * two -- the site asks it on every token-bearing `/fit` load and every `/fit`
  * run (src/lib/fit/client.ts), plus once per `npm run token mint`
  * (scripts/token.mjs) -- but reaching it at all takes a token minted by hand
@@ -209,6 +227,21 @@ export async function listCampaigns(env: CampaignEnv): Promise<CampaignConfig[]>
  * on volume at all. The decision can be reopened if day 6's `/ops` read
  * patterns ever show volume that changes this trade; nothing has shown that
  * yet.
+ *
+ * THE THIRD CALLER BREAKS THAT PREMISE RATHER THAN INCREMENTING THE COUNT
+ * (recorded 2026-09-18). "Both callers are grant-gated" was true of the two
+ * above and is false of `src/pages/fit/r/[id].astro`: the report permalink
+ * carries no token by design, so it is the first caller to reach this walk
+ * with nothing authenticated behind it, and every load of a forwarded link
+ * pays the residual `list` on the SITE Worker -- uncached and uncacheable,
+ * for the reason the next paragraph gives. The decision stands anyway, on the
+ * half of the premise that survives: a permalink is forwarded narrowly, by
+ * the one reader who was sent it, and `fit_reports` is single-figure volume
+ * in the same way the token-bearing surfaces are. What has genuinely changed
+ * is the evidence that reopens the question. The reopening condition above is
+ * `/ops` showing volume, and that volume no longer has to belong to a token
+ * holder: traffic on this one route is enough by itself, because nothing
+ * gates who can produce it.
  *
  * CORRECTED 2026-09-16 (#225): this paragraph used to offer a `cacheTtl` as
  * the cheaper alternative to that index, "trading configuration-propagation

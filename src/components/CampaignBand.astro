@@ -1,0 +1,50 @@
+---
+/**
+ * The campaign hero band (04 §3), rendered by audience rather than by
+ * referrer.
+ *
+ * THE SAME BAND `withCampaignHero` BUILDS, AND THAT IS THE POINT rather than
+ * a coincidence. src/lib/tier/hero-band.ts renders this band on the home
+ * page as an HTML string spliced in by HTMLRewriter -- a string because
+ * HTMLRewriter's `element.after()` takes one, not an Astro component, so a
+ * prerendered static page can carry a referrer-matched line without an
+ * on-demand route. `/fit` already reads its grant on every request, so there
+ * is no equivalent constraint here and this component can be the real thing.
+ * The two are kept in step BY HAND, not by one calling the other: a change
+ * to the class list, the element, or the padding belongs in both files, or
+ * the band the home page shows and the band `/fit` shows drift apart
+ * visually with nothing to catch it.
+ *
+ * NO `escapeHtml` HERE, AND THAT IS NOT AN OMISSION. `hero-band.ts` inserts
+ * its band with `{ html: true }`, so it has to escape `heroLine` itself
+ * before it is anything but markup -- see `escapeHtml`'s own docblock there.
+ * Astro escapes every `{expression}` in its template by default, which is
+ * what `{line}` below is, so an equivalent call here would double-escape the
+ * line rather than protect it. One line is operator-typed into KV either
+ * way; the two renderers just protect it through different mechanisms.
+ *
+ * NO `Vary` AND NO `no-store` ON EITHER FIT SURFACE, and the reason is not
+ * that these responses happen to go uncached. The band here is a
+ * deterministic function of the URL: `/fit` carries the token in its query
+ * string and the permalink carries the report id in its path, so a cache
+ * keyed on the URL cannot serve one audience's band to another. That is
+ * exactly what `withCampaignHero`'s own `no-store` paragraph is about on the
+ * home page, where the band varies on `Referer` -- a request header that is
+ * not in the cache key, which is what makes an intermediary able to hand one
+ * visitor's band to the next. A reader arriving here from that paragraph
+ * asks this question immediately, so it is answered here rather than left to
+ * the inference that the surfaces are merely uncached today.
+ */
+interface Props {
+  line: string;
+}
+const { line } = Astro.props;
+---
+
+{line !== '' && (
+  <section data-campaign-hero class="border-b border-rule bg-accent-ground/10">
+    <div class="mx-auto max-w-[1440px] px-5 py-4 lg:px-10">
+      <p class="text-small text-ink">{line}</p>
+    </div>
+  </section>
+)}

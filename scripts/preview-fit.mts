@@ -24,6 +24,11 @@
  * from a preview. The port is whatever the harness picks, so it moves between
  * runs.
  *
+ * WHAT IT DOES SHOW YOU, as of the campaign band this branch put on both /fit
+ * surfaces: a fixture `campaign:preview` entry, seeded into `KV_CONFIG` below
+ * for the same `preview-audience` this script already mints and stamps on the
+ * inserted report, so both printed URLs render the band rather than nothing.
+ *
  * `.mts` AND `tsx`, WHERE EVERY OTHER SCRIPT HERE IS PLAIN `.mjs`. Those run
  * with no build step on purpose and this one cannot: it imports the worker
  * list from tests/workers.ts rather than restating it, because a second copy
@@ -105,9 +110,10 @@ await server.update({
   ),
 });
 
-const mcp = server.getWorker<{ DB: D1Database }>('ryanlindsey-me-mcp');
+const mcp = server.getWorker<{ DB: D1Database; KV_CONFIG: KVNamespace }>('ryanlindsey-me-mcp');
 await mcp.applyD1Migrations('DB');
-const db = (await mcp.getEnv()).DB;
+const mcpEnv = await mcp.getEnv();
+const db = mcpEnv.DB;
 
 const now = Math.floor(Date.now() / 1000);
 const claims = {
@@ -146,8 +152,38 @@ await db
   )
   .run();
 
+// One campaign, so the band this branch put on both /fit surfaces has
+// something to render -- without this, `readCampaignForAudience` finds
+// nothing, `context.heroLine` resolves to '', and CampaignBand.astro renders
+// nothing on either URL below, which would make this preview look unchanged
+// by the branch it is previewing. `token_audience` matches `claims.aud` above
+// and the audience already stamped on the fit_reports row, which is what lets
+// both surfaces resolve it, and `status: 'active'` is required because both
+// gate the band on it (retired and staged render nothing, by design). Written
+// to the MCP Worker's `KV_CONFIG`: MEASURED 2026-09-18 (tests/fit-pages.test.ts)
+// that this harness binds both Workers' `KV_CONFIG` to the same namespace id,
+// so this one write reaches /fit (which reads it through the MCP Worker's
+// grant-context endpoint) and /fit/r/<id> (which reads it directly) alike.
+// Fixture values only, matching this repo's other campaign fixtures
+// (tests/fit-pages.test.ts, tests/campaign-hero.test.ts): no real company,
+// campaign or posting name belongs in a public repository.
+await mcpEnv.KV_CONFIG.put(
+  'campaign:preview',
+  JSON.stringify({
+    id: 'preview',
+    company: 'Preview',
+    status: 'active',
+    jd_text: 'A generic target description.',
+    referrer_domains: [],
+    hero_line: 'A generic line.',
+    token_audience: 'preview-audience',
+    gated_narrative_doc: 'narratives/preview.md',
+  }),
+);
+
 console.log('');
 console.log('  Fit preview, serving the real site Worker with a forged grant.');
+console.log('  Both URLs below also carry a seeded campaign band (`campaign:preview`).');
 console.log('');
 console.log(`  Form      ${url.origin}/fit?t=${token}`);
 console.log(`  Report    ${url.origin}/fit/r/${REPORT_ID}`);

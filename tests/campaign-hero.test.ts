@@ -83,6 +83,16 @@ test('a matching referrer renders the band under the NOW strip', async () => {
   // UNDER the strip, not above it: the strip carries real information and a
   // referred reader is exactly who should still see it.
   expect(html.indexOf('data-now-strip')).toBeLessThan(html.indexOf('data-campaign-hero'));
+  // THE CLASS LIST, PINNED EXACTLY, and the other half of this assertion is
+  // in tests/fit-pages.test.ts. `[data-campaign-hero]` has no CSS of its own,
+  // so these three utilities are the band's whole visual contract, and this
+  // string is kept in step with `src/components/CampaignBand.astro` by hand.
+  // Checking the hook and the line alone, as every other assertion on both
+  // sides does, would let the home page's band and the `/fit` band drift
+  // apart with nothing to catch it.
+  expect(html).toContain(
+    '<section data-campaign-hero class="border-b border-rule bg-accent-ground/10">',
+  );
 });
 
 test('the transformed variant is never cached, and carries no ETag while the plain response does', async () => {

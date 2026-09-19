@@ -473,6 +473,15 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (new URL(request.url).pathname.startsWith('/fit')) {
     let response: Response;
     try {
+      // `withCampaignHero` IS A NO-OP ON THIS PREFIX, and is written here
+      // because this branch answers the request itself rather than falling
+      // through to the site-wide call further down. It early-returns on any
+      // `pathname` but `/` (src/lib/tier/hero-band.ts), so it renders
+      // no band on a `/fit` URL and never has. What puts the band on these two
+      // surfaces is `src/components/CampaignBand.astro`, rendered by
+      // src/pages/fit/index.astro off the grant's `heroLine` and by
+      // src/pages/fit/r/[id].astro off the stored row's audience. Noted
+      // because the two now look like one thing from here.
       response = await withCampaignHero(request, await handle(request, env, ctx), env);
     } catch (error) {
       // A REJECTED promise, not a 500 `Response` -- a different shape from
