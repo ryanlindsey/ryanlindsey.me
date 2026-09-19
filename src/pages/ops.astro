@@ -907,12 +907,9 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
           <span class={KICKER}>· Constants in this build</span>
         </div>
         <p class="mt-5 max-w-[70ch] text-small text-ink-muted">
-          Every model this build calls, named from the constant the calling code passes rather than
+          Every model this system calls, named from the constant the calling code passes rather than
           typed out here, so this list cannot describe a model the site has stopped using. Chat
-          answers and eval judging are separate constants that name the same model today; the fit
-          path's documented fallback has no call site, so it is not a model the site runs and is not
-          listed. What these models spent is three tiles up, read from the gateway rather than
-          estimated here.
+          answers and eval judging are separate constants that name the same model today.
         </p>
 
         {/*
@@ -1061,11 +1058,11 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
           <h2 id="status" class={PANEL_HEADING}>
             Status &amp; degradation
           </h2>
-          <span class={KICKER}>· What happens when a part fails</span>
+          <span class={KICKER}>· What happens when something fails</span>
         </div>
         <p class="mt-5 max-w-[70ch] text-small text-ink-muted">
-          Everything here degrades rather than disappearing, and says so while it does. This is the
-          ladder, in the order a reader would meet it.
+          This system degrades gracefully and tells you when it does. This is the ladder, in the
+          order a user would meet it when...
         </p>
 
         <dl class="mt-6 divide-y divide-rule border-t border-rule">
@@ -1085,11 +1082,11 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
             <dt class="font-mono text-micro uppercase text-ink">Retrieval finds nothing</dt>
             <dd class="mt-2 text-small text-ink-muted">
               The answer says the published work does not cover it rather than filling the gap.
-              Everything published is plain text at
+              Everything published is plain text at{' '}
               <a class="text-accent" href="/llms.txt">
                 /llms.txt
               </a>
-              , and the
+              , and the{' '}
               <a class="text-accent" href="/mcp">
                 MCP endpoint
               </a>{' '}
@@ -1109,15 +1106,18 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
             </li>
           ))}
           <li class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
-            <span class="text-small text-ink-muted">Chat, across everyone, before the breaker</span>
+            <span class="text-small text-ink-muted">
+              Chat, across everyone, before the breaker trips
+            </span>
             <span class="font-mono text-small text-ink" data-numeric>
               {GLOBAL_LIMITS.chat.limit} per {per(GLOBAL_LIMITS.chat.periodSeconds)}
             </span>
           </li>
         </ul>
-        <p class="mt-3 font-mono text-micro uppercase text-ink-muted">this build</p>
 
-        <h3 class="mt-9 font-mono text-micro uppercase text-ink">What is kept, and for how long</h3>
+        <h3 class="mt-9 font-mono text-micro uppercase text-ink">
+          What's stored, and for how long
+        </h3>
         <ul class="mt-4 divide-y divide-rule border-t border-rule">
           {RETENTION.map((entry) => (
             <li class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
@@ -1131,7 +1131,7 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
           ))}
         </ul>
         <p class="mt-3 font-mono text-micro text-ink-muted">
-          this build — a daily job enforces these, and the{' '}
+          A daily job enfores these and the{' '}
           <a class="text-accent" href="/ai-policy">
             policy
           </a>{' '}
@@ -1142,13 +1142,9 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
       <section aria-labelledby="releases" class={PANEL}>
         <div class="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
           <h2 id="releases" class={PANEL_HEADING}>
-            Changelog
+            Release history
           </h2>
         </div>
-        <p class="mt-5 max-w-[70ch] text-small text-ink-muted">
-          Read out of the file release-please writes from merged pull request titles, so this list
-          is the deploy history rather than a second one kept by hand. Dates only, never times.
-        </p>
 
         {releases.length === 0 ? (
           <p class="mt-6 text-small text-ink-muted">No releases parsed from this build.</p>
@@ -1166,7 +1162,6 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
             ))}
           </ul>
         )}
-        <p class="mt-3 font-mono text-micro uppercase text-ink-muted">this build</p>
       </section>
     </div>
   </div>
