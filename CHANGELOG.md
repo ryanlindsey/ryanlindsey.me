@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.31.0...ryanlindsey-me-v1.32.0) (2026-09-19)
+
+
+### Features
+
+* **fit:** render the campaign band on the fit surfaces, keyed by audience ([#297](https://github.com/ryanlindsey/ryanlindsey.me/issues/297)) ([77134f6](https://github.com/ryanlindsey/ryanlindsey.me/commit/77134f6770f5c4377fdc5cb80a928f86b6b842ad))
+
 ## [1.31.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.30.0...ryanlindsey-me-v1.31.0) (2026-09-18)
 
 
