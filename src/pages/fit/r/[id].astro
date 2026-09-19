@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import Shell from '../../../layouts/Shell.astro';
 import CampaignBand from '../../../components/CampaignBand.astro';
 import { FitReport } from '../../../lib/fit/schema';
-import { readCampaignForAudience } from '../../../lib/tier/campaigns';
+import { readCampaignForAudience, type CampaignConfig } from '../../../lib/tier/campaigns';
 
 /**
  * A fit report's permalink (04 §2): a link the reader can pass along to
@@ -165,8 +165,39 @@ const generated = dateLabel(row.created_at);
  * separate check for that property -- there is nothing to add, since the
  * property already has to hold for the referrer-matched band to be safe, and
  * the same stored string is what both surfaces render.
+ *
+ * GUARDED, FIXED 2026-09-18 (review finding). `readCampaignForAudience` ->
+ * `walkCampaigns` (src/lib/tier/campaigns.ts) calls `env.KV_CONFIG.list(...)`
+ * with no try/catch of its own -- that function's internal `try` wraps only
+ * the per-key `get`+parse, to survive one malformed entry, not a `list()`
+ * itself failing. Left unguarded, a transient KV outage on THIS call would
+ * throw out of the page's frontmatter into a 500, and `src/worker.ts`
+ * flattens every 500 on the `/fit` prefix into the site's undecorated 404 --
+ * turning a legitimately forwarded, working permalink into "page not found"
+ * for its reader. `parseStoredReport`'s own docblock above states almost this
+ * exact rule for `JSON.parse`, and `dateLabel` applies the same discipline
+ * for `new Date(...).toISOString()`; this call is the one remote read on this
+ * page that had not yet followed it. The shape matches this repo's existing
+ * precedent for a failed KV read on the SAME feature -- `readHeroIndex`
+ * (src/lib/tier/hero-index.ts) catches, warns and returns the empty index
+ * rather than letting a caller crash, and `withCampaignHero`
+ * (src/lib/tier/hero-band.ts) cites that same precedent for its own re-fetch
+ * guard. FAILS TOWARD NO BAND, NEVER TOWARD NO PAGE: the report, the
+ * provenance and the stale-schema notice all still have to render even if
+ * this one read cannot answer, so the catch falls through to `campaign =
+ * null` rather than re-throwing or returning early.
+ *
+ * `workers/mcp/src/grant-context.ts` calls the same function unguarded too,
+ * on the OTHER Worker, and is intentionally NOT touched here -- a different
+ * failure surface (a grant resolution, not a page render) that is out of this
+ * task's scope.
  */
-const campaign = await readCampaignForAudience(env, row.audience);
+let campaign: CampaignConfig | null = null;
+try {
+  campaign = await readCampaignForAudience(env, row.audience);
+} catch {
+  console.warn('fit/r: readCampaignForAudience failed; rendering no band');
+}
 const heroLine = campaign?.status === 'active' ? campaign.heroLine : '';
 ---
 
