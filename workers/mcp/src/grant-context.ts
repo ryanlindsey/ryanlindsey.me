@@ -42,7 +42,7 @@ export interface GrantContext {
    * GATED HERE, NOT INSIDE `readCampaignForAudience`. That function returns
    * an entry of any `status` on purpose, which its own docblock states in one
    * sentence ("IT RETURNS AN ENTRY OF ANY `status`, BY DESIGN",
-   * src/lib/tier/campaigns.ts) and `parseCampaign`'s docblock one above it
+   * src/lib/tier/campaigns.ts) and `parseCampaign`'s docblock above
    * explains: the same call resolves `preload` and the gated narrative
    * document, and a filter inside it would take both of those out along with
    * the hero line. `preload`, declared just above, is deliberately NOT gated

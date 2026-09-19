@@ -148,8 +148,8 @@ const generated = dateLabel(row.created_at);
  * by design, and its own docblock now says so in one sentence -- "IT RETURNS
  * AN ENTRY OF ANY `status`, BY DESIGN" -- naming this call site and
  * `grant-context.ts` as the two that gate and `gated.ts` as the one that
- * deliberately does not. The reasoning behind the design lives one docblock
- * up, on `parseCampaign`. This call site wants only the hero line, so it
+ * deliberately does not. The reasoning behind the design is `parseCampaign`'s
+ * docblock above rather than this one. This call site wants only the hero line, so it
  * applies the same gate `grant-context.ts` applies on the token-bearing
  * surfaces, matching their behavior rather than reaching into a function that
  * deliberately does not apply it itself. CORRECTED 2026-09-18: this paragraph
