@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.32.0...ryanlindsey-me-v1.33.0) (2026-09-19)
+
+
+### Features
+
+* **ops:** rebuild the masthead as an inverted panel with a section index ([#299](https://github.com/ryanlindsey/ryanlindsey.me/issues/299)) ([75d609a](https://github.com/ryanlindsey/ryanlindsey.me/commit/75d609aa0e5022266b608cd5dcd62f239e490c91))
+
 ## [1.32.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.31.0...ryanlindsey-me-v1.32.0) (2026-09-19)
 
 
