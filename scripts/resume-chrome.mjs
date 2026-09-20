@@ -20,14 +20,23 @@
  * only Chrome distribution with addressable, immutable versions. Regular Chrome
  * updates itself underneath you, which is precisely how the two sides drifted.
  *
- * THE PLATFORM IS NOT THE VARIABLE, measured 2026-09-20. This paragraph was
- * written expecting the opposite and is kept as the correction. The open
- * question was whether the same build lays the sheet out identically on
- * darwin/arm64 and linux/x64; rendering here with the pinned build reproduced
- * the runner's line breaks exactly, on the golden the runner itself had
- * written, including the break this whole exercise started over. The version
- * was the whole of the drift. A macOS render and a Linux render agree once
- * they are the same Chrome.
+ * THE PLATFORM IS ALSO A VARIABLE, and this paragraph has been wrong once in
+ * each direction, so both readings are kept. It first said the pin could not
+ * settle the platform question. It was then rewritten to say the platform was
+ * not the variable at all, on one measurement: rendering here with the pinned
+ * build reproduced the runner's line breaks exactly, including the break this
+ * exercise started over. That measurement was real and the conclusion drawn
+ * from it was too strong. A later change moved the same skills line back onto
+ * the wrap boundary, and with the SAME pinned build on both sides, darwin/arm64
+ * and linux/x64 broke it in different places again.
+ *
+ * What the pin actually buys is one fewer source of drift, not determinism.
+ * A line sitting within a word of the right margin can still break differently
+ * per platform, and the golden records line breaks, so THE GOLDEN COMES FROM
+ * THE RUNNER when the two disagree: .github/workflows/resume-pdf.yml renders
+ * what ships, on Linux. Expect to take three lines out of a failed `checks` run
+ * whenever a résumé edit lands a line near the margin. Reproducing that locally
+ * would mean rendering on Linux, which is the only thing that would close it.
  */
 import {
   install,
