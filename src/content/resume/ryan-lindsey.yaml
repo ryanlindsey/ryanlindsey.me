@@ -355,14 +355,17 @@ skills:
       - Data warehouse (Snowflake)
       - VPN and network segmentation (WireGuard)
       - Reverse proxy and TLS automation (Traefik)
+      - Self-hosted monitoring (Uptime Kuma)
   - name: Languages and frameworks
     keywords:
       - TypeScript
       - JavaScript
       - Node.js
       - React and Next.js
+      - React Native
       - Ruby on Rails
-      - Swift
+      - Swift and SwiftUI
+      - Kotlin
       - SQL (SQLite, D1)
       - GraphQL
       - '*nix shell'

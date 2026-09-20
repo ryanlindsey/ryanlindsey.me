@@ -172,13 +172,14 @@ ENGINEERING LEADERSHIP Incident management, Change management (CAB, rollback pla
 executive reporting, Hiring and team growth, Coaching engineering managers, Engineering
 enablement, Cross-functional partnership, Performance management, Native mobile teams
 (iOS, Android), Multi-platform release coordination
-NATIVE MOBILE Swift and SwiftUI, iOS, iPadOS, and watchOS, React Native, App Store delivery and review, App
-Intents, Siri, and Shortcuts, Live Activities and Dynamic Island, On-device Foundation models
-(Apple Intelligence), iCloud sync
+NATIVE MOBILE Swift and SwiftUI, iOS, iPadOS, and watchOS, React Native, App Store delivery and review,
+App Intents, Siri, and Shortcuts, Live Activities and Dynamic Island, On-device Foundation
+models (Apple Intelligence), iCloud sync
 PLATFORM AND DELIVERY Edge compute and caching (Fastly, Cloudflare Workers), Serverless (Durable Objects,
 Workflows, Queues), Kubernetes and Docker, AWS and Terraform, CI/CD and automated
 testing, Blue/green, zero-downtime deployment, Release management, Bot mitigation, API
 design, High availability, Data warehouse (Snowflake), VPN and network segmentation
-(WireGuard), Reverse proxy and TLS automation (Traefik)
-LANGUAGES AND FRAMEWORKS TypeScript, JavaScript, Node.js, React and Next.js, Ruby on Rails, Swift, SQL (SQLite, D1),
-GraphQL, *nix shell
+(WireGuard), Reverse proxy and TLS automation (Traefik), Self-hosted monitoring (Uptime
+Kuma)
+LANGUAGES AND FRAMEWORKS TypeScript, JavaScript, Node.js, React and Next.js, React Native, Ruby on Rails, Swift and
+SwiftUI, Kotlin, SQL (SQLite, D1), GraphQL, *nix shell
