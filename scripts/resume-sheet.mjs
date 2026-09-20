@@ -81,7 +81,17 @@ const GOLDEN_OUTPUT = new URL('tests/fixtures/resume-sheet.txt', root);
  * relies on it. The rest are the install locations that actually occur: macOS
  * puts Chrome in either /Applications or ~/Applications depending on whether it
  * was installed for all users, and this machine has the second (measured
- * 2026-09-15, Chrome 152).
+ * 2026-09-15, Chrome 152; still the second on 2026-09-20, Chrome 153).
+ *
+ * THE BROWSER'S VERSION IS PART OF THE GOLDEN. On 2026-09-20 a skills line
+ * landed a word away from the right margin and Chrome 153 here broke it one
+ * word earlier than the runner's stable did, so `npm run resume:pdf` on this
+ * machine produced a golden that CI's own render contradicted while both PDFs
+ * said the same words. The gate was right and the local artifact was wrong:
+ * .github/workflows/resume-pdf.yml renders what ships, on a runner, so the
+ * runner's line breaks are the ones the committed golden has to carry. Expect
+ * to take the golden from a failed `checks` run whenever the two Chromes drift,
+ * until something pins this to one version.
  *
  * Named for what these ARE -- paths to a browser binary -- rather than for the
  * part they play in the search below. tests/tier-invisibility.test.ts scans
