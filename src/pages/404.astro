@@ -108,7 +108,7 @@ const CHIPS = [
         rather than a redirect to the homepage that pretends you asked for something else.
       </p>
 
-      <!--
+      {/*
         NO DISPLAY UTILITY ON THIS ELEMENT, and that is the whole reason the
         box is two divs rather than one. `hidden` is an attribute, and the
         user-agent `[hidden] { display: none }` it relies on sits in a lower
@@ -121,7 +121,7 @@ const CHIPS = [
         element out of the accessibility tree, which a `display: none` utility
         also does, but only as a side effect of a style anything later in the
         cascade can win against.
-      -->
+      */}
       <div data-requested-box hidden class="mt-[22px] border border-rule px-[18px] py-[14px]">
         <div class="flex items-center gap-[14px]">
           <span class="font-mono text-micro text-ink-muted">REQUESTED</span>
@@ -133,14 +133,14 @@ const CHIPS = [
 
     <div class="flex flex-col gap-[34px] lg:pt-[10px]">
       <div>
-        <!--
+        {/*
           The visible label is set in capitals because the design sets it that
           way, and an all-capital string is what a screen reader is liable to
           spell out letter by letter. So the landmark is named by `aria-label`
           in ordinary sentence case and the visible <p> is hidden from the
           accessibility tree. Same arrangement as the footer's four columns,
           and for the same reason.
-        -->
+        */}
         <p aria-hidden="true" class="font-mono text-micro text-ink-muted">
           MOST RECENT WRITING
         </p>
@@ -197,7 +197,7 @@ const CHIPS = [
     </div>
   </section>
 
-  <!--
+  {/*
     INLINE AND AT THE FOOT OF THE PAGE, not a module script. Astro bundles a
     module script and defers it, which would paint the page with the box shut
     and then shift the left column when it opened. Base.astro's theme script
@@ -217,7 +217,7 @@ const CHIPS = [
     here would be a reflected XSS on the widest surface there is. Inserting as
     text is the entire defense; nothing below escapes anything, because
     nothing below needs to.
-  -->
+  */}
   <script is:inline data-requested-fill>
     (() => {
       const box = document.querySelector('[data-requested-box]');

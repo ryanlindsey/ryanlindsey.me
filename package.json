@@ -21,7 +21,8 @@
     "private-doc": "node scripts/private-doc.mjs",
     "resume:pdf": "astro build && node scripts/resume-sheet.mjs",
     "resume:gate": "node scripts/resume-gate.mjs",
-    "evals": "node evals/run.mjs"
+    "evals": "node evals/run.mjs",
+    "resume:chrome": "node scripts/resume-chrome.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "14.3.1",
@@ -46,6 +47,7 @@
   },
   "devDependencies": {
     "@astrojs/check": "0.9.10",
+    "@puppeteer/browsers": "^3.2.2",
     "@tailwindcss/typography": "0.5.20",
     "@tailwindcss/vite": "4.3.3",
     "@types/node": "26.5.1",

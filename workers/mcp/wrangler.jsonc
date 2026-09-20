@@ -6,6 +6,23 @@
   "compatibility_date": "2026-09-02",
   "compatibility_flags": ["nodejs_compat"],
 
+  // Measured 2026-09-20: the bundle wrangler builds from this config carried
+  // 1771 comment lines, including src/lib/tier/token.ts on what each scope
+  // opens. This Worker is the one that resolves grants, so it holds the most
+  // of that reasoning and had been shipping all of it.
+  //
+  // astro.config.mjs fixed the same leak on the site Worker and cannot fix it
+  // here: wrangler builds this one from src/index.ts without reading that file.
+  // `minify` is wrangler's own switch for it, and esbuild drops comments as
+  // part of minifying rather than as a separate option.
+  //
+  // `upload_source_maps` is what makes that affordable. `observability` below
+  // is on and these logs get read, so minifying without it would trade the
+  // comments for unreadable stack traces. With it, Cloudflare maps a minified
+  // frame back to the original file and line.
+  "minify": true,
+  "upload_source_maps": true,
+
   "workers_dev": false,
   "routes": [{ "pattern": "mcp.ryanlindsey.me", "custom_domain": true }],
   "observability": {

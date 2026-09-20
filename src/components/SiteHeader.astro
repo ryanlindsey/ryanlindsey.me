@@ -29,7 +29,7 @@ const isCurrent = (href: string) => path === href || path.startsWith(`${href}/`)
 const searchQuery = prefilledQuery(Astro.url);
 ---
 
-<!--
+{/*
   `z-30` rides with `sticky` and is not decoration. Every sticky box on an
   article page sat at `z-index: auto`, so paint order fell back to tree order
   and the LAST one drew on top -- which is the article's own rails, not this
@@ -47,9 +47,9 @@ const searchQuery = prefilledQuery(Astro.url);
   once `sticky` makes this a stacking context the overlay's own z-50 is
   scoped to it and resolves to this level against the page -- still above the
   bar and the article, which is all it has to clear.
--->
+*/}
 <header data-site-header class={`border-b border-rule bg-bg ${sticky ? 'sticky top-0 z-30' : ''}`}>
-  <!--
+  {/*
     The flex-wrap mitigation this row carried before the 2026-09 redesign
     (task-13-report.md) is gone, not just restyled. It answered five links
     plus the wordmark not fitting this row's non-shrinkable floor at ~400px
@@ -65,8 +65,8 @@ const searchQuery = prefilledQuery(Astro.url);
     60px tall below `lg` and 68px at it. `lg` is 64rem, and src/lib/mobile-nav.ts
     matches that number in a media query for the same swap -- the two have to
     agree.
-  -->
-  <!--
+  */}
+  {/*
     max-w-[1440px] px-10 is the redesign's own target geometry for this row --
     a 1440px cap and a 40px gutter -- and it does not match the rest of the
     page yet. Written when nothing else did: the sentence here used to name
@@ -78,13 +78,13 @@ const searchQuery = prefilledQuery(Astro.url);
     bug: the later page issues in this epic widen the rest of the site to meet
     this width, the way the mobile toggle button below is commented as
     provisional rather than fixed.
-  -->
-  <!--
+  */}
+  {/*
     The 20px gutter below `lg` is the design's, not a guess: design 1c sets
     the overlay's own footer strip at `padding: 18px 20px 26px`, so 20px is
     what that view gutters at, and the collapsed header lines up with the
     overlay that replaces it. 40px from `lg` up, as everywhere else.
-  -->
+  */}
   <div class="mx-auto flex h-[60px] max-w-[1440px] items-center gap-9 px-5 lg:h-[68px] lg:px-10">
     <a href="/" class="font-display text-subheading text-ink">
       Ryan Lindsey
@@ -103,7 +103,7 @@ const searchQuery = prefilledQuery(Astro.url);
     </nav>
 
     <div class="ml-auto hidden items-center gap-[14px] lg:flex">
-      <!--
+      {/*
         A CONTROL NOW, and until issue #149 this was deliberately not one. The
         note that stood here said site search was not built -- "no overlay, no
         results page, no empty state, and none of those should be invented
@@ -148,7 +148,7 @@ const searchQuery = prefilledQuery(Astro.url);
         `hidden` attribute until it is opened, so at any width exactly one of
         them is displayed. Anything that gives either of them a second life at
         the other's breakpoint has to rename one of them too.
-      -->
+      */}
       <form
         data-header-search
         role="search"
@@ -160,12 +160,12 @@ const searchQuery = prefilledQuery(Astro.url);
         <label class="sr-only" for="rl-header-search">
           Search this site
         </label>
-        <!--
+        {/*
           NOT id="q", which is what src/pages/search.astro calls its own field.
           This header renders on that page too, so the obvious name would be a
           duplicate id and a label pointing at whichever element the browser
           found first.
-        -->
+        */}
         <input
           id="rl-header-search"
           name="q"
@@ -177,11 +177,11 @@ const searchQuery = prefilledQuery(Astro.url);
           aria-keyshortcuts="Meta+K Control+K"
           class="w-full min-w-0 border-0 bg-transparent p-0 font-mono text-small text-ink placeholder:text-ink-muted"
         />
-        <!--
+        {/*
           The chip is decoration to a screen reader and the shortcut is not, so
           the fact moves onto the control as `aria-keyshortcuts` rather than
           being read out as the characters "⌘K" after the field's name.
-        -->
+        */}
         <span
           aria-hidden="true"
           class="ml-auto shrink-0 border border-rule px-[5px] py-px text-micro font-mono text-ink-muted"
@@ -192,7 +192,7 @@ const searchQuery = prefilledQuery(Astro.url);
       <ThemeToggle />
     </div>
 
-    <!--
+    {/*
       Issue #99 shipped this button deliberately inert -- rendered with the
       right `aria-controls` and no script, because the overlay it names was
       the next issue's to build. Issue #101 built it, so the note that used to
@@ -204,7 +204,7 @@ const searchQuery = prefilledQuery(Astro.url);
       tests/mobile-nav.test.ts asserts the spelling, because a rendered page
       cannot be measured from a test but a swap to a smaller utility can be
       seen. The bars are aria-hidden decoration -- the name is on the button.
-    -->
+    */}
     <button
       type="button"
       aria-label="Open menu"

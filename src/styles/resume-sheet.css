@@ -200,7 +200,7 @@ body {
 .docline {
   font-family: 'IBM Plex Mono';
   font-size: 6.8pt;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--faint);
   display: flex;
@@ -256,7 +256,7 @@ h1 {
   font-family: 'IBM Plex Mono';
   font-weight: 600;
   font-size: 8pt;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--accent);
   margin-top: 6pt;
@@ -296,7 +296,7 @@ h2 {
   font-family: 'IBM Plex Mono';
   font-weight: 600;
   font-size: 7.8pt;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--accent);
   border-bottom: 1pt solid var(--ink);

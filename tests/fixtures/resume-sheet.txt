@@ -15,14 +15,14 @@ but has lost its contact block, or whose bullet markers no longer survive
 extraction into the text layer an ATS reads, shows up as a diff in these
 lines and nowhere else.
 
-Pages: 3
-Bullet markers: 30
+Pages: 4
+Bullet markers: 32
 
---- page 1 of 3 ---
+--- page 1 of 4 ---
 
-R É S U M É · R Y A N L I N D S E Y R E V 0 . 6 . 0 · 2 0 2 6 - 0 9 - 1 8
+RÉSUMÉ · RYAN LINDSEY REV 0.7.0 · 2026-09-20
 Ryan Lindsey
-S E N I O R E N G I N E E R I N G M A N A G E R , A G E N T I C E N G I N E E R I N G
+SENIOR ENGINEERING MANAGER, AGENTIC ENGINEERING
 BASED Laguna Niguel, CA
 EMAIL hello@ryanlindsey.me
 PHONE (714) 330-6251
@@ -34,22 +34,26 @@ them keep pace. Nineteen years in software, a decade of it leading engineering t
 for an entire engineering organization, I build the agentic tooling that other managers choose to adopt, and I still ship
 the code. The habit underneath all of it is to measure a process before improving it, because the constraint is rarely
 where everyone assumes it is.
-E X P E R I E N C E
+EXPERIENCE
 Weedmaps IRVINE, CA MAR 2016 — PRESENT
 Senior Engineering Manager FEB 2021 — PRESENT
 Own incident management for the entire engineering organization since 2024 and coach fellow engineering managers,
-while leading 8 engineers across 2 teams. Platform: AWS, Ruby on Rails, Node.js, GraphQL, React, Next.js, Terraform,
-Kubernetes, Docker, Fastly, Snowflake.
+while leading 8 engineers across 2 teams whose work spans the whole platform, the web applications and the native iOS
+and Android applications alike. Platform: AWS, Ruby on Rails, Node.js, GraphQL, React, Next.js, Swift, Kotlin, React Native,
+Terraform, Kubernetes, Docker, Fastly, Snowflake.
+• Lead cross-functional teams of polyglot engineers shipping features across Android, iOS, and web, partnering with
+Product and Design from definition through release. The native applications run Swift and Kotlin, with React Native
+covering roughly half the production surface since 2025.
 • Designed and built a delivery-forecasting toolchain for engineering managers, beginning as a set of Claude Skills and
 migrating to an internal MCP server as adoption outgrew that packaging. Adopted by >80% of engineering managers
 and absorbed into the org-wide roadmapping and reporting process.
 • The incident process I own now runs on agentic investigation: incident commanders use agents and connected MCP
 servers over live telemetry, which has raised root-cause-analysis quality and sharply reduced the time to produce one.
 • That ownership covers the process itself, the communication strategy, service integrations with third-party systems of
-record including Salesforce, data reporting, and training. Data Engineering and InfoSec run their own incident processes
-on the same tooling. Accountable for the area's OKRs and report on them to the executive team monthly. Risky changes
-go through a change advisory board with documented rollback plans, and post-incident review is blameless with linked
-action items.
+record including Salesforce, data reporting, and training, and it has covered the native mobile applications from the start
+alongside the web and back-end services. Data Engineering and InfoSec run their own incident processes on the same
+tooling. Accountable for the area's OKRs and report on them to the executive team monthly. Risky changes go through a
+change advisory board with documented rollback plans, and post-incident review is blameless with linked action items.
 • Measured the inherited process before changing it, and found response and resolution times were already at or better
 than industry standard, a reading corroborated independently by a vendor in the space. The real weakness was time to
 detect, so that became the focus: a service-level observability initiative run with DevOps and SRE now surfaces issues
@@ -62,15 +66,18 @@ is part of the agentic toolchain rather than a separate reporting step.
 coverage strategy integrated with CI and improved it over time, moved it to blue/green deployments for zero downtime
 with DevOps, and added bot mitigation and payload verification with InfoSec to protect metric integrity against junk
 traffic.
+
+--- page 2 of 4 ---
+
 • Built an off-marketplace e-commerce platform from nothing with a team, to meet marketplace regulatory requirements
 across the United States and Canada. Still in production and contributing to platform GMV.
 Case study: ryanlindsey.me/work/delivery-forecasting
-
---- page 2 of 3 ---
-
 Engineering Manager SEP 2017 — FEB 2021
 • Managed up to 19 engineers, from junior through staff level, across several cross-functional product delivery teams on a
-consumer platform used by millions of people every month. Reports spanned backend, front-end, iOS, and Android.
+consumer platform used by millions of people every month.
+• From 2019 the teams reporting to me shipped across Android, iOS, and web rather than one surface at a time, with
+backend, front-end, iOS, and Android engineers on the same delivery teams. Coordinating one feature across three
+release surfaces, two of them gated by app review, is a different planning problem than shipping to the web alone.
 • Decoupled deployment from feature release, so the product and go-to-market teams could control launch timing
 independently of engineering deploys. This removed a standing coupling between shipping software and announcing it.
 • Introduced global edge caching across the primary web applications on both client and server, through a Fastly CDN
@@ -108,18 +115,18 @@ Innocean Worldwide HUNTINGTON BEACH, CA FEB 2011 — OCT 2011
 Sr. Front End Developer
 • Led interactive development for Hyundai USA, including hyundaiusa.com, microsites, Facebook games, and a custom
 YouTube channel, working with the creative team from concept onward.
+
+--- page 3 of 4 ---
+
 Y&R Brands / Wunderman IRVINE, CA JUN 2007 — FEB 2011
 Front End Developer
 • Delivered interactive work for Land Rover, Southwest Airlines, Toshiba, and Hilton, recognized with Lester Wunderman
 awards (2008, 2009) and a 38th Annual Creativity Award (2008).
-
---- page 3 of 3 ---
-
 Freelance ORANGE COUNTY, CA JAN 2001 — JUN 2007
 Web design & development
 • Ran every part of the business: client relationships, project management, design, and development. Built marketing sites,
 online communities, and custom content management systems for local businesses, independent films, and bands.
-P R O J E C T S
+PROJECTS
 Pixelsonly Racing FOUNDER · JUN 2026 — PRESENT PIXELSONLY.RACING
 A sim racing coaching platform that turns telemetry into driver development goals, with a personal AI race engineer for
 every driver, plus a products line for sim racers.
@@ -128,6 +135,11 @@ Gateway.
 • Per-driver isolation by object addressing, property-based eval harnesses that report their own unmet gates, and cost
 tracked per unit of work against per-driver budgets.
 Case study: ryanlindsey.me/work/silent-failure
+Blooming Grounds AUTHOR · 2024 — PRESENT APPS.APPLE.COM/US/APP/BLOOMING-GROUNDS/ID6738151007
+A pour-over coffee companion for iPhone, iPad, and Apple Watch, written in Swift and SwiftUI and shipped on the App
+Store. On-device Apple Foundation models write tasting notes and brew guides, with no account and no third-party data
+sharing. Guided brews run as a Live Activity in the Dynamic Island, state syncs over iCloud, and the collection is reachable
+through Siri, Shortcuts, and Spotlight.
 Armature AUTHOR · JUN 2026 — PRESENT GITHUB.COM/RYANLINDSEY/ARMATURE
 A Claude Code plugin that gives an agent a GitHub Projects board: it claims the next item, works it on a branch, and opens
 a pull request it cannot merge.
@@ -140,10 +152,17 @@ An agent-native personal site and MCP server on Cloudflare, built largely by age
 and a published AI policy and risk register.
 • Retrieval through Vectorize, rate limits in a Durable Object, a tool-call audit trail, fenced untrusted content against prompt
 injection, and evals scored by a model judge.
-E D U C A T I O N
+Home lab AUTHOR · 2020 — PRESENT
+A self-designed home network and service platform: a segmented LAN reached over WireGuard, Traefik routing with
+Cloudflare certificate resolution, several Docker hosts, and a NUT server running the UPS power sequencing I wrote,
+which brings services down and back up in order, with Uptime Kuma as the dashboard.
+EDUCATION
 The Art Institute of California · B.S., Interactive Media (HCI) · 2003 — 2007
 Golden West College · A.A., Business Administration · 2001 — 2003
-S K I L L S
+
+--- page 4 of 4 ---
+
+SKILLS
 AGENTIC ENGINEERING MCP servers (Model Context Protocol), Claude Code and Claude Skills, Agent design and tool
 use, Spec-driven agentic development, LLM evals (property-based, LLM-as-judge), Retrieval-
 augmented generation (RAG), Human-in-the-loop controls, AI governance (acceptable use,
@@ -151,10 +170,16 @@ risk register, audit trail), Prompt-injection defenses, LLM cost controls and ga
 access to systems of record (MCP over Snowflake)
 ENGINEERING LEADERSHIP Incident management, Change management (CAB, rollback plans), Observability, OKRs and
 executive reporting, Hiring and team growth, Coaching engineering managers, Engineering
-enablement, Cross-functional partnership, Performance management
+enablement, Cross-functional partnership, Performance management, Native mobile teams
+(iOS, Android), Multi-platform release coordination
+NATIVE MOBILE Swift and SwiftUI, iOS, iPadOS, and watchOS, React Native, App Store delivery and review, App
+Intents, Siri, and Shortcuts, Live Activities and Dynamic Island, On-device Foundation models
+(Apple Intelligence), iCloud sync
 PLATFORM AND DELIVERY Edge compute and caching (Fastly, Cloudflare Workers), Serverless (Durable Objects,
 Workflows, Queues), Kubernetes and Docker, AWS and Terraform, CI/CD and automated
 testing, Blue/green, zero-downtime deployment, Release management, Bot mitigation, API
-design, High availability, Data warehouse (Snowflake)
-LANGUAGES AND FRAMEWORKS TypeScript, JavaScript, Node.js, React and Next.js, Ruby on Rails, SQL (SQLite, D1), GraphQL,
-*nix shell
+design, High availability, Data warehouse (Snowflake), VPN and network segmentation
+(WireGuard), Reverse proxy and TLS automation (Traefik), Self-hosted monitoring (Uptime
+Kuma)
+LANGUAGES AND FRAMEWORKS TypeScript, JavaScript, Node.js, React and Next.js, React Native, Ruby on Rails, Swift and
+SwiftUI, Kotlin, SQL (SQLite, D1), GraphQL, *nix shell

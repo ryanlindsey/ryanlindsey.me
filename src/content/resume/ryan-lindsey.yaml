@@ -32,11 +32,19 @@ work:
     summary: >-
       Own incident management for the entire engineering organization since
       2024 and coach fellow engineering managers, while leading 8 engineers
-      across 2 teams. Platform: AWS, Ruby on Rails, Node.js, GraphQL, React,
-      Next.js, Terraform, Kubernetes, Docker, Fastly, Snowflake.
+      across 2 teams whose work spans the whole platform, the web applications
+      and the native iOS and Android applications alike. Platform: AWS, Ruby on
+      Rails, Node.js, GraphQL, React, Next.js, Swift, Kotlin, React Native,
+      Terraform, Kubernetes, Docker, Fastly, Snowflake.
     x_artifacts:
       - delivery-forecasting
     highlights:
+      - >-
+        Lead cross-functional teams of polyglot engineers shipping features
+        across Android, iOS, and web, partnering with Product and Design from
+        definition through release. The native applications run Swift and
+        Kotlin, with React Native covering roughly half the production surface
+        since 2025.
       - >-
         Designed and built a delivery-forecasting toolchain for engineering
         managers, beginning as a set of Claude Skills and migrating to an
@@ -51,8 +59,10 @@ work:
       - >-
         That ownership covers the process itself, the communication strategy,
         service integrations with third-party systems of record including
-        Salesforce, data reporting, and training. Data Engineering
-        and InfoSec run their own incident processes on the same tooling.
+        Salesforce, data reporting, and training, and it has covered the native
+        mobile applications from the start alongside the web and back-end
+        services. Data Engineering and InfoSec run their own incident processes
+        on the same tooling.
         Accountable for the area's OKRs and report on them to the executive
         team monthly. Risky changes go through a change advisory board with
         documented rollback plans, and post-incident review is blameless with
@@ -93,8 +103,13 @@ work:
       - >-
         Managed up to 19 engineers, from junior through staff level, across
         several cross-functional product delivery teams on a consumer platform
-        used by millions of people every month. Reports spanned backend,
-        front-end, iOS, and Android.
+        used by millions of people every month.
+      - >-
+        From 2019 the teams reporting to me shipped across Android, iOS, and
+        web rather than one surface at a time, with backend, front-end, iOS,
+        and Android engineers on the same delivery teams. Coordinating one
+        feature across three release surfaces, two of them gated by app review,
+        is a different planning problem than shipping to the web alone.
       - >-
         Decoupled deployment from feature release, so the product and
         go-to-market teams could control launch timing independently of
@@ -223,6 +238,18 @@ projects:
         Per-driver isolation by object addressing, property-based eval
         harnesses that report their own unmet gates, and cost tracked per unit
         of work against per-driver budgets.
+  - name: Blooming Grounds
+    description: >-
+      A pour-over coffee companion for iPhone, iPad, and Apple Watch, written
+      in Swift and SwiftUI and shipped on the App Store. On-device Apple
+      Foundation models write tasting notes and brew guides, with no account
+      and no third-party data sharing. Guided brews run as a Live Activity in
+      the Dynamic Island, state syncs over iCloud, and the collection is
+      reachable through Siri, Shortcuts, and Spotlight.
+    url: https://apps.apple.com/us/app/blooming-grounds/id6738151007
+    startDate: '2024'
+    roles:
+      - Author
   - name: Armature
     description: >-
       A Claude Code plugin that gives an agent a GitHub Projects board: it
@@ -253,6 +280,16 @@ projects:
         Retrieval through Vectorize, rate limits in a Durable Object, a
         tool-call audit trail, fenced untrusted content against prompt
         injection, and evals scored by a model judge.
+  - name: Home lab
+    description: >-
+      A self-designed home network and service platform: a segmented LAN
+      reached over WireGuard, Traefik routing with Cloudflare certificate
+      resolution, several Docker hosts, and a NUT server running the UPS power
+      sequencing I wrote, which brings services down and back up in order, with
+      Uptime Kuma as the dashboard.
+    startDate: '2020'
+    roles:
+      - Author
 
 education:
   - institution: The Art Institute of California
@@ -291,6 +328,18 @@ skills:
       - Engineering enablement
       - Cross-functional partnership
       - Performance management
+      - Native mobile teams (iOS, Android)
+      - Multi-platform release coordination
+  - name: Native mobile
+    keywords:
+      - Swift and SwiftUI
+      - iOS, iPadOS, and watchOS
+      - React Native
+      - App Store delivery and review
+      - App Intents, Siri, and Shortcuts
+      - Live Activities and Dynamic Island
+      - On-device Foundation models (Apple Intelligence)
+      - iCloud sync
   - name: Platform and delivery
     keywords:
       - Edge compute and caching (Fastly, Cloudflare Workers)
@@ -304,17 +353,23 @@ skills:
       - API design
       - High availability
       - Data warehouse (Snowflake)
+      - VPN and network segmentation (WireGuard)
+      - Reverse proxy and TLS automation (Traefik)
+      - Self-hosted monitoring (Uptime Kuma)
   - name: Languages and frameworks
     keywords:
       - TypeScript
       - JavaScript
       - Node.js
       - React and Next.js
+      - React Native
       - Ruby on Rails
+      - Swift and SwiftUI
+      - Kotlin
       - SQL (SQLite, D1)
       - GraphQL
       - '*nix shell'
 
 meta:
-  version: 0.6.0
-  lastModified: '2026-09-18'
+  version: 0.7.0
+  lastModified: '2026-09-20'

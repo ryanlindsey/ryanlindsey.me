@@ -49,23 +49,23 @@ const isExternal = (href: string) => href.startsWith('http');
 const searchQuery = prefilledQuery(Astro.url);
 ---
 
-<!--
+{/*
   The id is the interface, not a data attribute. SiteHeader's toggle names it
   in `aria-controls` and src/lib/mobile-nav.ts finds it by the same name, so
   the `data-mobile-nav` this element briefly carried was a second handle on a
   thing that already had one. The close button keeps its data attribute
   because it has no name of its own to be found by.
--->
+*/}
 <div id="rl-mobile-menu" hidden class="fixed inset-0 z-50 overflow-y-auto bg-bg lg:hidden">
   <div class="flex min-h-full flex-col px-5">
     <div class="flex h-[100px] shrink-0 items-center justify-between">
       <p class="font-mono text-micro text-ink-muted">MENU</p>
-      <!--
+      {/*
         44x44, and it must not shrink -- the design floors both this and the
         toggle that opens it at the minimum hit target. The glyph is
         aria-hidden and the name is on the button, because an accessible name
         of "✕" is a name a screen reader has to guess at.
-      -->
+      */}
       <button
         type="button"
         data-mobile-nav-close
@@ -76,7 +76,7 @@ const searchQuery = prefilledQuery(Astro.url);
       </button>
     </div>
 
-    <!--
+    {/*
       text-[2.5rem] is an arbitrary value on purpose. 2.5rem is NOT a step of
       the type scale in global.css and should not become one: it is used once,
       in this overlay, and a token nothing else consumes is a token nobody
@@ -93,7 +93,7 @@ const searchQuery = prefilledQuery(Astro.url);
       Ask my agent is in the accent, and that is the design saying the
       promotion in colour rather than a highlight for its own sake: it is the
       link issue #99 moved INTO the primary nav out of the footer.
-    -->
+    */}
     <nav aria-label="Menu">
       {NAV_LINKS.map((link) => (
         <a
@@ -107,7 +107,7 @@ const searchQuery = prefilledQuery(Astro.url);
       ))}
     </nav>
 
-    <!--
+    {/*
       The header's search form, repeated full width, under the same rule it
       follows up there. Until issue #149 the note here said site search was not
       built, so this was "a label and not a control -- a non-interactive
@@ -121,7 +121,7 @@ const searchQuery = prefilledQuery(Astro.url);
       That is the same argument that put a theme toggle down here, and it is
       why src/lib/search-shortcut.ts opens this overlay rather than focusing a
       field nobody can see.
-    -->
+    */}
     <form
       data-nav-search
       role="search"
@@ -133,7 +133,7 @@ const searchQuery = prefilledQuery(Astro.url);
       <label class="sr-only" for="rl-nav-search">
         Search this site
       </label>
-      <!-- Its own id, for the reason SiteHeader.astro gives: /search calls its field `q`. -->
+      {/* Its own id, for the reason SiteHeader.astro gives: /search calls its field `q`. */}
       <input
         id="rl-nav-search"
         name="q"
@@ -153,7 +153,7 @@ const searchQuery = prefilledQuery(Astro.url);
       </span>
     </form>
 
-    <!--
+    {/*
       The theme control, directly under the search form because that is
       where it sits on the desktop: SiteHeader's right cluster is search and
       theme side by side, and below `lg` that cluster is hidden, so the overlay
@@ -165,16 +165,16 @@ const searchQuery = prefilledQuery(Astro.url);
       the pre-redesign header rendered this at every width. Raised on the pull
       request and overruled there, so the instruction is recorded rather than
       quietly ignored: the design does not place one, and one is placed anyway.
-    -->
+    */}
     <div class="mt-4 flex">
       <ThemeToggle />
     </div>
 
-    <!--
+    {/*
       `mt-auto` is what puts this strip at the bottom of a short viewport and
       keeps it below the content on a tall one. The negative margin lets its
       top rule reach both gutters while the links stay inside them.
-    -->
+    */}
     <nav
       aria-label="Site and agents"
       class="-mx-5 mt-auto flex flex-wrap gap-4 border-t border-rule px-5 pb-[26px] pt-[18px]"

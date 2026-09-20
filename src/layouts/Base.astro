@@ -222,11 +222,11 @@ const jsonLdNodes = [
     }
     <title>{pageTitle}</title>
 
-    <!--
+    {/*
       Blocking and inline on purpose. Anything deferred paints the wrong theme
       first. `is:inline` keeps Astro from bundling it into a module script,
       which would defer it. Kept small enough that the parser cost is noise.
-    -->
+    */}
     <script is:inline>
       (() => {
         try {

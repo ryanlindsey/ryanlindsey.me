@@ -24,9 +24,9 @@ const iso = (date: Date) => date.toISOString().slice(0, 10);
 ---
 
 <p class="flex flex-wrap items-baseline gap-x-3 font-mono text-micro uppercase text-ink-muted">
-  <!-- data-numeric is global.css's tabular-nums hook. Dates in a proportional
+  {/* data-numeric is global.css's tabular-nums hook. Dates in a proportional
        numeral set make two stacked meta lines wobble against each other, and
-       this line is mostly digits. -->
+       this line is mostly digits. */}
   <time datetime={publishedAt.toISOString()} data-numeric>
     {iso(publishedAt)}
   </time>

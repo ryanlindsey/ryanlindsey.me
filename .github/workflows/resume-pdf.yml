@@ -114,10 +114,22 @@ jobs:
         if: steps.plan.outputs.publish == 'true'
         run: npm run build
 
-      # Chrome is preinstalled on the runner image and scripts/resume-sheet.mjs
-      # finds it at /usr/bin/google-chrome-stable. `npm run resume:pdf` would
-      # build a second time; the step above already wrote dist/client, which is
-      # what the renderer serves.
+      # THE RUNNER'S OWN CHROME IS NOT USED, and the reason is measured. The
+      # golden is compared byte for byte, and its line breaks are a layout
+      # decision some Chrome made. On 2026-09-20 a skills line sat a word from
+      # the right margin, the author's Chrome 153.0.8010.53 and this image's
+      # stable broke it in different places, and the gate failed on a golden
+      # that said the same words as the render it was compared against.
+      #
+      # scripts/resume-chrome.mjs pins one Chrome for Testing build for both
+      # sides. CHROME_PATH is set from its output rather than left to the search
+      # order, so a runner image that exports its own CHROME_PATH cannot quietly
+      # win: the pin is the explicit choice here, not the fallback.
+      - name: Install the pinned Chrome
+        run: echo "CHROME_PATH=$(npm run --silent resume:chrome)" >> "$GITHUB_ENV"
+
+      # `npm run resume:pdf` would build a second time; the step above already
+      # wrote dist/client, which is what the renderer serves.
       - name: Render the sheet
         if: steps.plan.outputs.publish == 'true'
         run: node scripts/resume-sheet.mjs

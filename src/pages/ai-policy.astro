@@ -174,9 +174,9 @@ const TABLE_HEADING = 'font-display text-section text-ink';
         </time>
       </p>
       <div class="mt-7">
-        <!-- collapsible for the same reason the article's rail is: `buildToc`
+        {/* collapsible for the same reason the article's rail is: `buildToc`
              reads the document's own headings, so this list grows with the
-             policy and is twelve items today (issue #113). -->
+             policy and is twelve items today (issue #113). */}
         <TableOfContents toc={sections} label={null} ariaLabel="Policy sections" collapsible />
       </div>
     </aside>
@@ -273,10 +273,10 @@ const TABLE_HEADING = 'font-display text-section text-ink';
           {stale.length > 0 && <span class="text-warn"> · {stale.length} overdue for review</span>}
         </p>
 
-        <!-- The table scrolls inside this container rather than widening the page;
+        {/* The table scrolls inside this container rather than widening the page;
              `tabindex` is what makes a scrollable region reachable without a
              pointer, and the `role`/`aria-label` pair is what stops that tab stop
-             from being an unlabelled one. -->
+             from being an unlabelled one. */}
         <div
           class="mt-8 overflow-x-auto border border-rule"
           role="region"
