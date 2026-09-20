@@ -20,9 +20,9 @@ Bullet markers: 32
 
 --- page 1 of 4 ---
 
-R É S U M É · R Y A N L I N D S E Y R E V 0 . 7 . 0 · 2 0 2 6 - 0 9 - 2 0
+RÉSUMÉ · RYAN LINDSEY REV 0.7.0 · 2026-09-20
 Ryan Lindsey
-S E N I O R E N G I N E E R I N G M A N A G E R , A G E N T I C E N G I N E E R I N G
+SENIOR ENGINEERING MANAGER, AGENTIC ENGINEERING
 BASED Laguna Niguel, CA
 EMAIL hello@ryanlindsey.me
 PHONE (714) 330-6251
@@ -34,7 +34,7 @@ them keep pace. Nineteen years in software, a decade of it leading engineering t
 for an entire engineering organization, I build the agentic tooling that other managers choose to adopt, and I still ship
 the code. The habit underneath all of it is to measure a process before improving it, because the constraint is rarely
 where everyone assumes it is.
-E X P E R I E N C E
+EXPERIENCE
 Weedmaps IRVINE, CA MAR 2016 — PRESENT
 Senior Engineering Manager FEB 2021 — PRESENT
 Own incident management for the entire engineering organization since 2024 and coach fellow engineering managers,
@@ -126,7 +126,7 @@ Freelance ORANGE COUNTY, CA JAN 2001 — JUN 2007
 Web design & development
 • Ran every part of the business: client relationships, project management, design, and development. Built marketing sites,
 online communities, and custom content management systems for local businesses, independent films, and bands.
-P R O J E C T S
+PROJECTS
 Pixelsonly Racing FOUNDER · JUN 2026 — PRESENT PIXELSONLY.RACING
 A sim racing coaching platform that turns telemetry into driver development goals, with a personal AI race engineer for
 every driver, plus a products line for sim racers.
@@ -156,13 +156,13 @@ Home lab AUTHOR · 2020 — PRESENT
 A self-designed home network and service platform: a segmented LAN reached over WireGuard, Traefik routing with
 Cloudflare certificate resolution, several Docker hosts, and a NUT server running the UPS power sequencing I wrote,
 which brings services down and back up in order, with Uptime Kuma as the dashboard.
-E D U C A T I O N
+EDUCATION
 The Art Institute of California · B.S., Interactive Media (HCI) · 2003 — 2007
 Golden West College · A.A., Business Administration · 2001 — 2003
 
 --- page 4 of 4 ---
 
-S K I L L S
+SKILLS
 AGENTIC ENGINEERING MCP servers (Model Context Protocol), Claude Code and Claude Skills, Agent design and tool
 use, Spec-driven agentic development, LLM evals (property-based, LLM-as-judge), Retrieval-
 augmented generation (RAG), Human-in-the-loop controls, AI governance (acceptable use,
@@ -172,9 +172,9 @@ ENGINEERING LEADERSHIP Incident management, Change management (CAB, rollback pla
 executive reporting, Hiring and team growth, Coaching engineering managers, Engineering
 enablement, Cross-functional partnership, Performance management, Native mobile teams
 (iOS, Android), Multi-platform release coordination
-NATIVE MOBILE Swift and SwiftUI, iOS, iPadOS, and watchOS, React Native, App Store delivery and review, App
-Intents, Siri, and Shortcuts, Live Activities and Dynamic Island, On-device Foundation models
-(Apple Intelligence), iCloud sync
+NATIVE MOBILE Swift and SwiftUI, iOS, iPadOS, and watchOS, React Native, App Store delivery and review,
+App Intents, Siri, and Shortcuts, Live Activities and Dynamic Island, On-device Foundation
+models (Apple Intelligence), iCloud sync
 PLATFORM AND DELIVERY Edge compute and caching (Fastly, Cloudflare Workers), Serverless (Durable Objects,
 Workflows, Queues), Kubernetes and Docker, AWS and Terraform, CI/CD and automated
 testing, Blue/green, zero-downtime deployment, Release management, Bot mitigation, API

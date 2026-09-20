@@ -539,20 +539,35 @@ async function waitForReady(cdp, sessionId) {
  * in the middle of three pages of prose. Verified 2026-09-15: two consecutive
  * runs over an unchanged commit write byte-identical goldens.
  *
- * THE TRACKED TEXT COMES OUT SPACED, and it is left that way. Every string the
- * sheet sets with `letter-spacing` -- the document line, the label under the
- * name, the section headings, the dates, the field keys, the skill leads, the
- * foot -- reads back as `R Y A N  L I N D S E Y`, because pdf.js emits one text
- * item per positioned glyph and puts a space between them.
+ * THE TRACKED TEXT USED TO COME OUT SPACED AND WAS LEFT THAT WAY, and this
+ * paragraph is the correction rather than the record. What stood here said the
+ * spacing was "pdf.js being stricter than the field, not the sheet being
+ * broken", and offered pdftotext reading the same bytes cleanly as the proof.
+ * It named the 58pt field-key column as the one string both extractors break,
+ * `EMAIL` as `E MA I L`, and concluded that the contact labels were the only
+ * text a parser genuinely could not recover.
  *
- * That is pdf.js being stricter than the field, not the sheet being broken.
- * Measured the same day against poppler's `pdftotext`, which reads the same
- * bytes as `RÉSUMÉ · RYAN LINDSEY` and `SENIOR ENGINEERING MANAGER`, unspaced.
- * The one string both extractors break is the 58pt field-key column, where
- * `EMAIL` reads as `E MA I L` -- so the labels on the contact block are the
- * only text on the sheet a parser genuinely cannot recover, and the VALUES
- * beside them, which are what anything reading this document is after, come
- * back clean in both.
+ * Every part of that was wrong, and the field disproved it. Uploading the sheet
+ * to Workday parsed the tracked strings as spaced text and filled the form with
+ * them, and the whole résumé had to be re-entered by hand, which is the exact
+ * work an upload exists to avoid. The reading was also backwards: the field-key
+ * column was the one tracked string that survived, and it survived because at
+ * 0.1em it was the least tracked thing on the sheet.
+ *
+ * That measurement is what set the number. `.docline` at 0.16em, `.label` at
+ * 0.14em and `h2` at 0.2em all came back one glyph at a time; `.fields .k` at
+ * 0.1em came back whole. All three now sit at 0.1em and extract clean, verified
+ * 2026-09-20. The three that broke were the name, the job title and the section
+ * headings, which is to say the field an ATS fills first and the headings it
+ * segments a work history by.
+ *
+ * DO NOT RAISE THESE VALUES BACK toward the design's original tracking on the
+ * evidence that one extractor still copes. Every parser draws its own threshold
+ * and this document's whole job is to be read by the ones we cannot test.
+ *
+ * A side effect worth knowing when reading the gate: the word counts per page
+ * fell when this landed, because a spaced heading had been counting as ten
+ * words rather than one. Page one went 647 to 571 on nothing but this change.
  *
  * Normalizing the spacing away here was the tempting alternative and is the
  * wrong one: a golden that post-processes its input can hide the regression it
