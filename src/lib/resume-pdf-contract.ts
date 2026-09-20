@@ -98,7 +98,7 @@
 // bump. It is made anyway for the reason version 3's note gives: the inputs and
 // the contract are independent, and the gate requires the constant to move
 // whenever the golden does.
-export const RESUME_PDF_CONTRACT_VERSION = 7;
+export const RESUME_PDF_CONTRACT_VERSION = 8;
 
 const encoder = new TextEncoder();
 

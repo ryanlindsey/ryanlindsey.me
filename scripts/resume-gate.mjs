@@ -57,8 +57,14 @@ const CONTRACT_SOURCE = 'src/lib/resume-pdf-contract.ts';
 
 const RESUME_YAML = new URL('src/content/resume/ryan-lindsey.yaml', root);
 
-/** Three sheets is the epic's target and the number the current design holds. */
-const MAX_PAGES = 3;
+/**
+ * Four sheets. The epic targeted three, and the constraint was raised on
+ * 2026-09-20 when surfacing multi-platform leadership and a shipped App Store
+ * app would not fit: nineteen years of work is the whole argument this record
+ * makes, and cutting real experience to hold a page count set by nobody but us
+ * inverts what the sheet is for.
+ */
+const MAX_PAGES = 4;
 
 /**
  * The check that would have caught page eight. The frozen file ran 1,346 words
