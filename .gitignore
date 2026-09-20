@@ -30,3 +30,6 @@ ds-bundle/
 # tests/fixtures/resume-sheet-sample.pdf is NOT this file and stays committed:
 # it is #182's frozen render, which the metadata stamper asserts against.
 tests/fixtures/resume-sheet.pdf
+
+# The pinned Chrome for Testing build (scripts/resume-chrome.mjs).
+.chrome/

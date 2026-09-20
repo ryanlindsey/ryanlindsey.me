@@ -29,6 +29,11 @@
  * Adding `puppeteer` proper would pull a ~170 MB browser download into every
  * install of this repo to save perhaps eighty lines of CDP. The protocol below
  * is five commands.
+ *
+ * `@puppeteer/browsers` IS a dependency, added 2026-09-20, and does not breach
+ * that. It ships no browser and downloads one only when `npm run resume:chrome`
+ * asks it to, so the install stays the size it was. scripts/resume-chrome.mjs
+ * says why the version has to be pinned at all.
  */
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -38,6 +43,7 @@ import { homedir, tmpdir } from 'node:os';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
+import { pinnedChromePath } from './resume-chrome.mjs';
 import { extractText, getDocumentProxy } from 'unpdf';
 import { resumePdfMetadata, stampPdfMetadata } from '../src/lib/resume-pdf-metadata.ts';
 
@@ -105,6 +111,11 @@ function chromePaths() {
   return [
     process.env.CHROME_PATH,
     process.env.PUPPETEER_EXECUTABLE_PATH,
+    // The pinned Chrome for Testing build, ahead of every system path: a
+    // machine that has run `npm run resume:chrome` renders in the same browser
+    // CI does, and one that has not falls through to its own Chrome and may
+    // produce a golden the gate rejects. See scripts/resume-chrome.mjs.
+    pinnedChromePath(),
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     join(homedir(), 'Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
     '/Applications/Chromium.app/Contents/MacOS/Chromium',
