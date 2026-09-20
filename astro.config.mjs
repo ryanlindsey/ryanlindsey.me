@@ -157,7 +157,63 @@ export default defineConfig({
       hastPlugins: [headingAnchors],
     }),
   },
+  // The comments in this repository are written for whoever edits it next:
+  // they record what was measured, on what date, and where an earlier version
+  // of the comment was wrong. Several describe the tier boundary, grant
+  // handling and the rate-limit buckets in detail. None of it is written for
+  // the deployment, and the deployment was carrying it.
+  //
+  // Measured 2026-09-20, before this block existed. `dist/client` carried no
+  // comments at all, because Vite minifies client assets and minification
+  // drops them. `dist/server/entry.mjs` carried 787 comment lines on its own,
+  // with hundreds more across the chunks, including the reasoning about grants
+  // and the private tier. The Worker bundle was the whole of the leak.
+  //
+  // THE OBVIOUS FIX DOES NOT WORK HERE, and the reason is worth keeping. The
+  // usual recipe is `build.minify` plus `esbuild.legalComments`, and neither
+  // reaches this bundle. Astro hardcodes `minify: false` for the SSR build in
+  // core/build/vite-build-config.js, commented "improve build performance",
+  // and reads no user value there; the client environment on the same page
+  // does read one. A `vite.environments.ssr.build.minify` does not survive
+  // either, because that block spreads the user's ssr config and then replaces
+  // `build` wholesale. Setting either one looks correct, changes nothing, and
+  // reports no error, which is the failure mode worth naming.
+  //
+  // `rolldownOptions.output` is the one key of the user's ssr config that
+  // block does keep, and Astro 7 builds with Rolldown, whose output options
+  // carry `comments` and `legalComments` of their own. Measured after: 787 to
+  // zero in entry.mjs, and no authored comment left anywhere in dist/server.
+  //
+  // What remains is Rolldown's own `//#region` markers, which are generated
+  // rather than authored and name source paths. They would go under full
+  // minification. That is deliberately not enabled: this Worker's stack traces
+  // are read in production logs, and minified frames cost more there than the
+  // markers do.
+  //
+  // `build.minify` below is for the client half, which is the one place Astro
+  // does read it. Terser would work there too and is not a dependency here,
+  // its minifier is several times slower, and esbuild's already drops every
+  // comment, so adding one to strip what is already stripped buys nothing.
+  //
+  // This reaches the site Worker and its client assets. It does not reach
+  // `ryanlindsey-me-mcp`, which wrangler builds from workers/mcp/ without
+  // consulting this file, so that Worker still ships its comments.
   vite: {
     plugins: [tailwindcss()],
+    build: {
+      minify: 'esbuild',
+    },
+    environments: {
+      ssr: {
+        build: {
+          rolldownOptions: {
+            output: {
+              comments: false,
+              legalComments: 'none',
+            },
+          },
+        },
+      },
+    },
   },
 });
