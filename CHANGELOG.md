@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.34.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.33.0...ryanlindsey-me-v1.34.0) (2026-09-20)
+
+
+### Features
+
+* **resume:** native leadership and shipped iOS app ([#316](https://github.com/ryanlindsey/ryanlindsey.me/issues/316)) ([06fa2a6](https://github.com/ryanlindsey/ryanlindsey.me/commit/06fa2a673e01919d794e63b97e838d36afdf1343))
+
 ## [1.33.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.32.0...ryanlindsey-me-v1.33.0) (2026-09-19)
 
 
