@@ -47,11 +47,11 @@ const OPEN = 'border-t-2 border-ink pt-3 font-mono text-micro uppercase text-ink
 const DIVIDE = 'border-t border-rule pt-3 font-mono text-micro uppercase text-ink-muted';
 ---
 
-<!--
+{/*
   The right rail. It comes AFTER the prose in the DOM on purpose (see
   ArticleLayout.astro): on a narrow screen, where the grid is inactive, a
   reader should not have to scroll past the colophon to reach the article.
--->
+*/}
 <aside data-article-meta-rail class="flex flex-col gap-[22px] lg:sticky lg:top-24">
   <div>
     <p class={OPEN}>Written by</p>
@@ -92,13 +92,13 @@ const DIVIDE = 'border-t border-rule pt-3 font-mono text-micro uppercase text-in
         </a>
       </li>
       <li>
-        <!--
+        {/*
           A bare link to /chat, with no query string. Nothing here may be
           derived from the request: putting the article's title or URL into a
           seeded question would push page-derived content into a URL, which is
           the habit /fit's whole design exists to avoid. The reader arrives at
           the agent and asks it whatever they like.
-        -->
+        */}
         <a href="/chat" class="text-accent">
           Ask my agent about this
         </a>

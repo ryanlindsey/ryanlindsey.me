@@ -188,9 +188,9 @@ const FACT_COLUMNS: Record<number, string> = {
 };
 ---
 
-<!-- 2026-09 redesign (issue #99): long-form is where a sticky 68px header
+{/* 2026-09 redesign (issue #99): long-form is where a sticky 68px header
      earns its keep; this is the only Shell caller that passes stickyHeader,
-     because it is the one template both article routes share. -->
+     because it is the one template both article routes share. */}
 <Shell
   title={title}
   description={description}
@@ -202,26 +202,26 @@ const FACT_COLUMNS: Record<number, string> = {
   <ReadingProgress />
 
   <article>
-    <!-- Full-bleed rule, capped content. The border sits on the outer element
+    {/* Full-bleed rule, capped content. The border sits on the outer element
          so it runs edge to edge the way design 1g draws it, while the masthead
-         text stays inside the site's 1440px cap and 40px gutter. -->
+         text stays inside the site's 1440px cap and 40px gutter. */}
     <header data-masthead={variant} class={masthead.shell}>
       <div class={masthead.inner}>
-        <!-- The kicker moved here from the meta line below (it used to sit
+        {/* The kicker moved here from the meta line below (it used to sit
              between the date and the reading time). data-testid travelled with
              it: tests/case-studies.test.ts asserts a case study's kicker reads
              "Case study", and that assertion should keep failing on a page
-             that has stopped showing one. -->
+             that has stopped showing one. */}
         <p class={masthead.kicker} data-testid="article-kicker">
           {kicker}
         </p>
         <h1 class={masthead.title}>{title}</h1>
         <p class={masthead.standfirst}>{description}</p>
-        <!-- data-masthead-meta is a styling hook, not a test hook: the two
+        {/* data-masthead-meta is a styling hook, not a test hook: the two
              rules in global.css that have to reach past `[&_p]:text-bg` (the
              no-JS dark path and the print pin) need a selector for this
              wrapper, and `[data-masthead='case-study'] p` would take the
-             kicker and the standfirst with it. -->
+             kicker and the standfirst with it. */}
         <div data-masthead-meta class={masthead.meta}>
           <ArticleMeta publishedAt={publishedAt} updatedAt={updatedAt} readingTime={readingTime} />
         </div>
@@ -277,7 +277,7 @@ const FACT_COLUMNS: Record<number, string> = {
       </div>
     )}
 
-    <!--
+    {/*
       The three-column spine. 220px contents / the measure / 240px meta, which
       is the answer to the brief this whole redesign was written against: the
       centre column is WIDER than the old site (prose-rl carries 72ch) and the
@@ -315,22 +315,22 @@ const FACT_COLUMNS: Record<number, string> = {
       Applied at every width, not gated at `lg`. Below the breakpoint the three
       children stack and the contents rail is what lands under the masthead, so
       it is the same seam and it was equally tight.
-    -->
+    */}
     <div class="mx-auto max-w-[1440px] px-10 pb-[60px] pt-9 lg:grid lg:grid-cols-[220px_minmax(0,1fr)_240px] lg:items-start lg:gap-12">
       <aside data-article-toc class="mb-12 lg:mb-0 lg:sticky lg:top-24">
-        <!-- lg:top-24 (96px), not the 32px lg:top-8 this rail shipped with
+        {/* lg:top-24 (96px), not the 32px lg:top-8 this rail shipped with
              before the 2026-09 redesign made the header sticky on this
              template. Both this rail and the header are `position: sticky`
              at `z-index: auto`, so paint order follows tree order -- at 32px
              the rail, being later in the DOM, drew over the 68px header as
              soon as the reader scrolled. 96px is the offset global.css's
              `scroll-padding-top` comment already claims for this rail; this
-             is what makes that claim true. -->
-        <!-- collapsible: below `lg` this rail is built from the article's own
+             is what makes that claim true. */}
+        {/* collapsible: below `lg` this rail is built from the article's own
              headings and is therefore unbounded. Issue #113 measured it at
              330px on an eight-heading article, sitting between the masthead and
              the first paragraph. /resume's rail is four fixed items and stays a
-             plain list; the asymmetry is the decision, not an oversight. -->
+             plain list; the asymmetry is the decision, not an oversight. */}
         <TableOfContents toc={toc} collapsible />
       </aside>
 

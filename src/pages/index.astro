@@ -37,7 +37,7 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
   description="Ryan Lindsey writes about agentic engineering and engineering leadership. This site also carries a full resume and an agent that answers questions about the work."
   markdownHref="/index.md"
 >
-  <!--
+  {/*
     THE ONE `dark:` VARIANT IN THE WHOLE REDESIGN, and it is deliberate.
     The epic's global constraints say no `dark:` variant is needed anywhere,
     because every token is redeclared per theme and the utilities therefore
@@ -60,7 +60,7 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
     global.css carries the matching `prefers-color-scheme` rule for that path,
     guarded with `:not([data-theme='light'])` the way tokens.css guards its
     own no-JS block. Both have to change together.
-  -->
+  */}
   <section
     class="bg-ink text-bg dark:border-b dark:border-rule dark:bg-surface-raised dark:text-ink"
     data-now-strip
