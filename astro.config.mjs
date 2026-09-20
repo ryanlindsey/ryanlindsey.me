@@ -184,6 +184,20 @@ export default defineConfig({
   // carry `comments` and `legalComments` of their own. Measured after: 787 to
   // zero in entry.mjs, and no authored comment left anywhere in dist/server.
   //
+  // `comments: false` drops third-party license banners along with the authored
+  // ones, and Rolldown offers no setting between the two. Measured 2026-09-20:
+  // `comments: { legal: true }` keeps all 3909 authored comment lines and three
+  // files carrying a copyright notice; `comments: false` takes both. `legal` is
+  // the only key the object accepts, `normal` is rejected as an invalid key,
+  // and an invalid key voids the whole option so every comment comes back.
+  //
+  // Taking both is the right trade HERE and would not be everywhere. This
+  // bundle runs on the server and is never served to anyone, so no copy of it
+  // leaves Cloudflare. dist/client, which IS served, is untouched by this and
+  // already carried neither authored comments nor a notice. The MCP Worker
+  // keeps its `content-type` MIT banner, because wrangler builds it with
+  // esbuild, whose `legalComments` does have the middle setting this lacks.
+  //
   // What remains is Rolldown's own `//#region` markers, which are generated
   // rather than authored and name source paths. They would go under full
   // minification. That is deliberately not enabled: this Worker's stack traces
@@ -209,7 +223,6 @@ export default defineConfig({
           rolldownOptions: {
             output: {
               comments: false,
-              legalComments: 'none',
             },
           },
         },
