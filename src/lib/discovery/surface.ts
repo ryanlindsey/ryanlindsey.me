@@ -21,6 +21,14 @@ export interface AdvertisedEndpoint {
   displayName: string;
   mediaType: string;
   representativeQueries: string[];
+  /**
+   * A document that DESCRIBES the endpoint, for the manifest builders that
+   * want one, while `path` stays the endpoint itself for the linkset. Added
+   * 2026-09-20 for the MCP server: SEP-2127 has the AI Catalog entry point
+   * at the server card with the card's media type, and RFC 9727's linkset
+   * still names the API. Absent on every entry that is its own description.
+   */
+  descriptor?: { path: string; mediaType: string };
 }
 
 export const ADVERTISED_SURFACE = [
@@ -29,7 +37,19 @@ export const ADVERTISED_SURFACE = [
     namespace: 'mcp',
     name: 'corpus',
     displayName: 'Model Context Protocol endpoint',
+    // UNREAD WHILE THE DESCRIPTOR BELOW IS PRESENT, and kept regardless: the
+    // manifest builder takes the descriptor's type instead and the linkset
+    // builder reads no media type at all, so nothing currently consumes this
+    // line. It stays because the field is required and because it is what
+    // this entry reverts to if the descriptor ever goes. It is also the
+    // weakest claim in this list -- `GET /mcp` answers 405, never a JSON body
+    // -- which is a second reason not to let a builder read it again without
+    // deciding what it should say.
     mediaType: 'application/json',
+    // A literal rather than an import of `SERVER_CARD_MEDIA_TYPE`: this file
+    // is the leaf every builder imports and must import nothing back.
+    // tests/discovery-catalog.test.ts pins the two equal.
+    descriptor: { path: '/mcp/server-card', mediaType: 'application/mcp-server-card+json' },
     representativeQueries: [
       'What has Ryan Lindsey written about agent-native sites?',
       'Show me the case studies in this portfolio',

@@ -54,6 +54,17 @@ export interface ArdManifest {
 }
 
 /**
+ * ai-catalog.io/guides/serving-your-catalog, read 2026-09-20: "Serve the
+ * file over HTTPS with the Content-Type header: application/ai-catalog+json".
+ * The site served `application/json` from #168 until 2026-09-20 because the
+ * type had not been checked against the spec. No charset, for the reason the
+ * linkset rule in public/_headers gives: a `+json` type is registered without
+ * one. IANA has neither this type nor the `ai-catalog` relation registered
+ * as of 2026-09-20; the spec's IANA Considerations section requests both.
+ */
+export const AI_CATALOG_MEDIA_TYPE = 'application/ai-catalog+json';
+
+/**
  * `/.well-known/ai-catalog.json`, this site's ARD (AI-Readable Data) manifest
  * -- the same surface `buildApiCatalog` describes in RFC 9727's vocabulary,
  * described again in the ARD specification's own vocabulary. ONE list feeds
@@ -100,12 +111,26 @@ export function buildAiCatalog(origin: string): ArdManifest {
     // identify the Worker serving this document (not the person) regardless
     // of which origin's copy is being read.
     host: { displayName: 'ryanlindsey-me' },
-    entries: ADVERTISED_SURFACE.map((endpoint) => ({
-      identifier: `urn:air:ryanlindsey.me:${endpoint.namespace}:${endpoint.name}`,
-      displayName: endpoint.displayName,
-      type: endpoint.mediaType,
-      url: `${origin}${endpoint.path}`,
-      representativeQueries: endpoint.representativeQueries,
-    })),
+    entries: ADVERTISED_SURFACE.map((endpoint) => {
+      // The descriptor when there is one (./surface.ts says why): SEP-2127 has
+      // the MCP entry point at the server card, not the endpoint.
+      //
+      // `'descriptor' in endpoint`, not `endpoint.descriptor?.`. ./surface.ts
+      // closes with `as const satisfies`, so ADVERTISED_SURFACE's element type
+      // is a UNION of one literal object type per entry, and only the member
+      // carrying a descriptor declares the property at all -- optional-chaining
+      // straight off the union is ts(2339) on the other seven, which `npm test`
+      // would never have told us (it does not typecheck). An `in` check narrows
+      // the union instead, the same idiom tests/discovery-catalog.test.ts uses
+      // to skip the described entries.
+      const descriptor = 'descriptor' in endpoint ? endpoint.descriptor : undefined;
+      return {
+        identifier: `urn:air:ryanlindsey.me:${endpoint.namespace}:${endpoint.name}`,
+        displayName: endpoint.displayName,
+        type: descriptor?.mediaType ?? endpoint.mediaType,
+        url: `${origin}${descriptor?.path ?? endpoint.path}`,
+        representativeQueries: endpoint.representativeQueries,
+      };
+    }),
   };
 }

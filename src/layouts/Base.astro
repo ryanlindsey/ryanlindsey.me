@@ -199,6 +199,11 @@ const jsonLdNodes = [
        rel="describedby" yet. Shipped because it is free and correct, not
        because anything is known to consume it. */}
     <link rel="describedby" href="/llms.txt" />
+    {/* rel="ard" is ARD v0.91's HTML discovery mechanism (ards-project/ard-spec
+       §5.1, 2026-08-26): a consumer "MUST honour a rel="ard" link". Sitewide
+       like the feed links above, because the manifest describes the site.
+       Not in IANA's link-relations registry as of 2026-09-20. */}
+    <link rel="ard" href="/.well-known/ard.json" />
     {
       /* rel="alternate" has pre-existing adoption (OpenAI's Codex CLI
        follows it) and points at THIS page's own markdown twin -- so unlike

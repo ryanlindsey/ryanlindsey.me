@@ -184,7 +184,26 @@
 # browser's own CORS check. No other rule in this file sets either header for
 # this exact path, so there is nothing here for Cloudflare to comma-join --
 # see the file-header note if that stops being true.
+#
+# `application/ai-catalog+json` is the type the AI Catalog spec's serving guide
+# names (read 2026-09-20); no charset, as with the linkset rule above. This
+# rule shipped `application/json; charset=utf-8` from #168 until then, because
+# the type had never been checked against the spec.
 /.well-known/ai-catalog.json
+  Content-Type: application/ai-catalog+json
+  Access-Control-Allow-Origin: *
+
+# /.well-known/ard.json (src/pages/.well-known/ard.json.ts), the same manifest
+# under ARD v0.91's name. Same CORS header as ai-catalog.json above and for the
+# same reason; an exact path, so nothing overlaps.
+#
+# THE SAME BYTES UNDER A DIFFERENT TYPE, deliberately rather than by oversight.
+# ARD v0.91 names no media type for this file, so it takes the generic JSON
+# type this repository gives any document with no registered one. Labelling it
+# `application/ai-catalog+json` would be the odder claim of the two: ARD treats
+# ai-catalog as a PREDECESSOR format, so that type would name the older spec on
+# the newer spec's own path.
+/.well-known/ard.json
   Content-Type: application/json; charset=utf-8
   Access-Control-Allow-Origin: *
 
@@ -257,14 +276,16 @@
 # two _headers rules being joined the way the file-header note above warns
 # about. A second `/*` rule that also set `Link` would still parse and still
 # mean something, which is the worst kind of wrong: do not "fix" this into one.
-# The four targets are the discovery documents issues #166-#169 shipped
+# Five targets. Four are the discovery documents issues #166-#169 shipped
 # (the MCP Server Card, the RFC 9727 API catalog, the agent skills index, and
-# /llms.txt); `rel` values are the ones IANA's Link Relations registry defines
-# for each (service-desc, api-catalog, describedby, service-doc).
+# /llms.txt), whose `rel` values are the ones IANA's Link Relations registry
+# defines for each (service-desc, api-catalog, describedby, service-doc). The
+# fifth is the ARD manifest: `ard` is ARD v0.91's own relation, unregistered
+# with IANA as of 2026-09-20 like the well-known path it names.
 # tests/discovery-link-headers.test.ts pins the parsed relations, fetches every
 # target for a live 200, and counts the `</` occurrences to catch a reversion to
 # two joined rules.
 /*
   X-For-AI-Agents: You're welcome here. Start at /llms.txt
   X-MCP-Server: https://ryanlindsey.me/mcp
-  Link: </.well-known/mcp/server-card.json>; rel="service-desc", </.well-known/api-catalog>; rel="api-catalog", </.well-known/agent-skills/index.json>; rel="describedby", </llms.txt>; rel="service-doc"
+  Link: </.well-known/mcp/server-card.json>; rel="service-desc", </.well-known/api-catalog>; rel="api-catalog", </.well-known/agent-skills/index.json>; rel="describedby", </llms.txt>; rel="service-doc", </.well-known/ard.json>; rel="ard"

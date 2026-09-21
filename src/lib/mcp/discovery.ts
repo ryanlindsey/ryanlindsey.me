@@ -102,6 +102,19 @@ export function buildMcpRobotsTxt(): string {
 # anything from the \`*\` group (RFC 9309 §2.2.1), so both groups state
 # \`Allow: /\` explicitly rather than one leaning on the other.
 
+# ARD's Agentmap directive (ards-project/ard-spec §5.1) names the SITE's
+# manifest, because this origin serves no catalog: its entries name /llms.txt,
+# the résumé documents and the feeds at the serving origin, and this host
+# serves none of those. The pointer crosses origins on purpose.
+#
+# ABOVE the groups, not inside one, matching the site's own robots.txt: like
+# \`Sitemap:\` it is group-independent, so it belongs to the file rather than to
+# any \`User-agent\` group. RFC 9309 §2.2.4 has a crawler ignore an
+# unrecognized line wherever it sits, so this placement changes no behavior --
+# it is here so the two files do not teach a reader comparing them that one
+# position or the other is meaningful.
+Agentmap: https://ryanlindsey.me/.well-known/ard.json
+
 User-agent: *
 Allow: /
 

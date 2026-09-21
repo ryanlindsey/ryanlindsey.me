@@ -164,6 +164,20 @@ const HANDLER_OPTIONS = {
  * field is this identical literal, on THIS origin's `/.well-known/mcp.json`
  * response), so this is the second instance of an existing pattern, not a
  * new one.
+ *
+ * STILL TWO after 2026-09-21, and that is a decision rather than an omission.
+ * The site's header gained a fifth relation then, `ard`, naming the ARD
+ * manifest, and this origin's robots.txt gained an `Agentmap:` line pointing
+ * across origins at that same manifest -- so this origin now names that
+ * document in one place and not in the other. `service-doc`'s reasoning above
+ * transfers to `ard` exactly and would justify adding it, since the manifest
+ * is another document this origin does not serve but can usefully name. It
+ * was left out because #312 scoped itself to serving the manifest, and
+ * because tests/discovery-link-headers.test.ts's "the MCP origin advertises
+ * only the documents it actually serves" reads this header as the statement
+ * of what this origin has, which a cross-origin `ard` would complicate for a
+ * reason worth deciding on its own rather than in passing. Recorded so the
+ * next reader finds a decision here instead of re-deriving the question.
  */
 function discoveryLinkHeader(): string {
   return [

@@ -92,7 +92,7 @@ Every draft has a real route by design. `src/lib/unindexed-routes.mjs` is what k
 
 ### DNS, which this repository does not manage
 
-The `ryanlindsey.me` zone carries two DNS-AID entrypoint records, added by hand in the Cloudflare dashboard. `_index._agents` is a ServiceMode SVCB record targeting the apex, and the document it stands for is `/.well-known/ai-catalog.json`. `_mcp._agents` targets `mcp.ryanlindsey.me`, and the endpoint path comes from the server card at `/.well-known/mcp/server-card.json`.
+The `ryanlindsey.me` zone carries two DNS-AID entrypoint records, added by hand in the Cloudflare dashboard. `_index._agents` is a ServiceMode SVCB record targeting the apex, and the document it stands for is `/.well-known/ai-catalog.json`. That is still the predecessor name: the same manifest is also served as `/.well-known/ard.json`, which is what ARD v0.91 tells a consumer to fetch and what `rel="ard"`, the `Link` header and both robots files point at. Neither is the removable one. `_mcp._agents` targets `mcp.ryanlindsey.me`, and the endpoint path comes from the server card at `/.well-known/mcp/server-card.json`.
 
 Neither record names its own path, and not by choice. The draft defines a `well-known` service parameter for exactly that job, and Cloudflare rejects it: the parameter has no assigned IANA key number, and an unknown key fails validation. So each record carries `alpn` and `port`, and the path lives one fetch away in the document its target serves. Moving or renaming either document breaks a DNS record that no test in this repository can see.
 
