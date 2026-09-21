@@ -5,6 +5,7 @@ import { CORPUS_CRON, evalsRunEnabled, suitesForCron } from '../../../src/lib/ev
 import { buildMcpDiscovery, buildMcpRobotsTxt } from '../../../src/lib/mcp/discovery';
 import { forwardedBySite } from '../../../src/lib/mcp/via';
 import { buildMcpServerCard } from '../../../src/lib/discovery/server-card';
+import { serverCardResponse } from '../../../src/lib/discovery/server-card-v1';
 import { buildProtectedResource } from '../../../src/lib/discovery/protected-resource';
 import { handleChat } from './chat';
 import { handleGrantContext } from './grant-context';
@@ -211,6 +212,16 @@ async function dispatch(request: Request, env: McpEnv, ctx: ExecutionContext): P
         Link: discoveryLinkHeader(),
       },
     });
+  }
+
+  // The SEP-2127 card at the place its spec reserves, `<streamable-http-url>/
+  // server-card`. Routed here for the same reason every document above is:
+  // HANDLER_OPTIONS answers exactly `/mcp` and 404s everything else it sees,
+  // so this path never reaches anything that could answer it otherwise. The
+  // SEP-1649 card above stays; src/lib/discovery/server-card-v1.ts says why
+  // both exist.
+  if (pathname === '/mcp/server-card') {
+    return serverCardResponse(MCP_ORIGIN, request);
   }
 
   // Issue #167 (epic #165, "agent readiness"): RFC 9728 protected-resource
