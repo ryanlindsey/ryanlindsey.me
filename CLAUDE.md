@@ -23,6 +23,7 @@ Deploys run on Workers Builds from `main`. CI has no deploy step. It holds exact
 | `npm run evals`                   | the model evals, against a deployed endpoint (see `evals/README.md`)    |
 | `npm run token`                   | mint, list and revoke scoped tokens                                     |
 | `npm run private-doc`             | put one document into the private R2 bucket                             |
+| `npm run registry:publish`        | publish the registry entry, owner-run under `op run`                    |
 | `npm run resume:pdf`              | `astro build` then render the résumé sheet and its golden extraction    |
 | `npm run resume:gate`             | assert the rendered sheet, needs poppler and a prior render             |
 
@@ -139,6 +140,8 @@ Prompts are code. They change by pull request and this suite is what gates them.
 `scripts/preview-fit.mts` is how you look at `/fit` and `/fit/r/<id>` before shipping a change to either, and `npm run dev` is not. Both routes are on-demand and grant-gated, so astro dev serves them the flattened 404 and nothing else: there is no token its grant check will honor and no `fit_reports` row to read. The script boots the same harness the suite boots, which is the only thing here that can forge a grant, then mints a `fit`-scoped token, inserts a report, and prints the three URLs. It reaches no credential and no remote service. Read the header before trusting it, in particular why minting a token in a public repository gives nobody anything, and what the preview deliberately cannot do.
 
 `scripts/private-doc.mjs` is invoked from the directory holding the document, not from here. The mechanism is generic and lives in this repo; every document it deploys is authored outside every repository, so nothing it writes enters any history rather than merely staying out of this one.
+
+`scripts/registry-publish.mjs` publishes this server's entry to the official MCP Registry under the `me.ryanlindsey` namespace. It builds the entry from `src/lib/discovery/registry-entry.ts`; issue 02 will read this same builder for the SEP-2127 card, so the registry and the card cannot disagree and no copy of the version is committed for release-please to bump. The namespace is proved by `/.well-known/mcp-registry-auth`, one line carrying the public key, and the private key reaches the script only through `op run`. It needs `mcp-publisher` installed, which is not a dependency of this repository.
 
 ## The one credential in CI
 
