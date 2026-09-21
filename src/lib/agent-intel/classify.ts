@@ -43,20 +43,38 @@ export interface Classification {
 /**
  * Known AI clients, most specific first.
  *
- * ORDER IS LOAD-BEARING in two places, and both are real UA strings rather than
- * hypotheticals: `Claude-User` and `Claude-SearchBot` must precede `ClaudeBot`
- * (the shorter is not a prefix of the longer, but a future `ClaudeBot-User`
- * would make it one), and `Applebot-Extended` must precede `Applebot`, which it
- * genuinely is a prefix of. A first-match loop over an ordered list is the
- * cheapest structure that makes that orderable at all.
+ * ORDER IS LOAD-BEARING in three places, and all three are real UA strings
+ * rather than hypotheticals: `Claude-User` and `Claude-SearchBot` must precede
+ * `ClaudeBot` (the shorter is not a prefix of the longer, but a future
+ * `ClaudeBot-User` would make it one), `Applebot-Extended` must precede
+ * `Applebot`, which it genuinely is a prefix of, and `claude-code` must precede
+ * `anthropic-ai`, because Claude Code ships as the npm package
+ * `@anthropic-ai/claude-code` and a client naming itself after the package
+ * rather than the product contains both strings. A first-match loop over an
+ * ordered list is the cheapest structure that makes that orderable at all.
  *
  * The label is what /ops renders and what the Analytics Engine row carries, so
- * it is written the way the operator of that crawler writes it.
+ * it is written the way the operator of that crawler writes it. `Claude-Code`
+ * is the one label that is the product name rather than the observed token,
+ * and the entry below says why.
+ *
+ * Since 2026-09-20 the list also names MCP developer clients, added from
+ * strings seen in `mcp_tool_calls.user_agent` rather than from vendor
+ * documentation, because those clients publish none.
  */
 const KNOWN_AGENTS: readonly (readonly [RegExp, string])[] = [
   [/Claude-SearchBot/i, 'Claude-SearchBot'],
   [/Claude-User/i, 'Claude-User'],
   [/ClaudeBot/i, 'ClaudeBot'],
+  // The first MCP developer client on this list, and the reason the list
+  // stopped being crawlers only. MEASURED 2026-09-20, the first real client
+  // to connect to the deployed private tier: `claude-code/2.1.278 (sdk-cli)`.
+  // Hyphenated lower-case in the wild; labelled the way Anthropic writes the
+  // product name. Ordered after ClaudeBot for readability, since neither
+  // string contains the other. It must stay AHEAD of `anthropic-ai`: the npm
+  // package is `@anthropic-ai/claude-code`, so a client naming itself after
+  // the package matches both, and moving this row down relabels it.
+  [/claude-code/i, 'Claude-Code'],
   [/anthropic-ai/i, 'anthropic-ai'],
   [/ChatGPT-User/i, 'ChatGPT-User'],
   [/OAI-SearchBot/i, 'OAI-SearchBot'],
@@ -291,7 +309,9 @@ function qualityOf(accept: string, type: string): number | null {
  * The rules, in order, and the order is the design:
  *
  * 1. A named AI client wins outright. Its own UA is the most reliable thing
- *    about it, and every operator in `KNOWN_AGENTS` publishes theirs.
+ *    about it, and every crawler operator in `KNOWN_AGENTS` publishes theirs.
+ *    The developer clients on that list publish none; their entries come from
+ *    a measured string instead, which the list's own comment explains.
  * 2. First-party, then ordinary HTTP clients, then the generic bot catch-all.
  * 3. `Sec-Fetch-Mode` present -> browser. This runs AFTER the UA rules on
  *    purpose: a headless browser driving a crawl sends it too, and when the UA
