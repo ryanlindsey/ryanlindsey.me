@@ -88,6 +88,27 @@ test('an authorization header the server cannot read is refused, not treated as 
   }
 });
 
+test('an authorization header present but empty is still an anonymous caller, not a refusal', async () => {
+  // MEASURED 2026-09-20: this is the one case in the branch above where the
+  // header IS present on the request -- `authorization: ''` -- and it must
+  // NOT be a refusal. `resolveGrant`'s `header ? ... : ...` and `bearerFrom`'s
+  // `if (!header) return null;` are two separate falsy checks over the same
+  // `Headers.get('authorization')` value, and the rule holds only because
+  // both treat an empty string the same way as absent. Fetch's `Headers.get`
+  // returns `null` for a header that was never sent and `''` (not `null`) for
+  // one sent with an empty value -- confirmed directly against this runtime's
+  // `Request` -- so this is a real, distinct input from "no header at all"
+  // and deserves its own assertion rather than resting on that symmetry
+  // holding by accident.
+  const { grant, refusal } = await resolveGrant(
+    env,
+    new Request('https://mcp.example/mcp', { headers: { authorization: '' } }),
+    NOW,
+  );
+  expect(grant).toBeNull();
+  expect(refusal).toBeNull();
+});
+
 test('no authorization header at all is still an anonymous caller', async () => {
   const { grant, refusal } = await resolveGrant(env, new Request('https://mcp.example/mcp'), NOW);
   expect(grant).toBeNull();
