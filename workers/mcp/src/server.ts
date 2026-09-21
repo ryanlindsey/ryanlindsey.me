@@ -6,35 +6,38 @@ import { registerResources } from './resources';
 import { registerTools } from './tools';
 
 /**
- * Sent on every `initialize` (03 §1), so this is a tool MAP rather than
- * prose on purpose: tests/mcp.smoke.test.ts's "the instructions name every
- * registered tool" enumerates `tools/list` at runtime and fails the moment a
- * later task adds a tool without a matching line here.
+ * PUBLIC_TOOL_MAP below is sent on every `initialize` (03 §1) -- directly to
+ * a grant, and embedded in PUBLIC_INSTRUCTIONS for everyone else -- so it is
+ * a tool MAP rather than prose on purpose: tests/mcp.smoke.test.ts's "the
+ * instructions name every registered tool" enumerates `tools/list` at
+ * runtime and fails the moment a later task adds a tool without a matching
+ * line in PUBLIC_TOOL_MAP.
  *
- * 03 §1's ~1200-character budget is THIS string's, and saying which string it
- * governs matters now that there is more than one. Measured 2026-09-08: this
- * constant is 922 characters, and the instructions a grant carrying all four
- * reader scopes was sent were 1364. Re-measured 2026-09-20 after
- * PRIVATE_TIER_HINT stopped being sent to a grant: 1383. The larger number is
- * not an overrun to trim: the
+ * 03 §1's ~1200-character budget is PUBLIC_INSTRUCTIONS's, and saying which
+ * string it governs matters now that there is more than one. Measured
+ * 2026-09-08: PUBLIC_INSTRUCTIONS is 922 characters, and the instructions a
+ * grant carrying all four reader scopes was sent were 1364. Re-measured
+ * 2026-09-20 after PRIVATE_TIER_HINT stopped being sent to a grant: 1383. The
+ * larger number is not an overrun to trim: the
  * budget describes what every client is sent on an unauthenticated connect,
  * and a per-token map that enumerates the tools a grant unlocked is the whole
- * point of `buildInstructions` below. Keep THIS one under the budget; let the
- * granted one be as long as the grant makes it. The two `resume://json` /
- * `writing://{slug}` resources get their own line for the same reason
- * `/llms.txt`'s MCP description (src/pages/llms.txt.ts) names both: two texts
- * describing the same server should not disagree about what it serves.
+ * point of `buildInstructions` below. Keep PUBLIC_INSTRUCTIONS under the
+ * budget; let the granted one be as long as the grant makes it. The two
+ * `resume://json` / `writing://{slug}` resources get their own line for the
+ * same reason `/llms.txt`'s MCP description (src/pages/llms.txt.ts) names
+ * both: two texts describing the same server should not disagree about what
+ * it serves.
  *
- * Candidacy-language discipline (09 §2/§4) applies to this string exactly as
- * it does to `request_private_access`'s copy in ./tools.ts: never `for hire`,
- * `candidate`, `job-search`, `recruiter`. The vocabulary here is *audience
- * tiers*, *private tier*, *scoped tokens*.
+ * Candidacy-language discipline (09 §2/§4) applies to PUBLIC_TOOL_MAP and
+ * PRIVATE_TIER_HINT exactly as it does to `request_private_access`'s copy in
+ * ./tools.ts: never `for hire`, `candidate`, `job-search`, `recruiter`. The
+ * vocabulary here is *audience tiers*, *private tier*, *scoped tokens*.
  *
  * ASSERTED VERBATIM in tests/mcp.smoke.test.ts, and day 5 kept it that way on
- * purpose: an untokened connection is served exactly this string and nothing
- * appended, so the private tier is invisible in the handshake as well as in
- * `tools/list`. Everything day 5 adds is in `buildInstructions` below, which
- * reaches this constant only through the branches a token opens.
+ * purpose: an untokened connection is served exactly PUBLIC_INSTRUCTIONS and
+ * nothing appended, so the private tier is invisible in the handshake as well
+ * as in `tools/list`. Everything day 5 adds is in `buildInstructions` below,
+ * which reaches PUBLIC_INSTRUCTIONS only through the branches a token opens.
  */
 /**
  * The tool map every caller is sent: the public tools, one line each, and the
