@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.35.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.34.0...ryanlindsey-me-v1.35.0) (2026-09-21)
+
+
+### Features
+
+* **mcp:** record an Analytics Engine row for a direct /mcp request ([#321](https://github.com/ryanlindsey/ryanlindsey.me/issues/321)) ([792b8a2](https://github.com/ryanlindsey/ryanlindsey.me/commit/792b8a28283bf3a9ce556f37a542a30e0f654425))
+* **tier:** report which fixed private documents are deployed ([#319](https://github.com/ryanlindsey/ryanlindsey.me/issues/319)) ([83ce33d](https://github.com/ryanlindsey/ryanlindsey.me/commit/83ce33db900032d8d820d00d3aed907ab5e167d3))
+* **token:** add a calls subcommand that reports what a token or audience has read ([#318](https://github.com/ryanlindsey/ryanlindsey.me/issues/318)) ([b820f79](https://github.com/ryanlindsey/ryanlindsey.me/commit/b820f79e5fa9c8d025272bcc89c391c94603ff3a))
+
+
+### Bug Fixes
+
+* **mcp:** stop telling a granted connection to request the tier it is on ([#322](https://github.com/ryanlindsey/ryanlindsey.me/issues/322)) ([7361b3a](https://github.com/ryanlindsey/ryanlindsey.me/commit/7361b3aee9455cec918b93204cdf5e6327600ac1))
+* **tier:** refuse an authorization header the server cannot read instead of ignoring it ([#320](https://github.com/ryanlindsey/ryanlindsey.me/issues/320)) ([7582b7b](https://github.com/ryanlindsey/ryanlindsey.me/commit/7582b7bdf2f2509f7a7fcc8d2de92db2d2e11859))
+
 ## [1.34.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.33.0...ryanlindsey-me-v1.34.0) (2026-09-20)
 
 
