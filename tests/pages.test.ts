@@ -2337,11 +2337,13 @@ test('/mcp is not swallowed by the SPA 404 page', async () => {
   expect(response.headers.get('content-type') ?? '').not.toContain('text/html');
 });
 
-test('/mcp/server-card on the site origin is forwarded, not swallowed by the SPA 404 page', async () => {
-  // The first sub-path under /mcp anywhere. It needs both the forward in
-  // src/worker.ts and its own `run_worker_first` entry in wrangler.jsonc,
-  // and this is the test that catches either one missing: without the entry
-  // the asset router serves the prerendered 404 and never reaches the Worker.
+test('/mcp/server-card on the site origin is served, not swallowed by the SPA 404 page', async () => {
+  // The first sub-path under /mcp anywhere: `/mcp` is an exact
+  // `run_worker_first` entry, so `/mcp/server-card` needs its own line.
+  // Measured 2026-09-21, before that line existed: this assertion failed
+  // with "expected 404 to be 200", because the asset router served the
+  // prerendered 404 and the on-demand route (src/pages/mcp/server-card.ts)
+  // never ran. That is what this test guards against.
   const response = await server.fetch('/mcp/server-card');
   expect(response.status).toBe(200);
   expect(response.headers.get('content-type')).toBe('application/mcp-server-card+json');
