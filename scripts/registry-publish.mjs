@@ -52,11 +52,29 @@ const dir = mkdtempSync(join(tmpdir(), 'rlme-registry-'));
 try {
   writeFileSync(join(dir, 'server.json'), `${JSON.stringify(entry, null, 2)}\n`);
   const { MCP_REGISTRY_PRIVATE_KEY: _withheld, ...env } = process.env;
-  execFileSync('mcp-publisher', ['login', 'http', '--domain', DOMAIN, '--private-key', key], {
-    stdio: 'inherit',
-    env,
-  });
-  execFileSync('mcp-publisher', ['publish'], { cwd: dir, stdio: 'inherit', env });
+
+  // Node exposes spawnargs in uncaught exceptions (ENOENT case) and puts the
+  // full argv — including the private key — into err.message on non-zero exit.
+  // Measured 2026-09-21: catch and discard both error details to keep the key
+  // off stderr; stdio: 'inherit' lets the publisher's own output still reach
+  // the owner.
+  try {
+    execFileSync('mcp-publisher', ['login', 'http', '--domain', DOMAIN, '--private-key', key], {
+      stdio: 'inherit',
+      env,
+    });
+  } catch (err) {
+    throw new Error(
+      'mcp-publisher login failed; run with MCP_REGISTRY_PRIVATE_KEY exported via op run',
+    );
+  }
+
+  try {
+    execFileSync('mcp-publisher', ['publish'], { cwd: dir, stdio: 'inherit', env });
+  } catch (err) {
+    throw new Error('mcp-publisher publish failed');
+  }
+
   process.stdout.write(`published ${entry.name}@${entry.version}\n`);
 } finally {
   rmSync(dir, { recursive: true, force: true });
