@@ -358,6 +358,44 @@ describe('invisibility without a grant', () => {
     // an oracle for probing tokens.
     expect(json.result.instructions).toMatch(/was not accepted/i);
   });
+
+  test('a bare token with no scheme is served the public tier and told so', async () => {
+    const token = await tokenFor(['profile']);
+    const response = await server.getWorker('ryanlindsey-me-mcp').fetch('/mcp', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        authorization: token,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: ++id,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'bare-token-test', version: '1' },
+        },
+      }),
+    });
+    const text = await response.text();
+    const payload =
+      text.startsWith('event:') || text.startsWith('data:')
+        ? text
+            .split('\n')
+            .find((line) => line.startsWith('data:'))!
+            .slice(5)
+            .trim()
+        : text;
+    const json = JSON.parse(payload);
+    // Served, not broken: the public tier answers, and the one unspecific
+    // sentence a refused caller gets is there. The tool count is what a client
+    // like claude.ai shows its user, so it is asserted too.
+    expect(response.status).toBe(200);
+    expect(json.result.instructions).toMatch(/was not accepted/i);
+    expect(json.result.instructions).not.toContain('It also has:');
+  });
 });
 
 describe('with a grant', () => {

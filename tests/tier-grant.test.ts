@@ -70,6 +70,51 @@ test('bearerFrom reads the header case-insensitively and tolerates its absence',
   expect(bearerFrom(undefined)).toBeNull();
 });
 
+test('an authorization header the server cannot read is refused, not treated as anonymous', async () => {
+  // MEASURED 2026-09-20: a reader pasted the bare credential into a client's
+  // header field. The header reached the Worker and the connection was served
+  // the public tier with nothing logged, because `null, null` is what an
+  // anonymous caller gets and nothing distinguished the two. Each value below
+  // is a header that IS present and is NOT a bearer.
+  const { token } = await issue();
+  for (const value of [token, `Basic ${token}`, 'Bearer']) {
+    const { grant, refusal } = await resolveGrant(
+      env,
+      new Request('https://mcp.example/mcp', { headers: { authorization: value } }),
+      NOW,
+    );
+    expect(grant, value).toBeNull();
+    expect(refusal, value).toBe('malformed_authorization');
+  }
+});
+
+test('an authorization header present but empty is still an anonymous caller, not a refusal', async () => {
+  // MEASURED 2026-09-20: this is the one case in the branch above where the
+  // header IS present on the request -- `authorization: ''` -- and it must
+  // NOT be a refusal. `resolveGrant`'s `header ? ... : ...` and `bearerFrom`'s
+  // `if (!header) return null;` are two separate falsy checks over the same
+  // `Headers.get('authorization')` value, and the rule holds only because
+  // both treat an empty string the same way as absent. Fetch's `Headers.get`
+  // returns `null` for a header that was never sent and `''` (not `null`) for
+  // one sent with an empty value -- confirmed directly against this runtime's
+  // `Request` -- so this is a real, distinct input from "no header at all"
+  // and deserves its own assertion rather than resting on that symmetry
+  // holding by accident.
+  const { grant, refusal } = await resolveGrant(
+    env,
+    new Request('https://mcp.example/mcp', { headers: { authorization: '' } }),
+    NOW,
+  );
+  expect(grant).toBeNull();
+  expect(refusal).toBeNull();
+});
+
+test('no authorization header at all is still an anonymous caller', async () => {
+  const { grant, refusal } = await resolveGrant(env, new Request('https://mcp.example/mcp'), NOW);
+  expect(grant).toBeNull();
+  expect(refusal).toBeNull();
+});
+
 test('no header at all is an ordinary public caller, not a refusal', async () => {
   expect(await resolveGrant(env, new Request('https://mcp.example/mcp'), NOW)).toEqual({
     grant: null,
