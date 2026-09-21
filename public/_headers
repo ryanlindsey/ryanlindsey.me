@@ -149,6 +149,13 @@
 /.well-known/oauth-protected-resource
   Content-Type: application/json; charset=utf-8
 
+# The MCP Registry namespace proof (src/pages/.well-known/mcp-registry-auth.ts),
+# extensionless like the two documents above it, so this rule is the only thing
+# between it and an unusable fallback type. The registry's own page names no
+# Content-Type for the file; text/plain is this repository's choice.
+/.well-known/mcp-registry-auth
+  Content-Type: text/plain; charset=utf-8
+
 # The prose half of the same surface, auth.md (src/pages/auth.md.ts).
 # Cloudflare's asset server already maps `.md` to `text/markdown; charset=utf-8`
 # by default -- /resume.md.ts relies on exactly that default with no rule of
