@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.36.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.35.1...ryanlindsey-me-v1.36.0) (2026-09-21)
+
+
+### Features
+
+* **discovery:** build the registry entry and serve the namespace proof ([#330](https://github.com/ryanlindsey/ryanlindsey.me/issues/330)) ([af57bfa](https://github.com/ryanlindsey/ryanlindsey.me/commit/af57bfaed9a3d6e1e042f523ad8f1c8e8ca56031))
+
 ## [1.35.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.35.0...ryanlindsey-me-v1.35.1) (2026-09-21)
 
 
