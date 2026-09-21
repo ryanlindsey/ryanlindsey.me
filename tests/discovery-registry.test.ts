@@ -44,12 +44,7 @@ test('the registry entry carries the version it is given, the endpoint and the c
   expect(entry).not.toHaveProperty('packages');
 });
 
-// Skipped until the keypair from issue #310 step 1 exists: the format
-// assertion below cannot pass against the placeholder sentinel in
-// registry-auth.ts, and the equality assertion asserts nothing against it
-// either, since both sides read the same constant. Delete `.skip` in the
-// same commit that pastes the real key.
-test.skip('the namespace proof is one line in the documented format', () => {
+test('the namespace proof is one line in the documented format', () => {
   // modelcontextprotocol.io/registry/authentication, read 2026-09-20:
   // `v=MCPv1; k=ed25519; p=<base64 of the 32 raw public-key bytes>`. Thirty-two
   // bytes base64 is 43 characters and one `=`.
@@ -57,16 +52,17 @@ test.skip('the namespace proof is one line in the documented format', () => {
   expect(MCP_REGISTRY_PUBLIC_KEY).toMatch(/^[A-Za-z0-9+/]{43}=$/);
 });
 
-// Landing the real key in registry-auth.ts is a three-edit change, and
-// nothing but this test enforces the other two: delete the placeholder
-// paragraph there, and delete the skip on the test above. Read both files
-// as text, the way tests/mcp-env.test.ts reads wrangler configs to catch
-// drift no import can see, so this passes quietly today, on the sentinel,
-// and fails the day the real key lands while either leftover is still here.
-test('swapping in the real registry key leaves no placeholder text or skip behind', async () => {
-  if (MCP_REGISTRY_PUBLIC_KEY === 'PLACEHOLDER-AWAITING-ISSUE-310-STEP-1') {
-    return;
-  }
+// Born to police a three-edit change: registry-auth.ts shipped a sentinel
+// public key while issue #310 step 1 was still owner-run and undone, and the
+// day the real key landed the placeholder paragraph and the skip on the test
+// above both had to go with it. The key landed 2026-09-21, so the transition
+// this was written for is over and the early return it used to take on the
+// sentinel is gone. It stays as a live assertion because it costs one file
+// read and still catches the thing that made the scaffolding necessary: a
+// placeholder or a skip reintroduced here would otherwise make the proof
+// untested while the suite stayed green. Reads both files as text, the way
+// tests/mcp-env.test.ts reads wrangler configs to catch drift no import sees.
+test('the registry key carries no placeholder text or skipped test', async () => {
   const authSource = await readFile('src/lib/discovery/registry-auth.ts', 'utf8');
   const thisSource = await readFile('tests/discovery-registry.test.ts', 'utf8');
   // Split so this line's own source text never spells the marker it looks
