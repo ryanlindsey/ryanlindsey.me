@@ -21,6 +21,14 @@
 // release from github.com/modelcontextprotocol/registry). It is not a
 // dependency of this repository.
 //
+// WHAT IT LEAVES BEHIND: `mcp-publisher login` persists a registry bearer
+// token at ~/.config/mcp-publisher/token.json, mode 0600, and `publish`
+// reads the registry URL and token back from there -- which is also why
+// running `publish` with `cwd: dir` works rather than working by accident.
+// This script never logs out; `mcp-publisher logout` clears it. Measured
+// 2026-09-21 against cmd/publisher/commands/login.go in
+// modelcontextprotocol/registry.
+//
 // Usage:
 //   MCP_REGISTRY_PRIVATE_KEY='op://Private/RLME MCP Registry Key/credential' \
 //     op run -- npm run registry:publish
@@ -54,16 +62,25 @@ try {
   const { MCP_REGISTRY_PRIVATE_KEY: _withheld, ...env } = process.env;
 
   // Node exposes spawnargs in uncaught exceptions (ENOENT case) and puts the
-  // full argv — including the private key — into err.message on non-zero exit.
-  // Measured 2026-09-21: catch and discard both error details to keep the key
-  // off stderr; stdio: 'inherit' lets the publisher's own output still reach
-  // the owner.
+  // full argv -- including the private key -- into err.message on non-zero
+  // exit. Measured 2026-09-21: branch on err.code and err.status only, never
+  // on err.message or err.spawnargs, which is what keeps the key off stderr.
+  // Both carry no argv, so branching on them is safe: err.code === 'ENOENT'
+  // names a missing binary and err.status names the exit code the binary
+  // itself chose. stdio: 'inherit' lets the publisher's own output still
+  // reach the owner.
+  const notInstalled =
+    'mcp-publisher is not installed; brew install mcp-publisher, or get a release from github.com/modelcontextprotocol/registry';
+
   try {
     execFileSync('mcp-publisher', ['login', 'http', '--domain', DOMAIN, '--private-key', key], {
       stdio: 'inherit',
       env,
     });
   } catch (err) {
+    if (err.code === 'ENOENT') {
+      throw new Error(notInstalled);
+    }
     throw new Error(
       'mcp-publisher login failed; run with MCP_REGISTRY_PRIVATE_KEY exported via op run',
     );
@@ -72,7 +89,14 @@ try {
   try {
     execFileSync('mcp-publisher', ['publish'], { cwd: dir, stdio: 'inherit', env });
   } catch (err) {
-    throw new Error('mcp-publisher publish failed');
+    if (err.code === 'ENOENT') {
+      throw new Error(notInstalled);
+    }
+    throw new Error(
+      err.status != null
+        ? `mcp-publisher publish failed (exit ${err.status})`
+        : 'mcp-publisher publish failed',
+    );
   }
 
   process.stdout.write(`published ${entry.name}@${entry.version}\n`);

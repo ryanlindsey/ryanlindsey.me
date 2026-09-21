@@ -141,7 +141,7 @@ Prompts are code. They change by pull request and this suite is what gates them.
 
 `scripts/private-doc.mjs` is invoked from the directory holding the document, not from here. The mechanism is generic and lives in this repo; every document it deploys is authored outside every repository, so nothing it writes enters any history rather than merely staying out of this one.
 
-`scripts/registry-publish.mjs` publishes this server's entry to the official MCP Registry under the `me.ryanlindsey` namespace. It builds the entry from `src/lib/discovery/registry-entry.ts`, the same builder the SEP-2127 card reads, so the registry and the card cannot disagree and no copy of the version is committed for release-please to bump. The namespace is proved by `/.well-known/mcp-registry-auth`, one line carrying the public key, and the private key reaches the script only through `op run`. It needs `mcp-publisher` installed, which is not a dependency of this repository.
+`scripts/registry-publish.mjs` publishes this server's entry to the official MCP Registry under the `me.ryanlindsey` namespace. It builds the entry from `src/lib/discovery/registry-entry.ts`; issue 02 will read this same builder for the SEP-2127 card, so the registry and the card cannot disagree and no copy of the version is committed for release-please to bump. The namespace is proved by `/.well-known/mcp-registry-auth`, one line carrying the public key, and the private key reaches the script only through `op run`. It needs `mcp-publisher` installed, which is not a dependency of this repository.
 
 ## The one credential in CI
 

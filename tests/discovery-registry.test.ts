@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import {
@@ -54,6 +55,26 @@ test.skip('the namespace proof is one line in the documented format', () => {
   // bytes base64 is 43 characters and one `=`.
   expect(buildRegistryAuth()).toBe(`v=MCPv1; k=ed25519; p=${MCP_REGISTRY_PUBLIC_KEY}`);
   expect(MCP_REGISTRY_PUBLIC_KEY).toMatch(/^[A-Za-z0-9+/]{43}=$/);
+});
+
+// Landing the real key in registry-auth.ts is a three-edit change, and
+// nothing but this test enforces the other two: delete the placeholder
+// paragraph there, and delete the skip on the test above. Read both files
+// as text, the way tests/mcp-env.test.ts reads wrangler configs to catch
+// drift no import can see, so this passes quietly today, on the sentinel,
+// and fails the day the real key lands while either leftover is still here.
+test('swapping in the real registry key leaves no placeholder text or skip behind', async () => {
+  if (MCP_REGISTRY_PUBLIC_KEY === 'PLACEHOLDER-AWAITING-ISSUE-310-STEP-1') {
+    return;
+  }
+  const authSource = await readFile('src/lib/discovery/registry-auth.ts', 'utf8');
+  const thisSource = await readFile('tests/discovery-registry.test.ts', 'utf8');
+  // Split so this line's own source text never spells the marker it looks
+  // for -- otherwise this test would keep failing itself forever, even after
+  // the real skip above is gone.
+  const skipMarker = 'test' + '.skip(';
+  expect(authSource).not.toContain('PLACEHOLDER');
+  expect(thisSource).not.toContain(skipMarker);
 });
 
 const server = createTestHarness({ workers: SITE_HARNESS_WORKERS });
