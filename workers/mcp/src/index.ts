@@ -1,11 +1,14 @@
 import { createMcpHandler } from 'agents/mcp/server';
+import { recordAgentEvent } from '../../../src/lib/agent-intel/record';
 import { corpusRefreshEnabled, refreshCorpus, type CorpusEnv } from '../../../src/lib/corpus';
 import { CORPUS_CRON, evalsRunEnabled, suitesForCron } from '../../../src/lib/evals/plan';
 import { buildMcpDiscovery, buildMcpRobotsTxt } from '../../../src/lib/mcp/discovery';
+import { forwardedBySite } from '../../../src/lib/mcp/via';
 import { buildMcpServerCard } from '../../../src/lib/discovery/server-card';
 import { buildProtectedResource } from '../../../src/lib/discovery/protected-resource';
 import { handleChat } from './chat';
 import { handleGrantContext } from './grant-context';
+import { mcpAgentEvent } from './mcp-agent-event';
 import { handleSiteSearch } from './search';
 import { resolveGrant } from '../../../src/lib/tier/grant';
 import { type McpEnv } from './env';
@@ -165,166 +168,212 @@ function discoveryLinkHeader(): string {
   ].join(', ');
 }
 
-export default {
-  /**
-   * The server itself is built in ./server.ts, one instance per HTTP request:
-   * `createMcpHandler` is stateless, and `defineTool` needs `env`, `ctx` and
-   * the original request in scope to limit and audit the call. `requestInfo`
-   * is the SDK's own handle on that request and is preferred over the
-   * closed-over `request` for exactly the case where they differ -- a legacy
-   * fallback instance the handler constructs for a request of its own.
-   */
-  async fetch(request, env, ctx) {
-    // Day 4 Task 14 (roadmap "/.well-known + discovery"; 03 §5): routed
-    // BEFORE the MCP handler, deliberately. HANDLER_OPTIONS above answers
-    // exactly `route: '/mcp'` and 404s everything else it sees, so these two
-    // discovery surfaces have to be intercepted here or they never reach
-    // anything that could answer them.
-    const { pathname } = new URL(request.url);
+/**
+ * The server itself is built in ./server.ts, one instance per HTTP request:
+ * `createMcpHandler` is stateless, and `defineTool` needs `env`, `ctx` and
+ * the original request in scope to limit and audit the call. `requestInfo`
+ * is the SDK's own handle on that request and is preferred over the
+ * closed-over `request` for exactly the case where they differ -- a legacy
+ * fallback instance the handler constructs for a request of its own.
+ */
+async function dispatch(request: Request, env: McpEnv, ctx: ExecutionContext): Promise<Response> {
+  // Day 4 Task 14 (roadmap "/.well-known + discovery"; 03 §5): routed
+  // BEFORE the MCP handler, deliberately. HANDLER_OPTIONS above answers
+  // exactly `route: '/mcp'` and 404s everything else it sees, so these two
+  // discovery surfaces have to be intercepted here or they never reach
+  // anything that could answer them.
+  const { pathname } = new URL(request.url);
 
-    if (pathname === '/robots.txt') {
-      return new Response(buildMcpRobotsTxt(), {
-        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-      });
-    }
+  if (pathname === '/robots.txt') {
+    return new Response(buildMcpRobotsTxt(), {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
+  }
 
-    if (pathname === '/.well-known/mcp.json') {
-      return new Response(JSON.stringify(buildMcpDiscovery(MCP_ORIGIN), null, 2), {
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-          Link: discoveryLinkHeader(),
-        },
-      });
-    }
-
-    // Issue #166 (epic #165, "agent readiness"): the MCP Server Card
-    // (SEP-1649), this origin's own copy -- same reasoning as the
-    // `/.well-known/mcp.json` branch immediately above, and it has to sit
-    // here for the same reason: HANDLER_OPTIONS answers exactly `route:
-    // '/mcp'` and 404s everything else it sees.
-    if (pathname === '/.well-known/mcp/server-card.json') {
-      return new Response(JSON.stringify(buildMcpServerCard(MCP_ORIGIN), null, 2), {
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-          Link: discoveryLinkHeader(),
-        },
-      });
-    }
-
-    // Issue #167 (epic #165, "agent readiness"): RFC 9728 protected-resource
-    // metadata, served from THIS origin because it is where MCP's own
-    // authorization discovery sends a client -- an agent that reached
-    // mcp.ryanlindsey.me and wants to know what a bearer token here would
-    // unlock looks for this document on THIS origin, not on ryanlindsey.me,
-    // which independently serves the same document SHAPE describing ITS OWN
-    // `/mcp` (src/pages/.well-known/oauth-protected-resource.ts) -- not a
-    // copy of this one. `buildProtectedResource` takes the serving origin
-    // and derives `resource` from it (epic-165 follow-up review, finding B):
-    // RFC 9728 §2 requires `resource` to identify the origin a client
-    // fetched the document FROM, so the two origins' copies cannot share one
-    // hard-coded value without one of them failing that validation. Same
-    // reason it has to sit here rather than fall through to
-    // createMcpHandler: HANDLER_OPTIONS answers exactly `route: '/mcp'` and
-    // 404s everything else it sees. `/auth.md`, the prose half, stays
-    // site-only -- there is no reason for this Worker to carry a second copy
-    // of static markdown it does not otherwise serve.
-    if (pathname === '/.well-known/oauth-protected-resource') {
-      return new Response(JSON.stringify(buildProtectedResource(MCP_ORIGIN), null, 2), {
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-          Link: discoveryLinkHeader(),
-        },
-      });
-    }
-
-    // Day 6 (04 §1): grounded chat. Routed here for the same reason
-    // /.well-known/mcp.json is -- HANDLER_OPTIONS answers exactly `/mcp` and
-    // 404s everything else it sees. It lives on THIS Worker rather than the
-    // site because it needs `ai` and `vectorize`, and those bindings cannot
-    // exist in a config `astro build` instantiates (see both wrangler.jsonc
-    // files for the CI failure that settled it).
-    if (pathname === '/chat') return handleChat(request, env, ctx);
-
-    // `GET /search` (issue #146, epic #143), routed here for the same reason
-    // `/chat` is -- HANDLER_OPTIONS answers exactly `/mcp` and 404s everything
-    // else it sees. It lives on THIS Worker because the `ai_search` binding
-    // cannot exist in a config `astro build` instantiates: #144 measured that
-    // wrangler classifies it exactly as it classifies `ai`, so declaring it
-    // opens a remote proxy session at boot rather than at the call. The
-    // retrieval, the spend, the cache and the rate limiter are all already
-    // here too, so the site route is a renderer that holds none of them.
-    if (pathname === '/search') return handleSiteSearch(request, env);
-
-    // `POST /grant` (04 §2): what one bearer unlocks, answered here for the
-    // same reason `/chat` is -- HANDLER_OPTIONS answers exactly `/mcp` and
-    // 404s everything else it sees.
-    //
-    // A refusal returns `null` rather than a Response (see grant-context.ts's
-    // own doc for why), and falls through to the `createMcpHandler` call at
-    // the end of this function -- which answers the genuine unrouted 404 for
-    // any path that is not `/mcp`, `/grant` included. That fallthrough is
-    // cheap: agents@0.23.0's `serve` checks `requestUrl.pathname !== route`
-    // before it does anything else, so a refused `/grant` never reaches the
-    // async factory below and never calls `resolveGrant` a second time.
-    if (pathname === '/grant') {
-      const granted = await handleGrantContext(request, env);
-      if (granted !== null) return granted;
-      // fall through: the MCP handler below IS the unrouted 404
-    }
-
-    return createMcpHandler(
-      // ASYNC, and the factory's contract permits it: `McpServerFactory` is
-      // `(ctx) => McpServer | Server | Promise<McpServer | Server>` -- READ
-      // from @modelcontextprotocol/server 2.0.0's own declaration, the type
-      // agents@0.22.0's `createMcpHandler` takes, and exercised end to end in
-      // tests/tier-grant.test.ts rather than trusted.
-      //
-      // The grant is resolved HERE, once per HTTP request, rather than inside
-      // a tool -- so every tool and every resource in one request sees the
-      // same tier, and one D1 read serves the whole batch. That factory doc
-      // is explicit about the unit and about the one exception, which is not
-      // ours: "one serving unit: one HTTP request under createMcpHandler, or
-      // one connection (or one discarded `server/discover` probe) under
-      // serveStdio" (createMcpHandler-CLhGwQTn.d.mts:3801-3808). The probe
-      // belongs to `serveStdio`; this Worker serves HTTP and never calls it.
-      async (mcpCtx) => {
-        const httpRequest = mcpCtx.requestInfo ?? request;
-        const { grant, refusal } = await resolveGrant(
-          env,
-          httpRequest,
-          Math.floor(Date.now() / 1000),
-        );
-        if (refusal !== null) {
-          // Logged, not answered with an error: a stale token should still get
-          // the public tier rather than a broken connection.
-          //
-          // The log line names the REASON -- every member of `GrantRefusal`
-          // (src/lib/tier/grant.ts), whichever one was reached; what the
-          // caller is told does not. That asymmetry is the whole design: an
-          // operator running a revocation drill (09 §3 item 6) reads this line
-          // and knows exactly which check bit, while the holder gets one
-          // unspecific sentence that is no use for probing which state a token
-          // string is in.
-          //
-          // Deliberately NOT a list of those members. An earlier draft of this
-          // comment wrote out five of them and then called them "those four
-          // states" -- wrong twice over, since `GrantRefusal` is `TokenFailure`
-          // plus three and has seven. A hand-copied enumeration in a comment
-          // rots the first time a member is added, and it rots in the place an
-          // operator reading a drill's output would trust it. The type is the
-          // list.
-          console.warn(`mcp/grant: refused a presented token (${refusal})`);
-        }
-        // `refusal` is passed rather than dropped, and that second argument is
-        // the only thing that makes a refusal visible to the CALLER rather
-        // than only in the log above -- `buildInstructions` (./server.ts) has
-        // no other source for it, because the grant it would otherwise infer
-        // from is `null` for a refused token and for an ordinary public caller
-        // alike. Those two must not be told the same thing.
-        return createServer({ env, ctx, request: httpRequest, grant }, refusal);
+  if (pathname === '/.well-known/mcp.json') {
+    return new Response(JSON.stringify(buildMcpDiscovery(MCP_ORIGIN), null, 2), {
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        Link: discoveryLinkHeader(),
       },
-      HANDLER_OPTIONS,
-    )(request, env, ctx);
+    });
+  }
+
+  // Issue #166 (epic #165, "agent readiness"): the MCP Server Card
+  // (SEP-1649), this origin's own copy -- same reasoning as the
+  // `/.well-known/mcp.json` branch immediately above, and it has to sit
+  // here for the same reason: HANDLER_OPTIONS answers exactly `route:
+  // '/mcp'` and 404s everything else it sees.
+  if (pathname === '/.well-known/mcp/server-card.json') {
+    return new Response(JSON.stringify(buildMcpServerCard(MCP_ORIGIN), null, 2), {
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        Link: discoveryLinkHeader(),
+      },
+    });
+  }
+
+  // Issue #167 (epic #165, "agent readiness"): RFC 9728 protected-resource
+  // metadata, served from THIS origin because it is where MCP's own
+  // authorization discovery sends a client -- an agent that reached
+  // mcp.ryanlindsey.me and wants to know what a bearer token here would
+  // unlock looks for this document on THIS origin, not on ryanlindsey.me,
+  // which independently serves the same document SHAPE describing ITS OWN
+  // `/mcp` (src/pages/.well-known/oauth-protected-resource.ts) -- not a
+  // copy of this one. `buildProtectedResource` takes the serving origin
+  // and derives `resource` from it (epic-165 follow-up review, finding B):
+  // RFC 9728 §2 requires `resource` to identify the origin a client
+  // fetched the document FROM, so the two origins' copies cannot share one
+  // hard-coded value without one of them failing that validation. Same
+  // reason it has to sit here rather than fall through to
+  // createMcpHandler: HANDLER_OPTIONS answers exactly `route: '/mcp'` and
+  // 404s everything else it sees. `/auth.md`, the prose half, stays
+  // site-only -- there is no reason for this Worker to carry a second copy
+  // of static markdown it does not otherwise serve.
+  if (pathname === '/.well-known/oauth-protected-resource') {
+    return new Response(JSON.stringify(buildProtectedResource(MCP_ORIGIN), null, 2), {
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        Link: discoveryLinkHeader(),
+      },
+    });
+  }
+
+  // Day 6 (04 §1): grounded chat. Routed here for the same reason
+  // /.well-known/mcp.json is -- HANDLER_OPTIONS answers exactly `/mcp` and
+  // 404s everything else it sees. It lives on THIS Worker rather than the
+  // site because it needs `ai` and `vectorize`, and those bindings cannot
+  // exist in a config `astro build` instantiates (see both wrangler.jsonc
+  // files for the CI failure that settled it).
+  if (pathname === '/chat') return handleChat(request, env, ctx);
+
+  // `GET /search` (issue #146, epic #143), routed here for the same reason
+  // `/chat` is -- HANDLER_OPTIONS answers exactly `/mcp` and 404s everything
+  // else it sees. It lives on THIS Worker because the `ai_search` binding
+  // cannot exist in a config `astro build` instantiates: #144 measured that
+  // wrangler classifies it exactly as it classifies `ai`, so declaring it
+  // opens a remote proxy session at boot rather than at the call. The
+  // retrieval, the spend, the cache and the rate limiter are all already
+  // here too, so the site route is a renderer that holds none of them.
+  if (pathname === '/search') return handleSiteSearch(request, env);
+
+  // `POST /grant` (04 §2): what one bearer unlocks, answered here for the
+  // same reason `/chat` is -- HANDLER_OPTIONS answers exactly `/mcp` and
+  // 404s everything else it sees.
+  //
+  // A refusal returns `null` rather than a Response (see grant-context.ts's
+  // own doc for why), and falls through to the `createMcpHandler` call at
+  // the end of this function -- which answers the genuine unrouted 404 for
+  // any path that is not `/mcp`, `/grant` included. That fallthrough is
+  // cheap: agents@0.23.0's `serve` checks `requestUrl.pathname !== route`
+  // before it does anything else, so a refused `/grant` never reaches the
+  // async factory below and never calls `resolveGrant` a second time.
+  if (pathname === '/grant') {
+    const granted = await handleGrantContext(request, env);
+    if (granted !== null) return granted;
+    // fall through: the MCP handler below IS the unrouted 404
+  }
+
+  return createMcpHandler(
+    // ASYNC, and the factory's contract permits it: `McpServerFactory` is
+    // `(ctx) => McpServer | Server | Promise<McpServer | Server>` -- READ
+    // from @modelcontextprotocol/server 2.0.0's own declaration, the type
+    // agents@0.22.0's `createMcpHandler` takes, and exercised end to end in
+    // tests/tier-grant.test.ts rather than trusted.
+    //
+    // The grant is resolved HERE, once per HTTP request, rather than inside
+    // a tool -- so every tool and every resource in one request sees the
+    // same tier, and one D1 read serves the whole batch. That factory doc
+    // is explicit about the unit and about the one exception, which is not
+    // ours: "one serving unit: one HTTP request under createMcpHandler, or
+    // one connection (or one discarded `server/discover` probe) under
+    // serveStdio" (createMcpHandler-CLhGwQTn.d.mts:3801-3808). The probe
+    // belongs to `serveStdio`; this Worker serves HTTP and never calls it.
+    async (mcpCtx) => {
+      const httpRequest = mcpCtx.requestInfo ?? request;
+      const { grant, refusal } = await resolveGrant(
+        env,
+        httpRequest,
+        Math.floor(Date.now() / 1000),
+      );
+      if (refusal !== null) {
+        // Logged, not answered with an error: a stale token should still get
+        // the public tier rather than a broken connection.
+        //
+        // The log line names the REASON -- every member of `GrantRefusal`
+        // (src/lib/tier/grant.ts), whichever one was reached; what the
+        // caller is told does not. That asymmetry is the whole design: an
+        // operator running a revocation drill (09 §3 item 6) reads this line
+        // and knows exactly which check bit, while the holder gets one
+        // unspecific sentence that is no use for probing which state a token
+        // string is in.
+        //
+        // Deliberately NOT a list of those members. An earlier draft of this
+        // comment wrote out five of them and then called them "those four
+        // states" -- wrong twice over, since `GrantRefusal` is `TokenFailure`
+        // plus three and has seven. A hand-copied enumeration in a comment
+        // rots the first time a member is added, and it rots in the place an
+        // operator reading a drill's output would trust it. The type is the
+        // list.
+        console.warn(`mcp/grant: refused a presented token (${refusal})`);
+      }
+      // `refusal` is passed rather than dropped, and that second argument is
+      // the only thing that makes a refusal visible to the CALLER rather
+      // than only in the log above -- `buildInstructions` (./server.ts) has
+      // no other source for it, because the grant it would otherwise infer
+      // from is `null` for a refused token and for an ordinary public caller
+      // alike. Those two must not be told the same thing.
+      return createServer({ env, ctx, request: httpRequest, grant }, refusal);
+    },
+    HANDLER_OPTIONS,
+  )(request, env, ctx);
+}
+
+export default {
+  async fetch(request, env, ctx) {
+    const started = Date.now();
+    const response = await dispatch(request, env, ctx);
+    // ONE row per DIRECT `/mcp` request, and no other path on this Worker.
+    // `/chat` and `/search` write their own rows inside their handlers with
+    // their own surfaces, the discovery documents write none, and a `/mcp`
+    // the site forwarded is already the site's row (src/lib/mcp/via.ts).
+    // After the response so `status` is the real one, as src/worker.ts does.
+    //
+    // "DIRECT" INCLUDES THIS SYSTEM'S OWN TRAFFIC, which the paragraph above
+    // does not say and a reader would otherwise have to discover from the
+    // panel. Two first-party callers reach `/mcp` unmarked, both READ OFF
+    // THEIR CALL SITES on 2026-09-20 rather than measured on /ops:
+    //
+    //   - the scheduled eval run, over the `SELF` binding. Every `/mcp` call
+    //     it makes goes through ./evals-client.ts's `rpc`; `runTierCase`
+    //     (./evals-run.ts) alone is four requests per case plus one per
+    //     argumentless tool, daily. `ask` targets `/chat` instead, so the
+    //     chat and leak suites land on that surface, not this one.
+    //   - each `analyze_fit` the site runs, over its own `MCP` binding
+    //     (src/lib/fit/client.ts's `rpc`). `grantContext` there targets
+    //     `/grant` and so writes nothing here.
+    //
+    // Both send a `ryanlindsey-me-` user agent, so `FIRST_PARTY`
+    // (src/lib/agent-intel/classify.ts) labels them agent `first-party` with
+    // `agentClass: 'agent'` -- which is exactly what /ops's agent breakdown
+    // groups by, so they appear there under that name.
+    //
+    // KEPT, DELIBERATELY. Ruling 1, quoted in ./chat.ts's `firstOfSession`
+    // doc, is that the AE row stays UNCONDITIONAL so evals and every direct
+    // caller stay visible in /ops, and a filter here would be the first thing
+    // on this path deciding whose traffic counts as real. What that costs is
+    // worth naming rather than leaving to be found: the two halves of /ops
+    // disagree about first-party traffic. Its D1 metrics exclude the EVAL
+    // runner in SQL (src/lib/ops/metrics.ts, the `EVALS_AGENT` prefix and
+    // `EVALS_SURFACE`) and do not exclude the fit caller; its Analytics
+    // Engine panels (src/lib/ops/analytics.ts) exclude neither, and have no
+    // equivalent filter. So a "did the panel move after my call" check can be
+    // satisfied by this Worker's own housekeeping: read the `first-party` row
+    // before believing a visitor moved it.
+    if (new URL(request.url).pathname === '/mcp' && !forwardedBySite(request)) {
+      recordAgentEvent(env, mcpAgentEvent(request, response.status, Date.now() - started));
+    }
+    return response;
   },
 
   /**
