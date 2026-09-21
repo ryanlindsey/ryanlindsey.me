@@ -97,6 +97,8 @@
 //   node scripts/token.mjs list
 //   node scripts/token.mjs revoke --jti <jti>
 //   node scripts/token.mjs revoke --audience <label>
+//   node scripts/token.mjs calls --jti <jti>
+//   node scripts/token.mjs calls --audience <label>
 //
 // `--remote` is implied for list/revoke: the registry that matters is the
 // deployed one. `mint` writes to it too.
@@ -390,6 +392,55 @@ function list() {
 }
 
 /**
+ * What one token, or every token for an audience, has read.
+ *
+ * This is the owner's window and the only one there is. /ops is aggregate and
+ * public-tier only by design (09 §2): no audience, no jti, no gated tool name
+ * renders there, and that is why this prints to a terminal and nowhere else.
+ * `grant_jti` exists on `mcp_tool_calls` for exactly this question
+ * (migrations/0002_private_tier.sql), and until 2026-09-20 the only way to
+ * ask it was a `wrangler d1 execute` typed by hand.
+ *
+ * One flag, not both: `--jti` answers for a token and `--audience` for every
+ * token an audience was ever issued, grouped by jti so a revoked one and its
+ * replacement read as two rows rather than one. Refused before anything
+ * reaches wrangler, which tests/token-calls-args.test.ts is the guard for.
+ *
+ * `client_name` is in the grouping because "did their agent connect, and
+ * which one" was the first question the rehearsal asked. It is NULL for a
+ * client on a 2025-era protocol (workers/mcp/src/define.ts says why), so a
+ * `-` in that column is a fact about the client, not a missing row.
+ */
+function calls() {
+  const jti = arg('jti');
+  const audience = arg('audience');
+  if ((jti && audience) || (!jti && !audience)) {
+    process.stderr.write('usage: token.mjs calls (--jti <jti> | --audience <label>)\n');
+    process.exit(2);
+  }
+  const where = jti ? `grant_jti = ${quote(jti)}` : `audience = ${quote(audience)}`;
+  const rows = d1(
+    `SELECT grant_jti, tool, outcome, client_name, COUNT(*) AS calls,
+            MIN(called_at) AS first_call, MAX(called_at) AS last_call
+       FROM mcp_tool_calls
+      WHERE ${where}
+      GROUP BY grant_jti, tool, outcome, client_name
+      ORDER BY last_call DESC, tool ASC`,
+  );
+  if (rows.length === 0) {
+    process.stdout.write(
+      `no tool calls recorded for ${jti ? `jti ${jti}` : `audience ${audience}`}\n`,
+    );
+    return;
+  }
+  for (const row of rows) {
+    process.stdout.write(
+      `${row.grant_jti}  ${row.tool}  ${row.outcome}  ${row.client_name ?? '-'}  ${row.calls}  first ${row.first_call}  last ${row.last_call}\n`,
+    );
+  }
+}
+
+/**
  * Revoke one token, or every live token for an audience.
  *
  * `--audience` IS THE KILL SWITCH FOR EVERYTHING TOKEN-GATED, and it reaches
@@ -472,9 +523,9 @@ function revoke() {
 }
 
 const command = process.argv[2];
-const commands = { mint, list, revoke };
+const commands = { mint, list, revoke, calls };
 if (!commands[command]) {
-  process.stderr.write('usage: token.mjs <mint|list|revoke> [...]\n');
+  process.stderr.write('usage: token.mjs <mint|list|revoke|calls> [...]\n');
   process.exit(2);
 }
 await commands[command]();
