@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.35.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.35.0...ryanlindsey-me-v1.35.1) (2026-09-21)
+
+
+### Documentation
+
+* **mcp:** state what the granted-instructions measurement is measured against ([#324](https://github.com/ryanlindsey/ryanlindsey.me/issues/324)) ([a51d4be](https://github.com/ryanlindsey/ryanlindsey.me/commit/a51d4bed33c585cfd16d718557602fa6faf7bff2))
+
 ## [1.35.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.34.0...ryanlindsey-me-v1.35.0) (2026-09-21)
 
 
