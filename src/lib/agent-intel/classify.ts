@@ -104,6 +104,7 @@ const AGENT_SIGNAL_EXACT = new Set([
   '/feed.json',
   '/robots.txt',
   '/mcp',
+  '/mcp/server-card',
 ]);
 
 const MARKDOWN_VARIANT = /^\/(writing|work)\/.+\.md$/;

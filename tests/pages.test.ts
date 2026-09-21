@@ -2337,6 +2337,18 @@ test('/mcp is not swallowed by the SPA 404 page', async () => {
   expect(response.headers.get('content-type') ?? '').not.toContain('text/html');
 });
 
+test('/mcp/server-card on the site origin is forwarded, not swallowed by the SPA 404 page', async () => {
+  // The first sub-path under /mcp anywhere. It needs both the forward in
+  // src/worker.ts and its own `run_worker_first` entry in wrangler.jsonc,
+  // and this is the test that catches either one missing: without the entry
+  // the asset router serves the prerendered 404 and never reaches the Worker.
+  const response = await server.fetch('/mcp/server-card');
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toBe('application/mcp-server-card+json');
+  const card = (await response.json()) as { remotes: { url: string }[] };
+  expect(card.remotes[0]?.url).toBe('https://ryanlindsey.me/mcp');
+});
+
 test('/mcp on the site origin answers a CORS preflight, Origin and requested headers included', async () => {
   // The transport's OPTIONS branch (node_modules/agents' handler-stateless.ts)
   // answers before any JSON-RPC handling runs, so this exercises a different
