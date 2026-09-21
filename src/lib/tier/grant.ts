@@ -38,7 +38,8 @@ export interface Grant {
  * outage of our own would be a lie in exactly the place someone goes looking
  * for the truth.
  */
-export type GrantRefusal = TokenFailure | 'unknown' | 'revoked' | 'unavailable';
+export type GrantRefusal =
+  TokenFailure | 'unknown' | 'revoked' | 'unavailable' | 'malformed_authorization';
 
 /**
  * Both fields null means "no token was presented" -- an ordinary public
@@ -46,6 +47,11 @@ export type GrantRefusal = TokenFailure | 'unknown' | 'revoked' | 'unavailable';
  * honoured, which is worth saying out loud to the caller (see
  * `buildInstructions` in workers/mcp/src/server.ts) rather than silently
  * serving them the public tier and letting them wonder.
+ *
+ * A header that is present and carries no bearer -- another scheme, or
+ * `Bearer` with nothing after it -- counts as presented, and is refused as
+ * `'malformed_authorization'`. See the branch in `resolveGrant` for the
+ * measurement that made that a rule.
  */
 export interface GrantResolution {
   grant: Grant | null;
@@ -161,7 +167,24 @@ export async function resolveGrant(
   nowSeconds: number,
 ): Promise<GrantResolution> {
   const presented = bearerFrom(request);
-  if (presented === null) return { grant: null, refusal: null };
+  if (presented === null) {
+    // An `authorization` header `bearerFrom` could not read is a REFUSAL, not
+    // an anonymous caller. MEASURED 2026-09-20: a reader pasted a bare token,
+    // no `Bearer ` scheme, into a claude.ai connector's header value. The
+    // header arrived, this branch answered `null, null`, index.ts logged
+    // nothing because nothing was refused, and the connector showed the public
+    // tools with no explanation anywhere. Three variants replayed against the
+    // deployed Worker were told apart only because the refusal path logs and
+    // this one did not. `bearerFrom` keeps answering `null`, since "is there a
+    // bearer" is still its one question; which of its nulls was reached is
+    // this function's business, and only the header-was-present one is a
+    // refusal. An empty header value is treated as absent, as `bearerFrom`
+    // already treats it.
+    const header = request?.headers.get('authorization');
+    return header
+      ? { grant: null, refusal: 'malformed_authorization' }
+      : { grant: null, refusal: null };
+  }
 
   let verdict: TokenVerdict;
   try {

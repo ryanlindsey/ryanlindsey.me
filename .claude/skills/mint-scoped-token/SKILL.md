@@ -64,6 +64,8 @@ Then read the rest of that line before chasing a cause, because only one of its 
 
 `https://ryanlindsey.me/fit?t=<token>` for a reader who will use the browser form. The bare token for an MCP client, pointed at `https://mcp.ryanlindsey.me/mcp` and presented as `Authorization: Bearer <token>`.
 
+The scheme is part of the value. A header carrying the bare token, or any scheme other than `Bearer`, is refused as `malformed_authorization` since 2026-09-20: the connection is served the public tools and told its token was not accepted, and the Worker logs the reason. Before that date the same header was silently treated as no token at all.
+
 ## Outstanding tokens
 
 ```sh
