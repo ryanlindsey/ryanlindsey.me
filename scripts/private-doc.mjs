@@ -24,6 +24,7 @@
 //     --key profile/availability.md --file availability.md
 //   node /path/to/ryanlindsey.me/scripts/private-doc.mjs check --key profile/availability.md
 //   node /path/to/ryanlindsey.me/scripts/private-doc.mjs delete --key narrative/foo.md
+//   node /path/to/ryanlindsey.me/scripts/private-doc.mjs roster
 //
 // Keys must match what src/lib/tier/private-docs.ts builds. The script
 // re-checks the shape rather than trusting the caller, because a typo here
@@ -45,11 +46,18 @@
 // listing over a private-document store would enumerate every gated key --
 // including every narrative audience -- where a per-key probe only ever
 // answers the one question a caller actually has: is THIS key there.
+//
+// `roster` is not a listing either. It probes the four FIXED keys in
+// ./private-doc-keys.mjs one at a time, the keys every grant is promised,
+// and names no audience. Added 2026-09-20 after all three profile keys were
+// found absent with four reader tokens live and nothing here able to say so.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+import { FIXED_KEYS } from './private-doc-keys.mjs';
 
 const BUCKET = 'ryanlindsey-me-private';
 
@@ -93,6 +101,65 @@ function requireKey() {
   return key;
 }
 
+/**
+ * Whether one key is in the bucket: `'present'`, `'absent'`, or an object
+ * carrying wrangler's stderr when the answer is neither.
+ *
+ * `wrangler r2 object get` writes the object body to STDOUT unless `--file`
+ * is given (measured: `-f, --file` and `-p, --pipe` are its only output
+ * options). These are gated documents, so the body-catching form is not
+ * stylistic -- it is what keeps the text out of this process's stdout and out
+ * of whatever captures it next (a terminal scrollback, a CI log). The file is
+ * never read; only the outcome is inspected, and it is removed before
+ * returning either way.
+ *
+ * `absent` must mean the object is not there -- an auth failure, a network
+ * error, or an unresolved account are NOT absence, and reporting them as
+ * `absent` would tell a caller a deployed document does not exist, which is
+ * worse than no answer.
+ *
+ * MEASURED 2026-09-08 by running this same `get --file` against a key
+ * confirmed not to exist, with stderr captured instead of inherited:
+ * wrangler's not-found error is
+ *   [ERROR] The specified key does not exist.
+ * wrapped in ANSI colour codes that never split that phrase -- stripped below
+ * so a plain terminal, or a future wrangler version that drops colour, still
+ * matches the same substring. Anything else is returned as an error for the
+ * caller to print and fail on, instead of being read as a miss.
+ */
+function probe(key) {
+  const dir = mkdtempSync(join(tmpdir(), 'rlme-private-doc-'));
+  const file = join(dir, 'object');
+  try {
+    execFileSync(
+      'npx',
+      ['wrangler', 'r2', 'object', 'get', `${BUCKET}/${key}`, '--remote', '--file', file],
+      {
+        encoding: 'utf8',
+        stdio: ['ignore', 'ignore', 'pipe'],
+        env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID },
+      },
+    );
+    return 'present';
+  } catch (error) {
+    const stderr = String(error.stderr ?? '').replace(/\x1b\[[0-9;]*m/g, '');
+    if (/specified key does not exist/i.test(stderr)) return 'absent';
+    return { error: stderr || `${error.message}\n` };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** Print one probe's verdict the way `check` always has, optionally naming the key. */
+function report(verdict, key) {
+  if (typeof verdict === 'string') {
+    process.stdout.write(key ? `${verdict.padEnd(7)}  ${key}\n` : `${verdict}\n`);
+    return;
+  }
+  process.stderr.write(key ? `${key}: ${verdict.error}` : verdict.error);
+  process.exitCode = 1;
+}
+
 const commands = {
   put() {
     const key = requireKey();
@@ -103,62 +170,38 @@ const commands = {
     process.stdout.write(`put ${key}\n`);
   },
   check() {
-    const key = requireKey();
-    // `wrangler r2 object get` writes the object body to STDOUT unless
-    // `--file` is given (measured: `-f, --file` and `-p, --pipe` are its only
-    // output options). These are gated documents, so the body-catching form
-    // is not stylistic -- it is what keeps the text out of this process's
-    // stdout and out of whatever captures it next (a terminal scrollback, a
-    // CI log). This command never reads the file it writes; only the outcome
-    // below is inspected, and the file is removed before returning either way.
-    const dir = mkdtempSync(join(tmpdir(), 'rlme-private-doc-'));
-    const file = join(dir, 'object');
-    try {
-      execFileSync(
-        'npx',
-        ['wrangler', 'r2', 'object', 'get', `${BUCKET}/${key}`, '--remote', '--file', file],
-        {
-          encoding: 'utf8',
-          stdio: ['ignore', 'ignore', 'pipe'],
-          env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID },
-        },
-      );
-      process.stdout.write('present\n');
-    } catch (error) {
-      // `absent` must mean the object is not there -- an auth failure, a
-      // network error, or an unresolved account are NOT absence, and
-      // reporting them as `absent` would tell a caller a deployed document
-      // does not exist, which is worse than no answer.
-      //
-      // MEASURED 2026-09-08 by running this same `get --file` against a key
-      // confirmed not to exist, with stderr captured instead of inherited:
-      // wrangler's not-found error is
-      //   [ERROR] The specified key does not exist.
-      // wrapped in ANSI colour codes that never split that phrase -- stripped
-      // below so a plain terminal, or a future wrangler version that drops
-      // colour, still matches the same substring. Anything else is printed
-      // and fails the process instead of being read as a miss.
-      const stderr = String(error.stderr ?? '').replace(/\x1b\[[0-9;]*m/g, '');
-      if (/specified key does not exist/i.test(stderr)) {
-        process.stdout.write('absent\n');
-      } else {
-        process.stderr.write(stderr || `${error.message}\n`);
-        process.exitCode = 1;
-      }
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    report(probe(requireKey()));
   },
   delete() {
     const key = requireKey();
     wrangler(['r2', 'object', 'delete', `${BUCKET}/${key}`, '--remote']);
     process.stdout.write(`deleted ${key}\n`);
   },
+  roster() {
+    // The four fixed keys, and nothing else: see ./private-doc-keys.mjs for
+    // why this is not a listing and must never become one. One probe per key,
+    // every key probed even after an absence, so one run answers the whole
+    // question.
+    let absent = 0;
+    for (const key of FIXED_KEYS) {
+      const verdict = probe(key);
+      if (verdict === 'absent') absent += 1;
+      report(verdict, key);
+    }
+    if (absent > 0) {
+      process.stderr.write(
+        `${absent} fixed key(s) absent; every grant that unlocks one gets an error from its tool\n`,
+      );
+      process.exitCode = 1;
+    }
+  },
 };
 
 const command = process.argv[2];
 if (!commands[command]) {
-  process.stderr.write('usage: private-doc.mjs <put|check|delete> [--key ...] [--file ...]\n');
+  process.stderr.write(
+    'usage: private-doc.mjs <put|check|delete|roster> [--key ...] [--file ...]\n',
+  );
   process.exit(2);
 }
 commands[command]();
