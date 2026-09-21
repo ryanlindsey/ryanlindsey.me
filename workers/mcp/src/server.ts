@@ -14,7 +14,9 @@ import { registerTools } from './tools';
  * 03 §1's ~1200-character budget is THIS string's, and saying which string it
  * governs matters now that there is more than one. Measured 2026-09-08: this
  * constant is 922 characters, and the instructions a grant carrying all four
- * scopes is sent are 1364. The larger number is not an overrun to trim: the
+ * reader scopes was sent were 1364. Re-measured 2026-09-20 after
+ * PRIVATE_TIER_HINT stopped being sent to a grant: 1383. The larger number is
+ * not an overrun to trim: the
  * budget describes what every client is sent on an unauthenticated connect,
  * and a per-token map that enumerates the tools a grant unlocked is the whole
  * point of `buildInstructions` below. Keep THIS one under the budget; let the
@@ -34,7 +36,12 @@ import { registerTools } from './tools';
  * `tools/list`. Everything day 5 adds is in `buildInstructions` below, which
  * reaches this constant only through the branches a token opens.
  */
-const PUBLIC_INSTRUCTIONS = [
+/**
+ * The tool map every caller is sent: the public tools, one line each, and the
+ * two resources. Named separately from PUBLIC_INSTRUCTIONS because a GRANT is
+ * sent this and its own block, and nothing else.
+ */
+const PUBLIC_TOOL_MAP = [
   "Ryan Lindsey's professional corpus, exposed as MCP tools across audience tiers.",
   '',
   'get_contact: how to reach Ryan, and his working timezone.',
@@ -47,9 +54,23 @@ const PUBLIC_INSTRUCTIONS = [
   'request_private_access: explains the private tier and how to request a scoped token.',
   '',
   'Two MCP resources serve the same documents for clients that prefer resource attachment over tool calls: resume://json and writing://{slug}.',
-  '',
-  'A private tier exists beyond these public tools, for scoped tokens; call request_private_access to learn how to request one.',
 ].join('\n');
+
+/**
+ * The sentence that turns a caller WITHOUT a grant toward the private tier.
+ * Sent to anonymous and refused connections and to nobody holding a grant.
+ * MEASURED 2026-09-20 from a real client: a granted connection was being told
+ * to "call request_private_access to learn how to request" the tier it was
+ * already on. The tool itself stays registered for every caller and its map
+ * line above stays with it, so the rule that the instructions name every
+ * registered tool holds for a grant as well; tests/mcp-gated.test.ts asserts
+ * that side.
+ */
+const PRIVATE_TIER_HINT =
+  'A private tier exists beyond these public tools, for scoped tokens; call request_private_access to learn how to request one.';
+
+/** Exactly what an anonymous connection is sent. Asserted verbatim in tests/mcp.smoke.test.ts. */
+const PUBLIC_INSTRUCTIONS = [PUBLIC_TOOL_MAP, '', PRIVATE_TIER_HINT].join('\n');
 
 /**
  * The line a caller sees when they presented a token that was not honoured.
@@ -107,8 +128,8 @@ export function buildInstructions(grant: Grant | null, refusal: GrantRefusal | n
   // shut door. The header itself is kept because it is true and useful: it
   // confirms the token WAS accepted, which is the other half of what the
   // refusal line above says.
-  if (granted.length === 0) return [PUBLIC_INSTRUCTIONS, '', header].join('\n');
-  return [PUBLIC_INSTRUCTIONS, '', `${header} It also has:`, '', ...granted].join('\n');
+  if (granted.length === 0) return [PUBLIC_TOOL_MAP, '', header].join('\n');
+  return [PUBLIC_TOOL_MAP, '', `${header} It also has:`, '', ...granted].join('\n');
 }
 
 /**

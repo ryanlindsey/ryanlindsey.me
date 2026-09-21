@@ -1042,6 +1042,40 @@ test('every granted line is pinned verbatim, for the scopes this block covers', 
   );
 });
 
+test('a granted connection is not told to request the tier it is on', async () => {
+  // MEASURED 2026-09-20 from a real client: a reader's agent was told to call
+  // request_private_access "to learn how to request" the tier its token had
+  // already opened. The tool stays registered for every caller, so its map
+  // line stays; the sentence that turns a stranger toward the tier does not.
+  const granted = await instructionsFor(await tokenFor(['profile']));
+  expect(granted).not.toContain('call request_private_access to learn how to request one');
+  expect(granted).toContain('request_private_access: explains the private tier');
+
+  const anonymous = await instructionsFor();
+  expect(anonymous).toContain('call request_private_access to learn how to request one');
+});
+
+test('the granted instructions still name every tool the grant lists', async () => {
+  // tests/mcp.smoke.test.ts holds this rule for the anonymous caller. A grant
+  // is served a different string, so the rule is asserted for it here.
+  const token = await tokenFor(['fit', 'profile', 'documents', 'narrative']);
+  const instructions = await instructionsFor(token);
+  for (const tool of await listTools(token)) {
+    expect(instructions, tool.name).toContain(tool.name);
+  }
+});
+
+test('a refused token is served the anonymous instructions plus one line', async () => {
+  // Nothing asserted this before: the refused case was checked for its one
+  // sentence and never for what came before it. The split in server.ts makes
+  // it possible to get this wrong in a new way, so it is pinned.
+  const anonymous = await instructionsFor();
+  const refused = await instructionsFor('not-a-token');
+  expect(refused).toBe(
+    `${anonymous}\n\nThe scoped token presented with this request was not accepted; the public tools below are what this connection has.`,
+  );
+});
+
 test('the granted instructions and tools/list agree, scope by scope', async () => {
   /**
    * THE GENERAL FORM of the spot check above, and the reason Task 11 could
