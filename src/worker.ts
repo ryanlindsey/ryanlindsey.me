@@ -3,6 +3,7 @@ import { classifyRequest, referrerClassFor, signalsFrom } from './lib/agent-inte
 import { handleEventBatch } from './lib/agent-intel/consume';
 import { highIntentFor } from './lib/agent-intel/intent';
 import { recordAgentEvent, type Surface } from './lib/agent-intel/record';
+import { markForwardedBySite } from './lib/mcp/via';
 import { NOT_FOUND_PROBE } from './lib/not-found-probe';
 import { enforceRetention } from './lib/retention';
 import { listCampaigns } from './lib/tier/campaigns';
@@ -369,7 +370,13 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   // "/mcp on the site origin completes the MCP handshake" only turns green
   // once this forward is wired in, which would not be true if the pathname
   // were rewritten or dropped somewhere along the hop.
-  if (new URL(request.url).pathname === '/mcp') return env.MCP.fetch(request);
+  //
+  // Since 2026-09-20 the forward carries one header the client did not send,
+  // `x-rlme-via: site` (src/lib/mcp/via.ts), so the MCP Worker knows this
+  // request is already the row the `fetch` wrapper below writes and does not
+  // write a second. The URL is still untouched; the handshake test above is
+  // still what proves it.
+  if (new URL(request.url).pathname === '/mcp') return env.MCP.fetch(markForwardedBySite(request));
 
   // Day 5 Task 13 (04 §2, 09 §1): `/fit*` is unlisted and its URL carries a
   // scoped token. Two things happen to whatever the route returns, and they
