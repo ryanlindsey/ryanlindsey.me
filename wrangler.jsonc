@@ -9,6 +9,12 @@
   "assets": {
     "directory": "./dist/client",
     "binding": "ASSETS",
+    // Paths the Worker sees before the asset router. `/mcp/server-card` is the
+    // first sub-path under /mcp anywhere: `/mcp` is an exact entry, so without
+    // its own line the card falls through to the prerendered 404 and the
+    // on-demand route never runs. tests/pages.test.ts's assertion that this
+    // path answers 200 with the card, not the prerendered 404, is what
+    // catches that.
     "run_worker_first": [
       "/resume",
       "/resume/",
@@ -17,6 +23,7 @@
       "/work",
       "/work/*",
       "/mcp",
+      "/mcp/server-card",
       "/fit",
       "/fit/*",
       "/",

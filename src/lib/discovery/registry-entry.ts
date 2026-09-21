@@ -1,9 +1,10 @@
 /**
  * The official MCP Registry entry for this server, built rather than
  * committed. `scripts/registry-publish.mjs` writes it to a temporary
- * `server.json` at publish time, and issue 02 will read this same builder
- * for the SEP-2127 card, so the two cannot disagree and there is no third
- * copy of the version for release-please to keep in step.
+ * `server.json` at publish time, and src/lib/discovery/server-card-v1.ts
+ * reads this same builder for the SEP-2127 card, so the two cannot disagree
+ * and there is no third copy of the version for release-please to keep in
+ * step.
  *
  * Shape: static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json,
  * read 2026-09-20. `name`, `description` and `version` are required;

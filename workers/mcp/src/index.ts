@@ -5,6 +5,10 @@ import { CORPUS_CRON, evalsRunEnabled, suitesForCron } from '../../../src/lib/ev
 import { buildMcpDiscovery, buildMcpRobotsTxt } from '../../../src/lib/mcp/discovery';
 import { forwardedBySite } from '../../../src/lib/mcp/via';
 import { buildMcpServerCard } from '../../../src/lib/discovery/server-card';
+import {
+  SERVER_CARD_CORS_HEADERS,
+  serverCardResponse,
+} from '../../../src/lib/discovery/server-card-v1';
 import { buildProtectedResource } from '../../../src/lib/discovery/protected-resource';
 import { handleChat } from './chat';
 import { handleGrantContext } from './grant-context';
@@ -211,6 +215,39 @@ async function dispatch(request: Request, env: McpEnv, ctx: ExecutionContext): P
         Link: discoveryLinkHeader(),
       },
     });
+  }
+
+  // The SEP-2127 card at the place its spec reserves, `<streamable-http-url>/
+  // server-card`. Routed here for the same reason every document above is:
+  // HANDLER_OPTIONS answers exactly `/mcp` and 404s everything else it sees,
+  // so this path never reaches anything that could answer it otherwise. The
+  // SEP-1649 card above stays; src/lib/discovery/server-card-v1.ts says why
+  // both exist.
+  //
+  // No `Link: discoveryLinkHeader()` here, unlike every other branch above --
+  // this response comes verbatim from `serverCardResponse`, the same helper
+  // the site's own route calls (src/pages/mcp/server-card.ts), and that route
+  // has no `discoveryLinkHeader()` equivalent to draw one from. Adding a Link
+  // header only on this origin's copy would itself be the parity gap the
+  // shared helper exists to prevent.
+  //
+  // Method handling agrees with the site route rather than answering every
+  // method: OPTIONS gets the same four CORS headers a preflight needs and no
+  // body, GET and HEAD get the card, and anything else 404s the way the site
+  // route does when it has no handler for the method asked. Before this
+  // guard existed the branch below returned `serverCardResponse` for any
+  // method reaching it, so `POST /mcp/server-card` answered 200 with the
+  // card -- a method the SEP-2127 extension never reserves this path for,
+  // and one the site's Astro route (`GET` only, plus `OPTIONS` above) never
+  // answered either.
+  if (pathname === '/mcp/server-card') {
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: SERVER_CARD_CORS_HEADERS });
+    }
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      return new Response(null, { status: 404 });
+    }
+    return serverCardResponse(MCP_ORIGIN, request);
   }
 
   // Issue #167 (epic #165, "agent readiness"): RFC 9728 protected-resource

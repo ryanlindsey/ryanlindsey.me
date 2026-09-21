@@ -61,19 +61,20 @@ export function buildMcpDiscovery(origin: string) {
  * from https://ryanlindsey.me over `SITE_ORIGIN` (global constraint,
  * src/lib/corpus.ts) -- so the only things a GET on mcp.ryanlindsey.me can
  * ever return are this file, /.well-known/mcp.json,
- * /.well-known/mcp/server-card.json and /.well-known/oauth-protected-resource,
- * none of which is the corpus. (This paragraph named only this file and
- * /.well-known/mcp.json when it was written on day 3; issues #166 and #167 of
- * the agent-readiness epic added the other two documents to this origin, and
- * the reasoning below still holds unchanged, because neither addition is the
- * corpus either.) That content already carries its reservation at the origin
- * where it actually lives: every group in the site's own robots.txt repeats
- * `ai-train=no` for exactly this reason. Restating the line here would not
- * extend the reservation to anything new -- there is nothing new here to
- * reserve rights over -- and it would have nowhere to attach on this
- * origin's one real protocol surface regardless: `/mcp` answers JSON-RPC
- * POST, not the GET-driven page retrieval `Content-Signal` was written to
- * describe.
+ * /.well-known/mcp/server-card.json, /mcp/server-card (the SEP-2127 card) and
+ * /.well-known/oauth-protected-resource, none of which is the corpus. (This
+ * paragraph named only this file and /.well-known/mcp.json when it was
+ * written on day 3; issues #166 and #167 of the agent-readiness epic added
+ * two more documents to this origin, and issue #311 added the SEP-2127 card
+ * at /mcp/server-card; the reasoning below still holds unchanged, because
+ * none of the additions is the corpus either.) That content already carries
+ * its reservation at the origin where it actually lives: every group in the
+ * site's own robots.txt repeats `ai-train=no` for exactly this reason.
+ * Restating the line here would not extend the reservation to anything new
+ * -- there is nothing new here to reserve rights over -- and it would have
+ * nowhere to attach on this origin's one real protocol surface regardless:
+ * `/mcp` answers JSON-RPC POST, not the GET-driven page retrieval
+ * `Content-Signal` was written to describe.
  *
  * Named agents are welcomed by the same tokens the site's own file uses,
  * for legibility -- consistent with 03 §5's framing, not because any of
@@ -92,8 +93,9 @@ export function buildMcpRobotsTxt(): string {
 # machine-readable metadata documents, not pages -- POST /mcp speaks JSON-RPC
 # and there is nothing here for a crawler to read or index. See
 # https://ryanlindsey.me/llms.txt for the curated, agent-facing index of what
-# this corpus actually publishes, and /.well-known/mcp/server-card.json on
-# this origin for the machine-readable description of the endpoint itself.
+# this corpus actually publishes, and /.well-known/mcp/server-card.json and
+# /mcp/server-card (the SEP-2127 card) on this origin for the machine-readable
+# description of the endpoint itself.
 #
 # Permissive anyway (\`Allow: /\`, no \`Disallow\`), same reasoning as the
 # site's own file: a named \`User-agent\` group below does not inherit
@@ -105,7 +107,8 @@ Allow: /
 
 # Named for legibility, matching the site's own robots.txt -- there is
 # nothing on this origin for any of these to fetch beyond this file, the
-# metadata documents at /.well-known/mcp.json, /.well-known/mcp/server-card.json
+# metadata documents at /.well-known/mcp.json, /.well-known/mcp/server-card.json,
+# /mcp/server-card (the SEP-2127 card)
 # and /.well-known/oauth-protected-resource, and /mcp, /chat and /search
 # themselves. None of the three is a page: the first two are POST-only,
 # JSON-RPC and chat respectively, and /search (issue #146) answers JSON to a
