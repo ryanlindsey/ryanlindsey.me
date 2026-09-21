@@ -17,12 +17,27 @@ import { registerTools } from './tools';
  * string it governs matters now that there is more than one. Measured
  * 2026-09-08: PUBLIC_INSTRUCTIONS is 922 characters, and the instructions a
  * grant carrying all four reader scopes was sent were 1364. Re-measured
- * 2026-09-20 after PRIVATE_TIER_HINT stopped being sent to a grant: 1383. The
- * larger number is not an overrun to trim: the
- * budget describes what every client is sent on an unauthenticated connect,
- * and a per-token map that enumerates the tools a grant unlocked is the whole
- * point of `buildInstructions` below. Keep PUBLIC_INSTRUCTIONS under the
- * budget; let the granted one be as long as the grant makes it. The two
+ * 2026-09-20 after PRIVATE_TIER_HINT stopped being sent to a grant: 1383.
+ *
+ * BOTH GRANTED FIGURES ARE MEASURED AGAINST THE HARNESS'S AUDIENCE, and until
+ * 2026-09-21 neither said so, which made them read as a property of the SCOPES
+ * alone. `buildInstructions` below interpolates `grant.audience` into its
+ * header, so the granted length depends on the audience NAME as much as on
+ * what the grant opens, and tests/mcp-gated.test.ts measures with
+ * `fixture-audience`, 16 characters.
+ *
+ * MEASURED 2026-09-21 against the deployed Worker, which is the first time
+ * either figure was compared with production: a live token answered 1395.
+ * Replacing only the audience substring in that response with
+ * `fixture-audience` gave exactly 1383, every other character identical, so
+ * the whole difference was the name. Read either number as what the harness
+ * sends for that scope set, not as what a deployed token is sent.
+ *
+ * The larger number is not an overrun to trim: the budget describes what every
+ * client is sent on an unauthenticated connect, and a per-token map that
+ * enumerates the tools a grant unlocked is the whole point of
+ * `buildInstructions` below. Keep PUBLIC_INSTRUCTIONS under the budget; let
+ * the granted one be as long as the grant makes it. The two
  * `resume://json` / `writing://{slug}` resources get their own line for the
  * same reason `/llms.txt`'s MCP description (src/pages/llms.txt.ts) names
  * both: two texts describing the same server should not disagree about what
