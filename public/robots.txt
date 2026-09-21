@@ -115,6 +115,11 @@
 # stated once and is not repeated per group.
 Sitemap: https://ryanlindsey.me/sitemap-index.xml
 
+# `Agentmap:` is ARD v0.91's entry-source directive (ards-project/ard-spec
+# §5.1, 2026-08-26), group-independent like `Sitemap:` and stated once for the
+# same reason. Not part of RFC 9309; no crawler is obliged to read it.
+Agentmap: https://ryanlindsey.me/.well-known/ard.json
+
 User-agent: *
 Content-Signal: search=yes, ai-input=yes, ai-train=no, use=reference
 Allow: /

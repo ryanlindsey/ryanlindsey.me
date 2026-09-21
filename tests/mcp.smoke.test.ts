@@ -174,6 +174,10 @@ test('the MCP origin serves its own robots.txt, permissive and unrestricted', as
   // instead of only a human re-reading the file.
   expect(body).not.toMatch(/^Disallow:/im);
   expect(body).toMatch(/^Allow: \/$/m);
+  // ARD's Agentmap directive names the SITE's manifest: this origin serves no
+  // catalog, for the reason src/lib/discovery/ard.ts gives, so the pointer
+  // crosses origins on purpose.
+  expect(body).toMatch(/^Agentmap: https:\/\/ryanlindsey\.me\/\.well-known\/ard\.json$/m);
 });
 
 test('the MCP origin serves its own discovery document', async () => {

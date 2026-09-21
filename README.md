@@ -12,12 +12,12 @@ Deploys run on Workers Builds from `main`, and CI has no deploy step. `CLAUDE.md
 
 Four entrypoints, stable by contract:
 
-| Entrypoint                          | What it is                                |
-| ----------------------------------- | ----------------------------------------- |
-| `/llms.txt`                         | The curated index, and the place to start |
-| `/.well-known/ai-catalog.json`      | The ARD manifest                          |
-| `/.well-known/mcp/server-card.json` | The server card, served on both origins   |
-| `https://mcp.ryanlindsey.me/mcp`    | The protocol endpoint itself              |
+| Entrypoint                          | What it is                                         |
+| ----------------------------------- | -------------------------------------------------- |
+| `/llms.txt`                         | The curated index, and the place to start          |
+| `/.well-known/ard.json`             | The ARD manifest, also served as `ai-catalog.json` |
+| `/.well-known/mcp/server-card.json` | The server card, served on both origins            |
+| `https://mcp.ryanlindsey.me/mcp`    | The protocol endpoint itself                       |
 
 This file does not list the rest, and the omission is the part worth reading. Every endpoint this site advertises lives in one list, `ADVERTISED_SURFACE` in `src/lib/discovery/surface.ts`, published as both the API catalog and the ARD manifest and checked by `tests/discovery-catalog.test.ts`. A table here would be a second copy, living outside the test suite, and it would drift the first time an endpoint moved. Fetch the catalog rather than trusting this file.
 

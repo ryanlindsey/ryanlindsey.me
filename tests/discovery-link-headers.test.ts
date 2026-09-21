@@ -27,13 +27,14 @@ afterAll(async () => {
   await server.close();
 });
 
-test('the homepage advertises all four relations', async () => {
+test('the homepage advertises all five relations', async () => {
   const response = await server.fetch('/');
   const links = parseLink(response.headers.get('link') ?? '');
   expect(links.get('service-desc')).toBe('/.well-known/mcp/server-card.json');
   expect(links.get('api-catalog')).toBe('/.well-known/api-catalog');
   expect(links.get('describedby')).toBe('/.well-known/agent-skills/index.json');
   expect(links.get('service-doc')).toBe('/llms.txt');
+  expect(links.get('ard')).toBe('/.well-known/ard.json');
 });
 
 // The reason this issue is blocked by the other four. A Link header pointing at
@@ -48,9 +49,9 @@ test('every advertised target actually resolves', async () => {
 
 test('the header is one value, not two rules joined', async () => {
   const response = await server.fetch('/');
-  // Four targets, so three separators. A comma-joined pair from two _headers
+  // Five targets, so four separators. A comma-joined pair from two _headers
   // rules would show more.
-  expect((response.headers.get('link') ?? '').match(/<\//g)?.length).toBe(4);
+  expect((response.headers.get('link') ?? '').match(/<\//g)?.length).toBe(5);
 });
 
 // Step 6: the MCP Worker's own copy, set in code (workers/mcp/src/index.ts)

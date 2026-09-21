@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { buildAiCatalog } from '../../lib/discovery/ard';
+import { AI_CATALOG_MEDIA_TYPE, buildAiCatalog } from '../../lib/discovery/ard';
 import { SITE_ORIGIN } from '../../lib/markdown-export';
 
 // Prerendered, for the reason src/pages/.well-known/mcp.json.ts gives at
@@ -19,7 +19,7 @@ export const prerender = true;
 export const GET: APIRoute = async () =>
   new Response(JSON.stringify(buildAiCatalog(SITE_ORIGIN), null, 2), {
     headers: {
-      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Type': AI_CATALOG_MEDIA_TYPE,
       'Access-Control-Allow-Origin': '*',
     },
   });
