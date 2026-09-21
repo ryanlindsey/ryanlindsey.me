@@ -14,6 +14,7 @@ describe('classifyRequest', () => {
   test.each([
     ['Mozilla/5.0 (compatible; ClaudeBot/1.0; +claudebot@anthropic.com)', 'ClaudeBot'],
     ['Mozilla/5.0 ... Claude-User/1.0', 'Claude-User'],
+    ['claude-code/2.1.278 (sdk-cli)', 'Claude-Code'],
     ['Mozilla/5.0 (compatible; GPTBot/1.2; +https://openai.com/gptbot)', 'GPTBot'],
     ['Mozilla/5.0 (compatible; OAI-SearchBot/1.0)', 'OAI-SearchBot'],
     ['Mozilla/5.0 (compatible; PerplexityBot/1.0)', 'PerplexityBot'],

@@ -52,11 +52,23 @@ export interface Classification {
  *
  * The label is what /ops renders and what the Analytics Engine row carries, so
  * it is written the way the operator of that crawler writes it.
+ *
+ * Since 2026-09-20 the list also names MCP developer clients, added from
+ * strings seen in `mcp_tool_calls.user_agent` rather than from vendor
+ * documentation, because those clients publish none.
  */
 const KNOWN_AGENTS: readonly (readonly [RegExp, string])[] = [
   [/Claude-SearchBot/i, 'Claude-SearchBot'],
   [/Claude-User/i, 'Claude-User'],
   [/ClaudeBot/i, 'ClaudeBot'],
+  // The first MCP developer client on this list, and the reason the list
+  // stopped being crawlers only. MEASURED 2026-09-20, the first real client
+  // to connect to the deployed private tier: `claude-code/2.1.278 (sdk-cli)`.
+  // Hyphenated lower-case in the wild; labelled the way Anthropic writes the
+  // product name. Ordered after ClaudeBot because neither string contains
+  // the other, so the order between them is not load-bearing; the comment
+  // above says which orders are.
+  [/claude-code/i, 'Claude-Code'],
   [/anthropic-ai/i, 'anthropic-ai'],
   [/ChatGPT-User/i, 'ChatGPT-User'],
   [/OAI-SearchBot/i, 'OAI-SearchBot'],
