@@ -108,12 +108,12 @@ Allow: /
 # Named for legibility, matching the site's own robots.txt -- there is
 # nothing on this origin for any of these to fetch beyond this file, the
 # metadata documents at /.well-known/mcp.json, /.well-known/mcp/server-card.json,
-# /mcp/server-card (the SEP-2127 card) and /.well-known/oauth-protected-resource,
-# and /mcp, /chat and /search themselves. None of the three is a page: the
-# first two are POST-only, JSON-RPC and chat respectively, and /search
-# (issue #146) answers JSON to a GET carrying a query. It is left permitted
-# rather than disallowed because nothing links it and a crawler cannot
-# invent a \`?q=\`: without one it is a
+# /mcp/server-card (the SEP-2127 card)
+# and /.well-known/oauth-protected-resource, and /mcp, /chat and /search
+# themselves. None of the three is a page: the first two are POST-only,
+# JSON-RPC and chat respectively, and /search (issue #146) answers JSON to a
+# GET carrying a query. It is left permitted rather than disallowed because
+# nothing links it and a crawler cannot invent a \`?q=\`: without one it is a
 # 400 answered before the rate limiter, which costs nothing. The page a reader
 # or a crawler is meant to find is /search on the SITE origin (#147).
 User-agent: ClaudeBot

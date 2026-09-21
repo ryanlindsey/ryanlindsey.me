@@ -2296,9 +2296,12 @@ test('footer links /llms.txt and the MCP endpoint, and never links /llms-full.tx
 // endpoint, `mcp.ryanlindsey.me` the vanity alias -- so this origin must
 // serve the protocol rather than 404. `server.fetch()` in this file always
 // addresses the site Worker (SITE_HARNESS_WORKERS lists it first, making it
-// the harness's primary), so these two exercise the forward over the `MCP`
-// service binding end to end, not the MCP Worker directly the way
-// tests/mcp-tools.test.ts and tests/mcp.smoke.test.ts do.
+// the harness's primary), so the next two tests exercise the forward over
+// the `MCP` service binding end to end, not the MCP Worker directly the way
+// tests/mcp-tools.test.ts and tests/mcp.smoke.test.ts do. The server-card
+// test that follows them is not a third: `/mcp/server-card` is never
+// forwarded (src/pages/mcp/server-card.ts serves the site's own copy), so it
+// exercises that on-demand route directly.
 
 test('/mcp on the site origin completes the MCP handshake', async () => {
   const response = await server.fetch('/mcp', {
@@ -2349,6 +2352,35 @@ test('/mcp/server-card on the site origin is served, not swallowed by the SPA 40
   expect(response.headers.get('content-type')).toBe('application/mcp-server-card+json');
   const card = (await response.json()) as { remotes: { url: string }[] };
   expect(card.remotes[0]?.url).toBe('https://ryanlindsey.me/mcp');
+});
+
+test('/mcp/server-card on the site origin answers a CORS preflight', async () => {
+  // The two origins' 200s match because both call `serverCardResponse`
+  // (src/lib/discovery/server-card-v1.ts), but that helper never decides
+  // which methods a route answers -- method handling is per-route, in this
+  // route's own `OPTIONS` export and in the MCP Worker's matching branch
+  // (workers/mcp/src/index.ts). Before either existed, Astro's endpoint
+  // runtime returned a bare 404 with no headers here for any method this
+  // route exports no handler for, `OPTIONS` included, so a browser client
+  // revalidating with `If-None-Match` -- not a CORS-safelisted request
+  // header, so a preflight is mandatory -- would have preflighted
+  // successfully against mcp.ryanlindsey.me (which answered every method)
+  // and failed here, exactly the divergence running one helper on both
+  // origins is meant to rule out. Follows the shape of the `/mcp` preflight
+  // test above it.
+  const response = await server.fetch('/mcp/server-card', {
+    method: 'OPTIONS',
+    headers: {
+      origin: 'https://claude.ai',
+      'access-control-request-method': 'GET',
+      'access-control-request-headers': 'if-none-match',
+    },
+  });
+  expect(response.status).toBe(204);
+  expect(response.headers.get('access-control-allow-origin')).toBe('*');
+  expect(response.headers.get('access-control-allow-methods')).toBe('GET');
+  expect(response.headers.get('access-control-allow-headers')).toBe('Content-Type, If-None-Match');
+  expect(response.headers.get('access-control-expose-headers')).toBe('ETag');
 });
 
 test('/mcp on the site origin answers a CORS preflight, Origin and requested headers included', async () => {

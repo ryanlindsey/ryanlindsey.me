@@ -49,6 +49,24 @@ export function buildServerCardV1(origin: string): ServerCardV1 {
 }
 
 /**
+ * The four Access-Control headers docs/discovery.md makes MUST, on their own
+ * so a route's own OPTIONS handler can answer a preflight with the same
+ * values the 200 below carries, without duplicating the literals. This
+ * module still only builds headers, never a method's worth of response
+ * behavior: each origin's own route decides which methods it answers (site:
+ * src/pages/mcp/server-card.ts's `GET` and `OPTIONS`; MCP:
+ * workers/mcp/src/index.ts's `/mcp/server-card` branch), and that is
+ * deliberate -- see either comment for why method handling stays out of this
+ * shared helper.
+ */
+export const SERVER_CARD_CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET',
+  'Access-Control-Allow-Headers': 'Content-Type, If-None-Match',
+  'Access-Control-Expose-Headers': 'ETag',
+};
+
+/**
  * The card as an HTTP response, with the headers docs/discovery.md makes
  * mandatory (the four Access-Control headers) and recommended (an hour of
  * public caching, an ETag, and 304 on a matching If-None-Match). The ETag is
@@ -61,17 +79,39 @@ export async function serverCardResponse(origin: string, request: Request): Prom
   const etag = `"${[...new Uint8Array(digest).slice(0, 8)]
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')}"`;
-  const headers = {
-    'Content-Type': SERVER_CARD_MEDIA_TYPE,
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET',
-    'Access-Control-Allow-Headers': 'Content-Type, If-None-Match',
-    'Access-Control-Expose-Headers': 'ETag',
-    'Cache-Control': 'public, max-age=3600',
-    ETag: etag,
-  };
+  // RFC 9110 §13.1.2: If-None-Match is a comparable list, compared with the
+  // WEAK comparison function, so `W/"<same digest>"`, `*`, or a list like
+  // `"a", "b"` all miss this exact-string check and fall through to a full
+  // 200. Deliberately narrow: the only cost of missing a match this way is a
+  // wasted body on an already-cheap GET, and no client of this endpoint is
+  // documented to send anything but the single strong ETag this same
+  // response issued, so a list parser and a weak comparator would guard
+  // against a caller that does not exist here.
   if (request.headers.get('if-none-match') === etag) {
-    return new Response(null, { status: 304, headers });
+    // RFC 9110 §15.4.5: a 304 SHOULD NOT carry representation metadata that
+    // is not needed for cache validation, so this is its own header set
+    // rather than the 200's reused. Access-Control-Allow-Methods and
+    // Access-Control-Allow-Headers are preflight-response fields and answer
+    // no question a GET's 304 asks; Content-Type describes a body this
+    // response does not carry. Access-Control-Allow-Origin stays: drop it
+    // and the cross-origin response is not readable at all, 304 or not, so
+    // it is needed for cache validation in the way the RFC means.
+    return new Response(null, {
+      status: 304,
+      headers: {
+        ETag: etag,
+        'Cache-Control': 'public, max-age=3600',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Expose-Headers': 'ETag',
+      },
+    });
   }
-  return new Response(body, { headers });
+  return new Response(body, {
+    headers: {
+      'Content-Type': SERVER_CARD_MEDIA_TYPE,
+      ...SERVER_CARD_CORS_HEADERS,
+      'Cache-Control': 'public, max-age=3600',
+      ETag: etag,
+    },
+  });
 }
