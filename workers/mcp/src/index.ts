@@ -338,6 +338,38 @@ export default {
     // their own surfaces, the discovery documents write none, and a `/mcp`
     // the site forwarded is already the site's row (src/lib/mcp/via.ts).
     // After the response so `status` is the real one, as src/worker.ts does.
+    //
+    // "DIRECT" INCLUDES THIS SYSTEM'S OWN TRAFFIC, which the paragraph above
+    // does not say and a reader would otherwise have to discover from the
+    // panel. Two first-party callers reach `/mcp` unmarked, both READ OFF
+    // THEIR CALL SITES on 2026-09-20 rather than measured on /ops:
+    //
+    //   - the scheduled eval run, over the `SELF` binding. Every `/mcp` call
+    //     it makes goes through ./evals-client.ts's `rpc`; `runTierCase`
+    //     (./evals-run.ts) alone is four requests per case plus one per
+    //     argumentless tool, daily. `ask` targets `/chat` instead, so the
+    //     chat and leak suites land on that surface, not this one.
+    //   - each `analyze_fit` the site runs, over its own `MCP` binding
+    //     (src/lib/fit/client.ts's `rpc`). `grantContext` there targets
+    //     `/grant` and so writes nothing here.
+    //
+    // Both send a `ryanlindsey-me-` user agent, so `FIRST_PARTY`
+    // (src/lib/agent-intel/classify.ts) labels them agent `first-party` with
+    // `agentClass: 'agent'` -- which is exactly what /ops's agent breakdown
+    // groups by, so they appear there under that name.
+    //
+    // KEPT, DELIBERATELY. Ruling 1, quoted in ./chat.ts's `firstOfSession`
+    // doc, is that the AE row stays UNCONDITIONAL so evals and every direct
+    // caller stay visible in /ops, and a filter here would be the first thing
+    // on this path deciding whose traffic counts as real. What that costs is
+    // worth naming rather than leaving to be found: the two halves of /ops
+    // disagree about first-party traffic. Its D1 metrics exclude the EVAL
+    // runner in SQL (src/lib/ops/metrics.ts, the `EVALS_AGENT` prefix and
+    // `EVALS_SURFACE`) and do not exclude the fit caller; its Analytics
+    // Engine panels (src/lib/ops/analytics.ts) exclude neither, and have no
+    // equivalent filter. So a "did the panel move after my call" check can be
+    // satisfied by this Worker's own housekeeping: read the `first-party` row
+    // before believing a visitor moved it.
     if (new URL(request.url).pathname === '/mcp' && !forwardedBySite(request)) {
       recordAgentEvent(env, mcpAgentEvent(request, response.status, Date.now() - started));
     }

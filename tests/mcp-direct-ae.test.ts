@@ -36,8 +36,8 @@ beforeEach(async () => {
   await mockAe.reset();
 });
 
-function toolsList(headers: Record<string, string>) {
-  return server.getWorker('ryanlindsey-me-mcp').fetch('/mcp', {
+function toolsListInit(headers: Record<string, string>) {
+  return {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -45,7 +45,20 @@ function toolsList(headers: Record<string, string>) {
       ...headers,
     },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
-  });
+  };
+}
+
+function toolsList(headers: Record<string, string>) {
+  return server.getWorker('ryanlindsey-me-mcp').fetch('/mcp', toolsListInit(headers));
+}
+
+/**
+ * The same call addressed to the SITE Worker, which forwards it over its `MCP`
+ * service binding -- so the via header is the one src/worker.ts really sets
+ * rather than one a test wrote.
+ */
+function toolsListThroughSite(headers: Record<string, string>) {
+  return server.getWorker('ryanlindsey-me').fetch('/mcp', toolsListInit(headers));
 }
 
 test('a direct /mcp request lands one row with surface mcp', async () => {
@@ -77,6 +90,36 @@ test('a /mcp request the site forwarded writes no row here', async () => {
     'user-agent': 'curl/8.7.1',
     [VIA_SITE_HEADER]: VIA_SITE_VALUE,
   });
+  expect(forwarded.status).toBe(200);
+  const direct = await toolsList({ 'user-agent': 'ClaudeBot/1.0' });
+  expect(direct.status).toBe(200);
+
+  let points: Awaited<ReturnType<typeof mockAe.points>> = [];
+  await vi.waitFor(async () => {
+    points = await mockAe.points();
+    expect(points).toHaveLength(1);
+  });
+  expect(points[0]?.blobs?.[1]).toBe('ClaudeBot');
+});
+
+test('a /mcp the real site Worker forwarded writes no row here', async () => {
+  // THE SITE-SIDE MARKING, END TO END, and the reason this test exists beside
+  // the one above rather than instead of it. That one hand-sets the via
+  // header, so it proves this Worker HONOURS the header and nothing about
+  // whether the site ever SENDS it. Measured 2026-09-20 during fix round 1:
+  // with `markForwardedBySite` deleted from src/worker.ts's forward, every
+  // suite in this repo still passed -- tests/pages.test.ts's handshake
+  // included, because it checks the handshake and not the counting. So the
+  // one line standing between production and a double count had no test at
+  // all, and the failure would have been silent. This routes through the real
+  // site Worker, so that deletion lands two rows here and fails on the length.
+  //
+  // The site writes its OWN row for this request and it is deliberately not
+  // in `points()`: the `AE` override above is on the MCP Worker alone, so
+  // SITE_WORKER's binding is miniflare's own simulated dataset and only what
+  // the MCP Worker writes reaches the mock. That is what makes a length of 1
+  // the whole assertion.
+  const forwarded = await toolsListThroughSite({ 'user-agent': 'curl/8.7.1' });
   expect(forwarded.status).toBe(200);
   const direct = await toolsList({ 'user-agent': 'ClaudeBot/1.0' });
   expect(direct.status).toBe(200);
