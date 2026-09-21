@@ -8,6 +8,7 @@ import {
   caseStudyDetailKey,
   narrativeKey,
 } from '../src/lib/tier/private-docs';
+import { FIXED_KEYS } from '../scripts/private-doc-keys.mjs';
 
 /**
  * THE DRIFT THIS FILE EXISTS TO CATCH. scripts/private-doc.mjs's header says
@@ -109,4 +110,15 @@ test('the script is LOOSER than safeSegment about a dotted name, and that is the
   expect(keyVerdict('case-study/a..b.md')).toBe('accepted');
   expect(caseStudyDetailKey('a..b')).toBeNull();
   expect(narrativeKey('a..b')).toBeNull();
+});
+
+test('the roster is exactly the fixed keys the private tier reads, in order', () => {
+  // The script cannot import the TypeScript that owns these constants, so the
+  // roster is a second copy by necessity. This is the assertion that keeps the
+  // copy honest: a key added to PROFILE_KEYS or AUTHORING_KEYS without a line
+  // in the roster fails here rather than surfacing as a reader's tool error.
+  expect([...FIXED_KEYS]).toEqual([
+    ...Object.values(PROFILE_KEYS),
+    ...Object.values(AUTHORING_KEYS),
+  ]);
 });
