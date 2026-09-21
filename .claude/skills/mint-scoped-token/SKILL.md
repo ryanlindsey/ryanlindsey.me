@@ -72,6 +72,15 @@ node scripts/token.mjs list
 
 One row per token, newest first: the jti, the audience, the scopes, and either an expiry or the time it was revoked. This is where a jti comes from, and the `minted` line the mint wrote to stderr carries it too. It prints no secret material, which is why it is split from `mint` and safe to run in any session.
 
+## What a token has read
+
+```sh
+node scripts/token.mjs calls --jti <jti>
+node scripts/token.mjs calls --audience <token_audience>
+```
+
+One line per token, tool, outcome and client, with a count and the first and last call times. Exactly one of the two flags. This is the owner's window onto the private tier and the only one: `/ops` is aggregate and public-tier only by design, so nothing there names an audience or a token. A `-` in the client column means the client sent no `clientInfo` envelope, which every client on a 2025-era protocol does; it is not a missing row.
+
 ## Ending access
 
 One token, or every live token for an audience:
