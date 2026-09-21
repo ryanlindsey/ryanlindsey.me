@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.37.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.36.0...ryanlindsey-me-v1.37.0) (2026-09-21)
+
+
+### Features
+
+* **discovery:** point the catalog at the server card and serve it as ard.json ([#334](https://github.com/ryanlindsey/ryanlindsey.me/issues/334)) ([c67c0d9](https://github.com/ryanlindsey/ryanlindsey.me/commit/c67c0d9c55cdc7a33cd8c1b791ad9940c7fd6af5))
+* **discovery:** serve the SEP-2127 server card at the reserved place ([#332](https://github.com/ryanlindsey/ryanlindsey.me/issues/332)) ([ccd171b](https://github.com/ryanlindsey/ryanlindsey.me/commit/ccd171bcb04a3158935b5019a4c05c4ba793bb8a))
+* **ops:** name Claude Code on the traffic panel ([#335](https://github.com/ryanlindsey/ryanlindsey.me/issues/335)) ([9c1ea92](https://github.com/ryanlindsey/ryanlindsey.me/commit/9c1ea929aa1ad4ee98e12dc0a16421d6ac18121f))
+
 ## [1.36.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.35.1...ryanlindsey-me-v1.36.0) (2026-09-21)
 
 
