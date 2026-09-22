@@ -45,11 +45,24 @@ export default defineConfig({
             {
               type: 'div',
               props: {
-                style: { display: 'flex', width: 1200, height: 630, padding: 64, background: '#0a0a0b', color: '#fafaf9', fontSize: 84, fontFamily: 'Space Grotesk' },
+                style: {
+                  display: 'flex',
+                  width: 1200,
+                  height: 630,
+                  padding: 64,
+                  background: '#0a0a0b',
+                  color: '#fafaf9',
+                  fontSize: 84,
+                  fontFamily: 'Space Grotesk',
+                },
                 children: 'resvg on Workers Builds',
               },
             },
-            { width: 1200, height: 630, fonts: [{ name: 'Space Grotesk', data: font, weight: 600, style: 'normal' }] },
+            {
+              width: 1200,
+              height: 630,
+              fonts: [{ name: 'Space Grotesk', data: font, weight: 600, style: 'normal' }],
+            },
           );
           const png = new Resvg(svg).render().asPng();
           writeFileSync('dist/client/og-spike.png', png);
