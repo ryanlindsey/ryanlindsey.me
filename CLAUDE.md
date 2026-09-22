@@ -26,6 +26,7 @@ Deploys run on Workers Builds from `main`. CI has no deploy step. It holds exact
 | `npm run registry:publish`        | publish the registry entry, owner-run under `op run`                    |
 | `npm run resume:pdf`              | `astro build` then render the résumé sheet and its golden extraction    |
 | `npm run resume:gate`             | assert the rendered sheet, needs poppler and a prior render             |
+| `npm run icons`                   | rewrite the committed icon files in `public/` from `tokens.css`         |
 
 `npm test` does not typecheck. Run `npm run check` before pushing; CI runs check, lint, build and test in that order, and the typecheck catches what vitest never sees.
 
