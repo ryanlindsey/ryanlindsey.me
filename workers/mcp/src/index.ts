@@ -10,6 +10,7 @@ import {
   serverCardResponse,
 } from '../../../src/lib/discovery/server-card-v1';
 import { buildProtectedResource } from '../../../src/lib/discovery/protected-resource';
+import { buildGlamaClaim } from '../../../src/lib/discovery/glama';
 import { handleChat } from './chat';
 import { handleGrantContext } from './grant-context';
 import { mcpAgentEvent } from './mcp-agent-event';
@@ -287,6 +288,16 @@ async function dispatch(request: Request, env: McpEnv, ctx: ExecutionContext): P
         'Content-Type': 'application/json; charset=utf-8',
         Link: discoveryLinkHeader(),
       },
+    });
+  }
+
+  // Issue #314 (epic #309): the Glama ownership claim, on this origin only
+  // (src/lib/discovery/glama.ts says why). No Link header: this is a claim,
+  // not a discovery document, so it stays out of the advertised surface that
+  // tests/discovery-link-headers.test.ts holds to exactly what it serves.
+  if (pathname === '/.well-known/glama.json') {
+    return new Response(JSON.stringify(buildGlamaClaim(), null, 2), {
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
     });
   }
 
