@@ -473,8 +473,12 @@ export async function handleChat(
   // `chatHighIntentEvent` (above `handleChat`) is the decision -- Ruling 4's
   // D1 read (corrected by task-13a-findings-final.md's Important 1) plus
   // Important 2's server-minted-session gate -- kept out of line because both
-  // needed room to say why; the send itself mirrors `queueFitRunIntent` in
-  // src/worker.ts.
+  // needed room to say why; the send itself mirrors `queueResumePdfIntent` in
+  // src/worker.ts. It mirrored `queueFitRunIntent` there until #277, which
+  // deleted that function and moved the `fit-run` event into `completeRun`
+  // (workers/mcp/src/fit-start.ts) -- so the one on this Worker that is worth
+  // comparing this call against now sits two files away and is AWAITED, for
+  // the reason its own comment gives rather than in disagreement with this one.
   //
   // AWAITED HERE, SERIALLY, RATHER THAN WRAPPED IN `ctx.waitUntil()`
   // (task-13a-findings-final.md item 14, the controller's own call, KEPT on

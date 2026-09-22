@@ -274,33 +274,17 @@ const REFUSAL_STATUSES = new Set([403, 404, 500]);
  * `GET`, which is what an unrouted path's 404 is rendered from.
  */
 /**
- * Queues a `fit-run` event when a `/fit` submission actually produced a report
- * (06 §3). Producer one of two on this Worker.
- *
- * The report id comes off the `Location` header rather than from the page,
- * because this Worker never sees the route's internals -- a 303 to
- * `/fit/r/<id>` is the only success signal it has, and it is an unambiguous
- * one: src/pages/fit/run.ts sends every failure to `/fit?<query>` instead.
- *
- * THE AUDIENCE IS NOT AVAILABLE HERE, so the event omits it. Resolving the
- * grant is the MCP Worker's job -- doing it here would mean a second verifier,
- * which is the thing `resolveGrant` exists to prevent -- so the site Worker
- * knows a report was made and not for whom. The operator gets the audience from
- * the `gated-read` event the MCP Worker queues for the same run; two events a
- * second apart in one email is a smaller cost than a field that is sometimes a
- * real label and sometimes a placeholder standing where one should be.
- */
-function queueFitRunIntent(response: Response, env: Env, ctx: ExecutionContext): void {
-  if (response.status !== 303) return;
-  const reportId = /^\/fit\/r\/([^/?#]+)$/.exec(response.headers.get('Location') ?? '')?.[1];
-  if (reportId === undefined) return;
-  const event = highIntentFor({ kind: 'fit-run', at: new Date().toISOString(), reportId });
-  if (event !== null) ctx.waitUntil(env.EVENTS.send(event));
-}
-
-/**
  * Queues a `resume-pdf-referred` event for a PDF download that arrived from a
- * campaign or social referrer (06 §3). Producer two of two.
+ * campaign or social referrer (06 §3).
+ *
+ * THE ONLY HIGH-INTENT PRODUCER LEFT ON THIS WORKER, and it was the second of
+ * two until #277. `queueFitRunIntent` stood above this function and fired on
+ * the 303 to `/fit/r/<id>`, which it called an unambiguous success signal
+ * because src/pages/fit/run.ts sent every failure to `/fit?<query>` instead.
+ * #269 made that redirect mean a run STARTED, so the signal stopped being one,
+ * and the event moved to `completeRun` in workers/mcp/src/fit-start.ts -- the
+ * Worker that closes the row, and the only one that can name the audience
+ * without becoming a second grant verifier.
  *
  * THE ONE PLACE THE SITE WORKER READS CAMPAIGN DOMAINS ON A REQUEST. The hot
  * path deliberately does not (see `CAMPAIGN_DOMAINS_OFF`): a KV read per
@@ -526,9 +510,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     // left standing only with what makes it true attached, because the arm
     // silently converts a wrong answer here into a 404 nobody can read.
     if (REFUSAL_STATUSES.has(response.status)) return siteNotFound(request, env, ctx);
-    // AFTER the refusal flattening, so a 303 that reaches here is a real report
-    // rather than anything a stranger's probe could have produced.
-    queueFitRunIntent(response, env, ctx);
+    // The `fit-run` event is queued by the MCP Worker now (#277). It used to be
+    // produced here, from the 303 to /fit/r/<id> -- which stopped meaning "a
+    // report exists" when the run moved off the request path.
     const headers = new Headers(response.headers);
     headers.set('X-Robots-Tag', 'noindex, nofollow');
     headers.set('Referrer-Policy', 'strict-origin');
@@ -549,8 +533,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   // requests, and serve cached HTML in place of ever reaching this code
   // again -- the same class of stale-representation bug the markdown
   // side's `Vary` header guards against, just in the other direction.
-  // Producer two (06 §3). Wrapped in `waitUntil` rather than awaited, so the
-  // campaign KV read this needs stays off the download's critical path.
+  // The Worker's one producer (06 §3). Wrapped in `waitUntil` rather than
+  // awaited, so the campaign KV read this needs stays off the download's
+  // critical path.
   if (new URL(request.url).pathname === '/resume.pdf') {
     ctx.waitUntil(queueResumePdfIntent(request, env, ctx));
   }

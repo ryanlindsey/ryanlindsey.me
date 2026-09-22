@@ -25,12 +25,31 @@ import { TEST_SIGNING_KEY } from '../src/lib/tier/grant';
 // reaches `completeRun` and the `errored` half of the closed failure map gets
 // exercised. Neither spends a neuron, opens a subrequest or touches a binding.
 
+/**
+ * The queue double, local to this file for the reason tests/chat-endpoint.test.ts
+ * keeps `mock-ae` local to that one: `MCP_WORKER` is shared by every suite
+ * that boots this Worker, and no other suite reads a message back. Its own
+ * wrangler.jsonc carries why a double is needed at all, and the short version
+ * is that the real local simulation delivers a message to the site's consumer,
+ * which drops it under `RLME_NOTIFY_MODE: 'stub'` -- so the whole notification
+ * could be deleted from `completeRun` with nothing going red.
+ */
+type MockQueueModule = typeof import('../workers/mock-queue/src/index');
+const MOCK_QUEUE_WORKER = { configPath: './workers/mock-queue/wrangler.jsonc' };
+
 const server = createTestHarness({
-  workers: MCP_HARNESS_WORKERS.map((worker) =>
-    worker === MCP_WORKER
-      ? { ...MCP_WORKER, vars: { ...MCP_WORKER.vars, FIT_ENGINE: 'off-after-delay' } }
-      : worker,
-  ),
+  workers: [
+    ...MCP_HARNESS_WORKERS.map((worker) =>
+      worker === MCP_WORKER
+        ? {
+            ...MCP_WORKER,
+            vars: { ...MCP_WORKER.vars, FIT_ENGINE: 'off-after-delay' },
+            bindingOverrides: { ...MCP_WORKER.bindingOverrides, EVENTS: 'mock-queue' },
+          }
+        : worker,
+    ),
+    MOCK_QUEUE_WORKER,
+  ],
 });
 
 /**
@@ -60,6 +79,9 @@ const misconfigured = createTestHarness({
 
 let db: D1Database;
 let misconfiguredDb: D1Database;
+let mockQueue: Awaited<
+  ReturnType<ReturnType<typeof server.getWorker<unknown, MockQueueModule>>['getExport']>
+>;
 let origin = '';
 let misconfiguredOrigin = '';
 
@@ -70,6 +92,7 @@ beforeAll(async () => {
   const mcp = server.getWorker<{ DB: D1Database }>('ryanlindsey-me-mcp');
   await mcp.applyD1Migrations('DB');
   db = (await mcp.getEnv()).DB;
+  mockQueue = await server.getWorker<unknown, MockQueueModule>('mock-queue').getExport();
 
   // Listened here rather than inside the one test that uses it: a harness
   // started in a test body is a harness whose lifetime is not the file's.
@@ -225,6 +248,68 @@ test('opens the row as pending, answers with its id, and closes it behind the re
     },
     { timeout: 5000, interval: 25 },
   );
+});
+
+/**
+ * THE NOTIFICATION, WHICH THE OTHER WORKER USED TO SEND (#277).
+ *
+ * The site queued `fit-run` off the 303 out of `/fit/run`, calling that
+ * redirect an unambiguous "a report exists". #269 turned it into "a run
+ * started", so the operator was told at the moment nothing had been generated
+ * and was never told when something was. `completeRun` queues it now, which is
+ * why the assertion lives in this suite rather than in a site one.
+ *
+ * FOUND BY REPORT ID rather than by recency, for the reason the audit case
+ * below finds its row by `grant_jti`: every other case in this file opens a
+ * run too, each closes in its own `waitUntil`, and "the newest message" is
+ * whichever of them the runtime reached last.
+ *
+ * `outcome: 'failed'` is the one this harness can produce, and a failed run is
+ * worth waking the operator for rather than in spite of: it means a reader
+ * holding a live link got nothing, which is exactly the case nobody would
+ * otherwise hear about. The `ok` half of the map is the same two lines with a
+ * different literal, and reaching it here would mean an engine that answers.
+ */
+test('a completed run notifies with the audience the grant named', async () => {
+  const { token } = await grant(db, 'fixture-notified');
+  const response = await send(origin, '/fit/start', { token });
+  expect(response.status).toBe(200);
+  const { id } = (await response.json()) as { id: string };
+
+  const event = await vi.waitFor(
+    async () => {
+      const messages = (await mockQueue.messages()) as {
+        kind: string;
+        at: string;
+        detail: Record<string, string>;
+      }[];
+      const found = messages.find((message) => message.detail?.report === id);
+      expect(found, 'the finished run puts an event on the queue').toBeDefined();
+      return found!;
+    },
+    { timeout: 5000, interval: 25 },
+  );
+
+  expect(event.kind).toBe('fit-run');
+  expect(event.detail).toEqual({ audience: 'fixture-notified', report: id, outcome: 'failed' });
+
+  // THE EVENT NAMES A RUN THAT IS OVER, which is the whole move: the send is
+  // sequenced after the UPDATE that closes the row, so a message on the queue
+  // is never ahead of the state the permalink it names will show.
+  const closed = await db
+    .prepare('SELECT status FROM fit_reports WHERE id = ?')
+    .bind(id)
+    .first<{ status: string }>();
+  expect(closed?.status).toBe('failed');
+
+  // NOTHING A CALLER TYPED, asserted over the whole message rather than field
+  // by field. A queue message is copied into an email and leaves Cloudflare,
+  // which is what makes it the narrowest surface here
+  // (src/lib/agent-intel/intent.ts), and a list of forbidden fields cannot
+  // notice a field added later.
+  const wire = JSON.stringify(event);
+  expect(wire).not.toContain(A_ROLE);
+  expect(wire).not.toContain(token);
 });
 
 /**

@@ -1,0 +1,37 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+
+  // TEST-ONLY. Never deployed: no account_id, no routes, no workers.dev
+  // subdomain, and no deploy script references it. `workers_dev: false` is the
+  // mechanism rather than the convention, exactly as in workers/mock-ai and
+  // workers/mock-ae -- the absence of routes alone would not stop a stray
+  // `wrangler deploy --config workers/mock-queue/wrangler.jsonc`.
+  //
+  // THE THIRD MOCK, and it exists for the same reason as the second: the
+  // binding it stands in front of is emulated in a way no test can read back.
+  // Miniflare does simulate Queues, and a message sent to `ryanlindsey-me-events`
+  // under a harness that also boots the site is really delivered to the site's
+  // `queue()` consumer -- which calls `handleEventBatch`, which under
+  // `RLME_NOTIFY_MODE: 'stub'` returns 'skipped' without recording anything
+  // anywhere. So the whole high-intent path could be deleted from
+  // workers/mcp/src/fit-start.ts with no test going red, which is the class of
+  // silently-green hole workers/mock-ae was written to close for Analytics
+  // Engine.
+  //
+  // `bindingOverrides: { EVENTS: "mock-queue" }` replaces the producer binding
+  // with a plain service binding pointed here. `Queue.send()` is a method call
+  // rather than an HTTP request, so this exports a `WorkerEntrypoint` with
+  // `send` (what the Worker under test calls through the `EVENTS` binding) and
+  // `messages` (what the TEST calls on the SAME named worker via
+  // `server.getWorker('mock-queue')`), the same two-path shape workers/mock-ae
+  // documents at length. There is no `reset`, unlike mock-ae, and src/index.ts
+  // in this directory says why: producers send from `ctx.waitUntil`, so
+  // clearing the array is a race with the previous test.
+  //
+  // The name is what `bindingOverrides: { EVENTS: "mock-queue" }` resolves.
+  "name": "mock-queue",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+}
