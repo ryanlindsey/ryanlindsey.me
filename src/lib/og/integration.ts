@@ -3,6 +3,15 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AstroIntegration } from 'astro';
 import type { RenderedCard } from './cards';
+// A static import, not a dynamic one inside the astro:build:done hook below.
+// Measured 2026-09-22: a dynamic import written inside that hook fails with
+// "Vite module runner has been closed," because astro.config.mjs's whole
+// import graph, this file included, loads through Vite's SSR module runner,
+// and that runner is disposed before any build hook runs. Importing render.ts
+// statically here instead means it loads whenever the config does, including
+// under astro dev and astro check, which costs nothing measurable: satori is
+// plain JavaScript and native resvg loads a small compiled addon, neither of
+// which does real work until renderCard is actually called.
 import { loadCardAssets, renderCard } from './render';
 
 /**
@@ -42,19 +51,6 @@ export function ogCards(): AstroIntegration {
           );
         }
         const cards: RenderedCard[] = JSON.parse(readFileSync(manifest, 'utf8'));
-        // `./render` is a static import at the top of this file, and
-        // deliberately not a dynamic one here: astro.config.mjs, and this file
-        // through it, load through Vite's SSR module runner (the mechanism
-        // that lets a plain TS/ESM config file run at all), and that runner
-        // rewrites every `import()` literal it sees at parse time into a call
-        // routed through itself. It is disposed once config loading finishes
-        // -- long before astro:build:done fires -- so a dynamic import written
-        // here throws "Vite module runner has been closed" (measured
-        // 2026-09-22). What actually keeps satori and native resvg out of
-        // astro dev and astro check is one level down, in render.ts: it lazily
-        // imports those two packages from inside renderCard rather than at its
-        // own top level, so importing render.ts costs nothing until a card is
-        // actually rendered.
         const assets = loadCardAssets(root);
         for (const card of cards) {
           const out = new URL(card.path.slice(1), client);
