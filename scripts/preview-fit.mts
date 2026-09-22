@@ -137,8 +137,8 @@ const token = await mintToken(TEST_SIGNING_KEY, claims);
 
 await db
   .prepare(
-    `INSERT INTO fit_reports (id, created_at, audience, model, target_description, report_json, citations_checked, citations_dropped)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO fit_reports (id, created_at, status, audience, model, target_description, report_json, citations_checked, citations_dropped)
+     VALUES (?, ?, 'ok', ?, ?, ?, ?, ?, ?)`,
   )
   .bind(
     REPORT_ID,

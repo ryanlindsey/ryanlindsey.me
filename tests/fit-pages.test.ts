@@ -714,9 +714,9 @@ test('POST /fit/run with a grant reaches the engine and reports its refusal', as
 async function storeReport(id: string, audience = 'web') {
   await db
     .prepare(
-      `INSERT INTO fit_reports (id, created_at, audience, model, target_description,
+      `INSERT INTO fit_reports (id, created_at, status, audience, model, target_description,
          report_json, citations_checked, citations_dropped)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, 'ok', ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       id,
@@ -889,9 +889,9 @@ test('the band renders on the stale-schema notice path too', async () => {
   });
   await db
     .prepare(
-      `INSERT INTO fit_reports (id, created_at, audience, model, target_description,
+      `INSERT INTO fit_reports (id, created_at, status, audience, model, target_description,
          report_json, citations_checked, citations_dropped)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, 'ok', ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       'fixture-permalink-band-stale-id',
@@ -923,9 +923,9 @@ test('the report page states its provenance, dropped citations included', async 
   // count and asserts on that number directly.
   await db
     .prepare(
-      `INSERT INTO fit_reports (id, created_at, audience, model, target_description,
+      `INSERT INTO fit_reports (id, created_at, status, audience, model, target_description,
          report_json, citations_checked, citations_dropped)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, 'ok', ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       'fixture-provenance-id',
@@ -966,9 +966,9 @@ test('the report page states its provenance, dropped citations included', async 
 test('a stored report that no longer matches the schema renders a notice, not a crash', async () => {
   await db
     .prepare(
-      `INSERT INTO fit_reports (id, created_at, audience, model, target_description,
+      `INSERT INTO fit_reports (id, created_at, status, audience, model, target_description,
          report_json, citations_checked, citations_dropped)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, 'ok', ?, ?, ?, ?, ?, ?)`,
     )
     .bind('fixture-stale-id', '2026-09-08T00:00:00.000Z', 'web', 'm', 'd', '{"nope":true}', 0, 0)
     .run();
@@ -986,9 +986,9 @@ test('a stored report whose JSON will not even parse renders the same notice', a
   // uncaught SyntaxError here would do exactly that, silently.
   await db
     .prepare(
-      `INSERT INTO fit_reports (id, created_at, audience, model, target_description,
+      `INSERT INTO fit_reports (id, created_at, status, audience, model, target_description,
          report_json, citations_checked, citations_dropped)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, 'ok', ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       'fixture-unparseable-id',
@@ -1021,9 +1021,9 @@ test('a stored report with an unparseable created_at does not crash', async () =
   // specifically about the date guard and nothing else.
   await db
     .prepare(
-      `INSERT INTO fit_reports (id, created_at, audience, model, target_description,
+      `INSERT INTO fit_reports (id, created_at, status, audience, model, target_description,
          report_json, citations_checked, citations_dropped)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, 'ok', ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       'fixture-bad-date-id',
@@ -1091,9 +1091,9 @@ test('the permalink page copy does not call the published work "the corpus"', as
   // says the word.
   await db
     .prepare(
-      `INSERT INTO fit_reports (id, created_at, audience, model, target_description,
+      `INSERT INTO fit_reports (id, created_at, status, audience, model, target_description,
          report_json, citations_checked, citations_dropped)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, 'ok', ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       'fixture-vocabulary-id',
