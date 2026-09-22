@@ -33,6 +33,12 @@ test('the MCP origin serves the claim as JSON', async () => {
   const response = await mcpServer.fetch('/.well-known/glama.json');
   expect(response.status).toBe(200);
   expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8');
+  // The claim is not a discovery document, so it advertises nothing. Pinned
+  // here because discovery-link-headers.test.ts cannot catch it: that suite
+  // iterates three hard-coded paths and never sees this one, so without this
+  // line a later edit could add `Link: discoveryLinkHeader()` to the branch
+  // and every test would still pass.
+  expect(response.headers.get('link')).toBeNull();
   expect(await response.json()).toEqual(buildGlamaClaim());
 });
 

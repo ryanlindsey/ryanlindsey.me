@@ -61,13 +61,15 @@ export function buildMcpDiscovery(origin: string) {
  * from https://ryanlindsey.me over `SITE_ORIGIN` (global constraint,
  * src/lib/corpus.ts) -- so the only things a GET on mcp.ryanlindsey.me can
  * ever return are this file, /.well-known/mcp.json,
- * /.well-known/mcp/server-card.json, /mcp/server-card (the SEP-2127 card) and
- * /.well-known/oauth-protected-resource, none of which is the corpus. (This
- * paragraph named only this file and /.well-known/mcp.json when it was
- * written on day 3; issues #166 and #167 of the agent-readiness epic added
- * two more documents to this origin, and issue #311 added the SEP-2127 card
- * at /mcp/server-card; the reasoning below still holds unchanged, because
- * none of the additions is the corpus either.) That content already carries
+ * /.well-known/mcp/server-card.json, /mcp/server-card (the SEP-2127 card),
+ * /.well-known/oauth-protected-resource and /.well-known/glama.json, none of
+ * which is the corpus. (This paragraph named only this file and
+ * /.well-known/mcp.json when it was written on day 3; issues #166 and #167
+ * of the agent-readiness epic added two more documents to this origin, issue
+ * #311 added the SEP-2127 card at /mcp/server-card, and issue #314 added the
+ * Glama ownership claim at /.well-known/glama.json; the reasoning below
+ * still holds unchanged, because none of the additions is the corpus
+ * either.) That content already carries
  * its reservation at the origin where it actually lives: every group in the
  * site's own robots.txt repeats `ai-train=no` for exactly this reason.
  * Restating the line here would not extend the reservation to anything new
@@ -121,8 +123,9 @@ Allow: /
 # Named for legibility, matching the site's own robots.txt -- there is
 # nothing on this origin for any of these to fetch beyond this file, the
 # metadata documents at /.well-known/mcp.json, /.well-known/mcp/server-card.json,
-# /mcp/server-card (the SEP-2127 card)
-# and /.well-known/oauth-protected-resource, and /mcp, /chat and /search
+# /mcp/server-card (the SEP-2127 card),
+# /.well-known/oauth-protected-resource and /.well-known/glama.json (the
+# Glama ownership claim, issue #314), and /mcp, /chat and /search
 # themselves. None of the three is a page: the first two are POST-only,
 # JSON-RPC and chat respectively, and /search (issue #146) answers JSON to a
 # GET carrying a query. It is left permitted rather than disallowed because
