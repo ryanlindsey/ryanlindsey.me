@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.39.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.38.0...ryanlindsey-me-v1.39.0) (2026-09-22)
+
+
+### Features
+
+* **fit:** give a fit report a status so a run can be stored before it finishes ([0854860](https://github.com/ryanlindsey/ryanlindsey.me/commit/0854860d29de6b557fac58abf791b19c4011b1b6))
+* **fit:** notify on the run that finished rather than the one that started ([ad82a36](https://github.com/ryanlindsey/ryanlindsey.me/commit/ad82a363961ab914a2d27da0226be6b3d66023b1))
+* **fit:** redirect to the permalink without waiting for the report ([5eb1383](https://github.com/ryanlindsey/ryanlindsey.me/commit/5eb1383e6cd299b50b2725d6af287d1a81d1a85f))
+* **fit:** render a report that is pending, stale or failed ([f5e2c1a](https://github.com/ryanlindsey/ryanlindsey.me/commit/f5e2c1a16555df5a63bd7e955e4294b04bfe1346))
+* **fit:** start a fit run without waiting for it to finish ([2d031bd](https://github.com/ryanlindsey/ryanlindsey.me/commit/2d031bd6f4bd3a22472c9fe36bc792e366ca91bc))
+
+
+### Bug Fixes
+
+* **fit:** run the deferred fit analysis in a workflow so it is not cancelled at thirty seconds ([edd11d5](https://github.com/ryanlindsey/ryanlindsey.me/commit/edd11d5a93c74e11aa6b9d99e05ea554c972c074))
+
+
+### Dependencies
+
+* bump the all group across 1 directory with 3 updates ([#328](https://github.com/ryanlindsey/ryanlindsey.me/issues/328)) ([0502d05](https://github.com/ryanlindsey/ryanlindsey.me/commit/0502d0562281a1a13fec72364ad3d813245d684f))
+
 ## [1.38.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.37.0...ryanlindsey-me-v1.38.0) (2026-09-22)
 
 
