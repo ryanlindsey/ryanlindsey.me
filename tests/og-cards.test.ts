@@ -17,7 +17,7 @@ import {
   contentCard,
   type OgCard,
 } from '../src/lib/og/cards';
-import { TITLE_FLOOR, titleSize } from '../src/lib/og/layout';
+import { TITLE_FLOOR, TITLE_MAX_CHARS, titleSize } from '../src/lib/og/layout';
 import { loadCardAssets, renderCard } from '../src/lib/og/render';
 import { standfirstSchema } from '../src/lib/og/standfirst';
 import { readingTimeFor } from '../src/lib/reading-time';
@@ -84,6 +84,42 @@ test('a long title steps down, and never below the floor', () => {
   expect(titleSize(post('x'.repeat(300)))).toBe(TITLE_FLOOR);
   for (const card of [HOME_CARD, CHAT_CARD, OPS_CARD]) {
     expect(titleSize(card)).toBeGreaterThanOrEqual(TITLE_FLOOR);
+  }
+});
+
+/**
+ * Reads every `.mdx` entry's frontmatter `title:` line under
+ * `src/content/<dir>`, stripping the surrounding YAML quotes a title with a
+ * colon in it needs (silent-failure.mdx's title is one). Drafts included:
+ * a draft's card renders from the same layout as a published one.
+ */
+function contentTitles(dir: 'posts' | 'caseStudies'): { name: string; title: string }[] {
+  const base = new URL(`../src/content/${dir}/`, import.meta.url);
+  return readdirSync(base)
+    .filter((name) => name.endsWith('.mdx'))
+    .map((name) => {
+      const source = readFileSync(new URL(name, base), 'utf8');
+      const match = source.match(/^title:\s*(.*)$/m);
+      if (!match) throw new Error(`${dir}/${name}: no "title:" line in frontmatter`);
+      let title = match[1].trim();
+      if (
+        (title.startsWith("'") && title.endsWith("'")) ||
+        (title.startsWith('"') && title.endsWith('"'))
+      ) {
+        title = title.slice(1, -1);
+      }
+      return { name, title };
+    });
+}
+
+test('no real title is long enough for its share card to clip it', () => {
+  for (const { name, title } of [...contentTitles('posts'), ...contentTitles('caseStudies')]) {
+    expect(
+      title.length,
+      `${name}: title is ${title.length} characters ("${title}"), over TITLE_MAX_CHARS ` +
+        `(${TITLE_MAX_CHARS}) -- its share card will clip this title with an ellipsis at ` +
+        `TITLE_FLOOR. Shorten the title.`,
+    ).toBeLessThanOrEqual(TITLE_MAX_CHARS);
   }
 });
 

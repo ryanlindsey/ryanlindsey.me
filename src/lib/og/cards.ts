@@ -12,7 +12,15 @@ import { readingTimeFor } from '../reading-time';
  * /chat and /ops, and Node under vitest. All three have `crypto.subtle`.
  */
 
-/** Bump when the rendered layout changes, so every card moves to a new URL and no scraper keeps the old one. */
+/**
+ * Bump when the rendered layout changes, so every card moves to a new URL
+ * and no scraper keeps the old one. `cardPath` hashes only the strings an
+ * `OgCard` carries, so a change to how a card is drawn rather than what it
+ * says -- src/lib/og/layout.ts, src/styles/tokens.css (the palette
+ * src/lib/og/render.ts reads), or the fonts render.ts loads -- moves no hash
+ * on its own. Bump this alongside any of those, or the old image keeps
+ * serving under its old URL.
+ */
 export const OG_CARD_CONTRACT_VERSION = 1;
 
 export const CARD_WIDTH = 1200;

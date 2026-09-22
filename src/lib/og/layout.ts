@@ -40,13 +40,28 @@ export const TITLE_FLOOR = 64;
  * character in a 1000px column.
  *
  * Measured 2026-09-22 by building this repo's own content and reading the
- * rendered PNGs: the longest article title today (90 characters,
- * writing/agent-native-site) and the longest case-study title (74
- * characters, work/silent-failure) both exceed every step and land on
- * TITLE_FLOOR at 64px. Both sit on two lines with room to spare before
- * lineClamp: 3's three-line backstop, and the footer rule stays clear in
- * both. No threshold moved: the starting values above already held for
- * every title this content has.
+ * rendered PNGs. The longest POST title today is 43 characters
+ * (writing/agent-native-site, "An agent-native personal site on
+ * Cloudflare"), which lands on the article variant's first step and renders
+ * at 84px. The longest CASE STUDY title is 74 characters
+ * (work/silent-failure), which exceeds every case-study step, floors at
+ * TITLE_FLOOR (64px), and fills all three of lineClamp: 3's lines with no
+ * room to spare -- one more real word would have clipped it. The
+ * second-longest case study (58 characters, work/delivery-forecasting)
+ * lands on the second step at 72px, also on three lines, with margin to
+ * spare. No threshold moved: the starting values above already held for
+ * every title this content has, though silent-failure's render is now known
+ * to sit at the exact edge rather than comfortably inside it, which is what
+ * TITLE_MAX_CHARS below exists to police against a future, longer title.
+ *
+ * AN EARLIER VERSION OF THIS COMMENT WAS WRONG, and it is worth keeping the
+ * correction rather than the mistake: it named "writing/agent-native-site"
+ * as a 90-character title floored at 64px. That entry's real title is 43
+ * characters and renders at 84px; the 90-character, floored figure belonged
+ * to no title in this repository. It went uncaught because the comment was
+ * written from a recollection rather than from reading the rendered PNGs
+ * against the frontmatter, which is what every figure above this paragraph
+ * was redone against.
  */
 const TITLE_STEPS: Record<OgVariant, readonly (readonly [number, number])[]> = {
   home: [
@@ -77,6 +92,36 @@ export function titleSize(card: OgCard): number {
   }
   return TITLE_FLOOR;
 }
+
+/**
+ * The longest a post's or case study's title may be before its floored
+ * render (TITLE_FLOOR, 64px) risks Satori's `lineClamp: 3` truncating it
+ * with an ellipsis rather than failing loudly. `tests/og-cards.test.ts`
+ * enforces this against every real title under `src/content/posts` and
+ * `src/content/caseStudies`, drafts included, so a title that would clip
+ * fails the build instead of shipping quietly.
+ *
+ * Character count only approximates rendered width, so this was bracketed
+ * empirically on 2026-09-22 by rendering realistic sentences (real words,
+ * not a repeated character) at the floor size and reading the PNGs:
+ *
+ * - A typical sentence-case title (mixed short and long words, mostly
+ *   lowercase) filled three lines cleanly up to 96 characters and clipped
+ *   with an ellipsis at 104.
+ * - An all-lowercase, short-word title used only two of the three lines at
+ *   78 characters, well under capacity.
+ * - A worst-case title, every word capitalized and built from wide letters
+ *   (M, W, O), filled three lines cleanly at 82 characters and clipped at
+ *   84. This repository's own Title Case titles ("Choosing a Workflow over
+ *   a Queue") capitalize nearly as many words, so this is a realistic worst
+ *   case rather than a contrived one.
+ *
+ * 78 sits a few characters under the worst case's own safe edge (82), and
+ * above the longest real title in the corpus today (74, work/silent-failure,
+ * which the comment above `TITLE_STEPS` records as already at its own
+ * three-line edge with no room to spare).
+ */
+export const TITLE_MAX_CHARS = 78;
 
 export function cardTree(card: OgCard, c: Palette): Node {
   const home = card.variant === 'home';
