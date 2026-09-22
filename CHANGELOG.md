@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.38.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.37.0...ryanlindsey-me-v1.38.0) (2026-09-22)
+
+
+### Features
+
+* **discovery:** claim the Glama listing from the MCP origin ([#336](https://github.com/ryanlindsey/ryanlindsey.me/issues/336)) ([6359ecf](https://github.com/ryanlindsey/ryanlindsey.me/commit/6359ecf9a6eb03079d49eb517b36fd08e8e1987a))
+
 ## [1.37.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.36.0...ryanlindsey-me-v1.37.0) (2026-09-21)
 
 
