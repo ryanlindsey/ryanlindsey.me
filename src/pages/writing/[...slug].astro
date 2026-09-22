@@ -7,6 +7,7 @@ import { getResume } from '../../lib/resume-collection';
 import { canonicalUrlFor } from '../../lib/markdown-export';
 import { buildBlogPosting, buildBreadcrumbList } from '../../lib/structured-data';
 import { selectRelated } from '../../lib/related-posts';
+import { contentCard } from '../../lib/og/cards';
 import type { GetStaticPaths } from 'astro';
 
 // Drafts get a route but never an index entry, so work in progress is
@@ -82,6 +83,7 @@ const related = selectRelated(
   structuredData={structuredData}
   robots={post.data.draft ? 'noindex, nofollow' : undefined}
   related={related}
+  ogCard={contentCard('post', post)}
 >
   <Content />
   <SeriesNav slot="footer" current={post} siblings={siblings} />

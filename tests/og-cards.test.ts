@@ -165,3 +165,33 @@ test('a card is served for a year, and the manifest is not served at all', async
   expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
   expect((await server.fetch('/og/cards.json')).status).toBe(404);
 });
+
+/**
+ * The pages with a fixed card name that card, not the home card they would
+ * fall back to. Asserted by path, because a page that forgot its prop would
+ * still carry a valid, served image and pass every sweep in tests/seo.test.ts.
+ */
+test.each([
+  ['/chat/', CHAT_CARD],
+  ['/ops/', OPS_CARD],
+  ['/search/', HOME_CARD],
+  ['/writing/', HOME_CARD],
+  ['/', HOME_CARD],
+])('%s names its card', async (path, card) => {
+  const html = await (await server.fetch(path)).text();
+  expect(html).toContain(`content="https://ryanlindsey.me${await cardPath(card)}"`);
+  expect(html).toContain(`property="og:image:alt" content="${cardAlt(card)}"`);
+});
+
+test('/resume names the résumé card and every post names its own', async () => {
+  const resume = await (await server.fetch('/resume/')).text();
+  expect(resume).toMatch(/content="https:\/\/ryanlindsey\.me\/og\/resume\.[0-9a-f]{8}\.png"/);
+  const post = await (await server.fetch('/writing/armature/')).text();
+  expect(post).toMatch(
+    /content="https:\/\/ryanlindsey\.me\/og\/writing\/armature\.[0-9a-f]{8}\.png"/,
+  );
+  const study = await (await server.fetch('/work/silent-failure/')).text();
+  expect(study).toMatch(
+    /content="https:\/\/ryanlindsey\.me\/og\/work\/silent-failure\.[0-9a-f]{8}\.png"/,
+  );
+});

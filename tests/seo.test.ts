@@ -165,6 +165,13 @@ const robotsDirectives = (html: string): string[] =>
 const metaDescriptions = (html: string): string[] =>
   [...html.matchAll(/<meta name="description" content="([^"]*)"/g)].map((match) => match[1]);
 
+/** Every `content` of every `<meta>` whose `attr` equals `key`, in document order. */
+const metaContents = (html: string, attr: 'property' | 'name', key: string): string[] =>
+  [...html.matchAll(/<meta\b[^>]*>/g)]
+    .map(([tag]) => tag)
+    .filter((tag) => tag.includes(`${attr}="${key}"`))
+    .map((tag) => /\bcontent="([^"]*)"/.exec(tag)?.[1] ?? '');
+
 /**
  * A FINDING THIS TEST DOES NOT YET CATCH, recorded here so it is not
  * rediscovered as a surprise (measured 2026-09-13, through this harness).
@@ -748,4 +755,52 @@ test('every page the sitemap lists carries the markup the content selector needs
     problems,
     `the content selector's markup contract is broken:\n${problems.join('\n')}`,
   ).toEqual([]);
+});
+
+/**
+ * The share card (#363), on EVERY page rather than every indexable one:
+ * Base.astro emits these tags unconditionally, and a link shared from a draft
+ * or from /fit unfurls exactly as any other does. Each image is fetched back
+ * through the harness, because a tag naming a 404 renders as a blank preview
+ * and nothing else in the suite would notice.
+ */
+test('every page names one absolute, sized, described share image that is served', async () => {
+  for (const path of ALL_PAGES) {
+    const html = await page(path);
+    const images = metaContents(html, 'property', 'og:image');
+    expect(images, `${path} og:image`).toHaveLength(1);
+    const image = new URL(images[0]);
+    expect(image.origin, `${path} og:image must be absolute on the site`).toBe(SITE);
+    expect(image.pathname, `${path} og:image`).toMatch(/^\/og\/.+\.[0-9a-f]{8}\.png$/);
+    expect(metaContents(html, 'property', 'og:image:width'), path).toEqual(['1200']);
+    expect(metaContents(html, 'property', 'og:image:height'), path).toEqual(['630']);
+    const alt = metaContents(html, 'property', 'og:image:alt');
+    expect(alt, `${path} og:image:alt`).toHaveLength(1);
+    expect(alt[0].trim(), `${path} og:image:alt`).not.toBe('');
+    expect(metaContents(html, 'name', 'twitter:card'), path).toEqual(['summary_large_image']);
+    const served = await server.fetch(image.pathname);
+    expect(served.status, `${path} names ${image.pathname}`).toBe(200);
+    expect(served.headers.get('content-type'), image.pathname).toMatch(/^image\/png/);
+  }
+});
+
+test('posts and case studies are shared as articles, every other page as a website', async () => {
+  const article = /^\/(writing|work)\/(?!pillar\/)[^/]+\/$/;
+  for (const path of ALL_PAGES) {
+    const html = await page(path);
+    expect(metaContents(html, 'property', 'og:type'), path).toEqual([
+      article.test(path) ? 'article' : 'website',
+    ]);
+  }
+});
+
+test('the share tags agree with the page they are on', async () => {
+  for (const path of ALL_PAGES) {
+    const html = await page(path);
+    const title = /<title>([^<]*)<\/title>/.exec(html)?.[1];
+    expect(metaContents(html, 'property', 'og:title'), path).toEqual([title]);
+    expect(metaContents(html, 'property', 'og:description'), path).toEqual(metaDescriptions(html));
+    expect(metaContents(html, 'property', 'og:url'), path).toEqual([new URL(path, SITE).href]);
+    expect(metaContents(html, 'property', 'og:site_name'), path).toEqual(['Ryan Lindsey']);
+  }
 });

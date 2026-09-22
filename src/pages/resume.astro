@@ -6,6 +6,7 @@ import TableOfContents from '../components/TableOfContents.astro';
 import type { TocNode } from '../lib/toc';
 import { getResume } from '../lib/resume-collection';
 import { artifactLinks, formatDateRange, resumeGaps, groupWorkByCompany } from '../lib/resume';
+import { resumeCard } from '../lib/og/cards';
 
 // Day 3 (02 §1): render from the single validated résumé source instead of
 // the day-2 hardcoded skeleton. getResume() reads the `resume` content
@@ -105,7 +106,12 @@ const telHref = resume.basics.phone ? `tel:+1${resume.basics.phone.replace(/\D/g
 const SECTION_HEADING = 'border-b border-rule pb-3 font-display text-heading text-ink';
 ---
 
-<Shell title="Resume" description={resume.basics.summary} markdownHref="/resume.md">
+<Shell
+  title="Resume"
+  description={resume.basics.summary}
+  markdownHref="/resume.md"
+  ogCard={resumeCard(resume.basics)}
+>
   <div data-testid="resume">
     {showGapNotice && (
       <div

@@ -20,6 +20,7 @@ import { cached } from '../lib/ops/cache';
 import { recentReleases } from '../lib/ops/changelog';
 import { readOpsMetrics, type OpsMetrics } from '../lib/ops/metrics';
 import { formatWindow, RETENTION } from '../lib/retention';
+import { OPS_CARD } from '../lib/og/cards';
 
 /**
  * The living colophon (06 §1): what this site is, what it has done lately, what
@@ -455,6 +456,7 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
 <Shell
   title="Ops"
   description="What this site is running, what it has served in the last 30 days, which models it spends, how it degrades, and what shipped: every figure labeled with the system it was read from."
+  ogCard={OPS_CARD}
 >
   {/*
       A FILLED PANEL, WHICH MEANS THE CASE-STUDY MASTHEAD'S WHOLE CONTRACT AND
