@@ -195,3 +195,25 @@ test('/resume names the résumé card and every post names its own', async () =>
     /content="https:\/\/ryanlindsey\.me\/og\/work\/silent-failure\.[0-9a-f]{8}\.png"/,
   );
 });
+
+/**
+ * Every published entry has a line for its card. Not a schema rule: the field
+ * stays optional so a new post can ship before its standfirst is written, and
+ * its card simply renders without one. This pins the set that exists today.
+ */
+test.each([
+  '/writing/agent-native-site/',
+  '/writing/armature/',
+  '/writing/choosing-a-workflow-over-a-queue/',
+  '/writing/terminal-setup/',
+  '/writing/verifying-a-change-no-test-can-reach/',
+  '/work/delivery-forecasting/',
+  '/work/silent-failure/',
+])('%s shares a card with a standfirst', async (path) => {
+  const html = await (await server.fetch(path)).text();
+  const alt = /property="og:image:alt" content="([^"]*)"/.exec(html)?.[1] ?? '';
+  const title = /<title>([^<]*) — Ryan Lindsey<\/title>/.exec(html)?.[1] ?? '';
+  expect(alt.length, `${path} alt should be longer than its title`).toBeGreaterThan(
+    title.length + 2,
+  );
+});
