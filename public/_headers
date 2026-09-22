@@ -232,6 +232,36 @@
 /.well-known/agent-skills/*/SKILL.md
   Content-Type: text/markdown; charset=utf-8
 
+# The site icon and the web manifest (#363), written by scripts/icons.mjs.
+# A day of cache rather than a year: these names are stable, so a longer one
+# would pin an old icon after the next rerun. Each is an EXACT path and no
+# other rule here sets Cache-Control, so there is nothing to comma-join (see
+# the file-header note). The manifest also names its type, because
+# `.webmanifest` is exactly the kind of extension a mime table's default
+# should not be trusted for, the same reasoning every Content-Type rule above
+# gives.
+/favicon.ico
+  Cache-Control: public, max-age=86400
+
+/favicon-dark.svg
+  Cache-Control: public, max-age=86400
+
+/favicon-light.svg
+  Cache-Control: public, max-age=86400
+
+/apple-touch-icon.png
+  Cache-Control: public, max-age=86400
+
+/icon-192.png
+  Cache-Control: public, max-age=86400
+
+/icon-512.png
+  Cache-Control: public, max-age=86400
+
+/manifest.webmanifest
+  Content-Type: application/manifest+json
+  Cache-Control: public, max-age=86400
+
 # Day 4 Task 14 (08 v1 item 2): the two discovery headers, verbatim, on
 # every response this origin serves FROM A STATIC ASSET. `/*` is the broadest
 # pattern in this file and sets no header any rule above also sets, so there is

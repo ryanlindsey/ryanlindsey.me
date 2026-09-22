@@ -22,6 +22,7 @@
     "registry:publish": "node scripts/registry-publish.mjs",
     "resume:pdf": "astro build && node scripts/resume-sheet.mjs",
     "resume:gate": "node scripts/resume-gate.mjs",
+    "icons": "node scripts/icons.mjs",
     "evals": "node evals/run.mjs",
     "resume:chrome": "node scripts/resume-chrome.mjs"
   },
@@ -49,10 +50,12 @@
   "devDependencies": {
     "@astrojs/check": "0.9.10",
     "@puppeteer/browsers": "^3.2.2",
+    "@resvg/resvg-js": "2.6.2",
     "@tailwindcss/typography": "0.5.20",
     "@tailwindcss/vite": "4.3.3",
     "@types/node": "26.6.2",
     "jsdom": "30.1.0",
+    "opentype.js": "2.0.0",
     "prettier": "3.9.8",
     "prettier-plugin-astro": "1.0.1",
     "tailwindcss": "4.3.3",
