@@ -16,7 +16,7 @@ const events: IntentEvent[] = [
   {
     kind: 'fit-run',
     at: '2026-09-09T12:00:00.000Z',
-    detail: { audience: 'label-a', report: 'abc' },
+    detail: { audience: 'label-a', report: 'abc', outcome: 'ok' },
   },
   {
     kind: 'gated-read',
@@ -32,7 +32,9 @@ describe('buildNotification', () => {
 
   test('the body lists every event with its time and detail', () => {
     const { body } = buildNotification(events);
-    expect(body).toContain('2026-09-09T12:00:00.000Z  fit-run  audience=label-a report=abc');
+    expect(body).toContain(
+      '2026-09-09T12:00:00.000Z  fit-run  audience=label-a report=abc outcome=ok',
+    );
     expect(body).toContain('gated-read  tool=get_references');
   });
 

@@ -1,3 +1,4 @@
+import { highIntentFor } from '../../../src/lib/agent-intel/intent';
 import { analyzeFit, FitUnavailable } from '../../../src/lib/fit/engine';
 import { newReportId } from '../../../src/lib/fit/report-id';
 import { hasScope, resolveGrant } from '../../../src/lib/tier/grant';
@@ -17,7 +18,9 @@ import type { McpEnv } from './env';
  * on a queue and not logged. That is why the run happens here rather than in a
  * queue consumer: a message would have to carry the token and the pasted
  * description, and src/lib/agent-intel/intent.ts says the queue carries labels
- * the operator needs and nothing a caller typed.
+ * the operator needs and nothing a caller typed. `completeRun` does put one
+ * message on that queue (#277), and it is that rule's shape rather than an
+ * exception to it: three labels, none of them typed by the caller.
  *
  * LIMITED AND AUDITED THROUGH `limitAndAudit`, which is the same
  * implementation `defineTool` uses. `analyze_fit` is the only `expensive` tool
@@ -97,7 +100,7 @@ export async function handleFitStart(
 
       // The eighty seconds, off the response. `waitUntil` rather than an await:
       // the whole point of this route is that the caller does not wait.
-      ctx.waitUntil(completeRun(env, id, call.target_description));
+      ctx.waitUntil(completeRun(env, id, grant.audience, call.target_description));
       return id;
     },
   );
@@ -113,8 +116,49 @@ export async function handleFitStart(
   return null;
 }
 
-/** Runs the engine and closes the row, whichever way it goes. */
-async function completeRun(env: McpEnv, id: string, description: string): Promise<void> {
+/**
+ * Runs the engine, closes the row and tells the operator, whichever way it
+ * goes.
+ *
+ * THE NOTIFICATION IS QUEUED FROM HERE BECAUSE THIS IS WHERE THE RUN ENDS
+ * (#277). It used to be queued by the site Worker, off the 303 to
+ * `/fit/r/<id>`, which was an unambiguous "a report exists" until #269 made
+ * that redirect mean "a run started" instead -- so the operator was told at
+ * the moment nothing had been generated, and was never told when something
+ * was. This Worker resolved the grant, so it is also the only one that can
+ * name the audience without a second verifier.
+ *
+ * A FAILED RUN NOTIFIES TOO. It means a reader holding a live link got
+ * nothing, which is exactly the case nobody would otherwise hear about, and it
+ * is why the event carries `outcome` rather than standing for success by
+ * existing.
+ *
+ * `await` RATHER THAN `ctx.waitUntil`: every call of this function is already
+ * inside one, and a nested `waitUntil` buys no extra time while letting the
+ * send outlive the handler that scheduled it.
+ *
+ * THE SEND SITS OUTSIDE THE `try`, which is the one thing about the shape
+ * below worth pausing on. Inside the successful branch it would be a send
+ * whose own failure lands in the `catch`, and the `catch` writes
+ * `status = 'failed'` -- so a queue that refused a message would rewrite a run
+ * that produced a report as one that did not, send a second event saying so,
+ * and leave the reader's permalink contradicting the report behind it.
+ *
+ * WHAT A REFUSED SEND DOES INSTEAD, since the placement above chooses it: the
+ * rejection leaves this function and settles the promise the caller handed to
+ * `ctx.waitUntil`, which logs it. That is the outcome worth having. The row is
+ * already closed by then, so the reader's permalink is correct either way and
+ * nothing here is left half written; what is lost is one operator
+ * notification, which is the cheapest thing in this path to lose. It is log
+ * noise rather than state damage, and it was chosen rather than overlooked.
+ */
+async function completeRun(
+  env: McpEnv,
+  id: string,
+  audience: string,
+  description: string,
+): Promise<void> {
+  let outcome: 'ok' | 'failed';
   try {
     const result = await analyzeFit(fitEnv(env), description);
     await env.DB.prepare(
@@ -131,6 +175,7 @@ async function completeRun(env: McpEnv, id: string, description: string): Promis
         id,
       )
       .run();
+    outcome = 'ok';
   } catch (error) {
     // `refused` is the engine declining for a reason it wrote a sentence about
     // -- the breaker, an empty corpus, an unusable answer. Anything else is a
@@ -150,5 +195,32 @@ async function completeRun(env: McpEnv, id: string, description: string): Promis
     await env.DB.prepare(`UPDATE fit_reports SET status = 'failed', failure_code = ? WHERE id = ?`)
       .bind(code, id)
       .run();
+    outcome = 'failed';
   }
+  await notifyRun(env, id, audience, outcome);
+}
+
+/**
+ * Puts the finished run on the events queue.
+ *
+ * The three fields are the whole message: the audience the grant named, the
+ * permalink id and which way the run went. Not the description, not the
+ * report, not the token -- src/lib/agent-intel/intent.ts is where that rule is
+ * written, and a queue message is the one thing here that gets copied into an
+ * email and leaves Cloudflare.
+ */
+async function notifyRun(
+  env: McpEnv,
+  id: string,
+  audience: string,
+  outcome: 'ok' | 'failed',
+): Promise<void> {
+  const event = highIntentFor({
+    kind: 'fit-run',
+    at: new Date().toISOString(),
+    audience,
+    reportId: id,
+    outcome,
+  });
+  if (event !== null) await env.EVENTS.send(event);
 }

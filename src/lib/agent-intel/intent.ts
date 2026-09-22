@@ -29,23 +29,37 @@ export interface IntentEvent {
 
 export type IntentInput =
   /**
-   * `audience` is OPTIONAL here and required on `gated-read` below, and the
-   * asymmetry is the point rather than an oversight.
+   * `audience` IS REQUIRED, and it used to be optional. A fit run was
+   * observable from two places: the MCP Worker, which resolved the grant and
+   * knew the audience, and the site Worker, which saw only a 303 go past and
+   * could not resolve the token without becoming a second verifier. The site
+   * omitted the field rather than filling it, and the operator recovered the
+   * audience from the `gated-read` event queued for the same run.
    *
-   * A fit run is observable from two places. The MCP Worker resolves the grant
-   * and knows the audience. The site Worker sees only a 303 to `/fit/r/<id>` go
-   * past, and resolving the token itself would mean a second grant verifier --
-   * the one thing `resolveGrant` exists to prevent there being two of.
+   * #269 removed the second observer. The run is queued by the Worker that
+   * closes the row, which is the one that resolved the grant, so there is no
+   * longer a producer that cannot answer. A `fit-run` event without an
+   * audience is now a bug rather than a known gap.
    *
-   * So the site omits the field rather than filling it. A placeholder was tried
-   * (`audience: 'unavailable-at-site'`) and is worse: `detail` renders straight
-   * into a notification email as `key=value`, so a non-label sits in the one
-   * field that otherwise always holds a real one, one careless read away from
-   * looking like an audience actually named that. An absent key reads as absent.
-   * The audience arrives in the `gated-read` event the MCP Worker queues for the
-   * same run.
+   * WHAT THE OPTIONAL FIELD TAUGHT is kept, because it applies to the next
+   * field somebody is tempted to leave out. A placeholder was tried
+   * (`audience: 'unavailable-at-site'`) and is worse than an absent key:
+   * `detail` renders straight into a notification email as `key=value`, so a
+   * non-label sits in the one field that otherwise always holds a real one.
+   * An `undefined` value is worse still, because it is present to
+   * `Object.entries` and ships as `audience=undefined`.
+   *
+   * `outcome` joins it for a reason of the same kind. The event is queued from
+   * both branches of the run, and a `fit-run` line that does not say which one
+   * reads as success for both.
    */
-  | { kind: 'fit-run'; at: string; audience?: string; reportId: string }
+  | {
+      kind: 'fit-run';
+      at: string;
+      audience: string;
+      reportId: string;
+      outcome: 'ok' | 'failed';
+    }
   | { kind: 'private-access'; at: string; client: string }
   | { kind: 'gated-read'; at: string; tool: string; audience: string }
   | { kind: 'resume-pdf'; at: string; referrerClass: ReferrerClass }
@@ -79,13 +93,7 @@ export function highIntentFor(input: IntentInput): IntentEvent | null {
       return {
         kind: 'fit-run',
         at: input.at,
-        // Spread-if-present rather than `audience: input.audience`, which would
-        // put an `undefined` value in a `Record<string, string>` -- present to
-        // `Object.entries`, and rendered into the email as `audience=undefined`.
-        detail: {
-          ...(input.audience === undefined ? {} : { audience: input.audience }),
-          report: input.reportId,
-        },
+        detail: { audience: input.audience, report: input.reportId, outcome: input.outcome },
       };
     case 'private-access':
       return { kind: 'private-access', at: input.at, detail: { client: input.client } };

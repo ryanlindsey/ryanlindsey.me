@@ -380,16 +380,29 @@ export const MCP_WORKER = {
 export const MOCK_AI_WORKER = { configPath: './workers/mock-ai/wrangler.jsonc' };
 
 /**
- * A THIRD mock lives in `workers/mock-ae`, for the `AE` (Analytics Engine)
- * binding -- NOT exported here and not in `MCP_HARNESS_WORKERS` below, unlike
- * its two siblings above. `tests/chat-endpoint.test.ts` and
- * `tests/mcp-site-search.test.ts` are the only suites that need a readable
- * `AE` (the second arrived with #146), so each builds its own worker list
- * (`bindingOverrides: { AE: 'mock-ae' }` merged onto `MCP_WORKER`) rather than
- * widening this shared config for two files' sake -- see their own
- * top-of-file comments for the reasoning, and workers/mock-ae's own
- * wrangler.jsonc for why the mock exists at all. Noted here only so a reader
- * of this file discovers it exists (task-13a-findings-final.md item 8).
+ * TWO FURTHER MOCKS LIVE UNDER `workers/`, and neither is exported here or
+ * listed in `MCP_HARNESS_WORKERS` below, unlike `mock-ai` above. Each is wired
+ * by the one suite that needs it, and they are named here only so a reader of
+ * this file discovers they exist (task-13a-findings-final.md item 8).
+ *
+ * `workers/mock-ae` stands in for the `AE` (Analytics Engine) binding.
+ * `tests/chat-endpoint.test.ts` and `tests/mcp-site-search.test.ts` are the
+ * only suites that need a readable `AE` (the second arrived with #146).
+ *
+ * `workers/mock-queue` stands in for the `EVENTS` queue producer binding, and
+ * `tests/fit-start.test.ts` is the only suite that reads a message back
+ * (#277). THE GAP IT CLOSES IS NOT THE ONE ITS TWO SIBLINGS CLOSE, which is
+ * worth saying because the three look alike: Queues ARE simulated locally, and
+ * a message really is delivered to the site Worker's consumer. That consumer
+ * drops it under `RLME_NOTIFY_MODE: 'stub'` without recording it anywhere, so
+ * what is missing is not the emulator but the read-back -- a producer's
+ * `env.EVENTS.send` could be deleted outright with nothing going red.
+ *
+ * Each suite builds its own worker list (`bindingOverrides: { AE: 'mock-ae' }`
+ * or `{ EVENTS: 'mock-queue' }`, merged onto `MCP_WORKER`) rather than
+ * widening this shared config for three files' sake. See their own top-of-file
+ * comments for the reasoning, and each mock's own wrangler.jsonc for why it
+ * exists at all.
  */
 
 /**
