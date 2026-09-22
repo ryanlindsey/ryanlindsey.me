@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.40.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.39.0...ryanlindsey-me-v1.40.0) (2026-09-22)
+
+
+### Features
+
+* **writing:** publish the workflows post ([#361](https://github.com/ryanlindsey/ryanlindsey.me/issues/361)) ([cbf19a9](https://github.com/ryanlindsey/ryanlindsey.me/commit/cbf19a9d002e544482b0481d04b81dc26d9f9ac4))
+
+
+### Dependencies
+
+* bump the all group across 1 directory with 11 updates ([#329](https://github.com/ryanlindsey/ryanlindsey.me/issues/329)) ([df7d6b8](https://github.com/ryanlindsey/ryanlindsey.me/commit/df7d6b8bf72f552434bd1dc7f001fae7eb3b1350))
+
 ## [1.39.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.38.0...ryanlindsey-me-v1.39.0) (2026-09-22)
 
 
