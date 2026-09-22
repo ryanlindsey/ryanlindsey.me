@@ -74,6 +74,13 @@ import type { McpEnv } from './env';
  * spending seventy-eight seconds on an `UPDATE` that would match no rows.
  *
  * The cost is one D1 read in front of a call measured at 78,222 ms.
+ *
+ * THIS IS HALF THE STORY AND THE OTHER HALF IS BESIDE `Attempt` BELOW. Keeping
+ * the description out of the params does not keep every trace of it out of
+ * durable state: the analyze step persists the REPORT, and a requirement in a
+ * report is quoted or closely paraphrased from the description. That is
+ * accepted, bounded and argued there, and a reader who stops here would carry
+ * away a stronger claim than this design makes.
  */
 export interface FitRunParams {
   id: string;
@@ -153,6 +160,39 @@ const ROW_STEP: WorkflowStepConfig = { retries: { limit: 1, delay: '5 seconds' }
  * The second thing this shape buys: a refusal is PERSISTED like any other step
  * result, so a resumed instance replays the refusal instead of asking the
  * engine again.
+ *
+ * WHAT THIS DOES PUT INTO DURABLE STATE, WHICH `FitRunParams` ABOVE GOES TO
+ * SOME LENGTH TO KEEP OUT OF IT. That comment argues the pasted description
+ * must not enter a 30-day store src/lib/retention.ts cannot sweep. The `result`
+ * on the branch above is a `FitResult`, and `Requirement.requirement`
+ * (src/lib/fit/schema.ts) is declared as "one requirement, quoted or closely
+ * paraphrased from the target description" -- so the report carries the model's
+ * extraction of that same text, and a successful step persists it. Read only
+ * the params comment and you would think nothing of the caller's prose reaches
+ * workflow state. Some of it does.
+ *
+ * IT IS ACCEPTED RATHER THAN OVERLOOKED, and the trade is exactly the one
+ * `ENGINE_STEP` above rests on: what makes the analyze and close steps separate
+ * is that an eviction between them must not re-pay a call measured at 78,222
+ * ms, and the only way a step can be replayed instead of re-run is for its
+ * value to be persisted. Refusing to persist the report means one step, and one
+ * step means paying twice.
+ *
+ * THE BOUND, so this is a size rather than a shrug. What is persisted is the
+ * report, not the description: an extraction of the requirements rather than
+ * the paste, and the same document this run is about to write to
+ * `fit_reports.report_json` and publish at a forwardable permalink. It lives
+ * under Workflows' retention -- up to 30 days on this plan -- where the row it
+ * duplicates lives for 365 under a window /ai-policy states out loud. So the
+ * copy in workflow state is a strict subset of published content with a shorter
+ * life than the copy this repository already commits to keeping. The
+ * description itself -- the verbatim paste, which is what
+ * src/lib/agent-intel/intent.ts's rule is actually about -- stays out of both
+ * the params and every step return.
+ *
+ * THE LINE THAT WOULD CROSS IT: returning the description, or a `FitResult` for
+ * a run whose report is NOT going to be published. Either turns a bounded
+ * duplicate into a second, unswept original.
  */
 type Attempt =
   { ok: true; result: FitResult } | { ok: false; code: FitFailureCode; message: string };
