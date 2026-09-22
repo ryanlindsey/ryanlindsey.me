@@ -3,6 +3,7 @@ import { z } from 'astro/zod';
 import { glob } from 'astro/loaders';
 import { IMPACTS, LIKELIHOODS } from './lib/governance/register';
 import { caseStudyFiguresSchema } from './lib/case-study-figures';
+import { standfirstSchema } from './lib/og/standfirst';
 
 // 02 §2: three pillars, fixed at launch. A post belongs to exactly one.
 const pillar = z.enum(['agentic-engineering', 'org-scaling', 'building-in-the-open']);
@@ -12,6 +13,7 @@ const posts = defineCollection({
   schema: z.object({
     title: z.string(),
     description: z.string(),
+    standfirst: standfirstSchema,
     publishedAt: z.coerce.date(),
     updatedAt: z.coerce.date().optional(),
     pillar,
@@ -40,6 +42,7 @@ const caseStudies = defineCollection({
   schema: z.object({
     title: z.string(),
     description: z.string(),
+    standfirst: standfirstSchema,
     publishedAt: z.coerce.date(),
     updatedAt: z.coerce.date().optional(),
     draft: z.boolean().default(false),

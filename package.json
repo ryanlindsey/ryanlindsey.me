@@ -58,6 +58,7 @@
     "opentype.js": "2.0.0",
     "prettier": "3.9.8",
     "prettier-plugin-astro": "1.0.1",
+    "satori": "0.33.5",
     "tailwindcss": "4.3.3",
     "tsx": "^4.23.13",
     "typescript": "6.0.3",

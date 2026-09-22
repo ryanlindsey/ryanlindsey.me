@@ -262,6 +262,14 @@
   Content-Type: application/manifest+json
   Cache-Control: public, max-age=86400
 
+# The share cards (#363), written by src/lib/og/integration.ts. A year and
+# `immutable` are safe only because every path carries a hash of what the card
+# says (src/lib/og/cards.ts): an edited title is a new URL, never a stale one.
+# `/og/*` overlaps no other rule setting Cache-Control, so there is nothing to
+# comma-join (see the file-header note).
+/og/*
+  Cache-Control: public, max-age=31536000, immutable
+
 # Day 4 Task 14 (08 v1 item 2): the two discovery headers, verbatim, on
 # every response this origin serves FROM A STATIC ASSET. `/*` is the broadest
 # pattern in this file and sets no header any rule above also sets, so there is
