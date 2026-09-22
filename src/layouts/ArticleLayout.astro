@@ -8,6 +8,7 @@ import { buildToc, type Heading } from '../lib/toc';
 import { readingTimeFor } from '../lib/reading-time';
 import type { RelatedArticle } from '../lib/related-posts';
 import type { CaseStudyFact } from '../lib/case-study-shape';
+import type { OgCard } from '../lib/og/cards';
 
 // Primitives rather than a CollectionEntry. This template serves `posts` and
 // `caseStudies`, which share a presentation but not a schema: a case study has
@@ -71,6 +72,8 @@ interface Props {
    * blank. An entry declaring none renders no bar at all.
    */
   facts?: CaseStudyFact[];
+  /** This entry's share card, built by the route from its entry (#363). */
+  ogCard?: OgCard;
 }
 
 const {
@@ -87,6 +90,7 @@ const {
   related = [],
   variant = 'article',
   facts = [],
+  ogCard,
 } = Astro.props;
 const toc = buildToc(headings);
 const readingTime = readingTimeFor(body);
@@ -197,6 +201,8 @@ const FACT_COLUMNS: Record<number, string> = {
   markdownHref={markdownHref}
   structuredData={structuredData}
   robots={robots}
+  ogCard={ogCard}
+  ogType="article"
   stickyHeader
 >
   <ReadingProgress />

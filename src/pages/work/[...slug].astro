@@ -5,6 +5,7 @@ import { getResume } from '../../lib/resume-collection';
 import { canonicalUrlFor } from '../../lib/markdown-export';
 import { factsFor } from '../../lib/case-study-shape';
 import { buildTechArticle } from '../../lib/structured-data';
+import { contentCard } from '../../lib/og/cards';
 import type { GetStaticPaths } from 'astro';
 
 // 05 §3 puts case studies at /work + /work/<slug>. Same draft convention as
@@ -62,6 +63,7 @@ const facts = factsFor(study.data);
   robots={study.data.draft ? 'noindex, nofollow' : undefined}
   variant="case-study"
   facts={facts}
+  ogCard={contentCard('case-study', study)}
 >
   <Content />
 </ArticleLayout>

@@ -2,6 +2,14 @@
 import '../styles/global.css';
 import { getResume } from '../lib/resume-collection';
 import { buildPerson, stringifyJsonLd } from '../lib/structured-data';
+import {
+  CARD_HEIGHT,
+  CARD_WIDTH,
+  HOME_CARD,
+  cardAlt,
+  cardPath,
+  type OgCard,
+} from '../lib/og/cards';
 
 interface Props {
   title: string;
@@ -100,6 +108,16 @@ interface Props {
    * this is the type that says so.
    */
   refresh?: number;
+  /**
+   * This page's share card (#363). Defaults to the home card, which is what
+   * every page without one of its own shares: the indexes, /search,
+   * /ai-policy and /fit. A page that needs its own passes one, and the
+   * default moving later does not disturb it, the reasoning the `robots` prop
+   * records.
+   */
+  ogCard?: OgCard;
+  /** `article` on posts and case studies, set by ArticleLayout; `website` everywhere else. */
+  ogType?: 'website' | 'article';
 }
 
 const {
@@ -124,6 +142,8 @@ const {
   robots = 'index, follow',
   referrer,
   refresh,
+  ogCard = HOME_CARD,
+  ogType = 'website',
 } = Astro.props;
 
 /**
@@ -138,6 +158,11 @@ const {
  * is.
  */
 const pageTitle = titleIsSiteName ? title : `${title} — Ryan Lindsey`;
+
+// Absolute because every scraper requires it, by the same idiom `canonical`
+// uses. On the on-demand /chat and /ops this hashes at request time, which is
+// why cardPath uses Web Crypto rather than node:crypto.
+const ogImage = new URL(await cardPath(ogCard), Astro.site);
 
 // Person, sitewide (task-10-brief.md), built here rather than passed in by
 // every page: it is the same node everywhere, sourced from the one
@@ -197,6 +222,18 @@ const jsonLdNodes = [
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    {/* The share card (#363). og:url repeats canonical's path, so on
+       /fit/r/<id> it publishes nothing that page does not already carry. */}
+    <meta property="og:type" content={ogType} />
+    <meta property="og:site_name" content="Ryan Lindsey" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={new URL(Astro.url.pathname, Astro.site)} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content={String(CARD_WIDTH)} />
+    <meta property="og:image:height" content={String(CARD_HEIGHT)} />
+    <meta property="og:image:alt" content={cardAlt(ogCard)} />
+    <meta name="twitter:card" content="summary_large_image" />
     {/* Sitewide feed autodiscovery (day 3 Task 11, 02 §3) -- unlike the
        markdownHref block below, these are not conditional on any per-page
        prop: every page on the site is covered by the same one RSS feed and

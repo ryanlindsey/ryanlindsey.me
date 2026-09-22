@@ -4,6 +4,7 @@ import '../styles/resume-sheet.css';
 import { getResume } from '../lib/resume-collection';
 import { artifactLinks, formatDateRange, groupWorkByCompany } from '../lib/resume';
 import { buildPerson, stringifyJsonLd } from '../lib/structured-data';
+import { CARD_HEIGHT, CARD_WIDTH, cardAlt, cardPath, resumeCard } from '../lib/og/cards';
 
 /*
  * The print sheet (issue #181): the résumé as a designed three-page document,
@@ -87,6 +88,15 @@ const person = buildPerson({
  */
 const title = `${resume.basics.label} — ${resume.basics.name}`;
 
+// The share card (#363, task 5), hand-written for the same reason canonical
+// and the JSON-LD block above are: this route carries no `description` meta
+// tag either, and og:description has to agree with whatever meta description
+// tags a page carries -- tests/seo.test.ts asserts that agreement against
+// EVERY built page, this one included, and zero of one is still agreement.
+// Card, not tag, is what changes here if the résumé's summary ever grows one.
+const ogCard = resumeCard(resume.basics);
+const ogImage = new URL(await cardPath(ogCard), Astro.site);
+
 // E.164, derived rather than stored a second time. src/pages/resume.astro
 // carries the full reasoning on its own copy of this line, including why `+1`
 // is written in rather than mapped from `location.countryCode`; it is not
@@ -161,6 +171,20 @@ const fields: Field[] = [
     {/* Absolute and pointing at itself, the same shape src/layouts/Base.astro
         renders -- tests/seo.test.ts holds every built page to exactly one. */}
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+    {/* The share card (#363), hand-written for the same reason canonical is
+        above: this route uses neither Base.astro nor Shell.astro, so nothing
+        here is inherited. tests/seo.test.ts asserts these on every built page,
+        this one included, on the grounds that a link to it unfurls exactly as
+        any other page's does even though nothing links here on purpose. */}
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Ryan Lindsey" />
+    <meta property="og:title" content={title} />
+    <meta property="og:url" content={new URL(Astro.url.pathname, Astro.site)} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content={String(CARD_WIDTH)} />
+    <meta property="og:image:height" content={String(CARD_HEIGHT)} />
+    <meta property="og:image:alt" content={cardAlt(ogCard)} />
+    <meta name="twitter:card" content="summary_large_image" />
     {/* `is:inline` and `set:html` exactly as src/layouts/Base.astro writes it:
         `stringifyJsonLd` escapes every `<` so a value containing a closing
         script tag cannot end the element early, and tests/seo.test.ts parses

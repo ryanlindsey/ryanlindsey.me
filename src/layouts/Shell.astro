@@ -2,6 +2,7 @@
 import Base from './Base.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
+import type { OgCard } from '../lib/og/cards';
 
 interface Props {
   title: string;
@@ -46,6 +47,9 @@ interface Props {
    * the tag against the rendered HTML for exactly that reason.
    */
   refresh?: number;
+  /** Pure pass-through to Base.astro (#363); see that file. */
+  ogCard?: OgCard;
+  ogType?: 'website' | 'article';
   // 2026-09 redesign (issue #99): sticky is a route decision, not a viewport
   // one -- only ArticleLayout.astro (the template both article routes share)
   // passes true. Every other caller takes the default and its header scrolls
@@ -62,6 +66,8 @@ const {
   robots,
   referrer,
   refresh,
+  ogCard,
+  ogType,
   stickyHeader,
 } = Astro.props;
 ---
@@ -75,6 +81,8 @@ const {
   robots={robots}
   referrer={referrer}
   refresh={refresh}
+  ogCard={ogCard}
+  ogType={ogType}
 >
   <a
     href="#main"

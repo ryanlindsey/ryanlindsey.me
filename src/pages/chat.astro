@@ -6,6 +6,7 @@ import { MAX_QUESTION_CHARS } from '../lib/chat/engine';
 import { MCP_ENDPOINT } from '../lib/nav';
 import { LIMITS } from '../lib/mcp/limits';
 import { formatWindow, RETENTION } from '../lib/retention';
+import { CHAT_CARD } from '../lib/og/cards';
 
 /**
  * Grounded chat (04 §1). On-demand for one reason: the Turnstile sitekey is a
@@ -115,6 +116,7 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
 <Shell
   title="Ask my agent"
   description="A grounded chat over Ryan Lindsey's published writing, résumé and case studies, where every claim cites the page it came from."
+  ogCard={CHAT_CARD}
 >
   {/*
     THREE GRID ITEMS RATHER THAN TWO, and the order they are written in is the
