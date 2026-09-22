@@ -38,6 +38,16 @@ export { RateLimiter } from './rate-limiter';
 // anything.
 export { EvalsWorkflow } from './evals-workflow';
 
+// The deferred fit run's Workflow class (issue #349), re-exported for the same
+// reason and with the same consequence for forgetting it: `class_name` is
+// looked up on the module `main` names. Missing here, the deploy succeeds and
+// every `POST /fit/start` opens a row whose run cannot be started -- which is
+// the state this issue exists to end, reached by a different route. The route's
+// `create` failure path closes such a row rather than leaving it pending (see
+// `startRun` in ./fit-start.ts), so the failure is loud in the log and visible
+// at the permalink rather than silent.
+export { FitWorkflow } from './fit-workflow';
+
 /**
  * The corpus job's view of this Worker, assembled explicitly rather than spread
  * from `env` -- it is a deliberate subset, and `refreshCorpus` should not be
@@ -338,11 +348,14 @@ async function dispatch(request: Request, env: McpEnv, ctx: ExecutionContext): P
   }
 
   // `POST /fit/start` (#269): opens a fit run and answers with its permalink
-  // id in milliseconds, leaving the eighty-second engine call to `waitUntil`.
+  // id in milliseconds, leaving the eighty-second engine call to a Workflow
+  // instance named by that same id. It said `waitUntil` here until #349, which
+  // is the 30-second budget that cancelled every real run -- see ./fit-start.ts
+  // for the production confirmation and ./fit-workflow.ts for the replacement.
   // Routed here for the same reason `/grant` is, refuses the same way for the
   // same reason, and falls through to the same genuine 404 -- including when
   // the refusal is the limiter's, because a 429 would tell anyone holding a
-  // link that this route exists. See ./fit-start.ts.
+  // link that this route exists.
   if (pathname === '/fit/start') {
     const started = await handleFitStart(request, env, ctx);
     if (started !== null) return started;
@@ -424,6 +437,24 @@ export default {
     // fit run is synchronous, so when #275 moves it onto this route, those
     // rows stop appearing in the Analytics Engine panel and the D1 audit
     // trail becomes the only place that traffic is visible.
+    //
+    // AND #349 FOUND WHAT THAT SENTENCE WAS QUIETLY PROMISING. It reads as
+    // "the audit trail is where a fit run can be seen", and the audit trail
+    // does not record runs -- `limitAndAudit` records CALLS, at the moment the
+    // guarded body returns. The production run on 2026-09-22 left
+    // `analyze_fit / tier=private / outcome=ok / duration_ms=487` behind and
+    // produced nothing at all, because the run it accepted was cancelled 29
+    // seconds later.
+    //
+    // The row is unchanged and now means ACCEPTED, which it always did; what
+    // changed is that the run's own outcome is recorded reliably somewhere
+    // else. `fit_reports.status` reaches `ok` or `failed` from the Workflow in
+    // ./fit-workflow.ts, and the `fit-run` queue event carries the same
+    // verdict to the operator. Reading a fit run therefore means reading
+    // `fit_reports`, and `mcp_tool_calls` answers the different question it
+    // was always answering: what was metered, and what did accepting it cost.
+    // ./fit-start.ts carries why a second row at close would be worse than
+    // this sentence.
     //
     // "DIRECT" INCLUDES THIS SYSTEM'S OWN TRAFFIC, which the paragraph above
     // does not say and a reader would otherwise have to discover from the

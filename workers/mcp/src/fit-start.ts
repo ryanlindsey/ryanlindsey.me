@@ -1,36 +1,57 @@
-import { highIntentFor } from '../../../src/lib/agent-intel/intent';
-import { analyzeFit, FitUnavailable } from '../../../src/lib/fit/engine';
 import { newReportId } from '../../../src/lib/fit/report-id';
 import { hasScope, resolveGrant } from '../../../src/lib/tier/grant';
 import { limitAndAudit } from './define';
-import { fitEnv, FIT_INPUT } from './gated';
+import { abandonRun, messageOf } from './fit-workflow';
+import { FIT_INPUT } from './gated';
 import type { McpEnv } from './env';
 
 /**
  * Opens a fit run and answers with its permalink id (#269).
  *
- * THE WAIT MOVED, NOT THE WORK. `analyze_fit` takes about eighty seconds --
+ * THE WAIT MOVED, NOT THE WORK. The fit engine takes about eighty seconds --
  * measured at 78,222 ms on 2026-09-18 -- and `/fit/run` used to hold the
- * browser open for every one of them. This route writes the row, hands back
- * the id, and finishes in `ctx.waitUntil`.
+ * browser open for every one of them. This route writes the row, hands back the
+ * id, and starts a Workflow instance to finish the run.
+ *
+ * THE SHAPE THIS REPLACES, AND WHY IT FAILED, because deleting it would leave
+ * the next reader free to reach for it again. Epic #270 finished the run in
+ * `ctx.waitUntil(completeRun(...))`. For an HTTP-triggered Worker that is
+ * capped at 30 seconds after the response is sent and Cloudflare CANCELS
+ * anything still unsettled at the cap, so a call measured at 2.6 times the
+ * budget was killed mid-engine on every real run. CONFIRMED IN PRODUCTION
+ * 2026-09-22: one run answered `200 {"id":"QIdjP22q7RAJi1No8Ckjag"}` in 0.98 s
+ * and the row read `pending`, with `model`, `report_json` and
+ * `citations_checked` all null, at t+25, 40, 60, 85, 110 and 150 seconds. The
+ * `UPDATE` never ran and no notification arrived. Nothing in this repository
+ * could see it: `FIT_ENGINE`'s harness modes refuse in half a second at the
+ * slowest, three orders of magnitude inside the budget, so no test could reach
+ * a real eighty-second run. That invisibility is why the Workflow was chosen
+ * over the queue #349 first recommended -- workers/mcp/src/fit-workflow.ts
+ * carries the rest of that argument.
+ *
+ * `ctx.waitUntil` IS STILL HERE AND IS NOT THE THING THAT BROKE. What it holds
+ * now is `env.FIT_WORKFLOW.create`, which settles in milliseconds; the budget
+ * it sits inside is three orders of magnitude larger than that. The rule the
+ * defect actually taught is narrower than "no `waitUntil`": nothing whose
+ * duration is a measured number may be scheduled on a budget that is not.
  *
  * THE TOKEN NEVER LEAVES THIS REQUEST. It is not written to the row, not put
- * on a queue and not logged. That is why the run happens here rather than in a
- * queue consumer: a message would have to carry the token and the pasted
- * description, and src/lib/agent-intel/intent.ts says the queue carries labels
- * the operator needs and nothing a caller typed. `completeRun` does put one
- * message on that queue (#277), and it is that rule's shape rather than an
- * exception to it: three labels, none of them typed by the caller.
+ * into the workflow's params, not persisted in any step's durable state and not
+ * logged. The instance is handed the permalink id alone and reads the rest back
+ * off the row -- the reasoning, including why the pasted description stays out
+ * of the params too, is beside `FitRunParams` in ./fit-workflow.ts.
  *
- * LIMITED AND AUDITED THROUGH `limitAndAudit`, which is the same
- * implementation `defineTool` uses. `analyze_fit` is the only `expensive` tool
- * in the server, and a route that reached the engine around the limiter would
- * be an unmetered path to it.
+ * LIMITED AND AUDITED THROUGH `limitAndAudit`, which is the same implementation
+ * `defineTool` uses. `analyze_fit` is the only `expensive` tool in the server,
+ * and a route that reached the engine around the limiter would be an unmetered
+ * path to it.
  *
  * `resolveGrant` IS ASKED HERE AND NOWHERE ELSE ON THIS PATH. The site holds
  * the token as an opaque string and cannot verify it (src/lib/fit/client.ts);
  * this Worker is the one authorization check, and a second one would be a copy
- * that proves nothing by agreeing with the first.
+ * that proves nothing by agreeing with the first. The Workflow does not add one
+ * either: it finishes work this check already authorized, and it never sees a
+ * bearer.
  */
 export async function handleFitStart(
   request: Request,
@@ -81,6 +102,26 @@ export async function handleFitStart(
   // description it closes over was parsed ABOVE the guard rather than inside
   // it. A body this route cannot read is answered like an unrouted path and
   // spends nothing, which is the same decision as the refusals above it.
+  //
+  // WHAT THE AUDIT ROW THIS WRITES MEANS, which is the second half of #349 and
+  // was found by the same production run. `limitAndAudit` audits the moment the
+  // guarded body returns, so this row said `analyze_fit / tier=private /
+  // outcome=ok / duration_ms=487` for a run that went on to produce nothing.
+  // The row is kept exactly as it is and it means ACCEPTED: the call the
+  // limiter metered really did succeed, in 487 ms, and 487 ms is how long
+  // accepting takes. What the RUN came to is recorded where the run ends, on
+  // `fit_reports.status` and in the `fit-run` event, which is the pair this
+  // issue makes reliable -- before the fix neither ever happened, so there was
+  // no honest record of a run anywhere and this row was the only thing left
+  // being read as one.
+  //
+  // WHY NOT A SECOND ROW WHEN THE RUN CLOSES, which is the obvious repair. One
+  // accepted call has to stay one row: scripts/token.mjs answers "what did this
+  // token read" by counting `mcp_tool_calls` per `grant_jti`, /ops groups by
+  // tool, and the limiter's whole claim is that a metered call leaves one
+  // record. A second row under the same name would double every one of those
+  // for the one tool whose spend matters most. tests/fit-workflow.test.ts pins
+  // the count so the repair cannot be made later without meeting this comment.
   const outcome = await limitAndAudit(
     tc,
     {
@@ -98,9 +139,11 @@ export async function handleFitStart(
         .bind(id, new Date().toISOString(), grant.audience, call.target_description)
         .run();
 
-      // The eighty seconds, off the response. `waitUntil` rather than an await:
-      // the whole point of this route is that the caller does not wait.
-      ctx.waitUntil(completeRun(env, id, grant.audience, call.target_description));
+      // The eighty seconds, off the response AND off this request's lifetime.
+      // `waitUntil` rather than an await: creating an instance is a round trip
+      // to the Workflows API, and the whole point of this route is that the
+      // caller does not wait for anything it does not have to.
+      ctx.waitUntil(startRun(env, id, grant.audience));
       return id;
     },
   );
@@ -117,110 +160,37 @@ export async function handleFitStart(
 }
 
 /**
- * Runs the engine, closes the row and tells the operator, whichever way it
- * goes.
+ * Starts the instance that finishes the run, and closes the row if it cannot.
  *
- * THE NOTIFICATION IS QUEUED FROM HERE BECAUSE THIS IS WHERE THE RUN ENDS
- * (#277). It used to be queued by the site Worker, off the 303 to
- * `/fit/r/<id>`, which was an unambiguous "a report exists" until #269 made
- * that redirect mean "a run started" instead -- so the operator was told at
- * the moment nothing had been generated, and was never told when something
- * was. This Worker resolved the grant, so it is also the only one that can
- * name the audience without a second verifier.
+ * THE INSTANCE ID IS THE REPORT ID, which is a deliberate join rather than a
+ * convenience. Workflows instance ids are unique per workflow and accept up to
+ * 100 characters (workflows/reference/limits); a report id is 22 base64url
+ * characters from `newReportId`, so the mapping is total and collision-free.
+ * What it buys is that an operator holding a permalink can run
+ * `wrangler workflows instances describe rlme-fit <id>` and read what became of
+ * that run, and that a test can address the instance a request started --
+ * which is the thing `ctx.waitUntil` could never offer, and the reason this
+ * defect survived seven merged children of epic #270.
  *
- * A FAILED RUN NOTIFIES TOO. It means a reader holding a live link got
- * nothing, which is exactly the case nobody would otherwise hear about, and it
- * is why the event carries `outcome` rather than standing for success by
- * existing.
+ * It also makes a second instance for one report impossible from this route,
+ * which is what lets ./fit-workflow.ts's row read skip a `status` guard.
  *
- * `await` RATHER THAN `ctx.waitUntil`: every call of this function is already
- * inside one, and a nested `waitUntil` buys no extra time while letting the
- * send outlive the handler that scheduled it.
+ * A `create` THAT REJECTS MUST NOT LEAVE THE ROW OPEN. The row is already
+ * inserted by the time this runs, and a `pending` row with no instance behind
+ * it is exactly the state #349 is about: `/fit/r/<id>` refreshes every five
+ * seconds and then renders the stale copy, having promised a report nothing
+ * will write. `abandonRun` closes it as `errored` and notifies, which is the
+ * same treatment the run itself gives a failure it cannot recover from.
  *
- * THE SEND SITS OUTSIDE THE `try`, which is the one thing about the shape
- * below worth pausing on. Inside the successful branch it would be a send
- * whose own failure lands in the `catch`, and the `catch` writes
- * `status = 'failed'` -- so a queue that refused a message would rewrite a run
- * that produced a report as one that did not, send a second event saying so,
- * and leave the reader's permalink contradicting the report behind it.
- *
- * WHAT A REFUSED SEND DOES INSTEAD, since the placement above chooses it: the
- * rejection leaves this function and settles the promise the caller handed to
- * `ctx.waitUntil`, which logs it. That is the outcome worth having. The row is
- * already closed by then, so the reader's permalink is correct either way and
- * nothing here is left half written; what is lost is one operator
- * notification, which is the cheapest thing in this path to lose. It is log
- * noise rather than state damage, and it was chosen rather than overlooked.
+ * Both branches here are milliseconds: a create, or two D1 writes and a queue
+ * send. Nothing on this path is anywhere near the 30-second `waitUntil` budget,
+ * which is the distinction the doc comment above draws.
  */
-async function completeRun(
-  env: McpEnv,
-  id: string,
-  audience: string,
-  description: string,
-): Promise<void> {
-  let outcome: 'ok' | 'failed';
+async function startRun(env: McpEnv, id: string, audience: string): Promise<void> {
   try {
-    const result = await analyzeFit(fitEnv(env), description);
-    await env.DB.prepare(
-      `UPDATE fit_reports
-          SET status = 'ok', model = ?, report_json = ?,
-              citations_checked = ?, citations_dropped = ?
-        WHERE id = ?`,
-    )
-      .bind(
-        result.model,
-        JSON.stringify(result.report),
-        result.citations.checked,
-        result.citations.dropped,
-        id,
-      )
-      .run();
-    outcome = 'ok';
+    await env.FIT_WORKFLOW.create({ id, params: { id } });
   } catch (error) {
-    // `refused` is the engine declining for a reason it wrote a sentence about
-    // -- the breaker, an empty corpus, an unusable answer. Anything else is a
-    // defect, and the two are worth telling apart on /ops even though the
-    // reader is told the same thing.
-    //
-    // The message is INTERPOLATED rather than passed as a second argument.
-    // Measured 2026-09-17: Cloudflare Worker observability renders
-    // `console.error(msg, err)` as the message followed by the stack and drops
-    // `err.message` entirely, which is what made the original `/fit` failure
-    // take several rounds of log reading to place. Nothing about the caller's
-    // token reaches this line, and nothing may be added that does.
-    const code = error instanceof FitUnavailable ? 'refused' : 'errored';
-    console.error(
-      `fit: the deferred run failed (${code}): ${error instanceof Error ? error.message : String(error)}`,
-    );
-    await env.DB.prepare(`UPDATE fit_reports SET status = 'failed', failure_code = ? WHERE id = ?`)
-      .bind(code, id)
-      .run();
-    outcome = 'failed';
+    console.error(`fit: the run for ${id} could not be started: ${messageOf(error)}`);
+    await abandonRun(env, id, audience);
   }
-  await notifyRun(env, id, audience, outcome);
-}
-
-/**
- * Puts the finished run on the events queue.
- *
- * The three fields are the whole message: the audience the grant named, the
- * permalink id and which way the run went. Not the description, not the
- * report, not the token -- src/lib/agent-intel/intent.ts is where that rule is
- * written, and a queue message is the one thing here that gets copied into an
- * email and leaves Cloudflare.
- */
-async function notifyRun(
-  env: McpEnv,
-  id: string,
-  audience: string,
-  outcome: 'ok' | 'failed',
-): Promise<void> {
-  const event = highIntentFor({
-    kind: 'fit-run',
-    at: new Date().toISOString(),
-    audience,
-    reportId: id,
-    outcome,
-  });
-  if (event !== null) await env.EVENTS.send(event);
 }

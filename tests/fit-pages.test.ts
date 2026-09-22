@@ -106,8 +106,8 @@ beforeAll(async () => {
               // anything. `/fit/run` now returns while the run it started is
               // still going, so the state that proves it did not wait is
               // `pending`. Under `'off'` the deferred run refuses at the seam
-              // and `completeRun`'s UPDATE lands before this suite's next
-              // round trip can SELECT -- MEASURED 2026-09-21 in
+              // and the UPDATE that closes the row lands before this suite's
+              // next round trip can SELECT -- MEASURED 2026-09-21 in
               // tests/fit-start.test.ts, where every read of a freshly opened
               // row came back `failed`, and re-measured here on the first run
               // of that case. The delayed mode costs no neuron, no subrequest
@@ -1287,8 +1287,11 @@ test('a pending report past the budget stops refreshing', async () => {
   expect(html).not.toContain('http-equiv="refresh"');
   // The staleness budget is computed at READ time from `created_at`, so this
   // row goes stale with nothing having run against it -- no sweep, no cron.
-  // That is the property that makes the page honest when `ctx.waitUntil` dies
-  // without ever closing the row.
+  // That is the property that makes the page honest when whatever was supposed
+  // to close the row never does. #276 wrote it against a `ctx.waitUntil` that
+  // died; #349 established that was happening on every run, and moved the run
+  // into a Workflow instance. The branch is insurance again rather than the
+  // normal path.
   expect(html).toMatch(/did not finish/i);
   // NO RETRY LINK, and this is the assertion that keeps it that way. This
   // permalink carries no token and cannot construct one, so an `href="/fit"`

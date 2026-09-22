@@ -176,11 +176,17 @@ function dateLabel(value: string): string {
  *
  * `pending` and `stale` are the same `status` told apart by the clock, and
  * the clock is read HERE rather than written by a sweep: `isStale` subtracts
- * `created_at` from now, so a row whose `ctx.waitUntil` died without ever
- * closing it goes stale on its own, with nothing having run against it. That
- * is the whole reason this issue's budget is computed at read time, and it is
- * what keeps the page honest when the thing that was supposed to finish the
- * run is the thing that failed.
+ * `created_at` from now, so a row nothing ever closed goes stale on its own,
+ * with nothing having run against it. That is the whole reason this issue's
+ * budget is computed at read time, and it is what keeps the page honest when
+ * the thing that was supposed to finish the run is the thing that failed.
+ *
+ * #276 NAMED THAT THING AS `ctx.waitUntil`, AND #349 ESTABLISHED THAT IT WAS
+ * FAILING ON EVERY RUN rather than rarely: the budget is 30 seconds and the
+ * engine call was measured at 78,222 ms, confirmed in production on 2026-09-22
+ * with a row still `pending` at t+150 s. So this branch was the page's only
+ * honest output for the whole of that window. The run is a Workflow instance
+ * now (workers/mcp/src/fit-workflow.ts) and the branch is insurance again.
  *
  * `failureCopy` is gated on `status === 'failed'` rather than on the column
  * being non-null, so a stray `failure_code` left on an `ok` or `pending` row

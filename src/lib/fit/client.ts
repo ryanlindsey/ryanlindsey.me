@@ -254,9 +254,18 @@ export type StartOutcome = { ok: true; id: string } | { ok: false; code: 'unreac
  * Opens a run on the MCP Worker and returns its permalink id (#269).
  *
  * THIS DOES NOT WAIT FOR THE REPORT. `/fit/start` answers as soon as the row
- * is open, in milliseconds, and the engine runs behind it in that Worker's
- * `ctx.waitUntil`. The eighty seconds this used to spend on the request path
- * -- measured at 78,222 ms on 2026-09-18 -- is what the whole change is about.
+ * is open, in milliseconds, and the engine runs behind it in a Workflow
+ * instance on that Worker. The eighty seconds this used to spend on the request
+ * path -- measured at 78,222 ms on 2026-09-18 -- is what the whole change is
+ * about.
+ *
+ * IT RAN IN THAT WORKER'S `ctx.waitUntil` UNTIL #349, and the correction is
+ * worth keeping here because this side cannot see it: that budget is 30 seconds
+ * for an HTTP-triggered Worker and the runtime cancels what has not settled, so
+ * a call measured at 2.6 times it never once finished. This function's own
+ * answer was correct throughout -- the id came back in a second either way --
+ * which is exactly why nothing on this side of the hop noticed for seven
+ * merged children of epic #270.
  *
  * PLAIN JSON RATHER THAN THE MCP TRANSPORT, so this never meets a keep-alive
  * frame. `rpc` above still parses SSE correctly and still has to: it is the
