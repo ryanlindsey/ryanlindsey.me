@@ -15,7 +15,7 @@
  */
 import { beforeEach, expect, test } from 'vitest';
 import { builtHeaderMarkup } from './markup';
-import { initThemeToggle } from '../src/lib/theme-toggle';
+import { initThemeToggle, setFavicon } from '../src/lib/theme-toggle';
 
 const headerMarkup = builtHeaderMarkup();
 
@@ -54,6 +54,9 @@ beforeEach(() => {
   localStorage.clear();
   document.documentElement.removeAttribute('data-theme');
   installMatchMedia();
+  // The link Base.astro server-renders, verbatim, so the swap is tested
+  // against the element it will actually meet.
+  document.head.innerHTML = '<link rel="icon" href="/favicon-dark.svg" type="image/svg+xml">';
   document.body.innerHTML = headerMarkup;
   initThemeToggle();
 });
@@ -121,4 +124,46 @@ test('an explicit choice is not overridden when the OS flips', () => {
 
   expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   expect(labels()).toEqual(['LIGHT', 'LIGHT']);
+});
+
+const svgIcons = () => [
+  ...document.head.querySelectorAll<HTMLLinkElement>('link[rel="icon"][type="image/svg+xml"]'),
+];
+
+test('cycling the toggle swaps the SVG icon for the resolved theme, and leaves exactly one', () => {
+  toggles()[0].click(); // system -> light
+  expect(svgIcons().map((link) => link.getAttribute('href'))).toEqual(['/favicon-light.svg']);
+  toggles()[0].click(); // light -> dark
+  expect(svgIcons().map((link) => link.getAttribute('href'))).toEqual(['/favicon-dark.svg']);
+});
+
+test('the swap replaces the element rather than editing its href', () => {
+  // Safari caches the bitmap against the element, and Firefox ignores an
+  // in-place href change, so an edited node would look right here and wrong
+  // in both browsers.
+  const before = svgIcons()[0];
+  setFavicon('light');
+  expect(svgIcons()[0]).not.toBe(before);
+  expect(before.isConnected).toBe(false);
+});
+
+test('on load the icon matches the theme the head script already resolved', () => {
+  document.documentElement.setAttribute('data-theme', 'light');
+  initThemeToggle();
+  expect(svgIcons().map((link) => link.getAttribute('href'))).toEqual(['/favicon-light.svg']);
+});
+
+test('an OS flip while following the system swaps the icon too', () => {
+  osPrefersDark = true;
+  for (const listener of mediaListeners) listener();
+  expect(svgIcons().map((link) => link.getAttribute('href'))).toEqual(['/favicon-dark.svg']);
+});
+
+test('the .ico fallback is left alone', () => {
+  document.head.insertAdjacentHTML(
+    'beforeend',
+    '<link rel="icon" href="/favicon.ico" sizes="32x32">',
+  );
+  setFavicon('light');
+  expect(document.head.querySelectorAll('link[href="/favicon.ico"]')).toHaveLength(1);
 });

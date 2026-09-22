@@ -27,6 +27,28 @@ type Mode = (typeof ORDER)[number];
 
 const prefersDark = () => matchMedia('(prefers-color-scheme: dark)').matches;
 
+/**
+ * The tab icon, in the resolved theme's variant (#363).
+ *
+ * REPLACES THE NODE rather than editing its `href`: Safari caches the old
+ * bitmap against the element, and Firefox ignores an in-place change. Firefox
+ * also keeps the first icon it fetched for a tab whatever happens here, so
+ * this is an enhancement there. Only the SVG link is touched; the .ico cannot
+ * follow a theme and is left as the fallback.
+ *
+ * Not in Base.astro's blocking head script, deliberately: the tab icon is not
+ * painted before <body>, so it would buy nothing and add bytes to the path
+ * that decides first paint.
+ */
+export const setFavicon = (theme: 'light' | 'dark') => {
+  document.head.querySelector('link[rel="icon"][type="image/svg+xml"]')?.remove();
+  const link = document.createElement('link');
+  link.rel = 'icon';
+  link.type = 'image/svg+xml';
+  link.href = `/favicon-${theme}.svg`;
+  document.head.appendChild(link);
+};
+
 const read = (): Mode => {
   try {
     const stored = localStorage.getItem('rl-theme');
@@ -39,6 +61,7 @@ const read = (): Mode => {
 const apply = (mode: Mode) => {
   const resolved = mode === 'system' ? (prefersDark() ? 'dark' : 'light') : mode;
   document.documentElement.setAttribute('data-theme', resolved);
+  setFavicon(resolved);
   try {
     if (mode === 'system') localStorage.removeItem('rl-theme');
     else localStorage.setItem('rl-theme', mode);
@@ -67,6 +90,12 @@ const paintAll = (mode: Mode) => {
 };
 
 export function initThemeToggle(): void {
+  // The server renders the dark variant. Base.astro's head script has already
+  // resolved the theme by the time this runs, so read its answer rather than
+  // deciding again.
+  const resolved = document.documentElement.getAttribute('data-theme');
+  if (resolved === 'light' || resolved === 'dark') setFavicon(resolved);
+
   paintAll(read());
 
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-theme-toggle]')) {
