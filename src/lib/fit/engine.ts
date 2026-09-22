@@ -211,7 +211,9 @@ export function extractToolInput(raw: unknown, toolName: string): unknown {
  * `'off-after-delay'` refuses the same way and with the same sentence, a few
  * hundred milliseconds later. It exists because #274 moved the fit run off the
  * request path: `POST /fit/start` opens a `fit_reports` row as `pending`,
- * answers with its id, and closes the row from `ctx.waitUntil`. Under `'off'`
+ * answers with its id, and closes the row from a Workflow instance -- from
+ * `ctx.waitUntil` until #349 found that budget cancelling every real run.
+ * Which of the two is doing the waiting does not change this seam. Under `'off'`
  * that whole sequence finishes before a test can read the row -- MEASURED
  * 2026-09-21, every read of a freshly opened row came back `failed` -- so the
  * one state the endpoint exists to produce was unobservable, and the only

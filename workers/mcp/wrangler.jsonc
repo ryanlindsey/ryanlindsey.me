@@ -90,8 +90,17 @@
   // re-pays. workers/mcp/src/evals-workflow.ts records the 2026-09-18
   // measurement that this binding, unlike `ai` and `ai_search`, boots and
   // creates instances under the test harness.
+  //
+  // The deferred fit run (issue #349) is the second. A Workflow rather than
+  // `ctx.waitUntil` because that budget is 30 seconds for an HTTP-triggered
+  // Worker and the run it was holding was measured at 78,222 ms -- confirmed
+  // against production on 2026-09-22, where the row stayed `pending` out to
+  // t+150 s and the UPDATE never ran. Its instance id is the permalink id, so
+  // `wrangler workflows instances describe rlme-fit <id>` answers what became
+  // of a report somebody is holding a link to.
   "workflows": [
     { "name": "rlme-evals", "binding": "EVALS_WORKFLOW", "class_name": "EvalsWorkflow" },
+    { "name": "rlme-fit", "binding": "FIT_WORKFLOW", "class_name": "FitWorkflow" },
   ],
 
   "durable_objects": {

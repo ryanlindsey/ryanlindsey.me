@@ -1,5 +1,6 @@
 import type { RateLimiterObject } from '../../../src/lib/mcp/limits';
 import type { EvalsRunParams } from './evals-workflow';
+import type { FitRunParams } from './fit-workflow';
 
 /**
  * The bindings THIS Worker declares, from workers/mcp/wrangler.jsonc.
@@ -120,6 +121,21 @@ export interface McpEnv {
    * ./evals-workflow.ts holds the class and the reasoning.
    */
   EVALS_WORKFLOW: Workflow<EvalsRunParams>;
+  /**
+   * The deferred fit run (issue #349), a Cloudflare Workflow because the run it
+   * carries was measured at 78,222 ms and `ctx.waitUntil` cancels at 30 -- a
+   * defect confirmed in production on 2026-09-22 and invisible to every test
+   * here until an instance became the thing doing the waiting.
+   * ./fit-workflow.ts holds the class and the reasoning, including why
+   * `FitRunParams` is the permalink id and nothing else.
+   *
+   * The second `workflows` binding on this Worker, so the pair are worth one
+   * sentence together: `EVALS_WORKFLOW` exists because a weekly eval run is
+   * minutes of paced SLEEPING, and this one because a single fit run is minutes
+   * of WORKING. `step.sleep` answers the first and `step.do`'s durable result
+   * answers the second.
+   */
+  FIT_WORKFLOW: Workflow<FitRunParams>;
   RLME_AI_GATEWAY_ID: string;
   SITE_ORIGIN: string;
   /** Test-only seam; see `CorpusEnv.CORPUS_REFRESH` in src/lib/corpus.ts. */
@@ -282,6 +298,7 @@ export const MCP_BINDING_NAMES = [
   'SITE',
   'SELF',
   'EVALS_WORKFLOW',
+  'FIT_WORKFLOW',
   'RLME_AI_GATEWAY_ID',
   'SITE_ORIGIN',
   'RLME_TURNSTILE_SECRET_KEY',

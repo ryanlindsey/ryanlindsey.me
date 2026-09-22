@@ -475,8 +475,9 @@ export async function handleChat(
   // Important 2's server-minted-session gate -- kept out of line because both
   // needed room to say why; the send itself mirrors `queueResumePdfIntent` in
   // src/worker.ts. It mirrored `queueFitRunIntent` there until #277, which
-  // deleted that function and moved the `fit-run` event into `completeRun`
-  // (workers/mcp/src/fit-start.ts) -- so the one on this Worker that is worth
+  // deleted that function and moved the `fit-run` event onto this Worker; #349
+  // moved it again, with the run, into `notifyRun` in
+  // workers/mcp/src/fit-workflow.ts -- so the one on this Worker that is worth
   // comparing this call against now sits two files away and is AWAITED, for
   // the reason its own comment gives rather than in disagreement with this one.
   //

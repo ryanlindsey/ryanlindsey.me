@@ -282,9 +282,11 @@ const REFUSAL_STATUSES = new Set([403, 404, 500]);
  * the 303 to `/fit/r/<id>`, which it called an unambiguous success signal
  * because src/pages/fit/run.ts sent every failure to `/fit?<query>` instead.
  * #269 made that redirect mean a run STARTED, so the signal stopped being one,
- * and the event moved to `completeRun` in workers/mcp/src/fit-start.ts -- the
- * Worker that closes the row, and the only one that can name the audience
- * without becoming a second grant verifier.
+ * and the event moved to the Worker that closes the row, which is the only one
+ * that can name the audience without becoming a second grant verifier. It
+ * landed in `completeRun` (workers/mcp/src/fit-start.ts) and now lives in
+ * `notifyRun` in workers/mcp/src/fit-workflow.ts, which #349 moved it to along
+ * with the run itself.
  *
  * THE ONE PLACE THE SITE WORKER READS CAMPAIGN DOMAINS ON A REQUEST. The hot
  * path deliberately does not (see `CAMPAIGN_DOMAINS_OFF`): a KV read per
