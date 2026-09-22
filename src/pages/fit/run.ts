@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { callAnalyzeFit, grantContext, newReportId } from '../../lib/fit/client';
+import { callAnalyzeFit, grantContext } from '../../lib/fit/client';
+import { newReportId } from '../../lib/fit/report-id';
 import type { FitErrorCode } from '../../lib/fit/errors';
 import { verifyTurnstile } from '../../lib/turnstile';
 
