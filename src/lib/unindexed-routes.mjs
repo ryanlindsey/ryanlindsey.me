@@ -80,6 +80,11 @@ import { readdirSync, readFileSync } from 'node:fs';
  *    `/search` are the same route to this filter, which is what makes this one
  *    line rather than an enumeration nobody could write.
  *
+ * 6. BUILD INTERMEDIATES. `/og/cards.json` is written by the build for the
+ *    share-card hook and deleted by it before deploy (#363). It never ships,
+ *    and this line is what keeps a sitemap from listing it if that ever
+ *    stops being true. The cards themselves are assets, not pages.
+ *
  * The draft half is derived from disk rather than hand-listed, so a new draft
  * is covered the day it lands rather than the day someone remembers this file.
  * The pillar half is a single prefix, which `isUnindexed` already extends to
@@ -127,7 +132,7 @@ export function unindexedRoutes() {
       (slug) => `/work/${slug}`,
     ),
   ];
-  return ['/fit', '/writing/pillar', '/resume.print', '/search', ...drafts];
+  return ['/fit', '/writing/pillar', '/resume.print', '/search', '/og', ...drafts];
 }
 
 /**

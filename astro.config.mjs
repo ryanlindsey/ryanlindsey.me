@@ -11,6 +11,7 @@ import { figures } from './src/lib/figures.mjs';
 import { literalDirectives } from './src/lib/literal-directives.mjs';
 import { isUnindexed } from './src/lib/unindexed-routes.mjs';
 import { sitemapLastmods } from './src/lib/sitemap-lastmod.mjs';
+import { ogCards } from './src/lib/og/integration';
 
 // Read once at config-eval time -- src/lib/sitemap-lastmod.mjs's own header
 // says why this reads the filesystem directly rather than through
@@ -101,6 +102,9 @@ export default defineConfig({
         return lastmod ? { ...item, lastmod } : item;
       },
     }),
+    // Last, so it runs after every page and endpoint is written. See the file
+    // for why a build hook rather than an endpoint (#363).
+    ogCards(),
   ],
   markdown: {
     // Astro 7's default processor. `markdown.remarkPlugins` / `rehypePlugins`
