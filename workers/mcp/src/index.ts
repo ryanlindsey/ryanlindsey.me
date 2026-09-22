@@ -12,6 +12,7 @@ import {
 import { buildProtectedResource } from '../../../src/lib/discovery/protected-resource';
 import { buildGlamaClaim } from '../../../src/lib/discovery/glama';
 import { handleChat } from './chat';
+import { handleFitStart } from './fit-start';
 import { handleGrantContext } from './grant-context';
 import { mcpAgentEvent } from './mcp-agent-event';
 import { handleSiteSearch } from './search';
@@ -336,6 +337,18 @@ async function dispatch(request: Request, env: McpEnv, ctx: ExecutionContext): P
     // fall through: the MCP handler below IS the unrouted 404
   }
 
+  // `POST /fit/start` (#269): opens a fit run and answers with its permalink
+  // id in milliseconds, leaving the eighty-second engine call to `waitUntil`.
+  // Routed here for the same reason `/grant` is, refuses the same way for the
+  // same reason, and falls through to the same genuine 404 -- including when
+  // the refusal is the limiter's, because a 429 would tell anyone holding a
+  // link that this route exists. See ./fit-start.ts.
+  if (pathname === '/fit/start') {
+    const started = await handleFitStart(request, env, ctx);
+    if (started !== null) return started;
+    // fall through: the MCP handler below IS the unrouted 404
+  }
+
   return createMcpHandler(
     // ASYNC, and the factory's contract permits it: `McpServerFactory` is
     // `(ctx) => McpServer | Server | Promise<McpServer | Server>` -- READ
@@ -400,6 +413,17 @@ export default {
     // their own surfaces, the discovery documents write none, and a `/mcp`
     // the site forwarded is already the site's row (src/lib/mcp/via.ts).
     // After the response so `status` is the real one, as src/worker.ts does.
+    //
+    // `/fit/start` (#269) WRITES NONE EITHER, which is a decision rather than
+    // an omission. Its spend is already recorded where the spend is metered,
+    // in `mcp_tool_calls` under `analyze_fit` through `limitAndAudit`, and an
+    // agent-intel row on top of that would count one run twice on a panel
+    // whose subject is who is calling rather than what was spent. What that
+    // costs is worth naming now rather than being found later: the second
+    // first-party caller listed below reaches `/mcp` only while the site's
+    // fit run is synchronous, so when #275 moves it onto this route, those
+    // rows stop appearing in the Analytics Engine panel and the D1 audit
+    // trail becomes the only place that traffic is visible.
     //
     // "DIRECT" INCLUDES THIS SYSTEM'S OWN TRAFFIC, which the paragraph above
     // does not say and a reader would otherwise have to discover from the

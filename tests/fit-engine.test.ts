@@ -470,15 +470,27 @@ test('a FitUnavailable is recognisable after it stops being an instance', async 
 
 test('the FIT_ENGINE seam refuses without touching the corpus, and rejects any other value', async () => {
   // Same shape as `CORPUS_REFRESH` and `MCP_SEARCH_EMBEDDER`: no deployed
-  // config declares it, `'off'` is the only accepted value, and anything else
-  // THROWS rather than guessing -- a typo that silently disabled the engine in
-  // production is the failure this shape exists to make impossible.
+  // config declares it, it accepts two values and BOTH refuse, and anything
+  // else THROWS rather than guessing -- a typo that silently disabled the
+  // engine in production is the failure this shape exists to make impossible.
   const site = watchedSite();
 
   await expect(
     analyzeFit(env({ FIT_ENGINE: 'off', SITE: site.site }), 'A target description.'),
   ).rejects.toBeInstanceOf(FitUnavailable);
   expect(site.touched(), 'a refused run must not even fetch the corpus').toBe(false);
+
+  // `'off-after-delay'` (#274) refuses identically and a few hundred
+  // milliseconds later, which is what makes the deferred run's `pending`
+  // state observable in tests/fit-start.test.ts. Asserted here as well
+  // because this suite is where the seam's accepted set is pinned, and a
+  // second value that refused DIFFERENTLY would be a second behaviour rather
+  // than the same one on a timer.
+  const delayed = watchedSite();
+  await expect(
+    analyzeFit(env({ FIT_ENGINE: 'off-after-delay', SITE: delayed.site }), 'A description.'),
+  ).rejects.toBeInstanceOf(FitUnavailable);
+  expect(delayed.touched(), 'a delayed refusal must not fetch the corpus either').toBe(false);
 
   const bogus = analyzeFit(env({ FIT_ENGINE: 'yes' }), 'A target description.');
   await expect(bogus).rejects.toThrow(/FIT_ENGINE/);

@@ -104,6 +104,9 @@ export interface FitEnv extends DocumentsEnv {
    * makes `analyzeFit` refuse before the model call, which is what lets a
    * harness suite exercise the TOOL (its scope check, its limiter, its audit
    * row) without an `Ai` it does not have.
+   *
+   * `FIT_ENGINE_MODES` below is the whole accepted set, and `'off-after-delay'`
+   * is the second member. It exists for #274 and is argued for there.
    */
   FIT_ENGINE?: string;
 }
@@ -199,6 +202,44 @@ export function extractToolInput(raw: unknown, toolName: string): unknown {
 }
 
 /**
+ * Every value the `FIT_ENGINE` seam accepts, and the reason there are two.
+ *
+ * `'off'` refuses IMMEDIATELY, before the breaker, the corpus or the model,
+ * which is what lets a harness exercise everything around a call it cannot
+ * afford to make.
+ *
+ * `'off-after-delay'` refuses the same way and with the same sentence, a few
+ * hundred milliseconds later. It exists because #274 moved the fit run off the
+ * request path: `POST /fit/start` opens a `fit_reports` row as `pending`,
+ * answers with its id, and closes the row from `ctx.waitUntil`. Under `'off'`
+ * that whole sequence finishes before a test can read the row -- MEASURED
+ * 2026-09-21, every read of a freshly opened row came back `failed` -- so the
+ * one state the endpoint exists to produce was unobservable, and the only
+ * assertion left was that a literal appeared in the source. A delay the test
+ * can outrun makes the TRANSITION `pending -> failed` a behavioural
+ * assertion instead.
+ *
+ * It costs what `'off'` costs and no more: no neurons, no subrequest, no
+ * binding touched. The seam's three safety properties are unchanged -- no
+ * deployed config declares the var (tests/mcp-env.test.ts), absent means run
+ * the engine, and anything outside this list throws.
+ */
+const FIT_ENGINE_MODES = ['off', 'off-after-delay'];
+
+/**
+ * How long `'off-after-delay'` waits before refusing.
+ *
+ * Long enough that a test reading the row over the harness's loopback
+ * transport wins the race by a wide margin -- that read is single-digit
+ * milliseconds, so this is roughly a hundredfold -- and short enough to be
+ * paid twice a run without anyone noticing. ONE test waits for the
+ * transition, in tests/fit-start.test.ts. The other payer,
+ * tests/fit-engine.test.ts's seam case, waits for nothing and simply sits out
+ * the delay before the refusal it asserts arrives.
+ */
+const FIT_ENGINE_DELAY_MS = 500;
+
+/**
  * The fence long enough to enclose `text` whole.
  *
  * FIX ROUND 1, FINDING 2. A fixed three-backtick fence is not a boundary, it
@@ -228,13 +269,21 @@ export function extractToolInput(raw: unknown, toolName: string): unknown {
  * should spend no neurons and no subrequests it did not have to.
  */
 export async function analyzeFit(env: FitEnv, targetDescription: string): Promise<FitResult> {
-  if (env.FIT_ENGINE !== undefined && env.FIT_ENGINE !== 'off') {
+  if (env.FIT_ENGINE !== undefined && !FIT_ENGINE_MODES.includes(env.FIT_ENGINE)) {
     // A plain Error, deliberately NOT a FitUnavailable: this is a
     // misconfiguration rather than an outage, and a caller must never be given
     // a polite sentence about it. The other seams in this repo throw here too.
     throw new Error(`unrecognised FIT_ENGINE: ${env.FIT_ENGINE}`);
   }
-  if (env.FIT_ENGINE === 'off') {
+  if (env.FIT_ENGINE === 'off-after-delay') {
+    await new Promise((resolve) => setTimeout(resolve, FIT_ENGINE_DELAY_MS));
+  }
+  // Asked against the SET rather than against `!== undefined`, which would be
+  // correct only because the unrecognised-value throw above has already run.
+  // Every value in `FIT_ENGINE_MODES` refuses because that is what the set is
+  // for; reading it here is what keeps a future member from being committed to
+  // refusing by a condition written somewhere else.
+  if (env.FIT_ENGINE !== undefined && FIT_ENGINE_MODES.includes(env.FIT_ENGINE)) {
     throw new FitUnavailable('Fit analysis is not available in this environment.');
   }
 
