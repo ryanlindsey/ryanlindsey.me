@@ -90,9 +90,9 @@ function clientIdentity(
   // optional-chained too, not just `serverCtx`: a `ServerContext` whose
   // `mcpReq` is itself absent is exactly the shape a request that failed
   // before that field was populated would have, and a bare `serverCtx?.mcpReq
-  // .envelope` throws in precisely that case, escaping `guarded`'s `catch` and
-  // handing the caller a raw internal message -- the one outcome that
-  // function's own comment says nothing may do.
+  // .envelope` throws in precisely that case, escaping `limitAndAudit`'s
+  // `catch` and handing the caller a raw internal message -- the one outcome
+  // that function's own comment says nothing may do.
   const envelope = (serverCtx?.mcpReq?.envelope ?? {}) as Record<string, unknown>;
   const clientInfo = envelope[CLIENT_INFO_META_KEY] as
     { name?: unknown; version?: unknown } | undefined;
@@ -113,8 +113,10 @@ function clientIdentity(
  * paths apart: a tool answers a refusal as a RESULT and a resource has to
  * THROW one, a tool's payload is `content` and a resource's is `contents`, a
  * tool's safe-message marker is `ToolError` and a resource's is
- * `ProtocolError`. Everything BETWEEN those differences is `guarded` below,
- * once.
+ * `ProtocolError`. Everything BETWEEN those differences is `limitAndAudit`
+ * below, once -- `guarded` is the thin adapter that reads the SDK's
+ * parameters and hands a contract to it, not a second place the guarantee
+ * lives.
  */
 interface CallContract<C, R> {
   /** The name the audit row records, and the name the limiter keys on. */
@@ -154,6 +156,17 @@ interface CallContract<C, R> {
 }
 
 /**
+ * What a guarded call came to, with no opinion about how to say it.
+ *
+ * Three outcomes rather than two, because a refusal and a failure are
+ * different events to whoever answers them: one is this server declining to
+ * spend, the other is something that went wrong, and a tool, a resource and a
+ * route each spell those two differently.
+ */
+export type GuardOutcome<R> =
+  { kind: 'ok'; value: R } | { kind: 'rate_limited' } | { kind: 'failed'; error: unknown };
+
+/**
  * The obligations every call to this Worker carries, in ONE place.
  *
  * Rate limiting and the audit trail (03 §3) are cross-cutting, and the only
@@ -170,24 +183,58 @@ interface CallContract<C, R> {
  * that records `public` for a scoped call is worse than one that records
  * nothing, because it reads as evidence. There was one row builder to change,
  * and this is it. It stays one.
+ *
+ * EXTRACTED FROM `guarded` for #269, and the direction matters. `guarded` is
+ * shaped by the SDK -- it reads positional parameters, and it answers a
+ * refusal as tool content or as a `ProtocolError`. The deferred fit run is an
+ * HTTP route with neither shape, and it spends the most expensive call in the
+ * server. Giving it its own limiter and its own audit write would be the
+ * second copy of this guarantee that this module's own comment says must not
+ * exist, so the guarantee moved and the shapes stayed where they were.
+ *
+ * Returns an OUTCOME rather than an answer. What a refusal looks like is the
+ * caller's business, because a tool and a route disagree about it; what counts
+ * as a call is not, and that is what lives here.
+ *
+ * `read` is a THUNK rather than an already-parsed call, and that is not a
+ * style choice. The parse is one of the things being guarded: it runs inside
+ * the one try below, BEFORE the hash and before `checkLimit`, so a call this
+ * Worker cannot even read is audited as an `error` and never asks the limiter.
+ * Taking a parsed `C` here would move the parse out to the caller, whose only
+ * way back in for the audit row is a second entry carrying a rejecting `run`
+ * -- which asks the limiter first, spending a token on a call that spends none
+ * today, and files the row under `rate_limited` on the branch where that spend
+ * is refused, losing the parse error on the way.
  */
-async function guarded<C, R>(
+export async function limitAndAudit<C, R>(
   tc: ToolContext,
-  contract: CallContract<C, R>,
-  params: unknown[],
-): Promise<R> {
+  spec: {
+    /** The name the audit row records, and the name the limiter keys on. */
+    auditName: string;
+    /** Which limiter bucket this draws from (src/lib/mcp/limits.ts). */
+    cost: ToolCost;
+    /** `mcp/<surface>` in the log line a failure writes. */
+    surface: 'tool' | 'resource' | 'route';
+    /** The call payload, read lazily so a read that throws is audited too. */
+    read: () => C;
+    /** What `args_hash` is taken over. See `CallContract.hashable`. */
+    hashable: (call: C) => unknown;
+    /** Absent off the SDK's surfaces: an HTTP route has no `ServerContext`. */
+    serverCtx?: ServerContext;
+  },
+  run: (call: C) => Promise<R>,
+): Promise<GuardOutcome<R>> {
   const started = Date.now();
 
-  // Both are resolved inside the try below, so both need a value the audit
-  // path can fall back on. `args_hash` is NOT NULL, and a row saying the hash
-  // could not be computed is worth more than a call that vanishes.
+  // Resolved inside the try below, so it needs a value the audit path can
+  // fall back on. `args_hash` is NOT NULL, and a row saying the hash could
+  // not be computed is worth more than a call that vanishes.
   let argsHash = ARGS_HASH_UNAVAILABLE;
-  let serverCtx: ServerContext | undefined;
 
   const audit = (outcome: AuditRow['outcome']) => {
     // `audit('error')` runs inside the `catch` below, which is the LAST place
     // in this function anything can still catch a throw -- so building the
-    // row here must not itself throw, or the failure escapes `guarded`
+    // row here must not itself throw, or the failure escapes `limitAndAudit`
     // entirely and the SDK copies its message straight to the caller, same as
     // the escape this whole function exists to close. `clientIdentity` cannot
     // throw once `mcpReq` is optional-chained (see its own comment), but this
@@ -195,7 +242,7 @@ async function guarded<C, R>(
     // here, has nowhere to reopen that gap.
     let identity: Pick<AuditRow, 'clientName' | 'clientVersion' | 'userAgent' | 'protocolVersion'>;
     try {
-      identity = clientIdentity(tc.request, serverCtx);
+      identity = clientIdentity(tc.request, spec.serverCtx);
     } catch (identityError) {
       console.error('mcp/audit: failed to read client identity', identityError);
       identity = { clientName: null, clientVersion: null, userAgent: null, protocolVersion: null };
@@ -204,7 +251,7 @@ async function guarded<C, R>(
     tc.ctx.waitUntil(
       recordToolCall(tc.env.DB, {
         calledAt: new Date().toISOString(),
-        tool: contract.auditName,
+        tool: spec.auditName,
         argsHash,
         // Day 5: resolved from the request's token, in ONE place, exactly as
         // this function's own comment promised. `tier` is derived from the
@@ -230,15 +277,10 @@ async function guarded<C, R>(
   // straight to the caller -- `createToolError(error.message)` for a tool,
   // `message: error.message` at the Protocol layer for a resource -- handing
   // a public caller the raw internal text. Nothing may leave this function
-  // except through `run`, `refuse` or `fail`.
+  // except as a `GuardOutcome`, which the caller answers from outside it.
   try {
-    // MEASURED for both surfaces: the `ServerContext` is the LAST parameter
-    // the SDK passes, whatever it passes before it. Taken before `read` so
-    // that a read which throws still audits a row with the caller's identity
-    // on it.
-    serverCtx = params[params.length - 1] as ServerContext;
-    const call = contract.read(params);
-    argsHash = await hashArgs(contract.hashable(call));
+    const call = spec.read();
+    argsHash = await hashArgs(spec.hashable(call));
 
     // One `await` on the limiter object, before the handler and before
     // anything the handler would spend. See src/lib/mcp/limits.ts and
@@ -247,33 +289,75 @@ async function guarded<C, R>(
     // production (#29). The seam did not move -- this line is still the only
     // place a call is limited, and it is still checked BEFORE the handler
     // runs, which is what makes a refusal cost nothing.
-    const allowed = await checkLimit(
-      tc.env,
-      contract.cost,
-      tc.request,
-      contract.auditName,
-      tc.grant,
-    );
+    const allowed = await checkLimit(tc.env, spec.cost, tc.request, spec.auditName, tc.grant);
     if (allowed) {
-      const answer = await contract.run(call);
+      const value = await run(call);
       audit('ok');
-      return answer;
+      return { kind: 'ok', value };
     }
 
     audit('rate_limited');
-    // Falls out of the try WITHOUT answering, deliberately: a refusal is
-    // answered below instead. `refuse()` may throw rather than return -- a
-    // surface with no error result has no other way to say it -- and a throw
-    // raised in here would be caught below and audited a second time, as an
-    // `error`. Falling out is also the only path that reaches the bottom of
-    // this function: every other one returns from inside the try or the catch.
+    // Hands the refusal BACK rather than answering it, deliberately: a
+    // surface's `refuse` may throw rather than return -- one with no error
+    // result has no other way to say it -- and a throw raised in here would
+    // be caught below and audited a second time, as an `error`. Every caller
+    // of this function therefore answers a refusal outside it.
+    return { kind: 'rate_limited' };
   } catch (error) {
     audit('error');
-    console.error(`mcp/${contract.surface}: ${contract.auditName} failed`, error);
-    return contract.fail(error);
+    console.error(`mcp/${spec.surface}: ${spec.auditName} failed`, error);
+    return { kind: 'failed', error };
   }
+}
 
+/**
+ * The SDK-shaped half of a guarded call, and one of `limitAndAudit`'s callers
+ * rather than a second copy of it.
+ *
+ * What is left here is only what the SDK forces: the `ServerContext` at the
+ * end of a parameter list whose shape is measured rather than declared, and
+ * the three different ways a tool and a resource say yes, not now, and it
+ * broke.
+ */
+async function guarded<C, R>(
+  tc: ToolContext,
+  contract: CallContract<C, R>,
+  params: unknown[],
+): Promise<R> {
+  // MEASURED for both surfaces: the `ServerContext` is the LAST parameter
+  // the SDK passes, whatever it passes before it. Taken before `read` so
+  // that a read which throws still audits a row with the caller's identity
+  // on it.
+  const serverCtx = params[params.length - 1] as ServerContext;
+
+  const outcome = await limitAndAudit(
+    tc,
+    {
+      ...contractSpec(contract),
+      // Passed unread, so the read happens inside the one try rather than out
+      // here: see `CallContract.read` for why that placement is the contract.
+      read: () => contract.read(params),
+      hashable: contract.hashable,
+      serverCtx,
+    },
+    contract.run,
+  );
+
+  if (outcome.kind === 'ok') return outcome.value;
+  if (outcome.kind === 'failed') return contract.fail(outcome.error);
+
+  // `refuse()` is called out here, outside `limitAndAudit`'s try, and the
+  // placement is load-bearing rather than tidy: it may THROW rather than
+  // return -- a surface with no error result has no other way to say it --
+  // and a throw raised inside that try would be caught there and audited a
+  // second time, as an `error`. `fail` above is outside it for the same
+  // reason, and every resource failure takes that path.
   return contract.refuse();
+}
+
+/** The three fields a `CallContract` and a `limitAndAudit` spec name alike. */
+function contractSpec<C, R>(contract: CallContract<C, R>) {
+  return { auditName: contract.auditName, cost: contract.cost, surface: contract.surface };
 }
 
 /**
@@ -285,8 +369,9 @@ async function guarded<C, R>(
  * unaudited, unlimited tool -- which is why the review gate for this repo
  * treats that as a defect rather than a style difference.
  *
- * Everything a call is guarded BY lives in `guarded` above; what is here is
- * only what the tool surface does differently.
+ * Everything a call is guarded BY lives in `limitAndAudit` above, reached
+ * through `guarded`; what is here is only what the tool surface does
+ * differently.
  */
 export function defineTool<A>(
   server: McpServer,

@@ -249,11 +249,13 @@ async function auditRows(count: number) {
 test('a token on the wire reaches the audit row as tier, audience and grant_jti', async () => {
   // THE INTEGRATION THIS TASK IS, end to end and through the real endpoint:
   // ./workers.ts's seam -> index.ts's per-request `resolveGrant` -> the ONE
-  // audit-row builder in define.ts's `guarded`. Every other test in this file
-  // calls `resolveGrant` directly and would still pass if index.ts never
-  // called it -- and `guarded` would then write `tier: 'public'` for a scoped
-  // call, which that function's own comment calls worse than writing nothing,
-  // "because it reads as evidence".
+  // audit-row builder, which is define.ts's `limitAndAudit` since #269 put it
+  // where a route can reach it too (`guarded` is the adapter that carries a
+  // tool call into it). Every other test in this file calls `resolveGrant`
+  // directly and would still pass if index.ts never called it -- and that
+  // builder would then write `tier: 'public'` for a scoped call, which its
+  // own function's comment calls worse than writing nothing, "because it
+  // reads as evidence".
   //
   // `get_contact` deliberately: a PUBLIC tool, so what this asserts is the
   // tier resolution and nothing about scope gating (that is Task 7's suite).
