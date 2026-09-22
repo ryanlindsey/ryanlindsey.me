@@ -1,5 +1,8 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
+import { readFileSync, writeFileSync } from 'node:fs';
+import satori from 'satori';
+import { Resvg } from '@resvg/resvg-js';
 import cloudflare from '@astrojs/cloudflare';
 import tailwindcss from '@tailwindcss/vite';
 import mdx from '@astrojs/mdx';
@@ -30,6 +33,32 @@ export default defineConfig({
   // adapter provision an unmanaged `SESSION` KV namespace at deploy time.
   session: false,
   integrations: [
+    {
+      name: 'spike-resvg',
+      hooks: {
+        'astro:build:done': async ({ logger }) => {
+          const started = Date.now();
+          const font = readFileSync(
+            'node_modules/@fontsource/space-grotesk/files/space-grotesk-latin-600-normal.woff',
+          );
+          const svg = await satori(
+            {
+              type: 'div',
+              props: {
+                style: { display: 'flex', width: 1200, height: 630, padding: 64, background: '#0a0a0b', color: '#fafaf9', fontSize: 84, fontFamily: 'Space Grotesk' },
+                children: 'resvg on Workers Builds',
+              },
+            },
+            { width: 1200, height: 630, fonts: [{ name: 'Space Grotesk', data: font, weight: 600, style: 'normal' }] },
+          );
+          const png = new Resvg(svg).render().asPng();
+          writeFileSync('dist/client/og-spike.png', png);
+          logger.info(
+            `spike: ${png.length} bytes in ${Date.now() - started} ms, node ${process.version}, ${process.platform}-${process.arch}`,
+          );
+        },
+      },
+    },
     // Must precede mdx(). Reversing the order fails loudly rather than silently:
     // astro-expressive-code throws in its `astro:config:setup` hook (verified 2026-09-04).
     expressiveCode({
