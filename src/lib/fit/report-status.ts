@@ -7,7 +7,7 @@
  * future bug could put there. `fitFailureCopy` answers `null` for anything it
  * does not recognise, so the worst an unexpected code can do is show nothing.
  *
- * THE WRITER IS `writeFitReport` in workers/mcp/src/fit-start.ts, which is the
+ * THE WRITER IS `completeRun` in workers/mcp/src/fit-start.ts, which is the
  * only thing that sets `fit_reports.failure_code` and sets it to exactly these
  * two values: `refused` when the deferred run threw `FitUnavailable`, and
  * `errored` for anything else. The two are worth telling apart on /ops even

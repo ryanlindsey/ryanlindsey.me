@@ -96,7 +96,29 @@ beforeAll(async () => {
   await server.update({
     workers: SITE_HARNESS_WORKERS.map((worker) =>
       worker === MCP_WORKER
-        ? { ...MCP_WORKER, vars: { ...MCP_WORKER.vars, SITE_ORIGIN: url.origin } }
+        ? {
+            ...MCP_WORKER,
+            vars: {
+              ...MCP_WORKER.vars,
+              SITE_ORIGIN: url.origin,
+              // `'off-after-delay'` RATHER THAN THE SHARED `'off'` (#275), and
+              // it is what makes the redirect case below able to assert
+              // anything. `/fit/run` now returns while the run it started is
+              // still going, so the state that proves it did not wait is
+              // `pending`. Under `'off'` the deferred run refuses at the seam
+              // and `completeRun`'s UPDATE lands before this suite's next
+              // round trip can SELECT -- MEASURED 2026-09-21 in
+              // tests/fit-start.test.ts, where every read of a freshly opened
+              // row came back `failed`, and re-measured here on the first run
+              // of that case. The delayed mode costs no neuron, no subrequest
+              // and no binding; see `FIT_ENGINE_MODES` in
+              // src/lib/fit/engine.ts.
+              //
+              // Nothing else in this file reaches the engine, so this changes
+              // one case and no other.
+              FIT_ENGINE: 'off-after-delay',
+            },
+          }
         : worker,
     ),
   });
@@ -660,11 +682,23 @@ test('POST /fit/run without a bot-check response never reaches the engine', asyn
   expect(location.searchParams.get('t')).toBe(token);
 });
 
-test('POST /fit/run with a grant reaches the engine and reports its refusal', async () => {
-  // FIT_ENGINE is 'off' under the harness (tests/workers.ts), so the tool
-  // refuses -- which is exactly the path worth testing here: the form's job is
-  // to carry a refusal back to the page legibly rather than 500.
+test('a granted POST redirects to a permalink without waiting for the report', async () => {
+  // WHAT THIS REPLACED, because the replacement is the whole issue (#269):
+  // this case used to assert that `/fit/run` reached the engine, collected its
+  // refusal and carried the code back to the form. The route no longer waits
+  // for the engine at all. It asks the MCP Worker to OPEN a run and redirects
+  // to the permalink the moment it has an id, so a refusal is no longer
+  // something the form can report -- it is written to the row and rendered by
+  // `/fit/r/<id>` from `FIT_FAILURE_COPY`, which the failed-report case below
+  // pins.
+  //
+  // FIT_ENGINE is `'off-after-delay'` for this suite, set in `beforeAll` and
+  // argued for there: the deferred run still fails, on the other Worker and
+  // after this response, but slowly enough that the row is still `pending`
+  // when this test reads it. That is the state the redirect promises, and the
+  // redirect must not be waiting on the run either way.
   const token = await grant();
+  const started = Date.now();
   const response = await server.fetch('/fit/run', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', origin },
@@ -676,28 +710,32 @@ test('POST /fit/run with a grant reaches the engine and reports its refusal', as
       turnstile_response: 'stubbed',
     }).toString(),
   });
+
   expect(response.status).toBe(303);
-  const location = new URL(response.headers.get('location')!, 'https://ryanlindsey.me');
-  expect(location.pathname).toBe('/fit');
-  // `refused` is the code ONLY the tool-refusal branch produces, and keeping
-  // that discrimination is the point of asserting it rather than merely
-  // asserting `error=` is present: the bot-check refusal above, the storage
-  // failure and a transport error each carry a different code, so a test that
-  // accepted any of them would pass with the engine never reached -- the one
-  // thing this test's name claims.
-  //
-  // What it no longer proves, deliberately: that `FitUnavailable`'s own
-  // sentence ("Fit analysis is not available in this environment.", thrown by
-  // `analyzeFit` on the `FIT_ENGINE` seam) survives to the page. It no longer
-  // does, and must not -- the query string is forgeable by anyone holding a
-  // `/fit?t=...` link. The sentence still crosses the service binding as an
-  // `isError` result and is read by `callAnalyzeFit` into `outcome.message`,
-  // where `/fit/run` logs it; `tests/fit-client.test.ts` is where that half is
-  // pinned.
-  expect(location.searchParams.get('error')).toBe('refused');
-  // The token is carried back so the page still renders; nothing else is.
-  expect(location.searchParams.get('t')).toBe(token);
-  expect([...location.searchParams.keys()].sort()).toEqual(['error', 't']);
+  const location = response.headers.get('location') ?? '';
+  // The SHAPE of the id as well as the prefix. A redirect to `/fit/r/` plus
+  // anything would pass a prefix check while sending the reader to a
+  // permalink that cannot exist, and `newReportId` is the only thing that
+  // mints one (workers/mcp/src/fit-start.ts mints it now, not this site).
+  expect(location).toMatch(/^\/fit\/r\/[A-Za-z0-9_-]{22}$/);
+  // The eighty seconds, gone from the request path. Measured at 78,222 ms on
+  // 2026-09-18, so five seconds is not a tight bound -- it is far enough below
+  // the old behavior that it cannot pass by accident if the wait comes back.
+  expect(Date.now() - started).toBeLessThan(5_000);
+
+  // The ROW IS OPEN behind that id, which is what makes the redirect honest.
+  // Without this the test would pass against a route that invented an id and
+  // sent the reader to a 404.
+  const id = location.slice('/fit/r/'.length);
+  const row = await db
+    .prepare('SELECT status FROM fit_reports WHERE id = ?')
+    .bind(id)
+    .first<{ status: string }>();
+  expect(row).not.toBeNull();
+  // PENDING, which is the epic's contract rather than a detail of it: the
+  // redirect is honest only if the permalink it names has a row waiting for a
+  // run. A row in any other state here would mean this route waited after all.
+  expect(row?.status).toBe('pending');
 });
 
 // `/fit/r/<id>` (04 §2): the report permalink. THE ID IS THE CAPABILITY --
@@ -1359,12 +1397,20 @@ test('a forged ?error= renders nothing on the form', async () => {
   expect(html).not.toContain('Your token expired');
 });
 
-test('every code /fit/run can emit has copy, and the page renders it', async () => {
-  // The two halves cannot drift: `FitErrorCode` is what `back()` accepts and
-  // `FIT_ERROR_COPY` is what the page can show, so a code added to one and
-  // not the other would either be unrenderable or unreachable. TypeScript
-  // pins the table's completeness (`Record<FitErrorCode, string>`); this pins
-  // that the page actually reaches the table.
+test('every code in the error table has copy, and the page renders it', async () => {
+  // WHAT THIS PINS, and it is narrower than it was. `FitErrorCode` is what
+  // `back()` accepts and `FIT_ERROR_COPY` is what the page can show, and
+  // TypeScript pins the table's completeness (`Record<FitErrorCode, string>`);
+  // this pins that the page actually reaches the table.
+  //
+  // IT NO LONGER PINS A TIE, and the old name said it did. Until #275 the
+  // table and the set `/fit/run` could emit were the same set. `/fit/run`
+  // emits only `bot-check` and `unreachable` now: `startAnalyzeFit` has one
+  // failure code, and the engine's own verdict is written to the row and
+  // rendered from `FIT_FAILURE_COPY` instead (src/lib/fit/report-status.ts).
+  // `refused` and `unusable` stay in the table because a URL issued by an
+  // earlier deploy should still render the copy it was written for, which
+  // makes the table a superset. The reasoning is in src/lib/fit/errors.ts.
   const token = await grant();
   for (const [code, copy] of Object.entries(FIT_ERROR_COPY)) {
     expect(fitErrorCopy(code)).toBe(copy);

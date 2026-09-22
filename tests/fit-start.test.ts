@@ -112,7 +112,21 @@ async function grant(
   return { token: await mintToken(TEST_SIGNING_KEY, claims), jti: claims.jti };
 }
 
-const A_DESCRIPTION = JSON.stringify({ target_description: 'A role.' });
+/**
+ * The fixture description, and its LENGTH is the point rather than its words.
+ *
+ * `'A role.'` until #275, which is when this route started parsing with
+ * `FIT_INPUT` -- the same object `analyze_fit` declares, floor and all. Seven
+ * characters is now a refusal, so every case below that expects to get through
+ * has to send something a real caller would send. 203 characters after the
+ * trim, which clears the 200-character floor without sitting so close to it
+ * that a reader has to count.
+ */
+const A_ROLE = 'A generic description of a role, long enough to satisfy the schema. '
+  .repeat(3)
+  .trim();
+
+const A_DESCRIPTION = JSON.stringify({ target_description: A_ROLE });
 
 function send(
   at: string,
@@ -186,7 +200,7 @@ test('opens the row as pending, answers with its id, and closes it behind the re
   expect(opened?.status).toBe('pending');
   expect(opened?.failure_code).toBeNull();
   expect(opened?.audience).toBe(AUDIENCE);
-  expect(opened?.target_description).toBe('A role.');
+  expect(opened?.target_description).toBe(A_ROLE);
   expect(opened?.model, 'a pending row knows nothing about a report').toBeNull();
   expect(opened?.report_json).toBeNull();
 
@@ -222,7 +236,8 @@ test('opens the row as pending, answers with its id, and closes it behind the re
  * adding a helpful `400` to one nobody checked. So the list is the exits
  * themselves: a method the route does not answer, no bearer, a bearer with no
  * `fit` scope, a body that is not JSON, a description that is empty once
- * trimmed, and an allowance already spent.
+ * trimmed, a description below the tool's floor, and an allowance already
+ * spent.
  *
  * The rate-limited one is the one most easily argued away, and it is the one
  * that matters most: a 429 is honest to a caller and tells anyone holding a
@@ -257,6 +272,30 @@ const REFUSALS: { name: string; method: string; send: () => Promise<Response> }[
       send(origin, '/fit/start', {
         token: (await grant(db)).token,
         body: JSON.stringify({ target_description: '   ' }),
+      }),
+  },
+  {
+    // THE FLOOR, WHICH THIS BRANCH IS THE ONLY SERVER-SIDE ENFORCER OF (#275).
+    // `/fit/run` reached the engine through `analyze_fit` until #275, so the
+    // SDK rejected a short description against `FIT_INPUT` before the limiter
+    // ran. It calls this route now. Without the `safeParse` here the only
+    // 200-character check left on the `/fit` path is `minlength="200"` in
+    // src/pages/fit/index.astro, which a hand-rolled POST never sees -- and the
+    // call it would buy is the one `expensive` tool in the server.
+    //
+    // Compared against the unrouted control like every other refusal, because
+    // the tempting mistake is exactly the helpful one: the schema carries a
+    // sentence written for a calling agent, and answering it here would tell
+    // anyone holding a link that the route exists.
+    name: "a description below the tool's floor",
+    method: 'POST',
+    send: async () =>
+      send(origin, '/fit/start', {
+        token: (await grant(db)).token,
+        // One character short of `FIT_INPUT.min(200)`, so this fails for the
+        // floor and for nothing else. A five-word description would pass this
+        // test with the check deleted and `''` still refused.
+        body: JSON.stringify({ target_description: 'x'.repeat(199) }),
       }),
   },
   {
