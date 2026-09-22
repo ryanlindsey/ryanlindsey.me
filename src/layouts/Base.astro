@@ -188,10 +188,11 @@ const jsonLdNodes = [
     {referrer && <meta name="referrer" content={referrer} />}
     {refresh !== undefined && <meta http-equiv="refresh" content={String(refresh)} />}
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
-    {/* The site icon (#363). The dark variant is what every visitor gets
-       until #367 makes src/lib/theme-toggle.ts swap it for the resolved
-       theme; the .ico is for browsers that take no SVG icon, and cannot
-       follow a theme at all. Everything here is written by scripts/icons.mjs. */}
+    {/* The site icon (#363). The SVG link is server-rendered as the dark
+       variant, and src/lib/theme-toggle.ts swaps it for the resolved theme on
+       load and on every theme change. The .ico is for browsers that take no SVG
+       icon, and cannot follow a theme at all. Everything here is written by
+       scripts/icons.mjs. */}
     <link rel="icon" href="/favicon-dark.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
