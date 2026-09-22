@@ -6,7 +6,7 @@ pillar: building-in-the-open
 series:
   name: Building in the open
   order: 3
-draft: true
+draft: false
 ---
 
 **TL;DR.** A long, metered inference call on this site was deferred off its request and canceled at thirty seconds on every real run, and no test could see it. Cloudflare documents a Queue as the remedy, and a Workflow was chosen instead, the second on this site: another was already running the site's eval suites on a schedule. A Queue is still the right tool for many small, independent events, and this site still runs one. For a single expensive unit of work that is mostly waiting, that someone will ask about by id, and that your tests need to hold, a Workflow gives you three properties a Queue would leave you to build by hand. This is why, told through both Workflows, with the decision rule I would hand another engineer and the three defaults I would override on the first day.
