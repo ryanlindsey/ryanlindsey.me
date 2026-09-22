@@ -7,14 +7,28 @@ import { TEST_SIGNING_KEY } from '../src/lib/tier/grant';
 
 // `POST /fit/start` (#269): the endpoint that lets `/fit/run` answer in
 // milliseconds. It opens a `fit_reports` row, hands back the permalink id and
-// finishes the engine call in `ctx.waitUntil`, so the eighty seconds
+// leaves the engine call to a `FitWorkflow` instance, so the eighty seconds
 // `analyze_fit` takes stop being time a browser spends waiting.
+//
+// IT SAID `ctx.waitUntil` UNTIL #349, and every assertion below is unchanged
+// across that move -- which is the point worth recording rather than the
+// rename. That budget is 30 seconds for an HTTP-triggered Worker and the
+// runtime cancels what has not settled, so a call measured at 78,222 ms never
+// once finished in production (confirmed 2026-09-22, a row still `pending` at
+// t+150 s). This suite passed throughout, because half a second is inside
+// every budget, and that is exactly why the new work went to
+// tests/fit-workflow.test.ts: an instance has a status a test can read and a
+// `waitUntil` promise has nothing at all. What this file proves is what it
+// always proved, and it now proves it against the replacement -- including
+// that `refused` and `errored` still come back from the far side of a step
+// boundary, which is the one thing about the move that could have broken
+// quietly.
 //
 // THE SEAM THIS SUITE RUNS ON IS NOT THE SHARED ONE. tests/workers.ts sets
 // `FIT_ENGINE: 'off'`, under which the deferred run refuses at the seam before
-// the breaker, the corpus or the model -- so fast that `completeRun`'s UPDATE
-// lands before this suite's next round trip can SELECT, and `pending`, the one
-// state this endpoint exists to produce, is never visible. MEASURED
+// the breaker, the corpus or the model -- so fast that the UPDATE closing the
+// row lands before this suite's next round trip can SELECT, and `pending`, the
+// one state this endpoint exists to produce, is never visible. MEASURED
 // 2026-09-21: every read of a freshly opened row came back `failed`.
 //
 // So both harnesses below override it. The first refuses after half a second
@@ -22,7 +36,7 @@ import { TEST_SIGNING_KEY } from '../src/lib/tier/grant';
 // `FIT_ENGINE_MODES` in src/lib/fit/engine.ts), which makes the TRANSITION
 // `pending -> failed` a behavioural assertion rather than a race. The second
 // carries a value the seam does not accept, which is how a plain `Error`
-// reaches `completeRun` and the `errored` half of the closed failure map gets
+// reaches the run and the `errored` half of the closed failure map gets
 // exercised. Neither spends a neuron, opens a subrequest or touches a binding.
 
 /**
@@ -32,7 +46,7 @@ import { TEST_SIGNING_KEY } from '../src/lib/tier/grant';
  * wrangler.jsonc carries why a double is needed at all, and the short version
  * is that the real local simulation delivers a message to the site's consumer,
  * which drops it under `RLME_NOTIFY_MODE: 'stub'` -- so the whole notification
- * could be deleted from `completeRun` with nothing going red.
+ * could be deleted from the run with nothing going red.
  */
 type MockQueueModule = typeof import('../workers/mock-queue/src/index');
 const MOCK_QUEUE_WORKER = { configPath: './workers/mock-queue/wrangler.jsonc' };
@@ -60,9 +74,18 @@ const server = createTestHarness({
  * That is the ONLY way to reach the `errored` branch from here, and it is the
  * seam's own documented behaviour rather than a contrivance: a mis-set var is
  * an operator's mistake, `analyzeFit` throws a plain `Error` for it
- * specifically so the mistake is loud, and `completeRun` files exactly that
- * class of failure as `errored`. The pairing is the real one a deploy would
- * produce.
+ * specifically so the mistake is loud, and the run files exactly that class of
+ * failure as `errored`. The pairing is the real one a deploy would produce.
+ *
+ * IT DOES MORE THAN IT WAS WRITTEN TO DO SINCE #349, which is worth saying
+ * because nothing here changed to earn it. The run happens inside a `step.do`
+ * now, and an error raised in one is captured into durable state before it is
+ * handed back -- the boundary src/lib/fit/engine.ts records `FitUnavailable`
+ * losing its prototype across. `workers/mcp/src/fit-workflow.ts` classifies
+ * inside the step for that reason, and this case plus the `refused` one at the
+ * top of the file are what prove it worked: both halves of the closed map
+ * still come back from the far side of a step, asserted by a file that was not
+ * touched.
  *
  * A second harness rather than a second var on the first, because
  * `FIT_ENGINE` is read off the environment and one Worker has one value of it.
@@ -256,13 +279,15 @@ test('opens the row as pending, answers with its id, and closes it behind the re
  * The site queued `fit-run` off the 303 out of `/fit/run`, calling that
  * redirect an unambiguous "a report exists". #269 turned it into "a run
  * started", so the operator was told at the moment nothing had been generated
- * and was never told when something was. `completeRun` queues it now, which is
- * why the assertion lives in this suite rather than in a site one.
+ * and was never told when something was. This Worker queues it now -- from
+ * `notifyRun` in workers/mcp/src/fit-workflow.ts as of #349, and from
+ * `completeRun` in workers/mcp/src/fit-start.ts before that -- which is why
+ * the assertion lives in this suite rather than in a site one.
  *
  * FOUND BY REPORT ID rather than by recency, for the reason the audit case
  * below finds its row by `grant_jti`: every other case in this file opens a
- * run too, each closes in its own `waitUntil`, and "the newest message" is
- * whichever of them the runtime reached last.
+ * run too, each closes in its own workflow instance, and "the newest message"
+ * is whichever of them the runtime reached last.
  *
  * `outcome: 'failed'` is the one this harness can produce, and a failed run is
  * worth waking the operator for rather than in spite of: it means a reader
