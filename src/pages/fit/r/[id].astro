@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers';
 import Shell from '../../../layouts/Shell.astro';
 import CampaignBand from '../../../components/CampaignBand.astro';
 import { FitReport } from '../../../lib/fit/schema';
+import { fitFailureCopy, isStale, REFRESH_SECONDS } from '../../../lib/fit/report-status';
 import { readCampaignForAudience, type CampaignConfig } from '../../../lib/tier/campaigns';
 
 /**
@@ -27,6 +28,19 @@ import { readCampaignForAudience, type CampaignConfig } from '../../../lib/tier/
  * capability, so a `Referer` carrying the path IS the credential; nothing on
  * this page loads a cross-origin subresource today, and that is not a
  * property to leave resting on nobody adding one.
+ *
+ * FOUR STATES SINCE #276, because the run no longer finishes before the row
+ * exists. `analyze_fit` takes about eighty seconds (MEASURED at 78,222 ms on
+ * 2026-09-18), so the epic writes the row first and fills it in afterward,
+ * and this page is the surface that has to be honest about a row that is not
+ * a finished report yet: `pending` while the run is young, stale once it has
+ * outlived the budget in src/lib/fit/report-status.ts, `failed` with a reason
+ * from that module's closed map, and `ok` exactly as before.
+ *
+ * NONE OF THE FOUR CHANGES WHAT A MISSING ROW ANSWERS. A pending report and a
+ * forged id must stay indistinguishable to anyone who does not hold a real
+ * one, so the 404 below is untouched and the three new states are reachable
+ * only by a reader who already has the capability.
  */
 export const prerender = false;
 
@@ -53,19 +67,35 @@ const { id } = Astro.params;
  * it is never rendered directly -- only fed to `readCampaignForAudience`
  * below, which resolves it into a hero line already written to be shown to a
  * stranger (see the note beside `CampaignBand` further down).
+ *
+ * `status` and `failure_code` join them for #276, and they clear the same bar
+ * `audience` did rather than a lower one. Both are written by this build
+ * alone -- `writeFitReport` in workers/mcp/src/fit-start.ts opens the row
+ * `pending` and closes it `ok` or `failed` -- and neither is ever rendered
+ * verbatim: `status` selects a branch, and `failure_code` is looked up in the
+ * closed map in src/lib/fit/report-status.ts, which answers `null` for
+ * anything it does not recognise. The column that would put submitter-pasted
+ * text on this page is still exactly one, and it is still not selected.
+ *
+ * THE FOUR REPORT COLUMNS ARE NULLABLE NOW (0006), and the row shape below
+ * says so. They are unknown while a run is pending, and the template reaches
+ * them only on the `ok` branch.
  */
 const row = await env.DB.prepare(
-  `SELECT created_at, audience, model, report_json, citations_checked, citations_dropped
+  `SELECT created_at, status, failure_code, audience, model, report_json,
+          citations_checked, citations_dropped
      FROM fit_reports WHERE id = ?`,
 )
   .bind(id ?? '')
   .first<{
     created_at: string;
+    status: string;
+    failure_code: string | null;
     audience: string;
-    model: string;
-    report_json: string;
-    citations_checked: number;
-    citations_dropped: number;
+    model: string | null;
+    report_json: string | null;
+    citations_checked: number | null;
+    citations_dropped: number | null;
   }>();
 
 if (row === null) {
@@ -125,13 +155,54 @@ function parseStoredReport(json: string): FitReport | null {
  * `Number.isNaN(date.getTime())` is the check that never throws;
  * `toISOString()` is the one that can, so it only runs once that check has
  * passed.
+ *
+ * WHAT `created_at` MEANS MOVED UNDER THIS FUNCTION (0006, #271) and the
+ * label did not. It was the moment the report was STORED; it is now the
+ * moment the run STARTED, which on a finished report is about eighty seconds
+ * earlier and on a pending one is the only timestamp there is. The date this
+ * renders is therefore the run's start date on all four branches, which is
+ * the same day in every case a reader will see, and `isStale` below reads the
+ * same column for the budget. Left named `generated` rather than renamed in
+ * this change, because the value the page shows is a date rather than a
+ * time and the rename would touch more than it clarified.
  */
 function dateLabel(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? 'an unknown date' : date.toISOString().slice(0, 10);
 }
 
-const report = parseStoredReport(row.report_json);
+/**
+ * WHICH OF THE FOUR STATES THIS ROW IS IN (#276).
+ *
+ * `pending` and `stale` are the same `status` told apart by the clock, and
+ * the clock is read HERE rather than written by a sweep: `isStale` subtracts
+ * `created_at` from now, so a row whose `ctx.waitUntil` died without ever
+ * closing it goes stale on its own, with nothing having run against it. That
+ * is the whole reason this issue's budget is computed at read time, and it is
+ * what keeps the page honest when the thing that was supposed to finish the
+ * run is the thing that failed.
+ *
+ * `failureCopy` is gated on `status === 'failed'` rather than on the column
+ * being non-null, so a stray `failure_code` left on an `ok` or `pending` row
+ * renders nothing. The map answers `null` for an unrecognised code besides,
+ * which is the second half of the same argument and the one that matters:
+ * this permalink is designed to be forwarded to people holding no token, so
+ * the worst a value that should not be there can do is show nothing.
+ */
+const pending = row.status === 'pending' && !isStale(row.created_at, Date.now());
+const stale = row.status === 'pending' && !pending;
+const failureCopy = row.status === 'failed' ? fitFailureCopy(row.failure_code) : null;
+
+/**
+ * Parsed only for a finished report. `report_json` is NULL until the run
+ * closes (0006), and `parseStoredReport` takes a string -- but the gate is on
+ * `status` rather than on the null, because a non-`ok` row must render its
+ * own state even if some future writer leaves JSON behind on it. `null` here
+ * keeps meaning what it has always meant to the template below: an `ok` row
+ * whose stored report this build cannot read.
+ */
+const report =
+  row.status === 'ok' && row.report_json !== null ? parseStoredReport(row.report_json) : null;
 const generated = dateLabel(row.created_at);
 
 /**
@@ -247,10 +318,17 @@ try {
 const heroLine = campaign?.status === 'active' ? campaign.heroLine : '';
 ---
 
+{/*
+  `refresh` ONLY WHILE PENDING, which is what makes the budget visible to the
+  reader rather than only to the code. A stale row drops the tag, so a run
+  that never closed stops reloading a page that will never change, and an
+  `ok` or `failed` row never had it.
+*/}
 <Shell
   title="Fit report"
   robots="noindex, nofollow"
   referrer="strict-origin"
+  refresh={pending ? REFRESH_SECONDS : undefined}
   description="A structured comparison against Ryan Lindsey's published record."
 >
   {/*
@@ -273,20 +351,104 @@ const heroLine = campaign?.status === 'active' ? campaign.heroLine : '';
   <div class="mx-auto w-full max-w-[1440px]">
     <section class="border-b border-rule px-5 pb-9 pt-10 lg:px-10 lg:pt-11">
       <p class="font-mono text-micro uppercase text-accent">Fit report &middot; {generated}</p>
-      {report === null ? (
+      {/*
+        FOUR SIBLING CONDITIONS RATHER THAN A NESTED TERNARY, and they are
+        mutually exclusive by construction: `pending` and `stale` are both
+        gated on `status === 'pending'` and are each other's negation, and the
+        other two read `status` directly.
+
+        ONE `<h1>` IS A HOUSE INVARIANT THIS PAGE HONORS, NOT ONE A TEST
+        REACHES HERE. Corrected on review: an earlier version of this comment
+        cited tests/seo.test.ts as pinning it. That suite iterates
+        `sitemapPaths()`, and src/lib/unindexed-routes.mjs keeps every
+        `/fit/r/<id>` out of the sitemap on purpose (its reason 2 -- these
+        URLs carry a capability), so it never visits this page. The shape is
+        worth holding for the reader and for the skip link either way; the
+        citation was just false.
+
+        AT MOST ONE, NOT EXACTLY ONE, and the gap is a real row rather than a
+        hypothetical. 0006 declares `status TEXT NOT NULL` with no CHECK
+        constraint and no default, so a fifth value falls through all four
+        branches and renders the eyebrow and nothing else. That is the safe
+        direction to fail in -- a page showing no heading tells a reader less
+        than a page showing the wrong one -- and it stays remote because the
+        writer set is closed (`writeFitReport` in workers/mcp/src/fit-start.ts
+        is the only thing that sets this column). Written down because
+        "exactly one" is conditional on that, and whoever adds a fifth status
+        should know which way this breaks before they find out.
+      */}
+      {pending && (
         <>
-          <h1 class="mt-4 font-display text-title text-ink">This report cannot be displayed</h1>
+          <h1 class="mt-4 font-display text-title text-ink">The analysis is still running</h1>
           <p class="mt-6 max-w-[68ch] text-large text-ink-muted">
-            It was generated by an earlier version of the analyser. Run a new one from the link you
-            were sent.
+            A run takes about ninety seconds. This page refreshes itself every five seconds, so
+            leave it open.
           </p>
         </>
-      ) : (
+      )}
+      {/*
+        NO RETRY LINK ON THIS BRANCH OR THE NEXT, deliberately. This permalink
+        carries no token and cannot construct one, so an `href="/fit"` would
+        send the reader to a bare `/fit`, which has no grant and answers the
+        site's 404 -- a dead end offered as a remedy. The link they were given
+        is the only thing that can start another run, so that is what the copy
+        names.
+
+        "AT LEAST FIVE MINUTES", NOT "MORE THAN", and the two words are the
+        boundary rather than a register choice (corrected on review).
+        `isStale` compares with `>=`, so a row is stale at exactly
+        `STALE_AFTER_MS` -- where "more than five minutes ago" is false by one
+        millisecond. The sentence has to describe the comparison the page
+        actually made.
+
+        THE NUMBER IN THIS SENTENCE AND THE ONE IN THE PENDING SENTENCE ARE
+        `STALE_AFTER_MS` AND `REFRESH_SECONDS` SPELLED OUT, and nothing in the
+        type system makes them agree. `tests/fit-pages.test.ts` asserts the
+        rendered words against both constants for that reason: moving either
+        without rewriting its sentence leaves the page stating a budget it
+        does not keep, which is a page lying to the one reader who cannot
+        check.
+      */}
+      {stale && (
         <>
-          <h1 class="mt-4 font-display text-title text-ink">The read</h1>
-          <p class="mt-6 max-w-[68ch] text-large text-ink-muted">{report.overall_read}</p>
+          <h1 class="mt-4 font-display text-title text-ink">This run did not finish</h1>
+          <p class="mt-6 max-w-[68ch] text-large text-ink-muted">
+            It started at least five minutes ago and never produced a report. Go back to the link
+            you were given and start a new one.
+          </p>
         </>
       )}
+      {row.status === 'failed' && (
+        <>
+          {/*
+            THE HEADING IS NOT FALLBACK COPY FOR AN UNRECOGNISED CODE, and the
+            distinction is the whole design. It is a function of `status`,
+            which this build's own writer sets from a closed set; the SENTENCE
+            is the part that comes from `failure_code`, and that renders only
+            when the closed map recognises the value. A code nothing
+            recognises leaves the heading and nothing else.
+          */}
+          <h1 class="mt-4 font-display text-title text-ink">This run did not produce a report</h1>
+          {failureCopy !== null && (
+            <p class="mt-6 max-w-[68ch] text-large text-ink-muted">{failureCopy}</p>
+          )}
+        </>
+      )}
+      {row.status === 'ok' &&
+        (report === null ? (
+          <>
+            <h1 class="mt-4 font-display text-title text-ink">This report cannot be displayed</h1>
+            <p class="mt-6 max-w-[68ch] text-large text-ink-muted">
+              It was generated by an earlier version of the analyser. Run a new one from the link
+              you were sent.
+            </p>
+          </>
+        ) : (
+          <>
+            <h1 class="mt-4 font-display text-title text-ink">The read</h1>
+            <p class="mt-6 max-w-[68ch] text-large text-ink-muted">{report.overall_read}</p>
+          </>
+        ))}
     </section>
 
     {/*
@@ -295,27 +457,36 @@ const heroLine = campaign?.status === 'active' ? campaign.heroLine : '';
       whole argument to check. Shown even on the stale-schema notice: the
       numbers are about the ANALYSIS RUN, not about whether today's schema can
       render this row, so a reader is owed them either way.
+
+      GATED ON `ok` SINCE #276, and that is not a narrowing of the sentence
+      above. All three columns are NULL until the run closes (0006), so on a
+      pending, stale or failed row there is no model and no count to owe
+      anyone -- rendering the block would print three empty definitions and
+      call them provenance. The stale-schema notice is still an `ok` row and
+      still gets it, which is the case that paragraph was written about.
     */}
-    <section data-fit-provenance class="border-b border-rule px-5 py-6 lg:px-10">
-      <dl class="flex flex-wrap gap-x-12 gap-y-4 font-mono text-small">
-        <div>
-          <dt class="text-micro uppercase text-ink-muted">Model</dt>
-          <dd class="mt-1 text-ink">{row.model}</dd>
-        </div>
-        <div>
-          <dt class="text-micro uppercase text-ink-muted">Citations checked</dt>
-          <dd class="mt-1 text-ink" data-numeric>
-            {row.citations_checked}
-          </dd>
-        </div>
-        <div>
-          <dt class="text-micro uppercase text-ink-muted">Dropped as unresolvable</dt>
-          <dd class="mt-1 text-ink" data-numeric>
-            {row.citations_dropped}
-          </dd>
-        </div>
-      </dl>
-    </section>
+    {row.status === 'ok' && (
+      <section data-fit-provenance class="border-b border-rule px-5 py-6 lg:px-10">
+        <dl class="flex flex-wrap gap-x-12 gap-y-4 font-mono text-small">
+          <div>
+            <dt class="text-micro uppercase text-ink-muted">Model</dt>
+            <dd class="mt-1 text-ink">{row.model}</dd>
+          </div>
+          <div>
+            <dt class="text-micro uppercase text-ink-muted">Citations checked</dt>
+            <dd class="mt-1 text-ink" data-numeric>
+              {row.citations_checked}
+            </dd>
+          </div>
+          <div>
+            <dt class="text-micro uppercase text-ink-muted">Dropped as unresolvable</dt>
+            <dd class="mt-1 text-ink" data-numeric>
+              {row.citations_dropped}
+            </dd>
+          </div>
+        </dl>
+      </section>
+    )}
 
     {report !== null && (
       <div class="px-5 pb-16 lg:px-10">

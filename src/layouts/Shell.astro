@@ -32,6 +32,20 @@ interface Props {
    * tests/fit-pages.test.ts asserts the meta tag for exactly that reason.
    */
   referrer?: string;
+  /**
+   * Pure pass-through, added for the same caller that forced `referrer` down
+   * this layout: `/fit/r/<id>` sets it while its run is still pending (#276),
+   * and it is the only caller. See Base.astro for what the tag is, and for why
+   * a meta refresh rather than a script is the point rather than a shortcut.
+   *
+   * IT HAD TO BE ADDED IN BOTH FILES, which is the thing worth knowing before
+   * the next prop. Neither this layout nor `Base.astro` carried it, and a page
+   * that passed `refresh` to `Shell` alone would compile, render, and silently
+   * never emit the tag -- so the pending permalink would sit there forever
+   * telling a reader it was about to refresh. tests/fit-pages.test.ts asserts
+   * the tag against the rendered HTML for exactly that reason.
+   */
+  refresh?: number;
   // 2026-09 redesign (issue #99): sticky is a route decision, not a viewport
   // one -- only ArticleLayout.astro (the template both article routes share)
   // passes true. Every other caller takes the default and its header scrolls
@@ -47,6 +61,7 @@ const {
   structuredData,
   robots,
   referrer,
+  refresh,
   stickyHeader,
 } = Astro.props;
 ---
@@ -59,6 +74,7 @@ const {
   structuredData={structuredData}
   robots={robots}
   referrer={referrer}
+  refresh={refresh}
 >
   <a
     href="#main"

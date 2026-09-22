@@ -7,6 +7,7 @@ import { TEST_SIGNING_KEY } from '../src/lib/tier/grant';
 import { BANNED_PATTERNS } from './candidacy-patterns';
 import { NOT_FOUND_PROBE } from '../src/lib/not-found-probe';
 import { fitErrorCopy, FIT_ERROR_COPY } from '../src/lib/fit/errors';
+import { REFRESH_SECONDS, STALE_AFTER_MS } from '../src/lib/fit/report-status';
 
 // `/fit` (04 §2, 09 §1): the unlisted, grant-gated page.
 //
@@ -977,6 +978,45 @@ test('a stored report that no longer matches the schema renders a notice, not a 
   expect(await response.text()).toMatch(/cannot be displayed/i);
 });
 
+test('the stale-schema notice still states its provenance', async () => {
+  // ADDED ON REVIEW OF #276, which gated the provenance block on
+  // `status === 'ok'` so a pending or failed row would not print three empty
+  // definitions. The page's own comment has claimed since #223 that the
+  // numbers are about the ANALYSIS RUN rather than about whether today's
+  // schema can render the row, so they are owed to a reader either way -- and
+  // nothing asserted it. The nearby "renders a notice, not a crash" test
+  // checks only the notice, and every other provenance test stores a report
+  // that parses, so narrowing the new gate from `status === 'ok'` to
+  // `report !== null` would delete this behavior with the whole suite green.
+  //
+  // A nonzero dropped count for the reason the provenance test above records:
+  // it is the number that says whether the analyser was caught inventing a
+  // source, and asserting on it rather than on the block's presence alone is
+  // what stops this passing against an empty `<dl>`.
+  await db
+    .prepare(
+      `INSERT INTO fit_reports (id, created_at, status, audience, model, target_description,
+         report_json, citations_checked, citations_dropped)
+       VALUES (?, ?, 'ok', ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      'fixture-stale-provenance-id',
+      '2026-09-08T00:00:00.000Z',
+      'web',
+      'anthropic/claude-opus-5',
+      'A generic description of a role.',
+      '{"nope":true}',
+      4,
+      3,
+    )
+    .run();
+  const html = await (await server.fetch('/fit/r/fixture-stale-provenance-id')).text();
+  expect(html).toMatch(/cannot be displayed/i);
+  expect(html).toContain('data-fit-provenance');
+  expect(html).toContain('anthropic/claude-opus-5');
+  expect(html).toMatch(/Dropped as unresolvable<\/dt>\s*<dd[^>]*>\s*3\s*<\/dd>/i);
+});
+
 test('a stored report whose JSON will not even parse renders the same notice', async () => {
   // Adjacent to the stale-schema case above but a different failure mode:
   // `JSON.parse` itself throwing rather than merely producing something
@@ -1141,6 +1181,162 @@ test('each requirement shows its strength as its own column', async () => {
   await storeReport('fixture-strength-id');
   const html = await (await server.fetch('/fit/r/fixture-strength-id')).text();
   expect(html).toContain('data-strength="strong"');
+});
+
+// A row that is not a finished report (#276). Every test above this line
+// stores `status = 'ok'` and a full `report_json`, which was the only shape
+// the table could hold until migrations/0006_fit_report_status.sql; the three
+// below are the other three states the same permalink now has to render.
+
+/**
+ * A row whose report does not exist yet, or never will.
+ *
+ * SEPARATE FROM `storeReport` above rather than a parameter on it. That
+ * fixture's whole body is a finished report, and serving both shapes would
+ * make every one of its eight bound values optional to express the one case
+ * where four of them are NULL -- which is the shape 0006 made possible and
+ * the shape `writeFitReport` (workers/mcp/src/fit-start.ts) actually writes.
+ *
+ * `createdAt` is a parameter here and a constant there for the reason 0006
+ * records: on a pending row it is the moment the run STARTED, and the page
+ * subtracts it from the clock to decide the run has gone stale. A test of
+ * that budget has to be able to move it.
+ */
+async function storeUnfinishedReport(fields: {
+  id: string;
+  status: 'pending' | 'failed';
+  createdAt?: string;
+  failureCode?: string;
+}): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO fit_reports (id, created_at, status, failure_code, audience, target_description)
+       VALUES (?, ?, ?, ?, 'web', ?)`,
+    )
+    .bind(
+      fields.id,
+      fields.createdAt ?? new Date().toISOString(),
+      fields.status,
+      fields.failureCode ?? null,
+      'A generic description of a role.',
+    )
+    .run();
+}
+
+test('a pending report refreshes itself', async () => {
+  // A META REFRESH, not a script. The epic's rule is that `/fit` carries no
+  // client JavaScript beyond the Turnstile widget (src/pages/fit/run.ts states
+  // it as a plain form POST with no script), and this permalink carries no
+  // widget at all, so a poll written in JavaScript would be the first script
+  // on the page as well as the first on the feature.
+  await storeUnfinishedReport({ id: 'p'.repeat(22), status: 'pending' });
+  const response = await server.fetch(`/fit/r/${'p'.repeat(22)}`);
+  // 200 rather than the flattened 404: the row is real and the reader holds a
+  // working link. A pending report that answered 404 would tell whoever was
+  // sent the link that it was never valid.
+  expect(response.status).toBe(200);
+  const html = await response.text();
+
+  expect(html).toContain('http-equiv="refresh"');
+  expect(html).toContain('content="5"');
+});
+
+test('a pending report past the budget stops refreshing', async () => {
+  const old = new Date(Date.now() - 6 * 60 * 1000).toISOString();
+  await storeUnfinishedReport({ id: 's'.repeat(22), status: 'pending', createdAt: old });
+  const html = await (await server.fetch(`/fit/r/${'s'.repeat(22)}`)).text();
+
+  expect(html).not.toContain('http-equiv="refresh"');
+  // The staleness budget is computed at READ time from `created_at`, so this
+  // row goes stale with nothing having run against it -- no sweep, no cron.
+  // That is the property that makes the page honest when `ctx.waitUntil` dies
+  // without ever closing the row.
+  expect(html).toMatch(/did not finish/i);
+  // NO RETRY LINK, and this is the assertion that keeps it that way. This
+  // permalink carries no token and cannot construct one, so an `href="/fit"`
+  // would send the reader to a bare `/fit`, which answers the site 404 -- a
+  // dead end offered as a remedy.
+  expect(html).not.toMatch(/href="\/fit"/);
+});
+
+test('a failed report renders copy from the closed map and never the stored code', async () => {
+  await storeUnfinishedReport({ id: 'f'.repeat(22), status: 'failed', failureCode: 'refused' });
+  const html = await (await server.fetch(`/fit/r/${'f'.repeat(22)}`)).text();
+  expect(html).toContain('could not complete this run');
+  expect(html).not.toMatch(/href="\/fit"/);
+
+  // The same argument `a forged ?error= renders nothing on the form` runs for
+  // the query parameter, on the surface that reads from storage instead. An
+  // unrecognised code renders NOTHING rather than a generic banner, because
+  // this page is built to be forwarded to people holding no token and a
+  // fallback sentence would hand a future bug a way to put a banner of its
+  // own shape in front of all of them.
+  await storeUnfinishedReport({
+    id: 'g'.repeat(22),
+    status: 'failed',
+    failureCode: '<b>forged</b>',
+  });
+  const forged = await (await server.fetch(`/fit/r/${'g'.repeat(22)}`)).text();
+  expect(forged).not.toContain('forged');
+});
+
+/**
+ * The two constants as the page's copy spells them.
+ *
+ * A LOOKUP RATHER THAN A NUMBER-TO-WORDS FUNCTION. The only job here is to
+ * fail when a constant moves and the sentence it is written into does not,
+ * and a converter general enough to be correct would be a second
+ * implementation with its own bugs, guarding two numbers. A value missing
+ * from this table fails the test below with a message saying to add it, which
+ * is the same push toward reading the copy that a wrong word would give.
+ */
+const IN_WORDS: Record<number, string> = {
+  2: 'two',
+  3: 'three',
+  5: 'five',
+  10: 'ten',
+  15: 'fifteen',
+  20: 'twenty',
+  30: 'thirty',
+};
+
+test('the holding and stale copy state the constants the page computed them from', async () => {
+  // ADDED ON REVIEW OF #276. `REFRESH_SECONDS` and `STALE_AFTER_MS` are
+  // numbers, the sentences that describe them are prose, and nothing in the
+  // type system makes the two agree -- so halving the budget would leave a
+  // page telling a reader it waits five minutes while going stale in two and
+  // a half, with every other test in this file green. The reader of this page
+  // holds no token and cannot check, which is what makes the lie expensive.
+  const refreshWord = IN_WORDS[REFRESH_SECONDS];
+  const budgetWord = IN_WORDS[STALE_AFTER_MS / 60_000];
+  expect(
+    refreshWord,
+    `add ${REFRESH_SECONDS} to IN_WORDS and reword the holding copy`,
+  ).toBeDefined();
+  expect(
+    budgetWord,
+    `add ${STALE_AFTER_MS / 60_000} to IN_WORDS and reword the stale copy`,
+  ).toBeDefined();
+
+  await storeUnfinishedReport({ id: 'c'.repeat(22), status: 'pending' });
+  const holding = await (await server.fetch(`/fit/r/${'c'.repeat(22)}`)).text();
+  expect(holding).toContain(`every ${refreshWord} seconds`);
+  // The tag and the sentence are two renderings of one constant, so the page
+  // cannot promise one interval and reload on another.
+  expect(holding).toContain(`content="${REFRESH_SECONDS}"`);
+
+  // EXACTLY THE BUDGET, not a minute past it. `isStale` compares with `>=`,
+  // so this row is stale by one millisecond of margin -- which is the case
+  // that makes "at least five minutes" right and "more than five minutes"
+  // wrong, and the reason the copy says the former.
+  await storeUnfinishedReport({
+    id: 'd'.repeat(22),
+    status: 'pending',
+    createdAt: new Date(Date.now() - STALE_AFTER_MS).toISOString(),
+  });
+  const stale = await (await server.fetch(`/fit/r/${'d'.repeat(22)}`)).text();
+  expect(stale).not.toContain('http-equiv="refresh"');
+  expect(stale).toContain(`at least ${budgetWord} minutes ago`);
 });
 
 test('a forged ?error= renders nothing on the form', async () => {

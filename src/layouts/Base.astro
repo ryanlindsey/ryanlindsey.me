@@ -79,6 +79,27 @@ interface Props {
    * was ever for. src/worker.ts carries the measurement and the reasoning.
    */
   referrer?: string;
+  /**
+   * Seconds until this page reloads itself, as `<meta http-equiv="refresh">`.
+   * Unset on every page but one, so there is no default and no tag: a page
+   * that reloads on its own is a decision each route makes, not a site-wide
+   * one.
+   *
+   * `/fit/r/<id>` sets it while its run is still pending (#276), and A META
+   * TAG RATHER THAN A SCRIPT is the reason this is a prop at all. That feature
+   * ships no client JavaScript beyond the `/fit` form's Turnstile widget --
+   * src/pages/fit/run.ts states the design as a plain form POST with no script
+   * -- and the permalink ships none, so a poll written in JavaScript would be
+   * the first script on the page and the first on the feature, added for a
+   * page whose whole content is one sentence saying to wait.
+   *
+   * A NUMBER rather than the whole `content` string, and the difference is not
+   * ergonomics. `<meta http-equiv="refresh">` also takes a `;url=` target, so
+   * a string prop would let any route redirect a reader through this layout
+   * after a delay. The only thing a caller here varies is the interval, and
+   * this is the type that says so.
+   */
+  refresh?: number;
 }
 
 const {
@@ -102,6 +123,7 @@ const {
   structuredData,
   robots = 'index, follow',
   referrer,
+  refresh,
 } = Astro.props;
 
 /**
@@ -164,6 +186,7 @@ const jsonLdNodes = [
          that pass their own value depend on it being rendered. */}
     <meta name="robots" content={robots} />
     {referrer && <meta name="referrer" content={referrer} />}
+    {refresh !== undefined && <meta http-equiv="refresh" content={String(refresh)} />}
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
     {/* Sitewide feed autodiscovery (day 3 Task 11, 02 §3) -- unlike the
        markdownHref block below, these are not conditional on any per-page
