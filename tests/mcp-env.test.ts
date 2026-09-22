@@ -47,10 +47,13 @@ test('no wrangler config declares a day-5 test-only seam', async () => {
   // entry added to either config, for any reason, would make production sign
   // tokens with a constant committed to a public repo.
   //
-  // `FIT_ENGINE` (src/lib/fit/engine.ts's `analyzeFit`): the only value it
-  // accepts is `'off'`, so a `vars` entry could only ever turn the fit engine
-  // off in production -- silently, since the tool would keep answering a
-  // polite sentence about being unavailable and every test would stay green.
+  // `FIT_ENGINE` (src/lib/fit/engine.ts's `analyzeFit`): both values it
+  // accepts refuse, so a `vars` entry could only ever turn the fit engine off
+  // in production -- silently, since the tool would keep answering a polite
+  // sentence about being unavailable and every test would stay green. #274
+  // added the second value, `'off-after-delay'`, and it does not weaken that
+  // sentence: a stray entry naming it turns the engine off in production too,
+  // half a second slower.
   //
   // `RLME_TURNSTILE_MODE` (src/lib/turnstile.ts's `verifyTurnstile`) is the
   // one that most needs this guard, because it is the only seam of the three

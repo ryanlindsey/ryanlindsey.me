@@ -355,8 +355,14 @@ export async function resolveNarrativeKey(
  * `documentsEnv` (./tools.ts) follow, and for the same reason: the fit engine
  * has no business holding `R2_PRIVATE` or the token signing key, and a spread
  * would hand it both. Every binding below is one `analyzeFit` reaches for.
+ *
+ * EXPORTED SINCE #269, for one caller and deliberately: `POST /fit/start`
+ * (./fit-start.ts) runs the same engine after its own response has gone, so it
+ * needs exactly this slice. Assembling a second copy of it over there would be
+ * a second list of bindings to keep in step with `FitEnv`, and the copy that
+ * drifted would be the one no tool call exercises.
  */
-function fitEnv(env: McpEnv): FitEnv {
+export function fitEnv(env: McpEnv): FitEnv {
   return {
     SITE: env.SITE,
     SITE_ORIGIN: env.SITE_ORIGIN,

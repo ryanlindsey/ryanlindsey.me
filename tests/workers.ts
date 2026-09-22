@@ -278,6 +278,14 @@ export const MCP_WORKER = {
      * call is exercised there; the call itself is exercised with a stub `Ai`
      * at the call site in tests/fit-engine.test.ts, which is what
      * workers/mock-ai's own doc comment asks for.
+     *
+     * `'off'` IS NO LONGER THE ONLY ACCEPTED VALUE, and a reader of this file
+     * should know where the other one is used. #274 added
+     * `'off-after-delay'`, which refuses identically after half a second;
+     * tests/fit-start.test.ts overrides this entry with it, because the
+     * deferred fit run closes its own row and under `'off'` it does so before
+     * a test can read the row it opened. Nothing else overrides it, and no
+     * deployed config declares either value.
      */
     FIT_ENGINE: 'off',
     /**

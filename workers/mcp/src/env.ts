@@ -166,9 +166,11 @@ export interface McpEnv {
    * Test-only seam, the fourth of the same shape, and declared here because
    * `fitEnv` (./gated.ts) hands it to `analyzeFit` (src/lib/fit/engine.ts),
    * whose own `FitEnv` is where the accepted values are written down. ABSENT
-   * is the deployed behaviour -- run the engine -- and `'off'` is the only
-   * other accepted value, making `analyzeFit` refuse before it reads KV, the
-   * corpus or the model. Anything else throws rather than guessing.
+   * is the deployed behaviour -- run the engine -- and the other two accepted
+   * values both make `analyzeFit` refuse before it reads KV, the corpus or the
+   * model: `'off'` at once, and `'off-after-delay'` (#274) half a second later,
+   * which is what makes the deferred run's `pending` row observable to a test.
+   * Anything else throws rather than guessing.
    *
    * `'off'` is set on this Worker by tests/workers.ts, for the same reason
    * `MCP_SEARCH_EMBEDDER` is `'stub'` there: the harness overrides `AI` to a
