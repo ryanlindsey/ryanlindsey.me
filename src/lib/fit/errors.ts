@@ -1,5 +1,3 @@
-import type { AnalyzeFailure } from './client';
-
 /**
  * The reason codes `/fit/run` may put in its redirect, and the copy `/fit`
  * renders for each.
@@ -24,8 +22,24 @@ import type { AnalyzeFailure } from './client';
  * the tool result, which is the surface it was written for. A browser visitor
  * gets the `refused` copy below and is told to retry, which is the action
  * available to them either way.
+ *
+ * WRITTEN OUT RATHER THAN BUILT FROM THE CLIENT'S UNION SINCE #269. This was
+ * `AnalyzeFailure | 'bot-check' | 'not-saved'`, and `AnalyzeFailure` was the
+ * three ways the tool call could fail while the site waited for it. The site
+ * does not wait any more: `startAnalyzeFit` has one failure code and the
+ * engine's own verdict is written to the row instead, where
+ * src/lib/fit/report-status.ts renders it. `/fit/run` therefore emits only
+ * `bot-check` and `unreachable` today.
+ *
+ * `refused` AND `unusable` STAY, and they are a superset rather than an
+ * oversight. This table is what the PAGE will render for a `?error=` value,
+ * and the value arrives in a URL: one issued by the previous deploy, one
+ * bookmarked, one typed. A code that was emitted last week should render the
+ * copy it was written for rather than fall through to the blank that
+ * `fitErrorCopy` gives an unrecognized value. Narrowing the render set is its
+ * own decision and not this one.
  */
-export type FitErrorCode = AnalyzeFailure | 'bot-check' | 'not-saved';
+export type FitErrorCode = 'bot-check' | 'unreachable' | 'refused' | 'unusable';
 
 export const FIT_ERROR_COPY: Record<FitErrorCode, string> = {
   'bot-check': 'That bot check did not pass. Reload the page and try again.',
@@ -38,7 +52,6 @@ export const FIT_ERROR_COPY: Record<FitErrorCode, string> = {
   // are the same as for `refused`, so the copy is too; the codes stay
   // distinct because the operator's are not.
   unusable: 'The fit engine could not complete that run. Try again shortly.',
-  'not-saved': 'The report was generated but could not be saved. Try again shortly.',
 };
 
 /**

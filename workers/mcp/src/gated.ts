@@ -193,8 +193,18 @@ const CASE_STUDY_INPUT = z.object({
  * The ceiling is the model's problem rather than a limit anyone will meet:
  * 60k characters is far more than a description and far less than the context
  * window.
+ *
+ * EXPORTED SINCE #275, AND THAT IS WHAT KEEPS THE FLOOR REAL. `POST
+ * /fit/start` parses with THIS OBJECT rather than with its own copy of the
+ * number. Until #275 the site reached the engine through this tool, so the SDK
+ * rejected a short description before `limitAndAudit` ever ran and the floor
+ * held for free. `/fit/run` calls `/fit/start` now, and the only other
+ * 200-character check on that path is `minlength="200"` in
+ * src/pages/fit/index.astro, which is a browser's courtesy and not a check: a
+ * hand-rolled POST bypasses it entirely. A second literal `200` in
+ * ./fit-start.ts would have held until the day somebody tuned one of them.
  */
-const FIT_INPUT = z.object({
+export const FIT_INPUT = z.object({
   target_description: z
     .string()
     .min(200, 'Paste the full description; a few lines is not enough to analyse.')

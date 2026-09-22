@@ -2,7 +2,7 @@ import { analyzeFit, FitUnavailable } from '../../../src/lib/fit/engine';
 import { newReportId } from '../../../src/lib/fit/report-id';
 import { hasScope, resolveGrant } from '../../../src/lib/tier/grant';
 import { limitAndAudit } from './define';
-import { fitEnv } from './gated';
+import { fitEnv, FIT_INPUT } from './gated';
 import type { McpEnv } from './env';
 
 /**
@@ -47,7 +47,24 @@ export async function handleFitStart(
   }
   const description =
     typeof body.target_description === 'string' ? body.target_description.trim() : '';
-  if (description === '') return null;
+
+  // THE TOOL'S OWN SCHEMA, not a copy of its numbers (#275). `analyze_fit`
+  // declares `FIT_INPUT` and the SDK enforces it before `limitAndAudit` runs,
+  // which is what kept a five-character description from ever reaching the
+  // engine while `/fit/run` went through the tool. It does not any more, so
+  // this route is the floor: without this line a hand-rolled POST opens a row
+  // and spends an expensive-bucket inference call on two words. `minlength` on
+  // the form is a browser's courtesy and not a check.
+  //
+  // The TRIMMED value is what is parsed, so whitespace cannot pad a short
+  // description past the floor. That makes this a shade stricter than the tool
+  // and never looser, which is the direction an unguarded path should err in.
+  //
+  // `null` rather than the schema's own message, unlike the tool: the message
+  // is written for a calling agent that can act on it, and this surface
+  // answers every refusal the way an unrouted path does. A 400 saying "too
+  // short" would tell anyone holding a link that the route is real.
+  if (!FIT_INPUT.safeParse({ target_description: description }).success) return null;
 
   const id = newReportId();
   const tc = { env, ctx, request, grant };

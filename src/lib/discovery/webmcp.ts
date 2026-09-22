@@ -77,11 +77,11 @@ export const WEBMCP_TOOLS: readonly WebMcpTool[] = [
  * rate-limited call answers with a sentence like "Rate limit reached for
  * search_writing. Try again in Xs." through the exact same shape as a real
  * result. This rejects instead, carrying that sentence as the error message --
- * the same read of `result.content[0].text` src/lib/fit/client.ts's
- * `callAnalyzeFit` already does for its own `isError` branch -- so the
- * `Promise` `execute` returns is rejected precisely when the tool refused,
- * and a WebMCP host reading the rejection reason sees the refusal's own
- * sentence rather than a result that merely looks like an answer.
+ * the same read of `result.content[0].text` that src/lib/fit/client.ts's
+ * `callAnalyzeFit` did for its own `isError` branch until #269 deleted it --
+ * so the `Promise` `execute` returns is rejected precisely when the tool
+ * refused, and a WebMCP host reading the rejection reason sees the refusal's
+ * own sentence rather than a result that merely looks like an answer.
  */
 export async function callMcp(name: string, args: Record<string, unknown>) {
   const response = await fetch('/mcp', {

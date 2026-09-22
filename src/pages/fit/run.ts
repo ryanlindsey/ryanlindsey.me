@@ -1,7 +1,6 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { callAnalyzeFit, grantContext } from '../../lib/fit/client';
-import { newReportId } from '../../lib/fit/report-id';
+import { grantContext, startAnalyzeFit } from '../../lib/fit/client';
 import type { FitErrorCode } from '../../lib/fit/errors';
 import { verifyTurnstile } from '../../lib/turnstile';
 
@@ -12,10 +11,17 @@ import { verifyTurnstile } from '../../lib/turnstile';
  * plain form POST, no client JavaScript beyond the Turnstile widget itself,
  * and a result that survives a refresh because it lives at its own URL.
  *
- * ORDER: grant, then Turnstile, then the tool. The grant check is first
+ * ORDER: grant, then Turnstile, then the run. The grant check is first
  * because a caller without one should not be able to make this route spend a
- * siteverify round trip, and Turnstile is before the tool because the tool is
+ * siteverify round trip, and Turnstile is before the run because the run is
  * the expensive half.
+ *
+ * IT NO LONGER WAITS FOR THE REPORT (#269). This route used to call
+ * `analyze_fit` and hold the browser open for the whole run, measured at
+ * 78,222 ms on 2026-09-18, then write the row itself. It now asks the MCP
+ * Worker to OPEN a run and redirects immediately; that Worker mints the id,
+ * writes `fit_reports` and finishes the run after answering. So nothing below
+ * touches D1, and the success redirect points at a row that is still pending.
  */
 export const prerender = false;
 
@@ -99,64 +105,31 @@ export const POST: APIRoute = async ({ request }) => {
     return back(token, 'bot-check');
   }
 
-  const outcome = await callAnalyzeFit(env, token, description);
+  const outcome = await startAnalyzeFit(env, token, description);
   if (!outcome.ok) {
-    // The tool's own sentence goes to the LOG, not to the URL. It is the
-    // breaker's message, or the limiter's, or the engine's, and each was
-    // written to be read -- but the reader it can safely reach is the
-    // operator, because the redirect that would carry it to the page is
-    // forgeable by anyone holding the link.
-    console.warn(`fit: the tool refused the run (${outcome.code}): ${outcome.message}`);
+    // One code, and the log is where the detail was always going to live. The
+    // MCP Worker refuses a run the same way it refuses an unrouted path, so
+    // there is no sentence to carry here even if it were safe to carry one.
+    console.warn(`fit: the run could not be started (${outcome.code})`);
     return back(token, outcome.code);
   }
 
   /**
-   * The GRANT'S audience, out of the tool's own envelope.
+   * THE REPORT DOES NOT EXIST YET, and this redirect is correct anyway. The
+   * row is open, `/fit/r/<id>` renders its pending state and refreshes itself
+   * until the MCP Worker closes it.
    *
-   * `fit_reports.audience` is defined by migrations/0002_private_tier.sql as
-   * the audience of the grant that produced the report, with a comment saying
-   * a NULL there would be evidence the tier check was bypassed. This route
-   * cannot derive it: the token is opaque here by design and this file never
-   * verifies it. So the MCP Worker says it (`fitEnvelope` in
-   * workers/mcp/src/gated.ts, from `grant.audience`) and this reads it back.
+   * WHAT LEFT THIS FILE IN #269: the envelope's audience check and the INSERT.
+   * Both were here because the site stored the report. It does not any more --
+   * the Worker that resolves the grant is the one that writes the row, so the
+   * audience never has to cross a boundary to be checked on the other side.
+   * Nothing on the site WRITES `fit_reports` any more; `/fit/r/<id>`,
+   * src/lib/ops/metrics.ts and src/lib/retention.ts still read it.
    *
-   * An envelope with no audience is a contract violation rather than a missing
-   * nicety, and it is refused rather than papered over with a placeholder: a
-   * row that names a channel, or an empty string, is a row that lies to
-   * whoever reads the table next -- which is exactly what that column's
-   * comment says must not happen.
+   * THE ORDER NOTE ABOVE STILL HOLDS, with the last step renamed. Turnstile is
+   * before the start call because the start call is still the metered half:
+   * `/fit/start` goes through `limitAndAudit` and spends the caller's
+   * allowance, whether or not this route waits for the engine.
    */
-  const audience = typeof outcome.payload.audience === 'string' ? outcome.payload.audience : '';
-  if (audience === '') {
-    console.error('fit: the tool envelope carried no audience; refusing to store a report');
-    return back(token, 'not-saved');
-  }
-
-  const id = newReportId();
-  try {
-    await env.DB.prepare(
-      `INSERT INTO fit_reports
-         (id, created_at, audience, model, target_description, report_json,
-          citations_checked, citations_dropped)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        id,
-        new Date().toISOString(),
-        audience,
-        String(outcome.payload.model ?? ''),
-        description,
-        JSON.stringify(outcome.payload.report ?? {}),
-        Number(outcome.payload.citations_checked ?? 0),
-        Number(outcome.payload.citations_dropped ?? 0),
-      )
-      .run();
-  } catch (error) {
-    // The report exists but could not be stored. Say so rather than losing it
-    // silently behind a permalink that will 404.
-    console.error('fit: could not store the report', error);
-    return back(token, 'not-saved');
-  }
-
-  return new Response(null, { status: 303, headers: { Location: `/fit/r/${id}` } });
+  return new Response(null, { status: 303, headers: { Location: `/fit/r/${outcome.id}` } });
 };
