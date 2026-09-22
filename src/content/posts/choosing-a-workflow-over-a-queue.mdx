@@ -9,11 +9,11 @@ series:
 draft: true
 ---
 
-**TL;DR.** One call on this site takes about eighty seconds and costs real money every time it runs. It was moved off its request into `ctx.waitUntil`, which Cloudflare cancels thirty seconds after the response is sent, so every real run was killed partway and left its record reading `pending` forever. Cloudflare's own documentation names a Queue as the remedy. I used a Workflow, the second on this site: four days earlier another one had started running the site's eval suites on a schedule. A Queue is still the right tool for many small, independent events, and this site still runs one. For a single expensive unit of work that is mostly waiting, that someone will ask about by id, and that your tests need to see, a Workflow gives you three properties a Queue would make you build by hand. This post is the reasoning, a sketch of the shape that transfers, and the three defaults I would change before shipping the first one.
+**TL;DR.** One call on this site takes about eighty seconds and costs real money every time it runs. It was moved off its request into `ctx.waitUntil`, which Cloudflare cancels thirty seconds after the response is sent, so every real run was killed partway and left its record reading `pending` forever. Cloudflare's own documentation names a Queue as the remedy. I used a Workflow, the second on this site: four days earlier another one had started running the site's eval suites on a schedule. A Queue is still the right tool for many small, independent events, and this site still runs one. For a single expensive unit of work that is mostly waiting, that someone will ask about by id, and that your tests need to hold, a Workflow gives you three properties a Queue would leave you to build by hand. This post is the reasoning, a sketch of the shape that transfers, and the three defaults I would change before shipping the first one.
 
 ## The run that never finished
 
-The call in question is one inference request over the whole of this site's published writing. It was measured at 78,222 ms on 2026-09-18. Until that week it ran inside the request that asked for it, which held the visitor's browser open for eighty seconds and did, reliably, produce a result.
+The call in question is one metered request to a frontier model. It was measured at 78,222 ms on 2026-09-18. Until 2026-09-21 it ran inside the request that asked for it, which held the visitor's browser open for eighty seconds and did produce a result.
 
 So the work was deferred. The request now opens a record, answers with a permalink in about a second, and hands the long call to `ctx.waitUntil` to finish in the background. The permalink page refreshes itself until the record closes.
 
@@ -27,11 +27,13 @@ and exact about what happens past it:
 
 78,222 ms is 2.6 times that budget. Every real run was canceled mid-call, the write that closes the record never ran, and the notification that a run had finished was never sent, including the one meant for a run that failed. I confirmed it against production on 2026-09-22 rather than inferring it: the start request answered in 0.98 seconds, and the record still read `pending` with every result field null at 25, 40, 60, 85, 110 and 150 seconds. The only trace anywhere was the runtime's own line, `waitUntil() tasks did not complete within the allowed time after invocation end and have been cancelled`.
 
-No test caught it, and none could have. No test in this repository may spend inference, so the harness replaces the engine with one that declines after 500 ms, three orders of magnitude inside the budget. The test that watched the record move from `pending` to closed passed either way. A `waitUntil` promise has no handle, no status and no name, so there was nothing for a test to hold onto even in principle.
+No test caught it, and none could have. No test in this repository may spend inference, so the harness replaces the engine with one that declines after 500 ms, sixty times inside the budget. The test that watched the record move from `pending` to closed passed either way. A `waitUntil` promise has no handle, no status and no name, so there was nothing for a test to hold onto even in principle.
+
+`ctx.waitUntil` is still in that route, and it was never the thing that broke. What it holds now is the call that creates the Workflow instance, which settles in milliseconds. The rule the defect taught is narrower than avoiding an API: **nothing whose duration is a measured number may be scheduled on a budget that is not.**
 
 ## The documentation recommended a Queue, and it was not wrong
 
-The same page names the fix in its next sentence:
+The same passage names the fix a paragraph later:
 
 > If the work cannot finish within the `waitUntil()` time limit, send messages to a Queue and process them in a separate consumer Worker. Queues provide reliable delivery and automatic retries.
 
@@ -39,17 +41,17 @@ The issue I filed for the defect recommended exactly that, and it was a sound re
 
 So both would have worked. That is what makes the choice worth writing down.
 
-## Three things a Queue would have made me build
+## Three things a Queue would have left me to build
 
 **A paid result is not paid for twice.** Queues [deliver at least once](https://developers.cloudflare.com/queues/reference/delivery-guarantees/), and Cloudflare's guidance for the rare duplicate is to generate a unique id and use it "as the primary key on database inserts and/or as an idempotency key to de-duplicate the message after processing." That is correct, and for this work it is a system you write yourself. A redelivered message with no record beside it re-runs the whole seventy-eight seconds. In a Workflow, `step.do` persists its return value, and an instance that is evicted or restarted replays the step from that record instead of calling the model again. That is the platform's primitive rather than my table.
 
-**A run has an address and a terminal state.** Every Workflow instance has an id, and I create each one with the permalink id as the instance id. The question "what happened to this link?" becomes one command, `wrangler workflows instances describe <workflow> <id>`, which answers `complete` or `errored` with the error attached. A message that has been consumed, retried or sent to a dead letter queue has a history, but not one you can ask for by the id a person is holding.
+**A run has an address and a terminal state.** Every Workflow instance has an id, and I create each one with the permalink id as the instance id. The question "what happened to this link?" becomes one command, `wrangler workflows instances describe <workflow> <id>`, which answers with a terminal status, and the error if there was one. A message that has been consumed, retried or sent to a dead letter queue has a history, but not one you can ask for by the id a person is holding.
 
-**A test can see it.** This is the reason that decided it, and it rests on a measurement rather than a preference. On 2026-09-18, while building the eval Workflow described below, I declared a probe `workflows` binding and booted the test harness with it. It started cleanly and `create()` returned a real instance id locally. That is not true of every binding here: the ones with no local simulator make the harness fail at boot. So the new suite creates an instance, polls `instance.status()` until it reaches `complete` or `errored`, and asserts on both the status and the record the run closed.
+**A test can hold the run itself.** This is the reason that decided it, and it is not a claim that a Queue is untestable: Queues are simulated locally, and under this repository's harness a message really is delivered to its consumer. The difference is what a test can hold. A consumer's run has no handle, so a test of a Queue-based fix would have watched the record, exactly as the `waitUntil` test did, and passed either way. On 2026-09-18, while building the eval Workflow described below, I declared a probe `workflows` binding and booted the test harness with it. It started cleanly and `create()` returned a real instance id locally. That is not true of every binding here: the ones with no local simulator make the harness fail at boot. So the new suite gets the instance by the run's id, polls `instance.status()` until it reaches `complete` or `errored`, and asserts on both the status and the record the run closed.
 
-I should be precise about how far that last claim goes. The tests still cannot see the eighty seconds, because they still cannot spend inference, and the thirty-second budget is never crossed under the harness. What they pin is the shape that budget applied to: the long call is no longer something a request's execution context is holding open, and the thing holding it now has a status a test can read. That is less than proof that production works. It is a great deal more than the nothing the earlier shape allowed.
+That last claim has a limit. The tests still cannot see the eighty seconds, because they still cannot spend inference, and the thirty-second budget is never crossed under the harness. What they pin is the shape that budget applied to: the long call is no longer something a request's execution context is holding open, and the thing holding it now has a status a test can read. That is less than proof that production works. It is a great deal more than the nothing the earlier shape allowed.
 
-## The shape, without the specifics
+## The shape keeps the input out of durable state
 
 This is the pattern with the domain taken out. It is close to what runs here and deliberately not identical to it.
 
@@ -70,17 +72,23 @@ export class DeferredRun extends WorkflowEntrypoint<Env, Params> {
     if (row === null) throw new Error(`no run is stored under ${id}`);
 
     // The expensive call: no retries, and a verdict rather than a throw.
-    const outcome = await step.do(
-      'work',
-      { retries: { limit: 0, delay: 0 } },
-      async (): Promise<Outcome> => {
-        try {
-          return { ok: true, result: await expensiveCall(this.env, row.input) };
-        } catch (error) {
-          return { ok: false, code: error instanceof Declined ? 'refused' : 'errored' };
-        }
-      },
-    );
+    let outcome: Outcome;
+    try {
+      outcome = await step.do(
+        'work',
+        { retries: { limit: 0, delay: 0 } },
+        async (): Promise<Outcome> => {
+          try {
+            return { ok: true, result: await expensiveCall(this.env, row.input) };
+          } catch (error) {
+            return { ok: false, code: error instanceof Declined ? 'refused' : 'errored' };
+          }
+        },
+      );
+    } catch {
+      // The step machinery itself failed: a timeout, or an exhausted retry.
+      outcome = { ok: false, code: 'errored' };
+    }
 
     // The cheap write: one retry.
     await step.do('close', { retries: { limit: 1, delay: '5 seconds' } }, async () => {
@@ -96,13 +104,13 @@ export class DeferredRun extends WorkflowEntrypoint<Env, Params> {
 await env.DEFERRED_RUN.create({ id, params: { id } });
 ```
 
-Four decisions in there look like omissions, and each one would be undone by a well-meaning tidy-up.
+Four decisions in there would each be undone by a well-meaning tidy-up.
 
 **The params carry an id and nothing else.** Params are durable state, so anything placed there is copied into a store you do not sweep. The run reads its input back from the record it is named after, which also anchors it: a run whose record is gone throws before it spends anything.
 
 **The read sits outside every step.** A step's return value is persisted, so wrapping the read in `step.do` would write the input into exactly the store the params were kept out of. Outside a step, a resumed instance simply reads the record again, at the cost of one database read against a call of seventy-eight seconds.
 
-**The expensive step returns a verdict instead of throwing one.** An error raised inside a step is captured into durable state and handed back across the step boundary, and `instanceof` does not survive that trip. Classifying inside the step, where the error is still a real instance of its class, means nothing on the far side has to recognize anything. A refusal is then persisted like any other result, so a resumed instance replays the refusal rather than asking the model again. The one thing that still reaches `run()` as a throw is the step machinery itself: a timeout, or an exhausted retry. A `try` around the step, left out of the sketch for length, closes the record as `errored` in that case, because leaving it `pending` would restore the exact state this whole change exists to end.
+**The expensive step returns a verdict instead of throwing one.** An error raised inside a step is captured into durable state and handed back across the step boundary, and I did not trust `instanceof` to survive that trip, because on this site it already fails to survive a structured clone across a service binding. Classifying inside the step, where the error is still a real instance of its class, means nothing on the far side has to recognize anything. A refusal is then persisted like any other result, so a resumed instance replays the refusal rather than asking the model again. The one thing that still reaches `run()` as a throw is the step machinery itself: a timeout, or an exhausted retry. The `try` around the step closes the record as `errored` in that case, because leaving it `pending` would restore the exact state this whole change exists to end.
 
 **The notification is a Queue message, sent last.** More on that below.
 
@@ -110,13 +118,13 @@ Four decisions in there look like omissions, and each one would be undone by a w
 
 This site's prompts are gated by eval suites, and until this month they ran only by hand, from my shell, before a merge. That worked for as long as I remembered. The record showed what happened when I did not: the private-tier disclosure suite, the one whose failure is supposed to block a branch, sat red from 2026-09-12 to 2026-09-18, and the public operations page published that six-day-old result under a heading reading "Latest run per suite", beside another suite's failure that had been fixed twenty-two hours after it was recorded and never re-run.
 
-The obvious home for a nightly job is a CI cron, and it would have cost the credential boundary. A run from outside Cloudflare needs a signing key to mint a token that reaches the model, and an account-level login to record its results. CI here holds exactly one Cloudflare credential, scoped to object read and write on a single storage bucket, and that narrowness is the point. So the suites run inside the Worker that already holds the inference binding. A binding cannot leave Cloudflare, so nothing has to.
+The obvious home for a scheduled job is a CI cron, and it would have cost the credential boundary. A run from outside Cloudflare needs a signing key to mint a token that reaches the model, and an account-level login to record its results. CI here holds exactly one Cloudflare credential, scoped to object read and write on a single storage bucket, and that narrowness is the point. So the suites run inside the Worker that already holds the inference binding. A binding cannot leave Cloudflare, so nothing has to.
 
-A `scheduled()` handler could not do it alone. A weekly run is fifteen inference cases paced twenty-five seconds apart, because AI Gateway's Unified Billing carries a wholesale rate limit that Cloudflare does not publish and that one run is enough to reach. That is five minutes of deliberate waiting before any model time, and no single invocation should hold that open. A Durable Object alarm chain was the other option, and I will mark the reasoning as mine rather than measured: an alarm chain would have needed its own cursor and its own store of results, which is the same "build it yourself" argument as the Queue, one level down. `step.sleep` suspends the instance between cases, and `step.do` records each case as it finishes.
+A `scheduled()` handler could hold it, just. A Cron Trigger gets [fifteen minutes of wall time](https://developers.cloudflare.com/workers/platform/limits/), and a weekly run is fifteen inference cases paced twenty-five seconds apart, because AI Gateway's Unified Billing carries a wholesale rate limit that Cloudflare does not publish and that one run is enough to reach. That is five minutes of deliberate waiting before any model time, spent holding one invocation open against a ceiling the run would creep toward with every case added. A Durable Object alarm chain was the other option, and I will mark the reasoning as mine rather than measured: an alarm chain would have needed its own cursor and its own store of results, which is the same "build it yourself" argument as the Queue, one level down. `step.sleep` suspends the instance between cases, and `step.do` records each case as it finishes.
 
 One thing the schedule deliberately does not skip is the front door. The run reaches the public endpoints over a service binding the Worker holds to itself, so every case passes through the same request handler and the same single authorization check any outside client does. What that cannot exercise is the edge: a request over the binding never touches DNS or the route, so if the public hostname stopped resolving tomorrow, every scheduled suite would stay green.
 
-## Three decisions in the evals code
+## The evals code makes three decisions a tidy-up would undo
 
 These are excerpts from the running code, with the long comments trimmed.
 
@@ -164,7 +172,7 @@ async run(event: Readonly<WorkflowEvent<EvalsRunParams>>, step: WorkflowStep): P
   token = await mintToken(await signingKey(env), claims);
 ```
 
-Everything else in that file is a step, so moving the mint into one would look like a consistency fix. It would also write a bearer credential for a frontier model into the instance's persisted state, and every test would stay green. Minting outside a step means a resumed instance mints a fresh token and the stored state never holds one. The cost is that cases before and after a resume ran under different tokens, and the audit trail records which one was live for each.
+Almost everything else in that run is a step, so moving the mint into one would look like a consistency fix. It would also write a bearer credential for a frontier model into the instance's persisted state, and every test would stay green. Minting outside a step means a resumed instance mints a fresh token and the stored state never holds one. The cost is that cases before and after a resume ran under different tokens, and the audit trail records which one was live for each.
 
 **A run that could not run says so.** A suite whose cases throw has not failed. It did not run, and the record has to be able to tell those apart:
 
@@ -183,26 +191,26 @@ Everything else in that file is a step, so moving the mint into one would look l
 
 The results table gained a `status` column for exactly this, and the operations page renders an `incomplete` row as "did not run" rather than letting an older pass stand in for the current state. That was the precise failure the schedule was built to end, so a scheduled run that failed silently would have rebuilt it.
 
-## What a Workflow keeps, and for how long
+## A Workflow keeps what it persists for thirty days by default
 
-None of this is free, and the cost is retention. Params and step results are durable state, [kept after an instance completes](https://developers.cloudflare.com/workflows/reference/limits/) for 3 days on the Free plan and 30 days on Paid. This site's retention sweep is driven by a table over its own database and cannot reach that store at all. Anything a Workflow persists is outside the one mechanism that enforces the site's published retention windows.
+None of this is free, and the cost is retention. Params and step results are durable state, [kept after an instance completes](https://developers.cloudflare.com/workflows/reference/limits/) for 3 days on the Free plan and 30 days on Paid. This site's retention sweep is driven by a table over its own database, and as written it never touches that store. Cloudflare lets you shorten it, with `default_retention` on the binding or `retention` on each instance, and neither Workflow here sets either yet, so both keep state for the full thirty days. Until one does, anything a Workflow persists sits outside the one mechanism that enforces the site's published retention windows.
 
-That is why the input stays out of the params and out of the read. I cannot claim it stays out entirely. The expensive step's result is a structured document derived from the input, parts of it close paraphrase, and a step has to persist its result to be replayable. I accepted that deliberately, on a bound I can state. The persisted copy is a subset of what the run is about to publish anyway, and it lives for thirty days where the published copy lives for a year. The line I would not cross is persisting the verbatim input, or a result that is not going to be published, because either would turn a bounded duplicate into a second original nobody sweeps.
+That is why the input stays out of the params and out of every step. I cannot claim it stays out entirely. The expensive step's result is derived from the input and can restate parts of it, and a step has to persist its result to be replayable. I accepted that deliberately, on a bound I can state. The persisted copy is a subset of what the run is about to publish anyway, and it lives for thirty days, a default nobody here has lowered yet, where the published copy lives for a year. The line I would not cross is persisting the verbatim input, or a result that is not going to be published, because either would turn a bounded duplicate into a second original nobody sweeps.
 
-A step can also [persist at most 1 MiB](https://developers.cloudflare.com/workflows/build/rules-of-workflows/). Neither Workflow here comes close, but a design that returns large payloads from steps should store them elsewhere and return a reference.
+A step's return value can also [persist at most 1 MiB](https://developers.cloudflare.com/workflows/build/rules-of-workflows/) unless it is a stream. Neither Workflow here comes close, but a design that returns large payloads from steps should store them elsewhere and return a reference.
 
-## Choosing between them
+## Each tool is right for a different unit of work
 
 Here is the rule I would hand someone else, drawn from the two cases above.
 
-**Use a Workflow when a single unit of work** is expensive per attempt, so replaying a persisted result beats doing it again; is mostly waiting, on a model, a rate limit or a sleep; is something a person will ask about by the id they are holding; and has to be visible to your tests.
+**Use a Workflow when a single unit of work** is expensive per attempt, so replaying a persisted result beats doing it again; is mostly waiting, on a model, a rate limit or a sleep; is something a person will ask about by the id they are holding; and needs a status your tests can read by that id.
 
 **Use a Queue for many small, independent events**, where batching, backpressure, a dead letter queue and at-least-once delivery are the point, and repeating one is cheap. This site's `EVENTS` queue is exactly that: small labeled events, batched, one email out per message, [three retries and then a dead letter queue](https://developers.cloudflare.com/queues/configuration/batching-retries/). It stayed a Queue on purpose, and eval failures deliberately do not travel on it, because a channel that also carries housekeeping stops being read.
 
-The two also compose. The deferred run's last act is a three-field message onto that Queue, sent outside every step so that a failed send cannot re-run the database write before it. The Workflow does the expensive, addressable work, and the Queue does the fan-out it was always right for.
+The two also compose. The deferred run's last act is a small message onto that Queue, sent outside every step so that a failed send cannot re-run the database write before it. The cost is that a resumed instance replays its steps and reaches the send again, so one run can occasionally produce two messages. That is the right way round: a duplicate notification is noise, and persisting the send as a step so it could never repeat would buy silence at the price of a run nobody hears about. The Workflow does the expensive, addressable work, and the Queue does the fan-out it was always right for.
 
 If you adopt Workflows, these are the three defaults I would override before the first one ships.
 
 1. **Set retries on every step, deliberately.** The default is five retries with exponential backoff, and it stacks silently on whatever retries your client and your gateway already make. For a step that calls a paid model, the right number is usually zero.
-2. **Treat params and step results as a retained store you do not control.** Keep credentials and user input out of both, read sensitive inputs outside any step, and know which of your retention promises that store cannot keep.
+2. **Treat params and step results as a retained store, and set its retention.** Keep credentials and user input out of both, read sensitive inputs outside any step, and set `default_retention` to match the shortest window you have promised anyone.
 3. **Give "did not run" its own recorded state.** A background job that fails quietly leaves the last good result on display, and **a stale pass is worse than a visible failure.**
