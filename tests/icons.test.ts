@@ -49,16 +49,17 @@ test.each([
 });
 
 test('the two variants differ in the notch and nothing else', () => {
-  // A blanket .replaceAll(bg, 'GROUND') over the whole file is not safe here:
-  // tokens.css gives dark['--rl-bg'] and both themes' --rl-accent-on the
-  // identical hex #0a0a0b, so that replace would also clobber the ink
-  // comment and fill in the dark SVG while leaving the light SVG's (differently
-  // hex'd) ink alone, failing this assertion on a token coincidence that has
-  // nothing to do with the notch. Replacing the two full lines the ground
-  // color actually appears on -- the per-theme comment and the <rect> fill --
-  // disambiguates it from the ink lines, which read "is rl-accent-on" and
-  // "<path", never "is rl-bg" or "<rect", so this stays exactly as strict:
-  // every other byte, ink included, must still match verbatim.
+  // Measured 2026-09-22: a blanket .replaceAll(bg, 'GROUND') over the whole
+  // file is not safe here. tokens.css gives dark['--rl-bg'] and both themes'
+  // --rl-accent-on the identical hex #0a0a0b, so that replace would also
+  // clobber the ink comment and fill in the dark SVG while leaving the light
+  // SVG's (differently hex'd) ink alone, failing this assertion on a token
+  // coincidence that has nothing to do with the notch. Replacing the two full
+  // lines the ground color actually appears on -- the per-theme comment and
+  // the <rect> fill -- disambiguates it from the ink lines, which read "is
+  // rl-accent-on" and "<path", never "is rl-bg" or "<rect", so this stays
+  // exactly as strict: every other byte, ink included, must still match
+  // verbatim.
   const normalize = (name: string, theme: 'dark' | 'light') => {
     const bg = tokens[theme]['--rl-bg'];
     return publicFile(name)
