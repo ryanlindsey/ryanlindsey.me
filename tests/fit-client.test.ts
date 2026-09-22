@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { newReportId } from '../src/lib/fit/client';
+import { newReportId } from '../src/lib/fit/report-id';
 
 // `newReportId` (04 §2, migrations/0002_private_tier.sql's `fit_reports.id`
 // comment): the permalink id. IT IS THE CAPABILITY -- `/fit/r/<id>` requires
