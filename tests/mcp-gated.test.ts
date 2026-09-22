@@ -874,15 +874,15 @@ test("a scope refusal is audited as an error, on the caller's own tier and audie
   expect(row!.tier).toBe('private');
   expect(row!.audience).toBe(AUDIENCE);
   expect(row!.grant_jti).toBe(grant.jti);
-  // A real digest, not `guarded`'s `ARGS_HASH_UNAVAILABLE` sentinel -- which
-  // is the mechanical proof that the check ran INSIDE the guard rather than as
-  // an early return in front of it. An early return would answer the same
-  // sentence with no hash, no row, and no limiter spend.
+  // A real digest, not `limitAndAudit`'s `ARGS_HASH_UNAVAILABLE` sentinel --
+  // which is the mechanical proof that the check ran INSIDE the guard rather
+  // than as an early return in front of it. An early return would answer the
+  // same sentence with no hash, no row, and no limiter spend.
   //
-  // It is NOT proof of the spend, and reading it as one is the trap: `guarded`
-  // takes this hash BEFORE it awaits `checkLimit`, so a check moved to sit
-  // between the two would leave a perfectly real digest here. The limiter half
-  // is pinned by the test below, against the bucket itself.
+  // It is NOT proof of the spend, and reading it as one is the trap:
+  // `limitAndAudit` takes this hash BEFORE it awaits `checkLimit`, so a check
+  // moved to sit between the two would leave a perfectly real digest here.
+  // The limiter half is pinned by the test below, against the bucket itself.
   expect(row!.args_hash).toMatch(/^[0-9a-f]{64}$/);
 });
 
@@ -1556,12 +1556,13 @@ describe('analyze_fit', () => {
 
   test('fitToolError logs the cause it refuses to show, so its sentence is true', () => {
     // "The error was logged." is a CLAIM, and this is the test that keeps it
-    // true. `guarded` (workers/mcp/src/define.ts) logs what is THROWN, which
-    // on this path is the replacement ToolError -- so if the mapping does not
-    // log the original itself, nothing does, and the branch is strictly worse
-    // than not catching at all. The case that matters most is the one the
-    // engine deliberately does NOT wrap: a mis-set `FIT_ENGINE` throws a plain
-    // Error precisely so an operator's typo is loud.
+    // true. `limitAndAudit` (workers/mcp/src/define.ts, reached from
+    // `guarded`) logs what is THROWN, which on this path is the replacement
+    // ToolError -- so if the mapping does not log the original itself,
+    // nothing does, and the branch is strictly worse than not catching at
+    // all. The case that matters most is the one the engine deliberately does
+    // NOT wrap: a mis-set `FIT_ENGINE` throws a plain Error precisely so an
+    // operator's typo is loud.
     const logged: unknown[] = [];
     const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
       logged.push(...args);
