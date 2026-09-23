@@ -317,7 +317,7 @@ function messageOf(error: unknown): string {
  * this exists for is a person. `wrangler workflows trigger rlme-evals` takes
  * its params as an optional POSITIONAL JSON string, so omitting them is both
  * easy and valid at the CLI, and it is exactly what somebody reaches for after
- * a red Monday -- it hands `run()` an undefined `suites`. evals/README.md has
+ * a red Sunday -- it hands `run()` an undefined `suites`. evals/README.md has
  * the command with its params in place.
  *
  * WHAT THAT USED TO DO, MEASURED 2026-09-18 under the test harness. The
