@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.41.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.40.0...ryanlindsey-me-v1.41.0) (2026-09-23)
+
+
+### Features
+
+* **design:** make the favicon follow the site theme ([#374](https://github.com/ryanlindsey/ryanlindsey.me/issues/374)) ([4d64aaa](https://github.com/ryanlindsey/ryanlindsey.me/commit/4d64aaae661c4b7da6be0dbba74eb1119aaf108f))
+* **design:** ship the site icon and favicon ([#372](https://github.com/ryanlindsey/ryanlindsey.me/issues/372)) ([c3b15fd](https://github.com/ryanlindsey/ryanlindsey.me/commit/c3b15fd0ebffb7a2bcb29481a9ec063bbdf7f808))
+* **seo:** name a share card on every page ([#376](https://github.com/ryanlindsey/ryanlindsey.me/issues/376)) ([8575f2e](https://github.com/ryanlindsey/ryanlindsey.me/commit/8575f2e850383c3a53d9693cd292ffe86e4b742b))
+* **seo:** render a share card for every page at build time ([#375](https://github.com/ryanlindsey/ryanlindsey.me/issues/375)) ([973ce2f](https://github.com/ryanlindsey/ryanlindsey.me/commit/973ce2f45a6d66b2b17de0d1251f46f352b32eb4))
+* **seo:** write a share-card standfirst for every published entry ([#377](https://github.com/ryanlindsey/ryanlindsey.me/issues/377)) ([33faf6e](https://github.com/ryanlindsey/ryanlindsey.me/commit/33faf6eb40051b91057ba021050b1a01e22af491))
+
+
+### Bug Fixes
+
+* **seo:** harden the token reader and the share-card checks ([#378](https://github.com/ryanlindsey/ryanlindsey.me/issues/378)) ([2a8fc36](https://github.com/ryanlindsey/ryanlindsey.me/commit/2a8fc36c8a123753ab6f346d0de796f0d04c182f))
+
 ## [1.40.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.39.0...ryanlindsey-me-v1.40.0) (2026-09-22)
 
 
