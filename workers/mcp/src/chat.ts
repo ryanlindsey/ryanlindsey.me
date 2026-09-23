@@ -11,6 +11,11 @@ import {
 } from '../../../src/lib/chat/engine';
 import type { ChatErrorCode } from '../../../src/lib/chat/errors';
 import { parseModelSse, sseFrame } from '../../../src/lib/chat/protocol';
+import {
+  MarkerGate,
+  PRIVATE_TIER_ANSWER,
+  PRIVATE_TIER_MARKER,
+} from '../../../src/lib/chat/private-tier';
 import { EVALS_AGENT, EVALS_SURFACE } from '../../../src/lib/evals/plan';
 import { checkGlobalLimit, checkLimit } from '../../../src/lib/mcp/limits';
 import { resolveGrant } from '../../../src/lib/tier/grant';
@@ -520,6 +525,17 @@ export async function handleChat(
         ),
       );
 
+      // EVERY DELTA PASSES THROUGH THE GATE, which holds the start of the
+      // answer until it is clearly not PRIVATE_TIER_MARKER. If it is the
+      // marker, the reader is sent the fixed PRIVATE_TIER_ANSWER instead and
+      // the model's stream is cancelled, since nothing more it writes will be
+      // shown (issue #341, src/lib/chat/private-tier.ts).
+      const gate = new MarkerGate();
+      const emit = (text: string) => {
+        answer += text;
+        controller.enqueue(encoder.encode(sseFrame('delta', { text })));
+      };
+      let privateTier = false;
       const reader = upstream.getReader();
       try {
         for (;;) {
@@ -529,10 +545,28 @@ export async function handleChat(
           const parsed = parseModelSse(buffered);
           buffered = parsed.rest;
           if (parsed.text !== '') {
-            answer += parsed.text;
-            controller.enqueue(encoder.encode(sseFrame('delta', { text: parsed.text })));
+            const step = gate.push(parsed.text);
+            if (step.kind === 'private') {
+              privateTier = true;
+              break;
+            }
+            if (step.kind === 'pass') emit(step.text);
           }
           if (parsed.done) break;
+        }
+        if (privateTier) {
+          emit(PRIVATE_TIER_ANSWER);
+          // SWALLOWED: the answer is already sent, and a cancel that fails
+          // costs only the tokens the model goes on to write.
+          await reader.cancel().catch(() => {});
+        } else {
+          const rest = gate.finish();
+          if (rest.kind === 'pass') emit(rest.text);
+          if (answer.includes(PRIVATE_TIER_MARKER)) {
+            // The marker after other text, which the gate cannot honor because
+            // that text was already on screen. The prompt was not followed.
+            console.warn('chat: the private-tier marker appeared after the start of an answer');
+          }
         }
       } catch (error) {
         // MID-ANSWER FAILURE. The reader already has text on screen, so the
