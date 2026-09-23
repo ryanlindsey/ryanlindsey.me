@@ -104,11 +104,11 @@ there should be the last thing on screen rather than scrolled past. **A red
 
 ## Exit codes
 
-| Code | Meaning                                                                                                                              |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `0`  | every requested suite ran, and everything passed                                                                                     |
-| `1`  | a requested suite ran and something failed                                                                                           |
-| `2`  | a requested suite could not run at all (see the `SKIP` line) — nothing failed, but the run proves less than a bare `0` would suggest |
+| Code | Meaning                                                                                                                                                                                                |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `0`  | every requested suite ran, and everything passed                                                                                                                                                       |
+| `1`  | a requested suite ran and something failed                                                                                                                                                             |
+| `2`  | a requested suite could not run at all (see the `SKIP` line), or ran and no case reached the model (see the `incomplete` line) — nothing failed, but the run proves less than a bare `0` would suggest |
 
 A real failure always wins over an incomplete run: `1` outranks `2`. Running
 the first usage example above with `RLME_EVAL_TOKEN` unset prints
@@ -151,7 +151,7 @@ This costs real inference for `fit`, `chat` and `leak`, through the same shared 
 
 A failing scheduled run pushes nothing anywhere. It writes a line to Workers observability and one `eval_runs` row, and `/ops` renders that row's count in a warn tone under its "Latest run per suite" heading; the row's notes are not rendered there, and there is no email and no queue message. That is the same channel that let a red `leak` suite sit unnoticed for six days, so the claim for it is narrow and worth stating exactly: what changed is that the red is now current rather than stale. What made those six days bad was not that nobody was paged, it was that the page was publishing a six-day-old failure as the present state of a gate, beside a `fit` row repaired twenty-two hours after it was recorded and never re-run. A red row at most a week old, and a `tier` row at most a day old, is a figure worth reading. This is the weakest part of the answer: it still depends on somebody looking, and a schedule exists because people stop looking. Read `/ops`.
 
-`eval_runs` carries a `status` column now, `ran` or `incomplete`. A row that could not run at all, because the mint failed or a suite threw before finishing, records `incomplete` rather than going unwritten, and `/ops` reads it that way: its Pass column reads "did not run" and its Fail column reads "not recorded," in place of numbers that would otherwise read as a real pass rate. `EVALS_RUNNER` is the override variable that turns the scheduled run off; it joins the list named in `CLAUDE.md`'s Tests section, off only in the test harness and never in a deployed config.
+`eval_runs` carries a `status` column now, `ran` or `incomplete`. A row that could not run at all, because the mint failed, a suite threw before finishing, or every case failed with `unreachable` before the model said anything, records `incomplete` rather than going unwritten or reading as zero passed, and `/ops` reads it that way: its Pass column reads "did not run" and its Fail column reads "not recorded," in place of numbers that would otherwise read as a real pass rate. `EVALS_RUNNER` is the override variable that turns the scheduled run off; it joins the list named in `CLAUDE.md`'s Tests section, off only in the test harness and never in a deployed config.
 
 ## The golden cases
 

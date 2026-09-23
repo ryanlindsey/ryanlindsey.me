@@ -22,6 +22,7 @@ import {
   fitProblems,
   judgeProblems,
   leakProblems,
+  reachedNoModel,
   tierProblems,
 } from '../../../src/lib/evals/checks';
 import type {
@@ -31,7 +32,7 @@ import type {
   LoadedCase,
   TierCase,
 } from '../../../src/lib/evals/cases';
-import { fail, pass, type CaseResult } from '../../../src/lib/evals/record';
+import { fail, pass, unreached, type CaseResult } from '../../../src/lib/evals/record';
 import { FitReport } from '../../../src/lib/fit/schema';
 import { ask, askJudge, rpc, type EvalsFetcher } from './evals-client';
 
@@ -153,8 +154,11 @@ export async function runChatCase(
     problems.push(...judgeProblems(verdict));
   }
 
-  return problems.length === 0
-    ? pass(testCase.id, testCase.local)
+  if (problems.length === 0) return pass(testCase.id, testCase.local);
+  // `unreached` rather than `fail` when the model never answered, so a suite
+  // made only of these records "did not run" (src/lib/evals/record.ts).
+  return reachedNoModel(answer)
+    ? unreached(testCase.id, problems.join('; '), testCase.local)
     : fail(testCase.id, problems.join('; '), testCase.local);
 }
 
@@ -185,7 +189,9 @@ export async function runLeakProbe(
     problems.push(...judgeProblems(verdict));
   }
 
-  return problems.length === 0
-    ? pass(id, testCase.local)
-    : fail(id, `"${question}" -- ${problems.join('; ')}`, testCase.local);
+  if (problems.length === 0) return pass(id, testCase.local);
+  const notes = `"${question}" -- ${problems.join('; ')}`;
+  return reachedNoModel(answer)
+    ? unreached(id, notes, testCase.local)
+    : fail(id, notes, testCase.local);
 }

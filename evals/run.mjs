@@ -33,10 +33,11 @@ import {
   fitProblems,
   judgeProblems,
   leakProblems,
+  reachedNoModel,
   tierProblems,
 } from '../src/lib/evals/checks.ts';
 import { BACKOFF_MS, PACE_MS, RETRIES } from '../src/lib/evals/plan.ts';
-import { fail, localCount, pass, redactedNotes } from '../src/lib/evals/record.ts';
+import { fail, localCount, pass, summarize, unreached } from '../src/lib/evals/record.ts';
 
 const CASES = new URL('./cases/', import.meta.url).pathname;
 const DB = 'ryanlindsey-me-db';
@@ -374,10 +375,13 @@ async function runChat() {
       problems.push(...judgeProblems(verdict));
     }
 
+    // `unreached` rather than `fail` when the model never answered, so a suite
+    // made only of these records "did not run" (src/lib/evals/record.ts).
+    const outcome = reachedNoModel(answer) ? unreached : fail;
     results.push(
       problems.length === 0
         ? pass(testCase.id, testCase.local)
-        : fail(testCase.id, problems.join('; '), testCase.local),
+        : outcome(testCase.id, problems.join('; '), testCase.local),
     );
   }
   return results;
@@ -411,22 +415,34 @@ async function runLeak() {
         problems.push(...judgeProblems(verdict));
       }
 
+      const outcome = reachedNoModel(answer) ? unreached : fail;
       results.push(
         problems.length === 0
           ? pass(id, testCase.local)
-          : fail(id, `"${question}" -- ${problems.join('; ')}`, testCase.local),
+          : outcome(id, `"${question}" -- ${problems.join('; ')}`, testCase.local),
       );
     }
   }
   return results;
 }
 
+/**
+ * Prints and records one suite's results, and says what they amount to: `true`
+ * for a clean run, `false` for a real failure, and `null` for a suite where no
+ * case reached the model. The caller treats `null` as a suite that did not
+ * execute, so a transport fault exits 2 rather than 1 (issue #341).
+ */
 function report(suite, results) {
   const passed = results.filter((r) => r.ok).length;
+  const row = summarize(suite, results, new Date().toISOString());
   for (const result of results) {
     process.stdout.write(`${result.ok ? 'PASS' : 'FAIL'} ${suite}/${result.id} ${result.notes}\n`);
   }
-  process.stdout.write(`${suite}: ${passed}/${results.length}\n`);
+  process.stdout.write(
+    row.status === 'incomplete'
+      ? `${suite}: incomplete -- no case reached the model, so this is not a gate result\n`
+      : `${suite}: ${passed}/${results.length}\n`,
+  );
 
   if (record) {
     const local = localCount(results);
@@ -445,14 +461,20 @@ function report(suite, results) {
     // Truncate the RAW string first, then escape: escaping first can leave
     // a cut land inside a doubled `''` pair, dropping one of the two quotes
     // and unterminating the SQL literal that follows. `redactedNotes`
-    // (src/lib/evals/record.ts) does the filtering, redaction and truncation;
-    // it deliberately does not escape, because the Worker runner (Task 4)
-    // binds parameters instead and needs none -- so escaping stays here.
-    const notes = redactedNotes(results).replace(/'/g, "''");
-    // `status` is always 'ran' from here, and THIS RUNNER NEVER WRITES ANY
-    // OTHER VALUE. An earlier version of this comment pointed at "the SKIP
-    // handling below" for the 'incomplete' case, which was wrong: that handling
-    // writes no row at all, calls no `incompleteRow`, and never has.
+    // (src/lib/evals/record.ts, reached through `summarize`) does the
+    // filtering, redaction and truncation; it deliberately does not escape,
+    // because the Worker runner (Task 4) binds parameters instead and needs
+    // none -- so escaping stays here.
+    const notes = row.notes.replace(/'/g, "''");
+    // `status` comes from `summarize`, the same function the scheduled runner
+    // records through, so the two agree on when a run is `incomplete`. From
+    // here that is exactly one case: every case ran and none reached the model
+    // (issue #341). That is not the operator's choice, it is the deployed
+    // system failing, which is why it records where a skip does not.
+    //
+    // A SKIP STILL WRITES NO ROW. An earlier version of this comment pointed at
+    // "the SKIP handling below" for the 'incomplete' case, which was wrong: that
+    // handling writes no row at all, calls no `incompleteRow`, and never has.
     //
     // THAT IS DELIBERATE AND IT IS WHERE THE TWO RUNNERS DIFFER ON PURPOSE. A
     // scheduled run that could not run is news, because the only thing that
@@ -466,8 +488,8 @@ function report(suite, results) {
     // is a worse thing to publish than a genuine one, and an unset variable is
     // not evidence that anything is wrong with the deployed system.
     const sql = `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, status, notes)
-       VALUES ('${new Date().toISOString()}', '${suite}', NULL, ${results.length}, ${passed},
-               ${results.length - passed}, 'ran', '${notes}')`;
+       VALUES ('${row.ranAt}', '${suite}', NULL, ${row.total}, ${row.passed},
+               ${row.failed}, '${row.status}', '${notes}')`;
     // SWALLOWED AFTER LOGGING, and the results above are already on stdout by
     // the time this runs -- which is the whole point of the ordering.
     //
@@ -506,7 +528,16 @@ function report(suite, results) {
       process.stderr.write(`${suite}: the eval_runs row could not be written\n`);
     }
   }
-  return passed === results.length;
+  return row.status === 'incomplete' ? null : passed === results.length;
+}
+
+/** Folds one `report()` outcome into the run's exit state. */
+function tally(suite, outcome, green) {
+  if (outcome === null) {
+    skipped.push(suite);
+    return green;
+  }
+  return outcome && green;
 }
 
 // `skipped` is what makes a run that proves less than it looks like
@@ -517,7 +548,7 @@ function report(suite, results) {
 const skipped = [];
 
 let green = true;
-if (only === null || only === 'tier') green = report('tier', await runTier()) && green;
+if (only === null || only === 'tier') green = tally('tier', report('tier', await runTier()), green);
 if (only === null || only === 'fit') {
   const results = await runFit();
   if (results === null) {
@@ -527,7 +558,7 @@ if (only === null || only === 'fit') {
     process.stdout.write(`SKIP fit: ${FIT_SKIP_REASON}\n`);
     process.stdout.write('fit: skipped\n');
   } else {
-    green = report('fit', results) && green;
+    green = tally('fit', report('fit', results), green);
   }
 }
 
@@ -545,7 +576,7 @@ for (const [name, run] of [
     process.stdout.write(`SKIP ${name}: ${CHAT_SKIP_REASON}\n`);
     process.stdout.write(`${name}: skipped\n`);
   } else {
-    green = report(name, results) && green;
+    green = tally(name, report(name, results), green);
   }
 }
 

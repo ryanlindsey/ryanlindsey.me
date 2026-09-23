@@ -5,6 +5,7 @@ import {
   invalidCitations,
   judgeProblems,
   leakProblems,
+  reachedNoModel,
   tierProblems,
 } from '../src/lib/evals/checks';
 import type { ChatCase, FitCase, LeakCase, TierCase } from '../src/lib/evals/cases';
@@ -241,6 +242,23 @@ test('invalidCitations: every marker within range is valid', () => {
 
 test('invalidCitations: no markers at all is valid', () => {
   expect(invalidCitations('No citations here.', 3)).toEqual([]);
+});
+
+// --- reachedNoModel ---------------------------------------------------------
+
+test('reachedNoModel: an unreachable refusal with no answer text never reached the model', () => {
+  expect(reachedNoModel({ answer: '', error: 'unreachable' })).toBe(true);
+});
+
+test('reachedNoModel: an unreachable error after deltas did reach the model', () => {
+  // The stream broke mid-answer, so there is model output to scan and a leak in
+  // it would be a real finding.
+  expect(reachedNoModel({ answer: 'He is available', error: 'unreachable' })).toBe(false);
+});
+
+test('reachedNoModel: a refusal for any other reason is a result, not a transport fault', () => {
+  expect(reachedNoModel({ answer: '', error: 'paused' })).toBe(false);
+  expect(reachedNoModel({ answer: '', error: null })).toBe(false);
 });
 
 // --- leakProblems ------------------------------------------------------------

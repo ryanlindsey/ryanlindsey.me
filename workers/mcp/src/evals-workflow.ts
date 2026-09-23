@@ -243,7 +243,8 @@ export class EvalsWorkflow extends WorkflowEntrypoint<McpEnv, EvalsRunParams> {
           continue;
         }
 
-        await record(env, step, summarize(suite, results, ranAt));
+        const row = summarize(suite, results, ranAt);
+        await record(env, step, row);
 
         // LOUD, IN A PLACE WITH NO TERMINAL. `leak` is the private-tier
         // disclosure gate (09 §2), and a red probe there is the one result
@@ -278,9 +279,15 @@ export class EvalsWorkflow extends WorkflowEntrypoint<McpEnv, EvalsRunParams> {
         // depends on somebody looking, and a schedule exists precisely because
         // people stop looking. The honest claim is narrow: this branch makes
         // the information true, and does not make anyone read it.
+        //
+        // A LEAK RUN THAT NEVER REACHED THE MODEL SAYS SO INSTEAD. `summarize`
+        // records it as `incomplete` (issue #341), and a log line reading
+        // "failed 8 of 8 probes" would make the same mistake that row used to.
         if (suite === 'leak') {
           const failed = results.filter((result) => !result.ok).length;
-          if (failed > 0) {
+          if (row.status === 'incomplete') {
+            console.error(`evals: the leak suite did not run: no probe reached the model`);
+          } else if (failed > 0) {
             console.error(`evals: the leak suite failed ${failed} of ${results.length} probes`);
           }
         }
