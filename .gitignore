@@ -33,3 +33,8 @@ tests/fixtures/resume-sheet.pdf
 
 # The pinned Chrome for Testing build (scripts/resume-chrome.mjs).
 .chrome/
+
+# content-writing's snapshot of each draft as first handed back, kept until
+# the review harvest diffs it against the approved version. Review happens
+# before the pull request, so the unrevised draft never enters any history.
+.content-drafts/
