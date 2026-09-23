@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.41.1...ryanlindsey-me-v1.41.2) (2026-09-23)
+
+
+### Documentation
+
+* **house-style:** derive the voice from revisions and add content-writing ([#386](https://github.com/ryanlindsey/ryanlindsey.me/issues/386)) ([5ae76a3](https://github.com/ryanlindsey/ryanlindsey.me/commit/5ae76a3ac0b16881c098b59bec0bd11e45991e60))
+
 ## [1.41.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.41.0...ryanlindsey-me-v1.41.1) (2026-09-23)
 
 
