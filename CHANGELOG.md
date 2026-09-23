@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.41.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.41.0...ryanlindsey-me-v1.41.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **chat:** answer private-tier questions with a fixed server reply ([#383](https://github.com/ryanlindsey/ryanlindsey.me/issues/383)) ([195c471](https://github.com/ryanlindsey/ryanlindsey.me/commit/195c471e08c74efa3142616eaa255cbfa1ca65a0)), closes [#341](https://github.com/ryanlindsey/ryanlindsey.me/issues/341)
+* **evals:** record a run that never reached the model as incomplete ([#382](https://github.com/ryanlindsey/ryanlindsey.me/issues/382)) ([5e89630](https://github.com/ryanlindsey/ryanlindsey.me/commit/5e896300c83ae7565285a70cceadedb56fb23b63)), closes [#341](https://github.com/ryanlindsey/ryanlindsey.me/issues/341)
+
+
+### Documentation
+
+* **evals:** name the weekly eval run's real day, Sunday ([#380](https://github.com/ryanlindsey/ryanlindsey.me/issues/380)) ([77d2d89](https://github.com/ryanlindsey/ryanlindsey.me/commit/77d2d89be727bb4433b117502ec24d0bcde759f5)), closes [#340](https://github.com/ryanlindsey/ryanlindsey.me/issues/340)
+
 ## [1.41.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.40.0...ryanlindsey-me-v1.41.0) (2026-09-23)
 
 
