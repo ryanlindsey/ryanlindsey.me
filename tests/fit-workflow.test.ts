@@ -128,6 +128,58 @@ async function settled(instance: {
   return seen;
 }
 
+/**
+ * A handle to the instance for `id`, tolerating the race `POST /fit/start`
+ * leaves behind rather than closing it (#384).
+ *
+ * `workers/mcp/src/fit-start.ts` creates the instance inside
+ * `ctx.waitUntil(startRun(...))`, so the response this suite's `start()`
+ * awaits can land before `FIT_WORKFLOW.create` has actually run --
+ * MEASURED IN CI 2026-09-23 (run 35883324048, release PR #381):
+ * `env.FIT_WORKFLOW.get(id)` threw `instance.not_found` immediately after
+ * `start()` returned. The create stays inside `waitUntil` for caller
+ * latency, not for budget room: fit-start.ts says, beside that same
+ * `ctx.waitUntil`, that creating an instance is "a round trip to the
+ * Workflows API, and the whole point of this route is that the caller does
+ * not wait for anything it does not have to" (workers/mcp/src/fit-start.ts,
+ * ~142-145). So the fix belongs here, as patience on the same 20-second
+ * deadline `settled` already polls above, rather than as a change to that
+ * route.
+ *
+ * MEASURED LOCALLY 2026-09-23: one of twelve runs of this file exhausted the
+ * 20-second deadline; the fifteen runs after it all passed. What made that
+ * one run different is not yet known, which is why the error thrown at the
+ * deadline carries the row rather than the bare `instance.not_found` text.
+ * `fit_reports.status`/`failure_code`, checked here against `abandonRun`
+ * (workers/mcp/src/fit-workflow.ts:453-457), distinguish three shapes a
+ * stuck `get` can mean: `failed`/`errored` is `create` itself rejecting and
+ * `startRun` abandoning the row; `pending`/`null` is `startRun` never having
+ * run, or never having settled; `failed`/`refused` is the instance having run
+ * to completion -- refused by the engine, the same as every passing run --
+ * with `get` simply not seeing it yet. No row at all reads as `missing`
+ * rather than throwing a second error out of this one.
+ */
+async function instanceOf(id: string): Promise<WorkflowInstance> {
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    try {
+      return await env.FIT_WORKFLOW.get(id);
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes('instance.not_found')) throw error;
+      if (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        continue;
+      }
+      const row = await db
+        .prepare('SELECT status, failure_code FROM fit_reports WHERE id = ?')
+        .bind(id)
+        .first<{ status: string; failure_code: string | null }>();
+      const seen = row ? `${row.status}/${row.failure_code ?? 'null'}` : 'missing';
+      throw new Error(`${error.message} (row: ${seen})`, { cause: error });
+    }
+  }
+}
+
 test('the deferred run is a workflow instance named by the permalink id', async () => {
   // THE WHOLE FIX, IN ONE READING. Under the shape this replaces there was
   // nothing here to address: `ctx.waitUntil(completeRun(...))` hands the
@@ -139,7 +191,7 @@ test('the deferred run is a workflow instance named by the permalink id', async 
   const { token } = await grant();
   const id = await start(token);
 
-  const instance = await env.FIT_WORKFLOW.get(id);
+  const instance = await instanceOf(id);
   const seen = await settled(instance);
 
   // `complete` rather than `errored`, and the difference is the point: the
@@ -204,7 +256,7 @@ test('the audit trail records the accepted call exactly once', async () => {
   // Settled first, so the count below is taken after everything this run will
   // ever write has been written. `recordToolCall` is handed to
   // `ctx.waitUntil`, so the row lands after the response does.
-  await settled(await env.FIT_WORKFLOW.get(id));
+  await settled(await instanceOf(id));
   const closed = await db
     .prepare('SELECT status FROM fit_reports WHERE id = ?')
     .bind(id)
