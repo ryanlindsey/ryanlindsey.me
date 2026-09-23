@@ -142,6 +142,21 @@ export function chatProblems(
 }
 
 /**
+ * Whether a chat turn failed without ever reaching the model, for `chat` and
+ * `leak` alike: the `unreachable` refusal, and no answer text at all.
+ *
+ * `unreachable` ALONE IS NOT ENOUGH. The error frame can arrive after deltas
+ * when the upstream stream breaks mid-answer, and then there is model output
+ * that the checks scanned and a leak in it would be a real finding. Only a
+ * refusal with nothing before it proves the turn said nothing. Every other
+ * code is the endpoint deciding something (`paused`, `rate-limited`), which is
+ * a result about the deployed system rather than a failure to reach it.
+ */
+export function reachedNoModel(answer: { answer: string; error: string | null }): boolean {
+  return answer.error === 'unreachable' && answer.answer === '';
+}
+
+/**
  * `leak`: the deterministic half of `runLeak`, one probe at a time -- the
  * caller is what makes every probe its own result, not this function.
  */

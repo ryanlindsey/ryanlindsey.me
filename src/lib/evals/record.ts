@@ -5,12 +5,20 @@
 // (Task 4) will bind it as parameters instead. Two write paths only stay in
 // agreement if they compute the row from one function.
 
-/** One case's outcome. `notes` is what an operator reads when it fails. */
+/**
+ * One case's outcome. `notes` is what an operator reads when it fails.
+ *
+ * `unreached` marks a failure that never reached the model at all, which
+ * `summarize` needs to tell apart from a failure the model produced. It is a
+ * field rather than a pattern matched in `notes`, because notes are free text
+ * and a local case's notes are redacted before anything else reads them.
+ */
 export interface CaseResult {
   id: string;
   ok: boolean;
   notes: string;
   local: boolean;
+  unreached?: true;
 }
 
 export const pass = (id: string, local: boolean): CaseResult => ({
@@ -24,6 +32,17 @@ export const fail = (id: string, notes: string, local: boolean): CaseResult => (
   ok: false,
   notes,
   local,
+});
+
+/**
+ * A failed case whose request never reached the model: the endpoint answered
+ * `unreachable` past every retry and returned no answer text. Still a failure
+ * in the counts, since an operator reading the terminal needs to see it, but
+ * see `summarize` for what a suite made only of these records.
+ */
+export const unreached = (id: string, notes: string, local: boolean): CaseResult => ({
+  ...fail(id, notes, local),
+  unreached: true,
 });
 
 export type EvalRunStatus = 'ran' | 'incomplete';
@@ -82,8 +101,25 @@ export function redactedNotes(results: CaseResult[]): string {
  * `total`/`passed`/`failed` -- a count leaks nothing a real id or a fragment
  * of model output would -- and only its redaction, never its exclusion, is
  * what keeps it out of `notes`.
+ *
+ * A SUITE WHERE NO CASE REACHED THE MODEL DID NOT RUN, and the row says so
+ * rather than reporting zero of n (issue #341). `leak` rows 32, 34 and 43
+ * recorded 0/8 with every probe reading `the endpoint refused with
+ * "unreachable"`, and /ops published that as the disclosure gate's current
+ * result, in place of the one real finding from row 38 behind it. A transport
+ * fault is not a gate result, and publishing it as a pass rate is the thing
+ * migrations/0005_eval_run_status.sql exists to stop.
+ *
+ * ONLY EVERY CASE, NOT ANY. One case that reached the model makes the rest of
+ * the row a real, if partial, gate result: a suite where seven probes timed
+ * out and one leaked has found a leak. The unreached cases in such a row still
+ * count as failures, and their notes say why.
  */
 export function summarize(suite: string, results: CaseResult[], ranAt: string): EvalRunRecord {
+  if (results.length > 0 && results.every((result) => result.unreached)) {
+    const reason = `no case reached the model: ${redactedNotes(results)}`.slice(0, 900);
+    return incompleteRow(suite, reason, ranAt);
+  }
   const passed = results.filter((result) => result.ok).length;
   return {
     ranAt,
@@ -101,11 +137,13 @@ export function summarize(suite: string, results: CaseResult[], ranAt: string): 
  * omission: a suite that could not run must be visible in whatever reads
  * `eval_runs`, not merely absent from it.
  *
- * ONLY THE SCHEDULED RUNNER CALLS THIS. An earlier version of this comment
- * offered "no token, in evals/run.mjs's case" as the example, and that case
- * does not exist: evals/run.mjs skips a suite with no token, writes no row for
- * it, and never calls this function. The two callers of `eval_runs` differ here
- * deliberately, and each one's reason is the other's refusal.
+ * ONLY THE SCHEDULED RUNNER CALLS THIS DIRECTLY, and `summarize` calls it for
+ * a suite where no case reached the model, which evals/run.mjs reaches too. An
+ * earlier version of this comment offered "no token, in evals/run.mjs's case"
+ * as the example, and that case does not exist: evals/run.mjs skips a suite
+ * with no token, writes no row for it, and never calls this function. The two
+ * callers of `eval_runs` differ here deliberately, and each one's reason is the
+ * other's refusal.
  *
  * A scheduled run that could not run is news: something is broken, nobody was
  * watching, and this row is how anyone finds out. A manual skip is the

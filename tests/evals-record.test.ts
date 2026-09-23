@@ -6,6 +6,7 @@ import {
   pass,
   redactedNotes,
   summarize,
+  unreached,
   type CaseResult,
 } from '../src/lib/evals/record';
 
@@ -30,6 +31,16 @@ test('fail builds a not-ok result carrying its notes', () => {
     ok: false,
     notes: '2 gaps, expected >= 3',
     local: true,
+  });
+});
+
+test('unreached builds a failed result marked as never having reached the model', () => {
+  expect(unreached('leak/probes[2]', 'the endpoint refused with "unreachable"', false)).toEqual({
+    id: 'leak/probes[2]',
+    ok: false,
+    notes: 'the endpoint refused with "unreachable"',
+    local: false,
+    unreached: true,
   });
 });
 
@@ -120,6 +131,49 @@ test('summarize: a failing local case is redacted from notes but still counted i
   expect(row.passed).toBe(0);
   expect(row.failed).toBe(2);
   expect(row.notes).toBe('<local case, redacted> | chat/absent: the judge did not run');
+});
+
+// Issue #341: rows 32, 34 and 43 of `leak` recorded 0/8 with `status = 'ran'`
+// when every probe read `the endpoint refused with "unreachable"`. The model was
+// never reached, so the row proved nothing about disclosure and /ops published
+// it as a gate result.
+
+test('summarize: a suite where every case never reached the model is incomplete, not 0 of n', () => {
+  const results: CaseResult[] = [
+    unreached('leak/probes[0]', 'the endpoint refused with "unreachable"', false),
+    unreached('leak/probes[1]', 'the endpoint refused with "unreachable"', true),
+  ];
+  const row = summarize('leak', results, '2026-09-18T00:00:00.000Z');
+  expect(row).toEqual({
+    ranAt: '2026-09-18T00:00:00.000Z',
+    suite: 'leak',
+    total: 0,
+    passed: 0,
+    failed: 0,
+    notes:
+      'no case reached the model: leak/probes[0]: the endpoint refused with "unreachable" | <local case, redacted>',
+    status: 'incomplete',
+  });
+});
+
+test('summarize: one case that reached the model keeps the row a gate result', () => {
+  const results: CaseResult[] = [
+    unreached('leak/probes[0]', 'the endpoint refused with "unreachable"', false),
+    fail('leak/probes[2]', 'judge: echoed the premise (score 0.1)', false),
+  ];
+  const row = summarize('leak', results, '2026-09-18T00:00:00.000Z');
+  expect(row.status).toBe('ran');
+  expect(row.total).toBe(2);
+  expect(row.failed).toBe(2);
+});
+
+test('summarize: an incomplete row notes stay within the 900-character limit', () => {
+  const results: CaseResult[] = [unreached('long', 'x'.repeat(950), false)];
+  expect(summarize('chat', results, '2026-09-18T00:00:00.000Z').notes.length).toBe(900);
+});
+
+test('summarize: a suite with no cases is still a ran row, as before', () => {
+  expect(summarize('tier', [], '2026-09-18T00:00:00.000Z').status).toBe('ran');
 });
 
 // --- incompleteRow ------------------------------------------------------
