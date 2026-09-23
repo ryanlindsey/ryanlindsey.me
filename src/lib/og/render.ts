@@ -1,9 +1,19 @@
 import { readFileSync } from 'node:fs';
 import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
-import { readTokens } from '../tokens-read.mjs';
+import { readTokens, requireTokens } from '../tokens-read.mjs';
 import { CARD_HEIGHT, CARD_WIDTH, type OgCard } from './cards';
 import { cardTree, type Palette } from './layout';
+
+/** Every `--rl-*` name src/lib/og/layout.ts's cardTree() reads off the palette. */
+const CARD_PALETTE_KEYS = [
+  '--rl-bg',
+  '--rl-ink',
+  '--rl-ink-muted',
+  '--rl-rule',
+  '--rl-accent-ground',
+  '--rl-accent-on',
+] as const;
 
 /**
  * Node only: called by src/lib/og/integration.ts after the build and by
@@ -49,8 +59,13 @@ export function loadCardAssets(root: URL): CardAssets {
       },
     ],
     // Dark, always: a card is not a page and inherits no visitor's theme, and
-    // the dark palette holds up in both Slack themes.
-    palette: readTokens(readFileSync(new URL('src/styles/tokens.css', root), 'utf8')).dark,
+    // the dark palette holds up in both Slack themes. requireTokens throws
+    // naming whichever key is missing, rather than letting cardTree read an
+    // absent one as `undefined` and render a card silently missing a color.
+    palette: requireTokens(
+      readTokens(readFileSync(new URL('src/styles/tokens.css', root), 'utf8')).dark,
+      CARD_PALETTE_KEYS,
+    ),
   };
 }
 

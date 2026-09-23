@@ -5,12 +5,14 @@
  * The unit half runs against src/lib/og directly. The build half reads
  * dist/client, so like every harness suite it needs `npm run build` first.
  */
+import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import {
   CHAT_CARD,
   HOME_CARD,
+  OG_CARD_RENDER_FINGERPRINT,
   OPS_CARD,
   cardAlt,
   cardPath,
@@ -133,6 +135,55 @@ test('the longest title the layout allows still renders at 1200 by 630', async (
   const assets = loadCardAssets(ROOT);
   const card: OgCard = post('word '.repeat(40).trim(), 'x '.repeat(70).trim());
   expect(pngSize(await renderCard(card, assets))).toEqual([1200, 630]);
+});
+
+/**
+ * OG_CARD_CONTRACT_VERSION (src/lib/og/cards.ts) is a rule enforced only by
+ * that file's own comment: bump it when a card's drawing changes, so every
+ * card moves to a new URL and no scraper keeps an old image. Nothing before
+ * this test checked that mechanically -- a palette edit, an upgraded font
+ * package or an edited layout.ts could ship with the version left alone, and
+ * nothing here went red.
+ *
+ * This hashes every input that comment names -- the dark palette, the four
+ * card font files' bytes (read the same way loadCardAssets reads them), the
+ * installed satori and @resvg/resvg-js versions, and layout.ts's own source
+ * -- and compares the result to OG_CARD_RENDER_FINGERPRINT, a constant
+ * computed once from this same function and pasted into cards.ts next to the
+ * version it guards.
+ *
+ * COMPUTED HERE, NEVER IN cards.ts: that file ships into the Worker, which
+ * has no package-lock.json and no layout.ts source text to read at runtime,
+ * only the built bundle. A runtime computation would need both.
+ */
+function renderFingerprint(): string {
+  const assets = loadCardAssets(ROOT);
+  const layoutSource = readFileSync(new URL('../src/lib/og/layout.ts', import.meta.url), 'utf8');
+  const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+  const versionOf = (pkg: string): string => {
+    const version = lock.packages?.[`node_modules/${pkg}`]?.version;
+    if (!version) throw new Error(`package-lock.json: no installed version found for "${pkg}"`);
+    return version;
+  };
+
+  const hash = createHash('sha256');
+  hash.update(JSON.stringify(assets.palette));
+  for (const font of assets.fonts) hash.update(font.data);
+  hash.update(versionOf('satori'));
+  hash.update(versionOf('@resvg/resvg-js'));
+  hash.update(layoutSource);
+  return hash.digest('hex');
+}
+
+test('the render fingerprint catches a drawing change OG_CARD_CONTRACT_VERSION was not bumped for', () => {
+  expect(
+    renderFingerprint(),
+    'OG_CARD_RENDER_FINGERPRINT (src/lib/og/cards.ts) no longer matches the palette, fonts, ' +
+      'satori, @resvg/resvg-js or layout.ts this build actually uses. If the change was ' +
+      'intentional: bump OG_CARD_CONTRACT_VERSION in that file, then replace ' +
+      'OG_CARD_RENDER_FINGERPRINT with the value renderFingerprint() reports now (log it ' +
+      'locally -- this message does not print it). If it was not intentional, revert it instead.',
+  ).toBe(OG_CARD_RENDER_FINGERPRINT);
 });
 
 test('the build leaves one 1200 by 630 PNG per card and no manifest', () => {

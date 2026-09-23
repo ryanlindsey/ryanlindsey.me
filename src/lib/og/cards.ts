@@ -8,8 +8,8 @@ import { readingTimeFor } from '../reading-time';
  * build where to write that image, so the page and the file cannot disagree.
  *
  * `cardPath` hashes with Web Crypto rather than node:crypto because it runs in
- * three places: the workerd prerender, the Worker itself for the on-demand
- * /chat and /ops, and Node under vitest. All three have `crypto.subtle`.
+ * three places: the workerd prerender, the Worker itself for every on-demand
+ * route, and Node under vitest. All three have `crypto.subtle`.
  */
 
 /**
@@ -22,6 +22,33 @@ import { readingTimeFor } from '../reading-time';
  * serving under its old URL.
  */
 export const OG_CARD_CONTRACT_VERSION = 1;
+
+/**
+ * A fingerprint of every input OG_CARD_CONTRACT_VERSION's own comment names as
+ * moving a card's drawing without moving its hash: the dark palette
+ * readTokens() returns, the four card font files' bytes as loadCardAssets
+ * reads them, the installed versions of `satori` and `@resvg/resvg-js`, and
+ * src/lib/og/layout.ts's own source. Until this constant existed, that rule
+ * was enforced by nothing but the comment: a palette edit, a font upgrade or
+ * a layout.ts change could ship with OG_CARD_CONTRACT_VERSION left alone, and
+ * no test went red.
+ *
+ * tests/og-cards.test.ts recomputes the same hash from those same inputs on
+ * every run and compares it to this constant, so the drift fails a test
+ * instead of shipping a redrawn card under an unmoved URL. Computed there,
+ * never here: cards.ts ships into the Worker, which has neither
+ * package-lock.json nor layout.ts's source text available to read at
+ * runtime, so this value is pasted in by hand from what that test reports.
+ *
+ * A MISMATCH MEANS ONE OF TWO THINGS. Either a rendering input above changed
+ * on purpose, in which case bump OG_CARD_CONTRACT_VERSION and replace this
+ * constant with the test's newly reported value in the same commit. Or it
+ * changed by accident -- an upgraded font package, a lockfile bump pulling in
+ * a new satori -- in which case revert it rather than rubber-stamping the new
+ * fingerprint.
+ */
+export const OG_CARD_RENDER_FINGERPRINT =
+  'bd7dacdb7def5aa7a7ba23692aa79b697f9b6eabdea2b6a9403b33d1c9846a52';
 
 export const CARD_WIDTH = 1200;
 export const CARD_HEIGHT = 630;

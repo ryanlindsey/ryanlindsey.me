@@ -88,12 +88,9 @@ const person = buildPerson({
  */
 const title = `${resume.basics.label} — ${resume.basics.name}`;
 
-// The share card (#363, task 5), hand-written for the same reason canonical
-// and the JSON-LD block above are: this route carries no `description` meta
-// tag either, and og:description has to agree with whatever meta description
-// tags a page carries -- tests/seo.test.ts asserts that agreement against
-// EVERY built page, this one included, and zero of one is still agreement.
-// Card, not tag, is what changes here if the résumé's summary ever grows one.
+// No og:description tag below (#363): this route renders no `description`
+// meta tag of its own, and tests/seo.test.ts requires the two to agree, so
+// zero of each is what agreement looks like here.
 const ogCard = resumeCard(resume.basics);
 const ogImage = new URL(await cardPath(ogCard), Astro.site);
 

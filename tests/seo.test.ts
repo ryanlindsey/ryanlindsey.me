@@ -794,12 +794,40 @@ test('posts and case studies are shared as articles, every other page as a websi
   }
 });
 
+/**
+ * Astro escapes `'`, `"`, `&`, `<` and `>` as entities inside TEXT CONTENT
+ * (`<title>Ryan&#39;s …</title>`) but writes them raw inside an ATTRIBUTE
+ * value (`content="Ryan's …"`), so the exact same string spells an apostrophe
+ * two different ways depending on which tag the comparison below reads it
+ * from. The first real title containing one would have failed the
+ * `og:title` vs `<title>` comparison for a non-defect. Decoding both sides
+ * first is what makes this test about agreement between the tags rather than
+ * about Astro's own escaping rules.
+ *
+ * `&amp;` decodes last, so a source `&amp;lt;` -- already one decode away
+ * from the literal text `&lt;` -- is not re-decoded a second time into `<`.
+ */
+function decodeEntities(value: string): string {
+  return value
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+test('decodeEntities makes an escaped apostrophe equal its raw spelling', () => {
+  expect(decodeEntities('Ryan&#39;s')).toBe(decodeEntities("Ryan's"));
+});
+
 test('the share tags agree with the page they are on', async () => {
   for (const path of ALL_PAGES) {
     const html = await page(path);
-    const title = /<title>([^<]*)<\/title>/.exec(html)?.[1];
-    expect(metaContents(html, 'property', 'og:title'), path).toEqual([title]);
-    expect(metaContents(html, 'property', 'og:description'), path).toEqual(metaDescriptions(html));
+    const title = decodeEntities(/<title>([^<]*)<\/title>/.exec(html)?.[1] ?? '');
+    expect(metaContents(html, 'property', 'og:title').map(decodeEntities), path).toEqual([title]);
+    expect(metaContents(html, 'property', 'og:description').map(decodeEntities), path).toEqual(
+      metaDescriptions(html).map(decodeEntities),
+    );
     expect(metaContents(html, 'property', 'og:url'), path).toEqual([new URL(path, SITE).href]);
     expect(metaContents(html, 'property', 'og:site_name'), path).toEqual(['Ryan Lindsey']);
   }

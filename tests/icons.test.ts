@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
-import { readTokens } from '../src/lib/tokens-read.mjs';
+import { readTokens, requireTokens } from '../src/lib/tokens-read.mjs';
 import { SITE_HARNESS_WORKERS } from './workers';
 import { stripComments } from './markup';
 
@@ -30,6 +30,35 @@ test('the token reader returns both palettes', () => {
   expect(tokens.light['--rl-bg']).toBe('#fafaf9');
   expect(tokens.dark['--rl-bg']).toBe('#0a0a0b');
   expect(tokens.dark['--rl-accent-ground']).toBe(tokens.light['--rl-accent-ground']);
+});
+
+/**
+ * The token reader used to accept only lowercase six-digit hex, silently:
+ * an uppercase value (which tests/tokens.test.ts's own regex accepts) simply
+ * failed the reader's capture group and the token vanished from the returned
+ * object rather than raising anything, reaching loadCardAssets and
+ * scripts/icons.mjs as `undefined`. These three pin the reader's own
+ * contract with synthetic CSS, independent of what src/styles/tokens.css
+ * happens to hold today.
+ */
+test('an uppercase hex value is accepted, and lowercased', () => {
+  const css = `:root { --rl-bg: #FAFAF9; }\n[data-theme='dark'] { --rl-bg: #0A0A0B; }`;
+  expect(readTokens(css)).toEqual({
+    light: { '--rl-bg': '#fafaf9' },
+    dark: { '--rl-bg': '#0a0a0b' },
+  });
+});
+
+test('a token value that is not a 6-digit hex color throws, naming the token', () => {
+  const css = `:root { --rl-bg: red; }\n[data-theme='dark'] { --rl-bg: #0a0a0b; }`;
+  expect(() => readTokens(css)).toThrow(/--rl-bg/);
+});
+
+test('requireTokens throws naming the missing key', () => {
+  expect(() => requireTokens({ '--rl-bg': '#000000' }, ['--rl-bg', '--rl-ink'])).toThrow(
+    /--rl-ink/,
+  );
+  expect(requireTokens({ '--rl-bg': '#000000' }, ['--rl-bg'])).toEqual({ '--rl-bg': '#000000' });
 });
 
 test.each([
