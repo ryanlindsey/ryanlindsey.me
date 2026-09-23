@@ -128,6 +128,39 @@ async function settled(instance: {
   return seen;
 }
 
+/**
+ * A handle to the instance for `id`, tolerating the race `POST /fit/start`
+ * leaves behind rather than closing it.
+ *
+ * `workers/mcp/src/fit-start.ts` creates the instance inside
+ * `ctx.waitUntil(startRun(...))`, so the response this suite's `start()`
+ * awaits can land before `FIT_WORKFLOW.create` has actually run --
+ * MEASURED IN CI 2026-09-23 (run 35883324048, release PR #381): a runner
+ * slow enough to expose the gap had `env.FIT_WORKFLOW.get(id)` throw
+ * `instance.not_found` immediately after `start()` returned. The create has
+ * to stay inside `waitUntil`: pulling it onto the request would reopen the
+ * 30-second `waitUntil` budget this file's opening comment exists to escape,
+ * for the same run that already needs `settled`'s much longer deadline to
+ * finish. So the fix here is patience rather than a production change --
+ * retry `get` on exactly this error, using the same 20-second deadline and
+ * 50ms poll `settled` uses above, until the instance exists or time runs
+ * out. Any other error is a real failure and rethrows immediately; at the
+ * deadline the last `instance.not_found` rethrows too, so a genuine miss
+ * still reads exactly as it does today.
+ */
+async function instanceOf(id: string): Promise<WorkflowInstance> {
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    try {
+      return await env.FIT_WORKFLOW.get(id);
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes('instance.not_found')) throw error;
+      if (Date.now() >= deadline) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+}
+
 test('the deferred run is a workflow instance named by the permalink id', async () => {
   // THE WHOLE FIX, IN ONE READING. Under the shape this replaces there was
   // nothing here to address: `ctx.waitUntil(completeRun(...))` hands the
@@ -139,7 +172,7 @@ test('the deferred run is a workflow instance named by the permalink id', async 
   const { token } = await grant();
   const id = await start(token);
 
-  const instance = await env.FIT_WORKFLOW.get(id);
+  const instance = await instanceOf(id);
   const seen = await settled(instance);
 
   // `complete` rather than `errored`, and the difference is the point: the
@@ -204,7 +237,7 @@ test('the audit trail records the accepted call exactly once', async () => {
   // Settled first, so the count below is taken after everything this run will
   // ever write has been written. `recordToolCall` is handed to
   // `ctx.waitUntil`, so the row lands after the response does.
-  await settled(await env.FIT_WORKFLOW.get(id));
+  await settled(await instanceOf(id));
   const closed = await db
     .prepare('SELECT status FROM fit_reports WHERE id = ?')
     .bind(id)
