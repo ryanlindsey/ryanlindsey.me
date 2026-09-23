@@ -49,7 +49,7 @@ export const SCOPES = [
    * service binding rather than over the internet; and nobody hands it
    * anything, because it signs its own short-lived token from the same Secrets
    * Store key this Worker already reads to verify every token it sees, every
-   * day and every Monday, and revokes it when the run ends. See
+   * day and every Sunday, and revokes it when the run ends. See
    * `EvalsWorkflow` in workers/mcp/src/evals-workflow.ts.
    *
    * What both have in common is the only property this scope is about: neither

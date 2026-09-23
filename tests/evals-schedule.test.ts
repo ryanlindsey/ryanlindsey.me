@@ -418,7 +418,7 @@ async function settled(instance: {
 test('a payload naming no suite list fails loudly and mints nothing', async () => {
   // NOT REACHABLE WITHOUT ACCOUNT ACCESS, and reachable by exactly the person
   // most likely to be there: `wrangler workflows trigger rlme-evals` with no
-  // `--params` is what an operator reaches for after a red Monday, and it
+  // `--params` is what an operator reaches for after a red Sunday, and it
   // hands `run()` an undefined `suites`.
   //
   // WHAT IT USED TO DO. `suites.join` threw inside the mint's own `try`, and

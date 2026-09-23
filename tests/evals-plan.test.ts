@@ -59,9 +59,9 @@ function minutesPastMidnight(cron: string): number {
 test('the weekly evals cron leaves the corpus refresh a wide gap', () => {
   // WHAT THE GAP IS FOR. `fit` and `chat` are graded against the Vectorize
   // index that `CORPUS_CRON` re-embeds and upserts that same morning.
-  // src/lib/corpus.ts is incremental, so most Mondays that refresh is nearly
-  // instant -- but the Monday after content lands is the one where it is not,
-  // and that is exactly the Monday this schedule exists for. A Vectorize
+  // src/lib/corpus.ts is incremental, so most Sundays that refresh is nearly
+  // instant -- but the Sunday after content lands is the one where it is not,
+  // and that is exactly the Sunday this schedule exists for. A Vectorize
   // `upsert` returns a mutation id and the index reflects it some time later,
   // so a `chat` case with a `min_sources` expectation can query a
   // still-applying index and go red with no regression behind it.
@@ -72,6 +72,25 @@ test('the weekly evals cron leaves the corpus refresh a wide gap', () => {
   // back toward the refresh is the change that has to argue with it.
   const gap = minutesPastMidnight(EVALS_WEEKLY_CRON) - minutesPastMidnight(CORPUS_CRON);
   expect(gap).toBeGreaterThanOrEqual(90);
+});
+
+test('the weekly evals cron fires on Sunday under Cloudflare day numbering', () => {
+  // Cloudflare's day-of-week field runs 1 = Sunday to 7 = Saturday, not the
+  // Unix 0 = Sunday. Every document described this schedule as Monday until
+  // issue #340, measured against `eval_runs` rows dated Sunday 2026-09-20.
+  // Changing the day means changing this test and every comment that names it.
+  const cloudflareDays = [
+    '',
+    'Sunday',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+  ];
+  const dayOfWeek = EVALS_WEEKLY_CRON.split(' ')[4];
+  expect(cloudflareDays[Number(dayOfWeek)]).toBe('Sunday');
 });
 
 test('suitesForCron: an unknown expression asks for none', () => {

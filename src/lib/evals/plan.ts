@@ -193,11 +193,11 @@ export const EVALS_DAILY_CRON = '52 5 * * *';
  * `upsert` is asynchronous: it returns a mutation id and the index reflects the
  * change some time afterwards. A `chat` case carrying a `min_sources`
  * expectation that queries a still-applying index goes red with no regression
- * behind it, on the one Monday of the year when the answer matters.
+ * behind it, on the one Sunday of the year when the answer matters.
  *
- * src/lib/corpus.ts is incremental, so most Mondays the refresh is close to
- * instant and any gap would do. The Monday after content lands is the one where
- * it is not, and that is exactly the Monday this schedule exists for.
+ * src/lib/corpus.ts is incremental, so most Sundays the refresh is close to
+ * instant and any gap would do. The Sunday after content lands is the one where
+ * it is not, and that is exactly the Sunday this schedule exists for.
  *
  * WHAT IS NOT KNOWN, said plainly because the gap was 35 minutes until issue
  * #291's review and 35 was no more measured than 95 is: nothing in this
@@ -207,6 +207,17 @@ export const EVALS_DAILY_CRON = '52 5 * * *';
  * upserted id until it answers, and record both numbers here with their date.
  * Until somebody does that, the honest move is a wide gap rather than a precise
  * one.
+ *
+ * THE `1` IS SUNDAY. Cloudflare numbers the day-of-week field 1 = Sunday to
+ * 7 = Saturday, not the Unix 0 = Sunday, so this fires on Sundays. Every
+ * comment and document said Monday until issue #340: the first scheduled weekly
+ * rows in `eval_runs` (ids 41 to 43) are dated 2026-09-20, a Sunday, at 07:07
+ * UTC, and reading them against "Mondays" cost an hour chasing a Workflow that
+ * had worked. Sunday was kept and the prose corrected. `SUN` would say this in
+ * the expression itself, but `suitesForCron` matches `controller.cron` by
+ * equality and nothing here has measured whether Cloudflare echoes an
+ * abbreviation back verbatim; a mismatch returns `[]` and the weekly run
+ * disappears without a row. Measure that before adopting it.
  */
 export const EVALS_WEEKLY_CRON = '7 7 * * 1';
 
