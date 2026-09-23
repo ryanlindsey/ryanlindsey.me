@@ -232,7 +232,8 @@
 /.well-known/agent-skills/*/SKILL.md
   Content-Type: text/markdown; charset=utf-8
 
-# The site icon and the web manifest (#363), written by scripts/icons.mjs.
+# The site icon files (#363) are written by scripts/icons.mjs; the web
+# manifest just below is hand-written.
 # A day of cache rather than a year: these names are stable, so a longer one
 # would pin an old icon after the next rerun. Each is an EXACT path and no
 # other rule here sets Cache-Control, so there is nothing to comma-join (see

@@ -11,7 +11,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import opentype from 'opentype.js';
 import { Resvg } from '@resvg/resvg-js';
-import { readTokens } from '../src/lib/tokens-read.mjs';
+import { readTokens, requireTokens } from '../src/lib/tokens-read.mjs';
 
 const PUBLIC = new URL('../public/', import.meta.url);
 const FONT = new URL(
@@ -36,7 +36,12 @@ const TRACKING = -2;
 const CENTER_X = 34;
 const BASELINE = 45;
 
+// requireTokens throws naming whichever key is missing, rather than letting
+// icon() below read an absent one as `undefined` and draw a corner or a
+// letter in no color at all.
 const { light, dark } = readTokens();
+requireTokens(light, ['--rl-bg']);
+requireTokens(dark, ['--rl-bg', '--rl-accent-ground', '--rl-accent-on']);
 
 function lettersPath() {
   const bytes = readFileSync(FONT);

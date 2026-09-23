@@ -160,8 +160,8 @@ const {
 const pageTitle = titleIsSiteName ? title : `${title} — Ryan Lindsey`;
 
 // Absolute because every scraper requires it, by the same idiom `canonical`
-// uses. On the on-demand /chat and /ops this hashes at request time, which is
-// why cardPath uses Web Crypto rather than node:crypto.
+// uses. On every on-demand route this hashes at request time, which is why
+// cardPath uses Web Crypto rather than node:crypto.
 const ogImage = new URL(await cardPath(ogCard), Astro.site);
 
 // Person, sitewide (task-10-brief.md), built here rather than passed in by
@@ -216,8 +216,8 @@ const jsonLdNodes = [
     {/* The site icon (#363). The SVG link is server-rendered as the dark
        variant, and src/lib/theme-toggle.ts swaps it for the resolved theme on
        load and on every theme change. The .ico is for browsers that take no SVG
-       icon, and cannot follow a theme at all. Everything here is written by
-       scripts/icons.mjs. */}
+       icon, and cannot follow a theme at all. The icon files below are written
+       by scripts/icons.mjs; the manifest is hand-written. */}
     <link rel="icon" href="/favicon-dark.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

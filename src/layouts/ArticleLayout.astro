@@ -72,8 +72,18 @@ interface Props {
    * blank. An entry declaring none renders no bar at all.
    */
   facts?: CaseStudyFact[];
-  /** This entry's share card, built by the route from its entry (#363). */
-  ogCard?: OgCard;
+  /**
+   * This entry's share card, built by the route from its entry (#363).
+   *
+   * Required, not defaulted: both callers (writing/[...slug].astro,
+   * work/[...slug].astro) already build one from their own entry, and an
+   * optional prop here would let a future caller omit it and unfurl as
+   * `og:type=article` carrying HOME_CARD -- Base.astro's own `ogCard` default
+   * -- which is the home page's card on a post's or case study's URL. Making
+   * it required moves that mistake from a silent runtime fallback to a
+   * build-time type error.
+   */
+  ogCard: OgCard;
 }
 
 const {
