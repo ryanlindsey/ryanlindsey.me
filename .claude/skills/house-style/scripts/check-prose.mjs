@@ -131,6 +131,51 @@ const ISATION_RE = /\b[a-z]{3,}isations?\b|\b[a-z]{3,}isational\b/gi;
 const CONTRACTION_RE =
   /\b(\w+n['’]t|(?:I|you|we|they|it|he|she|that|there|here|what|who|let)['’](?:s|re|ve|ll|d|m))\b/gi;
 
+// Register warnings. Posts about work done here are drafted from issues, PRs
+// and code comments written as an engineering record, and the record's habits
+// survive the trip unless something catches them. These patterns are the ones
+// Ryan cut most often in review, and dates and meta phrases are the two markers
+// that separated the first draft of the workflows post (#361) from what shipped.
+// They are warnings rather than errors because each has legitimate uses (a date
+// can be the subject, a quoted issue can say "the spec"), so a hit is a prompt
+// to look, and a clean run is not proof the register is right.
+const MONTH =
+  '(?:January|February|March|April|May|June|July|August|September|October|November|December)';
+const NUMBER_WORD =
+  '(?:\\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|eighteen|twenty|thirty|forty|forty-five|fifty|sixty|ninety)';
+const REGISTER = [
+  [
+    'record-date',
+    new RegExp(
+      `\\b20\\d\\d-\\d\\d-\\d\\d\\b|\\b\\d{1,2} ${MONTH}\\b|\\b${MONTH} \\d{1,2}\\b(?!,? \\d)`,
+      'g',
+    ),
+    'a calendar date dates the piece; drop it, or give the relative time where it matters ("recently", "the same afternoon")',
+  ],
+  [
+    'record-time',
+    new RegExp(
+      `\\b(?:at|by) (?:[01]?\\d|2[0-3]):[0-5]\\d\\b|\\b(?:[01]?\\d|2[0-3]):[0-5]\\d ?(?:UTC|AM|PM|Pacific|PT|ET)\\b|\\b${NUMBER_WORD} (?:seconds?|minutes?|hours?|days?) (?:later|earlier)\\b|\\bwithin ${NUMBER_WORD} (?:seconds?|minutes?|hours?)\\b|\\bas of this (?:morning|afternoon|week)\\b`,
+      'gi',
+    ),
+    'a clock time or elapsed duration reads as a changelog; keep the order of events and drop the timestamps',
+  ],
+  [
+    'meta',
+    /\b(?:worth (?:being precise|naming|stating|saying|noting)|(?:want|need|have) to be precise|to be (?:precise|clear|honest)|honest rather than|rather than smoothing|I am telling (?:it|this) anyway|I will mark)\b/gi,
+    'the prose is commenting on its own honesty or precision; keep the claim and delete the commentary',
+  ],
+  [
+    'apparatus',
+    /\b(?:the spec|the epic|child of the epic|child issue|the handoff|blocked[- ]by|notes for Ryan|CLAUDE\.md)\b/gi,
+    'project-tracker vocabulary the reader never saw; tell the engineering event it stood for, or leave it out',
+  ],
+];
+
+// Frontmatter fields that are reader-facing prose, so the register warnings
+// reach them even though the text rules skip frontmatter.
+const PROSE_FIELD = /^(?:description|standfirst):/;
+
 // --- Line classification ---------------------------------------------------
 
 const RE = {
@@ -216,8 +261,21 @@ function walk(text, visit) {
 
 function audit(path, text) {
   const findings = [];
+  const warnings = [];
   const add = (no, col, rule, message, snippet) =>
     findings.push({ path, line: no, col, rule, message, snippet });
+  const warn = (no, line, masked) => {
+    for (const [rule, re, advice] of REGISTER)
+      for (const m of masked.matchAll(re))
+        warnings.push({
+          path,
+          line: no,
+          col: m.index + 1,
+          rule,
+          message: `"${m[0]}": ${advice}`,
+          snippet: line.trim().slice(0, 72),
+        });
+  };
 
   // Wrapping is tracked per paragraph rather than per line break, so a
   // six-line paragraph is one finding to fix and not five to wade through.
@@ -253,9 +311,11 @@ function audit(path, text) {
     // Text checks skip code, frontmatter, tables and verbatim quotations
     // (Section 4 exempts quotations from the punctuation, spelling and
     // vocabulary rules, since they are the source's words and not ours).
+    if (kind === 'frontmatter' && PROSE_FIELD.test(line)) warn(no, line, maskNonProse(line));
     if (kind === 'code' || kind === 'frontmatter' || kind === 'quote' || kind === 'table') return;
 
     const masked = maskNonProse(line);
+    warn(no, line, masked);
 
     for (const m of masked.matchAll(/—/g))
       add(
@@ -335,8 +395,8 @@ function audit(path, text) {
   });
 
   closePara(); // a file ending mid-paragraph still gets its finding
-  findings.sort((a, b) => a.line - b.line || a.col - b.col);
-  return findings;
+  const order = (a, b) => a.line - b.line || a.col - b.col;
+  return { findings: findings.sort(order), warnings: warnings.sort(order) };
 }
 
 // --- Unwrap ----------------------------------------------------------------
@@ -418,12 +478,25 @@ if (flags.has('--unwrap')) {
   exit(0);
 }
 
-const all = paths.flatMap((path) => audit(path, readFileSync(path, 'utf8')));
+const audits = paths.map((path) => audit(path, readFileSync(path, 'utf8')));
+const all = audits.flatMap((a) => a.findings);
+const warned = audits.flatMap((a) => a.warnings);
 
+// Warnings are reported apart from findings, and never change the exit code:
+// they ask for a look, and graders that count findings stay unaffected.
 if (flags.has('--json')) {
-  stdout.write(JSON.stringify({ findings: all, count: all.length }, null, 2) + '\n');
+  stdout.write(
+    JSON.stringify({ findings: all, count: all.length, warnings: warned }, null, 2) + '\n',
+  );
   exit(all.length ? 1 : 0);
 }
+
+for (const w of warned)
+  stdout.write(`${w.path}:${w.line}:${w.col}  [warn:${w.rule}]  ${w.message}\n    ${w.snippet}\n`);
+if (warned.length)
+  stdout.write(
+    `\n${warned.length} register warning(s); each is a prompt to look, not an error\n\n`,
+  );
 
 if (all.length === 0) {
   stdout.write(`clean: ${paths.length} file(s), no house-style findings\n`);

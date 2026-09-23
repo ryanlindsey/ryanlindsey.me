@@ -176,6 +176,8 @@ Use the `house-style` skill for any prose in this repository, including post and
 node .claude/skills/house-style/scripts/check-prose.mjs src/content/**/*.mdx
 ```
 
+Drafting a whole post or case study, usually from the `Spec:` issue a brainstorming session produced, also uses the `content-writing` skill (`.claude/skills/content-writing/`). The Spec and the issues, PRs and comments it cites are written as an engineering record, dated and numbered, and that register is the main thing it keeps out of the draft.
+
 Prose is written unwrapped, one line per paragraph. Never reflow a file as a side effect of another change.
 
 ## Comments

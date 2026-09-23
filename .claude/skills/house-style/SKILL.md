@@ -19,6 +19,8 @@ Prose on this site carries a specific load. The site argues that its author does
 
 Read `references/voice.md` first. It is the part that cannot be checked mechanically, and it is the part that actually makes the prose sound like him. Then write.
 
+When the job is a whole post or case study, use the content-writing skill as well (`.claude/skills/content-writing/`). It covers turning a brainstorming Spec and the record it cites into a draft, which is where most of the voice goes wrong. This skill stays the authority on every sentence, and on everything smaller than a whole piece: a paragraph, a description, page copy, an audit.
+
 Before handing anything back, run the checker over what you wrote and fix what it finds. The checker is fast and catches the errors that are easy to make and embarrassing to ship.
 
 ### Auditing
