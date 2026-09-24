@@ -70,7 +70,7 @@ describe('GET /chat', () => {
     const page = await html('/chat');
     const noscript = page.slice(page.indexOf('<noscript>'), page.lastIndexOf('</noscript>'));
     expect(noscript).toContain('/llms.txt');
-    expect(noscript).toContain('mcp');
+    expect(noscript).toContain('href="/connect"');
   });
 
   test('no copy on the page matches a banned pattern', async () => {
@@ -159,11 +159,13 @@ describe('GET /chat', () => {
     expect(rail).toContain(`/ ${LIMITS.conversation.limit}`);
   });
 
-  test('the protocol block points at /mcp, not the bare origin', async () => {
-    // The bare origin 404s -- createMcpHandler mounts the endpoint at /mcp.
-    // Verified live and recorded in src/lib/nav.ts.
+  test('the protocol block points a person at /connect, in the same tab', async () => {
+    // #395: a browser GET on the MCP endpoint answers 405 with JSON (measured
+    // 2026-09-24), so the rail links the page that explains how to connect.
     const rail = railOf(await html('/chat'));
-    expect(rail).toContain('https://mcp.ryanlindsey.me/mcp');
+    expect(rail).toMatch(/<a[^>]*href="\/connect"[^>]*>\s*Connect over MCP\s*<\/a>/);
+    expect(rail).not.toMatch(/href="\/connect"[^>]*target="_blank"/);
+    expect(rail).not.toContain('https://mcp.ryanlindsey.me/mcp');
   });
 
   test('a query handed over from /search arrives in the composer', async () => {
