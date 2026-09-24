@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.41.3](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.41.2...ryanlindsey-me-v1.41.3) (2026-09-24)
+
+
+### Bug Fixes
+
+* **writing:** correct stale facts and a contradiction found in the post audit ([#390](https://github.com/ryanlindsey/ryanlindsey.me/issues/390)) ([9ada02d](https://github.com/ryanlindsey/ryanlindsey.me/commit/9ada02d6dbafa6fba080bbb87500744b527c7ef6))
+* **writing:** drop the org-scaling pillar until a post is planned ([#388](https://github.com/ryanlindsey/ryanlindsey.me/issues/388)) ([200471c](https://github.com/ryanlindsey/ryanlindsey.me/commit/200471c27f085740db2b520420544029b337e98c))
+* **writing:** tighten the armature post and correct its authoring gap ([#391](https://github.com/ryanlindsey/ryanlindsey.me/issues/391)) ([0d03f0f](https://github.com/ryanlindsey/ryanlindsey.me/commit/0d03f0fca1be2c062277c24e3192bee684ce0d2f))
+
 ## [1.41.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.41.1...ryanlindsey-me-v1.41.2) (2026-09-23)
 
 
