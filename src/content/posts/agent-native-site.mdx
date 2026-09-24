@@ -1,6 +1,6 @@
 ---
 title: An agent-native personal site on Cloudflare
-description: 'An agent can read every page of this site as markdown, call the resume, the case studies and a retrieval-backed search as Model Context Protocol tools, and present a scoped token for what is not public. Underneath sits most of the Cloudflare developer platform: D1, KV, R2, Queues, Durable Objects, Vectorize, Workers AI, Browser Rendering, Analytics Engine and crons. Nearly all of it was written by agents working a plan. This is the build log, including the checks that were green about the wrong thing.'
+description: 'An agent can read every page of this site as markdown, call the resume, the case studies and a retrieval-backed search as Model Context Protocol tools, and present a scoped token for what is not public. Underneath sits most of the Cloudflare developer platform: D1, KV, R2, Queues, Durable Objects, Vectorize, Workers AI, Analytics Engine and crons. Nearly all of it was written by agents working a plan. This is the build log, including the checks that were green about the wrong thing.'
 standfirst: 'Every page as markdown, the résumé and case studies as MCP tools, and most of Cloudflare underneath, written by agents working a plan.'
 publishedAt: 2026-09-11
 pillar: building-in-the-open
@@ -12,7 +12,7 @@ draft: false
 
 import ArchitectureDiagram from '../../components/ArchitectureDiagram.astro';
 
-**TL;DR.** This site is two Cloudflare Workers. One serves the pages, the resume in four formats, the chat endpoint, a queue consumer and two crons; the other serves a Model Context Protocol server with eight public tools, three resources and a scoped-token tier behind it. Nearly all of the code was written by agents, and the source is [public](https://github.com/ryanlindsey/ryanlindsey.me). This post is the build log. The first half is what is actually running. The second half is what it cost to learn, and most of that is versions of one sentence: a green check is not evidence.
+**TL;DR.** This site is two Cloudflare Workers. One serves the pages, the resume in four formats, the chat endpoint, a queue consumer and a cron; the other serves a Model Context Protocol server with public tools, resources and a scoped-token tier behind it. Nearly all of the code was written by agents, and the source is [public](https://github.com/ryanlindsey/ryanlindsey.me). This post is the build log. The first half is what is actually running. The second half is what it cost to learn, and most of that is versions of one sentence: a green check is not evidence.
 
 ## The dry run passed and the Worker could not start
 
@@ -32,7 +32,7 @@ What I would say for them is that almost none of these are load problems. Most a
 
 Two Workers, and the split is not cosmetic.
 
-`ryanlindsey-me` serves the site: static assets, the on-demand routes, a queue consumer, and two daily crons, one that refreshes the resume PDF at 05:17 UTC and one that runs the transcript retention sweep at 05:47. `ryanlindsey-me-mcp` serves the protocol endpoint, the chat backend, the fit engine, the model judge, a rate limiter Durable Object, and its own cron at 05:32 that refreshes the retrieval corpus.
+`ryanlindsey-me` serves the site: static assets, the on-demand routes, a queue consumer, and a daily cron that runs the transcript retention sweep. `ryanlindsey-me-mcp` serves the protocol endpoint, the chat backend, the fit engine, the model judge, a rate limiter Durable Object, and its own crons, which refresh the retrieval corpus and run the evals on a schedule.
 
 They exist as two Workers because of one binding. Workers AI has no local emulator and never will; the Vite plugin's own table names it as permanently remote. Once the site gained its first on-demand route it gained a server bundle, and `astro build` began instantiating the site Worker's bindings at build time. An `ai` binding in the site's configuration therefore makes a plain build open a remote proxy session and demand an API token. The check suite in CI is designed to hold no Cloudflare credential at all, so that build can never run there. Moving `ai` and `vectorize` onto the Worker that actually queries the corpus fixed it, and it was the better architecture anyway: the Worker that reads the index became the Worker that fills it.
 

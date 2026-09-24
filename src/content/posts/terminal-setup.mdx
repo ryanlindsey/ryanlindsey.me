@@ -387,7 +387,7 @@ The `COREPACK_ENABLE_DOWNLOAD_PROMPT=0` line in the `.zshrc` above is there for 
 
 If you would rather install one directly: [npm](https://docs.npmjs.com) ships with Node and needs nothing, [pnpm](https://pnpm.io) is what I pin in most projects, [Yarn](https://yarnpkg.com) is the other mature option, and [Bun](https://bun.sh) is worth a look if you want the runtime and the package manager to be the same program.
 
-One thing I have deliberately left out. If you install from or publish to a private registry you will need authentication, and the tempting move is to export a token into your shell environment so it is always there. Do not do that, or at least do not do it without deciding to. Every process you start inherits your environment, including every command an agent runs, and a token that is always present is a token that is present during the mistake. Put the credential in a project-scoped config file or supply it to the single command that needs it.
+One thing I have deliberately left out. If you install from or publish to a private registry you will need authentication, and the tempting move is to export a token into your shell environment so it is always there. Do not do that, or at least do not do it without deciding to. Every process you start inherits your environment, including every command an agent runs, and a token that is always present is a token that is present during the mistake. Keep the credential in a secrets manager and supply it to the single command that needs it.
 
 ## 8. The agent layer: Claude Code
 
@@ -444,7 +444,7 @@ Note what is **not** in the list: the `.env.example` convention. Denying every `
 
 ### Plugins and skills
 
-Claude Code loads plugins from marketplaces you name yourself. Mine, current as of writing:
+Claude Code loads plugins from marketplaces you name yourself. These are mine, and the keys belong in the same `~/.claude/settings.json` as above, merged into it rather than replacing it:
 
 ```json title="~/.claude/settings.json"
 {
@@ -523,7 +523,7 @@ And four things to look at rather than run:
 - `ll` shows icons and per-file git status. Blank boxes instead of icons means Ghostty is not using the Nerd Font; check `font-family`.
 - `Ctrl-R` opens atuin's search interface, not zsh's. If you get the plain one, atuin is initializing before fzf.
 - `Cmd+D` splits the window; `Cmd+Opt+arrow` moves between panes.
-- Typing a command you have run before shows a grey completion after the cursor. That is `zsh-autosuggestions`, and it means Sheldon is loading.
+- Typing a command you have run before shows a gray completion after the cursor. That is `zsh-autosuggestions`, and it means Sheldon is loading.
 
 If the prompt appears noticeably slowly, the usual cause is `compinit` running before `sheldon source`. Check the order.
 
