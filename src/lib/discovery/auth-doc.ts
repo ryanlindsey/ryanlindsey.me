@@ -16,8 +16,13 @@ import { PUBLIC_SCOPES } from '../tier/token';
  * deployed separately, and the string is short enough that a literal copy,
  * with this comment naming its source, is more honest than a cross-Worker
  * import would be.
+ *
+ * Exported since #395, for /connect's rail, which publishes the same reviewed
+ * sentence to a person and imports it from here rather than holding a third
+ * copy. The MCP Worker's copy and tests/mcp-tools.test.ts's copy stay where
+ * they are, for the cross-Worker reason above.
  */
-const PRIVATE_ACCESS_TEXT =
+export const PRIVATE_ACCESS_TEXT =
   'Some material on this site is served to scoped tokens rather than published: ' +
   'reference contacts, engagement logistics, and the unredacted layer of a few case ' +
   'studies. This is an ordinary access tier, not a waiting list. Email ' +
