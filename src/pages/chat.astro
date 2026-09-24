@@ -3,7 +3,6 @@ import { env } from 'cloudflare:workers';
 import Shell from '../layouts/Shell.astro';
 import Turnstile from '../components/Turnstile.astro';
 import { MAX_QUESTION_CHARS } from '../lib/chat/engine';
-import { MCP_ENDPOINT } from '../lib/nav';
 import { LIMITS } from '../lib/mcp/limits';
 import { formatWindow, RETENTION } from '../lib/retention';
 import { CHAT_CARD } from '../lib/og/cards';
@@ -65,16 +64,17 @@ const messagesLeft = `${messageCap} / ${messageCap}`;
  * PREFER A PROTOCOL?, which is the same offer the footer's FOR AGENTS column
  * makes and deliberately not the same list. This is the page a person lands on
  * when they want an answer rather than a feed, so the three destinations are
- * the ones that answer questions: the endpoint, the index an agent reads
- * first, and the résumé as data. RSS belongs in a colophon and is already
- * there.
+ * the ones that answer questions: how to connect over MCP, the index an agent
+ * reads first, and the résumé as data. RSS belongs in a colophon and is
+ * already there.
  *
- * `MCP_ENDPOINT` is imported rather than spelled, and src/lib/nav.ts carries
- * the live verification of why it is `/mcp` on that host and never the bare
- * origin.
+ * The first destination is /connect rather than the endpoint itself (#395). A
+ * browser GET on the endpoint answers 405 with JSON (measured 2026-09-24), and
+ * this is a link a person clicks; /connect publishes the same address, from
+ * `MCP_ENDPOINT`, beside how to use it.
  */
 const PROTOCOL_LINKS = [
-  { href: MCP_ENDPOINT, label: 'MCP endpoint' },
+  { href: '/connect', label: 'Connect over MCP' },
   { href: '/llms.txt', label: 'llms.txt' },
   { href: '/resume.json', label: 'resume.json' },
 ];
@@ -330,10 +330,7 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
           writing it reads is plain text and needs nothing at all:
           <a href="/llms.txt">/llms.txt</a> is the index,
           <a href="/llms-full.txt">/llms-full.txt</a> is everything, and
-          <a href={MCP_ENDPOINT} target="_blank" rel="noopener">
-            the MCP server
-          </a>{' '}
-          answers the same questions over a protocol.
+          <a href="/connect">the MCP server</a> answers the same questions over a protocol.
         </p>
       </noscript>
     </div>
