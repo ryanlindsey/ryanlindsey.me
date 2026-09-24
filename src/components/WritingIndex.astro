@@ -17,16 +17,16 @@ import { readingTimeFor } from '../lib/reading-time';
  *
  * This was the site's existing copy, unchanged, through the 2026-09 redesign.
  * Issue #152 rewrote it: at 56 characters it was the shortest description on
- * the site after `/`'s, and the same string is what the index, the three
+ * the site after `/`'s, and the same string is what the index, the
  * `noindex` pillar filters, and their shared masthead all show a reader, so
- * fixing it here fixes all four at once. `tests/seo.test.ts` asserts a
- * 70-character floor on every indexable page's description; the three pillar
+ * fixing it here fixes all of them at once. `tests/seo.test.ts` asserts a
+ * 70-character floor on every indexable page's description; the pillar
  * pages are `noindex` and exempt from that floor, but they display this
  * sentence too and deserve the same rewrite rather than a floor-clearing one
  * forked just for `/writing/`.
  */
 export const WRITING_DESCRIPTION =
-  'Essays on agentic engineering, scaling organizations through it, and building this site itself in the open.';
+  'Essays on agentic engineering, and on building this site in the open on Cloudflare.';
 
 interface Props {
   /**
@@ -56,11 +56,13 @@ const rows = activePillar ? posts.filter((post) => post.data.pillar === activePi
  * That is the decision worth recording: a pillar with no published post still
  * gets a chip, reading zero, linking to a route that renders the empty state.
  * Generating chips from the posts instead would silently drop a pillar the day
- * its last post was retired, and 02 §2's three pillars are a fixed taxonomy --
- * the index should say a pillar is empty, not pretend it does not exist.
- * `org-scaling` is that case today, which is why the empty branch is live code
- * rather than a guard. tests/pages.test.ts asserts it off disk, so it stops
- * applying the day that pillar fills.
+ * its last post was retired, and the pillars are a declared taxonomy -- the
+ * index should say a pillar is empty, not pretend it does not exist.
+ * `org-scaling` was that case from launch until 2026-09-23, when it was removed
+ * from the taxonomy rather than left reading zero (content.config.ts says why).
+ * No pillar is empty today, so the empty branch is a guard again: it covers a
+ * pillar whose only post is still a draft, or whose last post is retired.
+ * tests/pages.test.ts asserts it off disk for whichever pillars are empty.
  *
  * Labels are uppercased by CSS (`uppercase`), never by `.toUpperCase()`. The
  * design sets them in caps, but the label is what identifies the chip in the

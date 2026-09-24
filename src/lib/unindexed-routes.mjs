@@ -24,9 +24,9 @@ import { readdirSync, readFileSync } from 'node:fs';
  *    its URL, so a sitemap entry for it would publish the token itself.
  *
  * 3. THIN DUPLICATES. `/writing/pillar/<pillar>` is the writing index filtered
- *    to one of 02 §2's three pillars (2026-09 redesign, design 1h). Every row
- *    on it is a row on `/writing`, so the four pages are one page and three
- *    subsets of it, and a sitemap that offered all four would be asking a
+ *    to one pillar (2026-09 redesign, design 1h). Every row on it is a row
+ *    on `/writing`, so those pages are one page and its subsets, and a
+ *    sitemap that offered all of them would be asking a
  *    crawler to pick a canonical among near-identical documents. It carries
  *    `/writing`. The filtered routes exist because a chip has to be an address
  *    -- that is the whole reason they are routes and not a client-side toggle

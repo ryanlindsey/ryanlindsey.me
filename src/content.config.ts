@@ -5,8 +5,12 @@ import { IMPACTS, LIKELIHOODS } from './lib/governance/register';
 import { caseStudyFiguresSchema } from './lib/case-study-figures';
 import { standfirstSchema } from './lib/og/standfirst';
 
-// 02 §2: three pillars, fixed at launch. A post belongs to exactly one.
-const pillar = z.enum(['agentic-engineering', 'org-scaling', 'building-in-the-open']);
+// A post belongs to exactly one pillar. 02 §2 fixed three at launch; on
+// 2026-09-23 `org-scaling` was dropped because no post was planned for it, and
+// a pillar now joins this enum when its first post is planned rather than in
+// advance. 02 §2 still says three: the docs repo is no longer updated, so this
+// comment is where the departure is recorded.
+const pillar = z.enum(['agentic-engineering', 'building-in-the-open']);
 
 const posts = defineCollection({
   loader: glob({ base: './src/content/posts', pattern: '**/*.mdx' }),
