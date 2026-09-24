@@ -113,7 +113,7 @@ export const CONNECT_CARD: OgCard = {
   kicker: 'MCP',
   title: 'Connect',
   standfirst:
-    'One endpoint, no account for the public tier. Point a client at it and let it discover what is there.',
+    'One address, with no account and no key. Point an MCP client at it and it finds out what the server offers.',
   footerLeft: SITE_FOOTER,
   footerRight: 'ONE ENDPOINT',
 };
