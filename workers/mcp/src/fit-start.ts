@@ -166,6 +166,9 @@ export async function handleFitStart(
  * convenience. Workflows instance ids are unique per workflow and accept up to
  * 100 characters (workflows/reference/limits); a report id is 22 base64url
  * characters from `newReportId`, so the mapping is total and collision-free.
+ * The limits page does not state the other rule: an instance id may not START
+ * with `-`. This comment used to cite the length alone, and one report id in
+ * sixty-four was refused until `newReportId` stopped minting them (2026-09-24).
  * What it buys is that an operator holding a permalink can run
  * `wrangler workflows instances describe rlme-fit <id>` and read what became of
  * that run, and that a test can address the instance a request started --
