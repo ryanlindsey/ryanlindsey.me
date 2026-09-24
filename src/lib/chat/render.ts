@@ -93,7 +93,8 @@ export function appendBlock(
 
   const list = document.createElement(tag === 'UL' ? 'ul' : 'ol');
   list.className = LIST_CLASS[block.kind];
-  if (block.kind === 'numbered' && block.start !== 1) list.start = block.start;
+  if (block.kind === 'numbered' && block.start !== 1)
+    list.setAttribute('start', String(block.start));
   for (const li of items) list.appendChild(li);
   container.appendChild(list);
   return [list];

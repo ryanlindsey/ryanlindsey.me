@@ -970,3 +970,59 @@
     break-inside: avoid;
   }
 }
+
+/*
+ * The /chat typing indicator and block fade (issue 403; the hash spelling
+ * reads as a colour to tests/tokens.test.ts).
+ *
+ * Square, accent-coloured, and outside any bubble: the transcript's agent turn
+ * is a rule rather than a box, and the dots belong to it. The base opacity is
+ * full and the keyframes only dim, so a dot with no animation at all is a
+ * visible dot.
+ *
+ * The reduced-motion rule is stated here even though the global one in
+ * @layer base already clamps every animation to one 0.01ms run. That rule
+ * would leave the dots showing their base state, which is right, but it
+ * reaches that by accident of how the keyframes are written; this says it on
+ * purpose, and tests/chat-pages.test.ts asserts it.
+ */
+@keyframes chat-typing {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+@keyframes chat-block-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@utility chat-typing-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  background: var(--color-accent);
+  animation: chat-typing 1.2s ease-in-out infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+@utility chat-block-in {
+  animation: chat-block-in 150ms ease-out;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}

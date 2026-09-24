@@ -245,6 +245,11 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
         narrower. An agent turn has no box at all: an accent rule down its left
         edge and its citations as chips underneath, because a citation is part
         of the answer rather than a footnote to it.
+
+        The answer container is a <div> because a rendered answer holds <p>
+        and lists, which a <p> cannot legally contain (#403). `empty:hidden`
+        keeps an unanswered turn to the typing dots alone, and the dots stay
+        under the answer until its last block has been shown.
       */}
       <template data-turn-template="user">
         <div data-turn="user" class="flex justify-end">
@@ -257,7 +262,16 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
 
       <template data-turn-template="agent">
         <div data-turn="agent" class="max-w-[64ch] border-l-2 border-accent pl-5">
-          <p class="whitespace-pre-wrap text-body text-ink" data-turn-text></p>
+          <div
+            class="mb-3 flex flex-col gap-4 text-body text-ink empty:hidden"
+            data-turn-text
+          ></div>
+          <p class="flex items-center" data-turn-pending>
+            <span class="sr-only">Thinking</span>
+            <span class="chat-typing-dot" aria-hidden="true"></span>
+            <span class="chat-typing-dot [animation-delay:160ms]" aria-hidden="true"></span>
+            <span class="chat-typing-dot [animation-delay:320ms]" aria-hidden="true"></span>
+          </p>
           <ul class="mt-4 flex flex-wrap gap-2" data-turn-citations></ul>
           <p class="mt-3 text-small text-accent" data-turn-error hidden></p>
         </div>
@@ -300,7 +314,7 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
           >{handoff}</textarea>
           <button
             type="submit"
-            class="shrink-0 bg-accent-ground px-4 py-[10px] font-mono text-small uppercase text-accent-on"
+            class="shrink-0 bg-accent-ground px-4 py-[10px] font-mono text-small uppercase text-accent-on disabled:cursor-wait disabled:opacity-60"
             data-send
           >
             Send
@@ -338,6 +352,9 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
 
   <script>
     import { CHAT_ERROR_COPY } from '../lib/chat/errors';
+    import { parseBlock } from '../lib/chat/markdown';
+    import { appendBlock, type ChatSource } from '../lib/chat/render';
+    import { createPacer, splitBlocks } from '../lib/chat/reveal';
 
     // The whole client. Deliberately small and deliberately not a framework:
     // one fetch, one stream reader, three event names (the wire contract in
@@ -345,10 +362,10 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
     //
     // THE SOURCE LIST IS RENDERED FROM THE `sources` FRAME AND NOTHING ELSE.
     // Citation numbers in the answer are linked by LOOKING UP the number in
-    // that list -- a number with no entry stays plain text. No href is ever
-    // built from anything the model wrote, which is the client half of the
-    // guarantee src/lib/chat/context.ts describes. The chips under an answer
-    // are built from the same list by the same rule.
+    // that list, in src/lib/chat/render.ts -- a number with no entry stays
+    // plain text. No href is ever built from anything the model wrote, which
+    // is the client half of the guarantee src/lib/chat/context.ts describes.
+    // The chips under an answer are built from the same list by the same rule.
     //
     // The error copy is IMPORTED rather than reproduced, so the sentences a
     // reader sees exist once. The frame carries a code and never a sentence
@@ -357,14 +374,13 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
     // WHAT ISSUE #111 CHANGED HERE AND WHAT IT DID NOT. The turn markup moved
     // out of this file into <template> elements above, so this builds a turn
     // by cloning one instead of concatenating class strings. The fetch, the
-    // frame parsing, `withCitations` and the Turnstile reset are untouched --
-    // the design changed, the wire contract did not.
-    interface ChatSource {
-      n: number;
-      title: string;
-      url: string;
-      exact: boolean;
-    }
+    // frame parsing and the Turnstile reset were untouched -- the design
+    // changed, the wire contract did not.
+    //
+    // Issue #403 moved the rendering out as well: the answer is parsed as
+    // markdown one finished block at a time (src/lib/chat/markdown.ts,
+    // src/lib/chat/reveal.ts) and built by src/lib/chat/render.ts. The wire
+    // contract is still untouched.
 
     // The Turnstile script (loaded by components/Turnstile.astro) hangs this on
     // `window`, and nothing in the type graph knows that. Declared here rather
@@ -375,15 +391,14 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
       }
     }
 
-    // `appendChild`, NEVER `append`, throughout this file -- and the reason is
-    // not style. `worker-configuration.d.ts` declares a global `Element` for
-    // HTMLRewriter whose `append(content: string | Response | ReadableStream)`
-    // MERGES with the DOM's `Element`, so `node.append(someNode)` fails
-    // `astro check` with "Argument of type 'HTMLElement' is not assignable to
-    // parameter of type 'string | Response | ReadableStream'". `appendChild`
-    // exists only on the DOM side, so it is unambiguous. Text goes through
-    // `createTextNode` for the same reason.
-    const text_ = (value: string) => document.createTextNode(value);
+    // `appendChild`, NEVER `append`, throughout this file and
+    // src/lib/chat/render.ts -- and the reason is not style.
+    // `worker-configuration.d.ts` declares a global `Element` for HTMLRewriter
+    // whose `append(content: string | Response | ReadableStream)` MERGES with
+    // the DOM's `Element`, so `node.append(someNode)` fails `astro check` with
+    // "Argument of type 'HTMLElement' is not assignable to parameter of type
+    // 'string | Response | ReadableStream'". `appendChild` exists only on the
+    // DOM side, so it is unambiguous.
 
     const form = document.querySelector<HTMLFormElement>('[data-chat-form]');
     const transcript = document.querySelector<HTMLDivElement>('[data-chat-transcript]');
@@ -405,6 +420,14 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
       return node ? (node.cloneNode(true) as HTMLElement) : null;
     };
 
+    /** Sending, as the reader sees it: the button says so and the form is busy. */
+    const setBusy = (busy: boolean) => {
+      form?.setAttribute('aria-busy', String(busy));
+      if (!sendButton) return;
+      sendButton.disabled = busy;
+      sendButton.textContent = busy ? 'Sending…' : 'Send';
+    };
+
     for (const button of document.querySelectorAll<HTMLButtonElement>('[data-opener]')) {
       button.addEventListener('click', () => {
         if (!field) return;
@@ -412,29 +435,6 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
         field.focus();
       });
     }
-
-    /** Renders `[n]` as a link when n names a source, and as plain text when it does not. */
-    const withCitations = (text: string, sources: ChatSource[]) => {
-      const fragment = document.createDocumentFragment();
-      let last = 0;
-      for (const match of text.matchAll(/\[(\d+)\]/g)) {
-        const index = match.index ?? 0;
-        fragment.appendChild(text_(text.slice(last, index)));
-        const source = sources.find((entry) => entry.n === Number(match[1]));
-        if (source) {
-          const link = document.createElement('a');
-          link.className = 'text-accent';
-          link.textContent = match[0];
-          link.href = source.url;
-          fragment.appendChild(link);
-        } else {
-          fragment.appendChild(text_(match[0]));
-        }
-        last = index + match[0].length;
-      }
-      fragment.appendChild(text_(text.slice(last)));
-      return fragment;
-    };
 
     form?.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -449,15 +449,19 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
       const answer = agentTurn.querySelector<HTMLElement>('[data-turn-text]');
       const citations = agentTurn.querySelector<HTMLUListElement>('[data-turn-citations]');
       const failure = agentTurn.querySelector<HTMLElement>('[data-turn-error]');
-      if (!asked || !answer || !citations || !failure) return;
+      const pending = agentTurn.querySelector<HTMLElement>('[data-turn-pending]');
+      if (!asked || !answer || !citations || !failure || !pending) return;
 
       const tokenField = form.querySelector<HTMLInputElement>('[name="turnstile_response"]');
       const token = tokenField?.value ?? '';
       asked.textContent = question;
       transcript.appendChild(userTurn);
       transcript.appendChild(agentTurn);
+      // A long transcript would otherwise leave the new turn below the fold,
+      // which is the frozen page #403 exists to fix.
+      agentTurn.scrollIntoView({ block: 'nearest' });
       field.value = '';
-      if (sendButton) sendButton.disabled = true;
+      setBusy(true);
 
       // Counted here rather than on a successful answer, because the bucket is
       // spent by the attempt: workers/mcp/src/chat.ts takes its token before it
@@ -473,7 +477,17 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
       };
 
       let sources: ChatSource[] = [];
-      let text = '';
+      // Model text not yet split into finished blocks (src/lib/chat/reveal.ts).
+      let buffer = '';
+      let shown = false;
+      const pacer = createPacer((source) => {
+        const block = parseBlock(source);
+        if (block === null) return;
+        for (const added of appendBlock(answer, block, sources))
+          added.classList.add('chat-block-in');
+        shown = true;
+      });
+
       try {
         const response = await fetch('/chat/send', {
           method: 'POST',
@@ -483,35 +497,25 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
         const reader = response.body?.getReader();
         if (!reader) throw new Error('no body');
         const decoder = new TextDecoder();
-        let buffer = '';
+        let frameBuffer = '';
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const frames = buffer.split('\n\n');
-          buffer = frames.pop() ?? '';
+          frameBuffer += decoder.decode(value, { stream: true });
+          const frames = frameBuffer.split('\n\n');
+          frameBuffer = frames.pop() ?? '';
           for (const frame of frames) {
             const name = frame.match(/^event: (.+)$/m)?.[1];
             const data = JSON.parse(frame.match(/^data: (.+)$/m)?.[1] ?? '{}');
             if (name === 'sources') {
+              // Stored, not drawn. The chips close the answer once its last
+              // block is shown (#403), and the inline [n] links resolve
+              // against this list as each block appears.
               sources = data.sources ?? [];
-              for (const source of sources) {
-                const item = cloneTemplate('[data-citation-template]');
-                const chip = item?.querySelector<HTMLAnchorElement>('[data-citation]');
-                if (!item || !chip) continue;
-                // `exact: false` means the passage is the opening of the
-                // document rather than the part that answered, and the chip
-                // says so rather than implying a precision the retrieval did
-                // not have.
-                chip.textContent = source.exact
-                  ? `[${source.n}] ${source.title}`
-                  : `[${source.n}] ${source.title} · opening`;
-                chip.href = source.url;
-                citations.appendChild(item);
-              }
             } else if (name === 'delta') {
-              text += data.text;
-              answer.replaceChildren(withCitations(text, sources));
+              const split = splitBlocks(buffer + data.text);
+              buffer = split.rest;
+              for (const block of split.blocks) pacer.push(block);
             } else if (name === 'error') {
               fail(
                 CHAT_ERROR_COPY[data.code as keyof typeof CHAT_ERROR_COPY] ??
@@ -523,10 +527,38 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
       } catch {
         fail(CHAT_ERROR_COPY.unreachable);
       } finally {
+        // The unfinished tail is a block once the stream has ended.
+        if (buffer.trim() !== '') pacer.push(buffer);
+        buffer = '';
+        // A failed turn shows what arrived at once rather than making the
+        // reader wait out the pacing to reach the error sentence.
+        if (failure.hidden) await pacer.idle();
+        else pacer.flush();
+        pending.hidden = true;
+
+        if (shown) {
+          for (const source of sources) {
+            const item = cloneTemplate('[data-citation-template]');
+            const chip = item?.querySelector<HTMLAnchorElement>('[data-citation]');
+            if (!item || !chip) continue;
+            // `exact: false` means the passage is the opening of the
+            // document rather than the part that answered, and the chip
+            // says so rather than implying a precision the retrieval did
+            // not have.
+            chip.textContent = source.exact
+              ? `[${source.n}] ${source.title}`
+              : `[${source.n}] ${source.title} · opening`;
+            chip.href = source.url;
+            citations.appendChild(item);
+          }
+        }
+
         // A STREAM THAT ENDED HAVING SAID NOTHING leaves an accent rule with no
-        // words beside it, which is the one dead end this page is least allowed
-        // to produce. `no-answer` is the copy that already exists for exactly
-        // that, so this renders a sentence rather than inventing one.
+        // words beside it once the dots are gone, which is the one dead end
+        // this page is least allowed to produce. `no-answer` is the copy that
+        // already exists for exactly that, so this renders a sentence rather
+        // than inventing one. `shown` rather than "any text arrived", so a
+        // stream of whitespace alone is caught too (#403).
         //
         // Guarded on `failure.hidden` so it cannot overwrite a specific code
         // that did arrive, and deliberately NOT written as an `response.ok`
@@ -539,8 +571,10 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
         // service binding at all: the fetch resolved, no frame parsed, and the
         // turn rendered empty. Pre-existing rather than new -- the transcript
         // this replaced had the same hole and the same silence.
-        if (text === '' && failure.hidden) fail(CHAT_ERROR_COPY['no-answer']);
-        if (sendButton) sendButton.disabled = false;
+        if (!shown && failure.hidden) fail(CHAT_ERROR_COPY['no-answer']);
+        // Re-enabled only now, after the last block, so a second question
+        // cannot start while the first answer is still appearing.
+        setBusy(false);
         // A Turnstile response is single-use, so the widget is re-run for the
         // next message. This is what makes "a bot check on every message"
         // affordable instead of needing a session credential to carry the first
