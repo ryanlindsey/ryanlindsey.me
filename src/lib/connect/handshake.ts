@@ -49,7 +49,7 @@ export interface ServerHello {
 }
 
 /**
- * Candidate JSON messages in a response body. The endpoint answers with SSE
+ * The JSON messages a response body might hold. The endpoint answers with SSE
  * today (`event: message` / `data: {...}`), and a Streamable HTTP server may
  * answer with plain JSON instead, so both are read. One `data:` line per
  * message is what this server sends; a message split across several `data:`
