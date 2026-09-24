@@ -195,7 +195,7 @@ test('the build leaves one 1200 by 630 PNG per card and no manifest', () => {
       name.endsWith('.mdx'),
     ).length;
   // Home, chat, ops, connect and the résumé, plus one per entry, drafts included.
-  expect(cards).toHaveLength(5 +entries('posts') + entries('caseStudies'));
+  expect(cards).toHaveLength(5 + entries('posts') + entries('caseStudies'));
   for (const card of cards) {
     expect(card.pathname).toMatch(/\.[0-9a-f]{8}\.png$/);
     expect(pngSize(readFileSync(card)), card.pathname).toEqual([1200, 630]);

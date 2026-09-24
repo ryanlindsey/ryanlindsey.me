@@ -6,13 +6,15 @@
  * WHY THE ANSWER IS REDUCED RATHER THAN RENDERED. Measured 2026-09-24 against
  * production: the `initialize` result's `instructions` field names and
  * describes every public tool. /connect deliberately publishes no tool
- * catalogue, so `parseInitialize` returns four fields and nothing else, and
+ * catalog, so `parseInitialize` returns four fields and nothing else, and
  * nothing downstream of it can render what it never received.
  *
  * `initialize` reaches neither `checkLimit` nor `recordToolCall`
  * (workers/mcp/src/define.ts wraps tools, not the handshake), so this spends
- * no inference and writes no row. That is also why the button carries no
- * Turnstile check: see #395's Decisions.
+ * no inference and writes no tool-call row, which is also why the button
+ * carries no Turnstile check: see #395's Decisions. It does still write the
+ * one Analytics Engine datapoint every request writes
+ * (src/lib/agent-intel/record.ts).
  */
 
 /** Requested, not displayed: the page shows whatever version the server answered. */

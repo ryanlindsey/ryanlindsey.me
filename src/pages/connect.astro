@@ -1,0 +1,332 @@
+---
+import Shell from '../layouts/Shell.astro';
+import { MCP_ENDPOINT } from '../lib/nav';
+import { buildInitialize } from '../lib/connect/handshake';
+import { SETUP_CLIENTS } from '../lib/connect/snippets';
+import { PRIVATE_ACCESS_TEXT } from '../lib/discovery/auth-doc';
+import { CONNECT_CARD } from '../lib/og/cards';
+
+/**
+ * How to connect an MCP client (#395). The person-facing address for the
+ * endpoint: a browser GET on MCP_ENDPOINT answers 405 with JSON (measured
+ * 2026-09-24), which is why the footer and /chat link here instead.
+ *
+ * NO TOOL IS NAMED ON THIS PAGE, and tests/connect-pages.test.ts holds that
+ * against the page and every script it loads. The set moves, and finding it is
+ * the reader's client's job. The handshake below receives the tool list in
+ * `instructions` and drops it: see src/lib/connect/handshake.ts.
+ *
+ * Prerendered. Nothing here depends on the request, and the one runtime act,
+ * the handshake, runs in the reader's browser against the endpoint directly,
+ * because that is the address they will paste. It carries no Turnstile check
+ * for the reasons #395 records: the endpoint is public, an MCP client cannot
+ * solve a challenge, and `initialize` spends nothing.
+ *
+ * Built on /chat's grid and its two turn shapes, so the request is a box and
+ * the server's answer is an accent rule.
+ */
+
+const request = JSON.stringify(buildInitialize(), null, 2);
+const curl = SETUP_CLIENTS.find((client) => client.id === 'http')!.anonymous.command!;
+
+const DESCRIBED_BY = [
+  { href: '/.well-known/mcp/server-card.json', label: 'Server card' },
+  { href: '/auth.md', label: 'auth.md' },
+  { href: '/.well-known/oauth-protected-resource', label: 'Protected resource metadata' },
+];
+
+const RAIL_BLOCK = 'border-t border-rule pt-[18px]';
+const RAIL_HEADING = 'font-mono text-micro uppercase text-ink-muted';
+const CODE =
+  'overflow-x-auto whitespace-pre border border-rule bg-surface-raised px-[18px] py-[14px] font-mono text-small text-ink';
+const COPY =
+  'shrink-0 border border-rule px-[9px] py-[5px] font-mono text-micro uppercase text-ink-muted';
+---
+
+<Shell
+  title="Connect"
+  description="Connect an MCP client to Ryan Lindsey's published writing, résumé and case studies: one endpoint, no account for the public tier."
+  ogCard={CONNECT_CARD}
+>
+  {/*
+    /chat's three grid items, in /chat's source order: masthead, rail, body.
+    A phone reads the headline, then the address and what it serves, then the
+    instructions; `lg` puts the rail back on the right.
+
+    `grid-cols-[minmax(0,1fr)]` below `lg` is the one departure from /chat's
+    grid, and /chat does not need it only because it has no <pre>. Without an
+    explicit column the phone layout gets one implicit `auto` track, which
+    grows to the longest `whitespace-pre` command: measured at 808px of page in
+    a 500px window. The zero minimum is what lets each block scroll inside
+    itself instead.
+  */}
+  <div class="mx-auto grid w-full max-w-[1440px] grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_320px]">
+    <div class="px-5 pt-10 lg:col-start-1 lg:row-start-1 lg:px-10 lg:pt-11">
+      <h1 class="font-display text-banner text-ink">Connect</h1>
+      <p class="mt-3 max-w-[64ch] text-ink-muted">
+        Everything this site publishes is also served over MCP, at one address. The public tier
+        needs no account and no key. What the server can do is left for your client to find out once
+        it connects.
+      </p>
+    </div>
+
+    <aside
+      data-connect-rail
+      class="mt-9 flex flex-col gap-[26px] border-t border-rule px-5 py-9 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0 lg:border-l lg:border-t-0 lg:px-7 lg:py-11"
+    >
+      <div>
+        <p class={RAIL_HEADING}>Endpoint</p>
+        <div class="mt-3 flex items-center gap-3">
+          <code id="endpoint" class="break-all font-mono text-small text-ink">
+            {MCP_ENDPOINT}
+          </code>
+          <button type="button" class={COPY} data-copy="endpoint">
+            Copy
+          </button>
+        </div>
+      </div>
+
+      <div class={RAIL_BLOCK}>
+        <p class={RAIL_HEADING}>What it reads</p>
+        <p class="mt-3 text-small text-ink-muted">
+          Published writing, case studies and the résumé. No account, no cookie.
+        </p>
+      </div>
+
+      <div class={RAIL_BLOCK}>
+        <p class={RAIL_HEADING}>A private tier</p>
+        <p class="mt-3 text-small text-ink-muted">{PRIVATE_ACCESS_TEXT}</p>
+      </div>
+
+      <div class={RAIL_BLOCK}>
+        <p class={RAIL_HEADING}>Described by</p>
+        <div class="mt-3 flex flex-col gap-[9px]">
+          {DESCRIBED_BY.map((link) => (
+            <a class="font-mono text-small text-ink" href={link.href}>
+              {link.label}
+            </a>
+          ))}
+        </div>
+      </div>
+
+      {/*
+        NOT "NOTHING IS RECORDED", which #395 drafted and which is false: every
+        request that reaches either Worker writes one Analytics Engine
+        datapoint (src/lib/agent-intel/record.ts), the handshake included. What
+        holds is that the row carries only bounded classes, the promise
+        /ai-policy publishes, and that `initialize` never reaches
+        `recordToolCall` or spends inference.
+      */}
+      <p class="mt-auto pt-6 font-mono text-micro uppercase text-ink-muted">
+        The handshake is not a tool call. It spends no inference, and it is counted like a page
+        view, with nothing that identifies you.
+      </p>
+    </aside>
+
+    <div class="flex flex-col gap-12 px-5 pb-12 pt-8 lg:col-start-1 lg:row-start-2 lg:px-10">
+      <section aria-labelledby="handshake" data-handshake class="flex flex-col gap-6">
+        <div>
+          <h2 id="handshake" class="font-mono text-micro uppercase text-ink-muted">
+            Handshake
+          </h2>
+          <p class="mt-3 max-w-[64ch] text-ink-muted">
+            This is the first message every client sends. Press the button and this page sends it
+            for real, from your browser, to the endpoint on this page.
+          </p>
+        </div>
+
+        <div class="flex justify-end">
+          <div class="min-w-0 max-w-[64ch] border border-rule bg-surface-raised px-[18px] py-[14px]">
+            <pre class="overflow-x-auto font-mono text-small text-ink">{request}</pre>
+            <button
+              type="button"
+              class="mt-4 bg-accent-ground px-4 py-[10px] font-mono text-small uppercase text-accent-on disabled:opacity-60"
+              data-say-hello
+            >
+              Say hello
+            </button>
+          </div>
+        </div>
+
+        <div data-hello-slot aria-live="polite"></div>
+
+        <template data-hello-template>
+          <div class="max-w-[64ch] border-l-2 border-accent pl-5">
+            <dl class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 font-mono text-small">
+              <dt class="text-ink-muted">server</dt>
+              <dd class="text-ink" data-hello="name"></dd>
+              <dt class="text-ink-muted">version</dt>
+              <dd class="text-ink" data-numeric data-hello="version"></dd>
+              <dt class="text-ink-muted">protocol</dt>
+              <dd class="text-ink" data-hello="protocolVersion"></dd>
+              <dt class="text-ink-muted">answered in</dt>
+              <dd class="text-ink" data-numeric data-hello="elapsed"></dd>
+            </dl>
+            <ul class="mt-4 flex flex-wrap gap-2" data-hello="capabilities"></ul>
+            <p class="mt-4 text-small text-ink-muted">
+              It lists its tools to your client, not to this page.
+            </p>
+          </div>
+        </template>
+
+        <template data-capability-template>
+          <li class="border border-rule px-[9px] py-[5px] font-mono text-micro uppercase text-ink-muted"></li>
+        </template>
+
+        <template data-failure-template>
+          <p class="max-w-[64ch] border-l-2 border-accent pl-5 text-small text-accent"></p>
+        </template>
+
+        <noscript>
+          <p class="max-w-[64ch] border-l-2 border-accent pl-5 font-mono text-small text-ink">
+            The button needs JavaScript. The same request from a terminal:
+          </p>
+          <pre class={`mt-3 ${CODE}`}>{curl}</pre>
+        </noscript>
+      </section>
+
+      <section aria-labelledby="setup" class="flex flex-col gap-10">
+        <h2 id="setup" class="font-display text-section text-ink">
+          Set up a client
+        </h2>
+        {SETUP_CLIENTS.map((client) => (
+          <div
+            data-setup={client.id}
+            class="flex max-w-[72ch] flex-col gap-4 border-t border-rule pt-6"
+          >
+            <h3 class="font-mono text-small uppercase text-ink">{client.label}</h3>
+            {client.anonymous.steps.map((step) => (
+              <p class="text-ink-muted">{step}</p>
+            ))}
+            {client.anonymous.command && (
+              <div class="flex items-start gap-3">
+                <pre
+                  id={`${client.id}-command`}
+                  class={`min-w-0 flex-1 ${CODE}`}
+                  set:text={client.anonymous.command}
+                ></pre>
+                <button type="button" class={COPY} data-copy={`${client.id}-command`}>
+                  Copy
+                </button>
+              </div>
+            )}
+            <p class="mt-2 font-mono text-micro uppercase text-ink-muted">With a token</p>
+            {client.withToken.steps.map((step) => (
+              <p class="text-small text-ink-muted">{step}</p>
+            ))}
+            {client.withToken.command && (
+              <div class="flex items-start gap-3">
+                <pre
+                  id={`${client.id}-token-command`}
+                  class={`min-w-0 flex-1 ${CODE}`}
+                  set:text={client.withToken.command}
+                ></pre>
+                <button type="button" class={COPY} data-copy={`${client.id}-token-command`}>
+                  Copy
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </section>
+    </div>
+  </div>
+
+  <script>
+    import {
+      buildInitialize,
+      CONNECT_ERROR_COPY,
+      HANDSHAKE_COOLDOWN_MS,
+      HANDSHAKE_TIMEOUT_MS,
+      parseInitialize,
+      type HandshakeFailure,
+      type ServerHello,
+    } from '../lib/connect/handshake';
+    import { MCP_ENDPOINT } from '../lib/nav';
+
+    // `appendChild`, never `append`: worker-configuration.d.ts merges an
+    // HTMLRewriter `Element.append` into the DOM's, and /chat's script records
+    // what that breaks under `astro check`.
+
+    const button = document.querySelector<HTMLButtonElement>('[data-say-hello]');
+    const slot = document.querySelector<HTMLElement>('[data-hello-slot]');
+
+    const cloneTemplate = (selector: string): HTMLElement | null => {
+      const node = document.querySelector<HTMLTemplateElement>(selector)?.content.firstElementChild;
+      return node ? (node.cloneNode(true) as HTMLElement) : null;
+    };
+
+    const renderHello = (hello: ServerHello, elapsed: number) => {
+      const turn = cloneTemplate('[data-hello-template]');
+      if (!turn || !slot) return;
+      const field = (key: string) => turn.querySelector<HTMLElement>(`[data-hello="${key}"]`);
+      field('name')!.textContent = hello.name;
+      field('version')!.textContent = hello.version;
+      field('protocolVersion')!.textContent = hello.protocolVersion;
+      field('elapsed')!.textContent = `${Math.round(elapsed)} ms`;
+      const chips = field('capabilities')!;
+      for (const capability of hello.capabilities) {
+        const chip = cloneTemplate('[data-capability-template]');
+        if (!chip) continue;
+        chip.textContent = capability;
+        chips.appendChild(chip);
+      }
+      slot.replaceChildren(turn);
+    };
+
+    const renderFailure = (failure: HandshakeFailure) => {
+      const turn = cloneTemplate('[data-failure-template]');
+      if (!turn || !slot) return;
+      turn.textContent = CONNECT_ERROR_COPY[failure];
+      slot.replaceChildren(turn);
+    };
+
+    button?.addEventListener('click', async () => {
+      button.disabled = true;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), HANDSHAKE_TIMEOUT_MS);
+      const started = performance.now();
+      try {
+        const response = await fetch(MCP_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            accept: 'application/json, text/event-stream',
+          },
+          body: JSON.stringify(buildInitialize()),
+          signal: controller.signal,
+        });
+        const body = await response.text();
+        const elapsed = performance.now() - started;
+        const hello = parseInitialize(body);
+        if (hello) renderHello(hello, elapsed);
+        else renderFailure('unexpected');
+      } catch {
+        renderFailure(controller.signal.aborted ? 'timeout' : 'unreachable');
+      } finally {
+        clearTimeout(timer);
+        setTimeout(() => (button.disabled = false), HANDSHAKE_COOLDOWN_MS);
+      }
+    });
+
+    // Copy buttons. The clipboard API is missing on an insecure origin and can
+    // be refused by permissions, so the fallback selects the text and leaves
+    // the keystroke to the reader rather than failing silently.
+    for (const copy of document.querySelectorAll<HTMLButtonElement>('[data-copy]')) {
+      copy.addEventListener('click', async () => {
+        const target = document.getElementById(copy.dataset.copy ?? '');
+        if (!target) return;
+        try {
+          await navigator.clipboard.writeText(target.textContent ?? '');
+          copy.textContent = 'Copied';
+          setTimeout(() => (copy.textContent = 'Copy'), 2000);
+        } catch {
+          const range = document.createRange();
+          range.selectNodeContents(target);
+          window.getSelection()?.removeAllRanges();
+          window.getSelection()?.addRange(range);
+        }
+      });
+    }
+  </script>
+</Shell>
