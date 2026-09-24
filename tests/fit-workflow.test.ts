@@ -158,6 +158,12 @@ async function settled(instance: {
  * to completion -- refused by the engine, the same as every passing run --
  * with `get` simply not seeing it yet. No row at all reads as `missing`
  * rather than throwing a second error out of this one.
+ *
+ * PLACED 2026-09-24, and it was `failed`/`errored`: `create` refused every
+ * report id starting with `-`, one in sixty-four, as "Workflow instance has
+ * invalid id". The race above was never the cause, and no deadline could have
+ * helped. `newReportId` no longer mints those ids (src/lib/fit/report-id.ts);
+ * the patience stays because it costs nothing on a run that passes.
  */
 async function instanceOf(id: string): Promise<WorkflowInstance> {
   const deadline = Date.now() + 20_000;
