@@ -3,7 +3,6 @@ import Shell from '../layouts/Shell.astro';
 import { MCP_ENDPOINT } from '../lib/nav';
 import { buildInitialize } from '../lib/connect/handshake';
 import { SETUP_CLIENTS } from '../lib/connect/snippets';
-import { PRIVATE_ACCESS_TEXT } from '../lib/discovery/auth-doc';
 import { CONNECT_CARD } from '../lib/og/cards';
 
 /**
@@ -26,6 +25,17 @@ import { CONNECT_CARD } from '../lib/og/cards';
  * Built on /chat's grid and its two turn shapes, so the request is a box and
  * the server's answer is an accent rule.
  */
+
+/**
+ * NOT `PRIVATE_ACCESS_TEXT`, which #395 specified verbatim here. That sentence
+ * stays the one `request_private_access` returns and /auth.md publishes, and
+ * tests/mcp-tools.test.ts still asserts it whole; this rail is page copy for a
+ * person and was allowed to depart from it during review of #398. It is held
+ * to the same rule that sentence was: tests/connect-pages.test.ts runs every
+ * pattern in BANNED_PATTERNS over the rendered page.
+ */
+const PRIVATE_TIER =
+  'A few things are shared on request rather than published: reference contacts, engagement logistics, and fuller versions of some case studies. Email hello@ryanlindsey.me with who you are and what you are evaluating, and if it fits, Ryan will send you a token that expires. Everything published works without one.';
 
 const request = JSON.stringify(buildInitialize(), null, 2);
 const curl = SETUP_CLIENTS.find((client) => client.id === 'http')!.anonymous.command!;
@@ -65,9 +75,10 @@ const COPY =
     <div class="px-5 pt-10 lg:col-start-1 lg:row-start-1 lg:px-10 lg:pt-11">
       <h1 class="font-display text-banner text-ink">Connect</h1>
       <p class="mt-3 max-w-[64ch] text-ink-muted">
-        Everything this site publishes is also served over MCP, at one address. The public tier
-        needs no account and no key. What the server can do is left for your client to find out once
-        it connects.
+        The writing, case studies and résumé on this site are also served over MCP, the Model
+        Context Protocol that AI clients use to call outside tools. Point a client at one address
+        and it can read and search all of it for you, with no account and no key. Your client asks
+        the server what it offers when it connects. Enjoy!
       </p>
     </div>
 
@@ -77,10 +88,16 @@ const COPY =
     >
       <div>
         <p class={RAIL_HEADING}>Endpoint</p>
-        <div class="mt-3 flex items-center gap-3">
-          <code id="endpoint" class="break-all font-mono text-small text-ink">
-            {MCP_ENDPOINT}
-          </code>
+        {/*
+          The button sits under the address rather than beside it: at the
+          rail's 320px the two shared one line and the URL broke mid-host.
+        */}
+        <div class="mt-3 flex flex-col items-start gap-3">
+          <code
+            id="endpoint"
+            class="break-all font-mono text-small text-ink"
+            set:text={MCP_ENDPOINT}
+          />
           <button type="button" class={COPY} data-copy="endpoint">
             Copy
           </button>
@@ -90,13 +107,13 @@ const COPY =
       <div class={RAIL_BLOCK}>
         <p class={RAIL_HEADING}>What it reads</p>
         <p class="mt-3 text-small text-ink-muted">
-          Published writing, case studies and the résumé. No account, no cookie.
+          Published writing, case studies and the résumé.
         </p>
       </div>
 
       <div class={RAIL_BLOCK}>
         <p class={RAIL_HEADING}>A private tier</p>
-        <p class="mt-3 text-small text-ink-muted">{PRIVATE_ACCESS_TEXT}</p>
+        <p class="mt-3 text-pretty text-small text-ink-muted">{PRIVATE_TIER}</p>
       </div>
 
       <div class={RAIL_BLOCK}>
@@ -143,20 +160,38 @@ const COPY =
           </p>
         </div>
 
-        <div class="flex justify-end">
-          <div class="min-w-0 max-w-[64ch] border border-rule bg-surface-raised px-[18px] py-[14px]">
-            <pre class="overflow-x-auto font-mono text-small text-ink">{request}</pre>
-            <button
-              type="button"
-              class="mt-4 bg-accent-ground px-4 py-[10px] font-mono text-small uppercase text-accent-on disabled:opacity-60"
-              data-say-hello
-            >
-              Say hello
-            </button>
+        {/*
+          Request and reply side by side from `lg`, stacked below it. An
+          earlier version right-aligned the request the way /chat aligns a
+          user turn and let the reply arrive on a new row underneath, which
+          read as two unrelated blocks on a page with only one exchange. The
+          reply column holds a placeholder until the first press so the
+          layout does not move when the answer lands.
+        */}
+        <div class="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-2 lg:gap-8">
+          <div class="min-w-0">
+            <p class="font-mono text-micro uppercase text-ink-muted">Request</p>
+            <div class="mt-3 border border-rule bg-surface-raised px-[18px] py-[14px]">
+              <pre class="overflow-x-auto font-mono text-small text-ink">{request}</pre>
+              <button
+                type="button"
+                class="mt-4 bg-accent-ground px-4 py-[10px] font-mono text-small uppercase text-accent-on disabled:opacity-60"
+                data-say-hello
+              >
+                Say hello
+              </button>
+            </div>
+          </div>
+
+          <div class="min-w-0">
+            <p class="font-mono text-micro uppercase text-ink-muted">Reply</p>
+            <div class="mt-3" data-hello-slot aria-live="polite">
+              <p class="border-l-2 border-rule pl-5 text-small text-ink-muted">
+                Press Say hello and the reply appears here.
+              </p>
+            </div>
           </div>
         </div>
-
-        <div data-hello-slot aria-live="polite"></div>
 
         <template data-hello-template>
           <div class="max-w-[64ch] border-l-2 border-accent pl-5">
@@ -172,7 +207,7 @@ const COPY =
             </dl>
             <ul class="mt-4 flex flex-wrap gap-2" data-hello="capabilities"></ul>
             <p class="mt-4 text-small text-ink-muted">
-              It lists its tools to your client, not to this page.
+              The reply also describes the server's tools. Your client reads them when it connects.
             </p>
           </div>
         </template>

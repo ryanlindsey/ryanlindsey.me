@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest';
 import { buildInitialize } from '../src/lib/connect/handshake';
 import { SETUP_CLIENTS, TOKEN_PLACEHOLDER } from '../src/lib/connect/snippets';
-import { buildAuthDoc, PRIVATE_ACCESS_TEXT } from '../src/lib/discovery/auth-doc';
 import { MCP_ENDPOINT } from '../src/lib/nav';
 
 const variants = SETUP_CLIENTS.flatMap((client) => [client.anonymous, client.withToken]);
@@ -36,8 +35,4 @@ test('the raw HTTP snippet sends exactly the handshake the button sends', () => 
 test('Claude Code adds the server over HTTP', () => {
   const add = SETUP_CLIENTS.find((client) => client.id === 'claude-code')!.anonymous.command;
   expect(add).toBe(`claude mcp add --transport http ryanlindsey-me ${MCP_ENDPOINT}`);
-});
-
-test('the private-tier sentence is the one /auth.md publishes', () => {
-  expect(buildAuthDoc()).toContain(PRIVATE_ACCESS_TEXT);
 });

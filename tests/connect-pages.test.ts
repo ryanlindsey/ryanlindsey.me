@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
-import { PRIVATE_ACCESS_TEXT } from '../src/lib/discovery/auth-doc';
 import { MCP_ENDPOINT } from '../src/lib/nav';
 import { GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
 import { PUBLIC_TOOL_NAMES } from '../workers/mcp/src/tools';
@@ -63,9 +62,16 @@ describe('GET /connect/', () => {
     expect(page).toContain('Bearer &lt;token&gt;');
   });
 
-  test('the private tier is described in the reviewed sentence', async () => {
-    const page = await html('/connect/');
-    expect(page).toContain(PRIVATE_ACCESS_TEXT);
+  // The rail's private-tier copy is its own, not PRIVATE_ACCESS_TEXT (see the
+  // page's PRIVATE_TIER comment), so this asserts what a reader must be able to
+  // act on rather than the wording: where to ask. The banned-pattern test
+  // below holds the wording to the same rule as the reviewed sentence.
+  test('the private tier says where to ask for access', async () => {
+    const rail = await html('/connect/').then((page) =>
+      page.slice(page.indexOf('data-connect-rail'), page.indexOf('</aside>')),
+    );
+    expect(rail).toContain('A private tier');
+    expect(rail).toContain('hello@ryanlindsey.me');
   });
 
   test('both turns are templates with /chat’s shapes, and the request is rendered without JavaScript', async () => {
