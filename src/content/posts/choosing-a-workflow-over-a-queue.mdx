@@ -214,4 +214,4 @@ If you adopt Workflows, these are the three defaults I would override before the
 
 1. **Set retries on every step, deliberately.** The default is five retries with exponential backoff, and it stacks silently on whatever retries your client and your gateway already make. For a step that calls a paid model, the right number is usually zero.
 2. **Treat params and step results as a retained store, and set its retention.** Keep credentials and user input out of both, read sensitive inputs outside any step, and set `default_retention` to match the shortest window you have promised anywhere else.
-3. **Give "did not run" its own recorded state.** A background job that fails quietly leaves the last good result on display, and **a stale pass is worse than a visible failure.**
+3. **Give "did not run" its own recorded state.** A background job that fails quietly leaves the last good result on display.
