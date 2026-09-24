@@ -24,6 +24,8 @@ The corrections Ryan makes most often to a drafted post, in the order they cost 
 
 **Abstraction.** Look for metaphors and elegant phrasings: "a repository that moved underneath it", "one credential projected twice", "did not survive contact with". Rewrite in plain computer-science terms, the way it would be said at a whiteboard. "This sounds like AI-speak, not something a human would write."
 
+**Clever or vague headings.** Look at every `##` heading. A heading that needs its section to explain it, such as "What a single checkout cannot see" or "What the model costs in plumbing", becomes the section's claim in plain words: "The plan lives on the board, where every agent can read it". "vague and too clever."
+
 **Absolutes that do not hold.** Look for "never", "impossible", "cannot", "forever", "the only place", "no path anywhere". Check each against the facts and narrow it to what holds: a one-year cache is not "forever".
 
 **Trailing clauses.** Look for a ", because…" or ", which…" tail at the end of a sentence. Cut it when it restates the sentence or generalizes past the evidence. Keep it when it carries the mechanism a reader would ask about.
