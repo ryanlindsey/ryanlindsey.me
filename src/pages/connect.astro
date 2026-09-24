@@ -9,7 +9,8 @@ import { CONNECT_CARD } from '../lib/og/cards';
 /**
  * How to connect an MCP client (#395). The person-facing address for the
  * endpoint: a browser GET on MCP_ENDPOINT answers 405 with JSON (measured
- * 2026-09-24), which is why the footer and /chat link here instead.
+ * 2026-09-24), which is why the footer and the mobile strip link here instead,
+ * and /chat's rail is to follow (#397).
  *
  * NO TOOL IS NAMED ON THIS PAGE, and tests/connect-pages.test.ts holds that
  * against the page and every script it loads. The set moves, and finding it is
@@ -110,16 +111,23 @@ const COPY =
       </div>
 
       {/*
-        NOT "NOTHING IS RECORDED", which #395 drafted and which is false: every
-        request that reaches either Worker writes one Analytics Engine
-        datapoint (src/lib/agent-intel/record.ts), the handshake included. What
-        holds is that the row carries only bounded classes, the promise
+        NOT "NOTHING IS RECORDED", which #395 drafted and which is false: the
+        MCP Worker writes one Analytics Engine row for every direct request to
+        /mcp (workers/mcp/src/index.ts, the `recordAgentEvent` call at the end
+        of `fetch`), so the handshake writes one, and its CORS preflight writes
+        another on the first press. What holds is that the row carries only
+        the bounded classes src/lib/agent-intel/record.ts allows, the promise
         /ai-policy publishes, and that `initialize` never reaches
         `recordToolCall` or spends inference.
+
+        An earlier draft of this line said "counted like a page view", which
+        was wrong twice: /ops files the row under the `mcp` surface rather than
+        as a page view, and a view of this page is not counted at all, since
+        it is a prerendered asset outside `run_worker_first`.
       */}
       <p class="mt-auto pt-6 font-mono text-micro uppercase text-ink-muted">
-        The handshake is not a tool call. It spends no inference, and it is counted like a page
-        view, with nothing that identifies you.
+        The handshake is not a tool call. It spends no inference, and it is counted as a request to
+        the endpoint, with nothing that identifies you.
       </p>
     </aside>
 
@@ -286,6 +294,9 @@ const COPY =
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), HANDSHAKE_TIMEOUT_MS);
       const started = performance.now();
+      // Only the network half is inside the `try`, so a failure to render a
+      // reply cannot be reported to the reader as a server they cannot reach.
+      let body: string;
       try {
         const response = await fetch(MCP_ENDPOINT, {
           method: 'POST',
@@ -296,17 +307,18 @@ const COPY =
           body: JSON.stringify(buildInitialize()),
           signal: controller.signal,
         });
-        const body = await response.text();
-        const elapsed = performance.now() - started;
-        const hello = parseInitialize(body);
-        if (hello) renderHello(hello, elapsed);
-        else renderFailure('unexpected');
+        body = await response.text();
       } catch {
         renderFailure(controller.signal.aborted ? 'timeout' : 'unreachable');
+        return;
       } finally {
         clearTimeout(timer);
         setTimeout(() => (button.disabled = false), HANDSHAKE_COOLDOWN_MS);
       }
+      const elapsed = performance.now() - started;
+      const hello = parseInitialize(body);
+      if (hello) renderHello(hello, elapsed);
+      else renderFailure('unexpected');
     });
 
     // Copy buttons. The clipboard API is missing on an insecure origin and can

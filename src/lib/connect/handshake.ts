@@ -13,8 +13,10 @@
  * (workers/mcp/src/define.ts wraps tools, not the handshake), so this spends
  * no inference and writes no tool-call row, which is also why the button
  * carries no Turnstile check: see #395's Decisions. It does still write the
- * one Analytics Engine datapoint every request writes
- * (src/lib/agent-intel/record.ts).
+ * Analytics Engine row the MCP Worker writes for every direct request to /mcp
+ * (workers/mcp/src/index.ts), carrying only the bounded classes
+ * src/lib/agent-intel/record.ts allows; the CORS preflight on a first press
+ * writes a second.
  */
 
 /** Requested, not displayed: the page shows whatever version the server answered. */
