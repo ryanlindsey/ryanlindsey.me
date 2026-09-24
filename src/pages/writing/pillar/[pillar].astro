@@ -22,8 +22,8 @@ import { PILLAR_LABELS } from '../../../lib/pillars';
  *
  * PATHS COME FROM PILLAR_LABELS, NOT FROM THE POSTS. Every pillar gets a page
  * even when nothing is published under it, because the index renders a chip per
- * pillar and a chip that 404s is worse than one reading zero. 02 §2's pillars
- * are a fixed taxonomy; the index reports an empty one rather than hiding it.
+ * pillar and a chip that 404s is worse than one reading zero. The pillars are a
+ * declared taxonomy; the index reports an empty one rather than hiding it.
  */
 export const getStaticPaths = (async () =>
   Object.keys(PILLAR_LABELS).map((pillar) => ({ params: { pillar } }))) satisfies GetStaticPaths;

@@ -1101,13 +1101,15 @@ test('a filtered index serves only its own pillar, and still 200s', async () => 
 });
 
 test('a pillar with no published posts keeps its chip, its route and an honest empty state', async () => {
-  // `org-scaling` has no published post today, and the design (1h) shows only
-  // pillars that do. The chips are generated from PILLAR_LABELS rather than
+  // `org-scaling` was the empty pillar from launch until 2026-09-23, when it
+  // left the taxonomy. No pillar is empty today, so this loop runs over
+  // nothing until one is: a pillar whose only post is a draft, or whose last
+  // post is retired. The design (1h) shows only pillars with posts. The chips are generated from PILLAR_LABELS rather than
   // from the corpus, so an empty pillar still gets a chip -- which makes its
   // route a real address that has to answer rather than 404. It answers with
   // the empty state, because a chip that links nowhere is worse than a chip
   // reading zero. Read off disk so this stops applying the day the pillar
-  // fills, rather than pinning `org-scaling` empty forever.
+  // fills, rather than pinning one pillar empty forever.
   const empty = Object.keys(PILLAR_LABELS).filter(
     (pillar) =>
       !CONTENT_ENTRIES.some((e) => e.section === 'writing' && !e.draft && e.pillar === pillar),
