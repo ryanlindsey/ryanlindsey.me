@@ -352,7 +352,7 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
 
   <script>
     import { CHAT_ERROR_COPY } from '../lib/chat/errors';
-    import { parseBlock } from '../lib/chat/markdown';
+    import { parseBlocks } from '../lib/chat/markdown';
     import { appendBlock, type ChatSource } from '../lib/chat/render';
     import { createPacer, splitBlocks } from '../lib/chat/reveal';
 
@@ -481,11 +481,11 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
       let buffer = '';
       let shown = false;
       const pacer = createPacer((source) => {
-        const block = parseBlock(source);
-        if (block === null) return;
-        for (const added of appendBlock(answer, block, sources))
-          added.classList.add('chat-block-in');
-        shown = true;
+        for (const block of parseBlocks(source)) {
+          for (const added of appendBlock(answer, block, sources))
+            added.classList.add('chat-block-in');
+          shown = true;
+        }
       });
 
       try {
@@ -517,6 +517,10 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
               buffer = split.rest;
               for (const block of split.blocks) pacer.push(block);
             } else if (name === 'error') {
+              // Pacing stops here rather than when the stream closes, so the
+              // error sentence never appears while earlier blocks are still
+              // trickling in above it.
+              pacer.flush();
               fail(
                 CHAT_ERROR_COPY[data.code as keyof typeof CHAT_ERROR_COPY] ??
                   CHAT_ERROR_COPY.unreachable,
@@ -527,59 +531,66 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
       } catch {
         fail(CHAT_ERROR_COPY.unreachable);
       } finally {
-        // The unfinished tail is a block once the stream has ended.
-        if (buffer.trim() !== '') pacer.push(buffer);
-        buffer = '';
-        // A failed turn shows what arrived at once rather than making the
-        // reader wait out the pacing to reach the error sentence.
-        if (failure.hidden) await pacer.idle();
-        else pacer.flush();
-        pending.hidden = true;
+        // NESTED so that nothing below can keep the composer locked: Send,
+        // `aria-busy` and the Turnstile reset are restored in the inner
+        // `finally` whatever happens while the answer is finished off
+        // (final review, #403).
+        try {
+          // The unfinished tail is a block once the stream has ended.
+          if (buffer.trim() !== '') pacer.push(buffer);
+          buffer = '';
+          // A failed turn shows what arrived at once rather than making the
+          // reader wait out the pacing to reach the error sentence.
+          if (failure.hidden) await pacer.idle();
+          else pacer.flush();
+          pending.hidden = true;
 
-        if (shown) {
-          for (const source of sources) {
-            const item = cloneTemplate('[data-citation-template]');
-            const chip = item?.querySelector<HTMLAnchorElement>('[data-citation]');
-            if (!item || !chip) continue;
-            // `exact: false` means the passage is the opening of the
-            // document rather than the part that answered, and the chip
-            // says so rather than implying a precision the retrieval did
-            // not have.
-            chip.textContent = source.exact
-              ? `[${source.n}] ${source.title}`
-              : `[${source.n}] ${source.title} · opening`;
-            chip.href = source.url;
-            citations.appendChild(item);
+          if (shown) {
+            for (const source of sources) {
+              const item = cloneTemplate('[data-citation-template]');
+              const chip = item?.querySelector<HTMLAnchorElement>('[data-citation]');
+              if (!item || !chip) continue;
+              // `exact: false` means the passage is the opening of the
+              // document rather than the part that answered, and the chip
+              // says so rather than implying a precision the retrieval did
+              // not have.
+              chip.textContent = source.exact
+                ? `[${source.n}] ${source.title}`
+                : `[${source.n}] ${source.title} · opening`;
+              chip.href = source.url;
+              citations.appendChild(item);
+            }
           }
-        }
 
-        // A STREAM THAT ENDED HAVING SAID NOTHING leaves an accent rule with no
-        // words beside it once the dots are gone, which is the one dead end
-        // this page is least allowed to produce. `no-answer` is the copy that
-        // already exists for exactly that, so this renders a sentence rather
-        // than inventing one. `shown` rather than "any text arrived", so a
-        // stream of whitespace alone is caught too (#403).
-        //
-        // Guarded on `failure.hidden` so it cannot overwrite a specific code
-        // that did arrive, and deliberately NOT written as an `response.ok`
-        // check after the fetch: src/pages/chat/send.ts mirrors the MCP
-        // Worker's status onto its own response, so a non-2xx can still be
-        // carrying a real `error` frame, and refusing to read it would turn
-        // `rate-limited` into `unreachable` and tell the reader the wrong thing.
-        //
-        // Found by sending a message under `astro dev`, where there is no `MCP`
-        // service binding at all: the fetch resolved, no frame parsed, and the
-        // turn rendered empty. Pre-existing rather than new -- the transcript
-        // this replaced had the same hole and the same silence.
-        if (!shown && failure.hidden) fail(CHAT_ERROR_COPY['no-answer']);
-        // Re-enabled only now, after the last block, so a second question
-        // cannot start while the first answer is still appearing.
-        setBusy(false);
-        // A Turnstile response is single-use, so the widget is re-run for the
-        // next message. This is what makes "a bot check on every message"
-        // affordable instead of needing a session credential to carry the first
-        // check forward.
-        window.turnstile?.reset();
+          // A STREAM THAT ENDED HAVING SAID NOTHING leaves an accent rule with no
+          // words beside it once the dots are gone, which is the one dead end
+          // this page is least allowed to produce. `no-answer` is the copy that
+          // already exists for exactly that, so this renders a sentence rather
+          // than inventing one. `shown` rather than "any text arrived", so a
+          // stream of whitespace alone is caught too (#403).
+          //
+          // Guarded on `failure.hidden` so it cannot overwrite a specific code
+          // that did arrive, and deliberately NOT written as an `response.ok`
+          // check after the fetch: src/pages/chat/send.ts mirrors the MCP
+          // Worker's status onto its own response, so a non-2xx can still be
+          // carrying a real `error` frame, and refusing to read it would turn
+          // `rate-limited` into `unreachable` and tell the reader the wrong thing.
+          //
+          // Found by sending a message under `astro dev`, where there is no `MCP`
+          // service binding at all: the fetch resolved, no frame parsed, and the
+          // turn rendered empty. Pre-existing rather than new -- the transcript
+          // this replaced had the same hole and the same silence.
+          if (!shown && failure.hidden) fail(CHAT_ERROR_COPY['no-answer']);
+        } finally {
+          // Re-enabled only now, after the last block, so a second question
+          // cannot start while the first answer is still appearing.
+          setBusy(false);
+          // A Turnstile response is single-use, so the widget is re-run for the
+          // next message. This is what makes "a bot check on every message"
+          // affordable instead of needing a session credential to carry the first
+          // check forward.
+          window.turnstile?.reset();
+        }
       }
     });
   </script>

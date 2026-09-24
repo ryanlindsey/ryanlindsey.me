@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { parseBlock, parseInline } from '../src/lib/chat/markdown';
+import { parseBlocks, parseInline } from '../src/lib/chat/markdown';
 
 describe('parseInline', () => {
   test('plain text is one text node', () => {
@@ -61,20 +61,20 @@ describe('parseInline', () => {
   });
 });
 
-describe('parseBlock', () => {
+describe('parseBlocks', () => {
   test('a blank block is nothing', () => {
-    expect(parseBlock('  \n ')).toBeNull();
+    expect(parseBlocks('  \n ')).toEqual([]);
   });
 
   test('a paragraph joins its lines with spaces', () => {
-    expect(parseBlock('one\ntwo')).toEqual({
+    expect(parseBlocks('one\ntwo')[0]).toEqual({
       kind: 'paragraph',
       children: [{ kind: 'text', text: 'one two' }],
     });
   });
 
   test('bulleted lines are a bulleted list', () => {
-    expect(parseBlock('- a\n* **b**')).toEqual({
+    expect(parseBlocks('- a\n* **b**')[0]).toEqual({
       kind: 'bullets',
       items: [
         [{ kind: 'text', text: 'a' }],
@@ -84,22 +84,31 @@ describe('parseBlock', () => {
   });
 
   test('numbered lines are a numbered list that keeps its start', () => {
-    expect(parseBlock('3. c\n4. d')).toEqual({
+    expect(parseBlocks('3. c\n4. d')[0]).toEqual({
       kind: 'numbered',
       start: 3,
       items: [[{ kind: 'text', text: 'c' }], [{ kind: 'text', text: 'd' }]],
     });
   });
 
-  test('a block mixing list and prose lines is a paragraph', () => {
-    expect(parseBlock('Two things:\n- a')?.kind).toBe('paragraph');
+  test('a sentence introducing a list is a paragraph followed by the list', () => {
+    // The commonest way a model writes a list: no blank line after the lead-in.
+    expect(parseBlocks('Here are two:\n- a\n- b')).toEqual([
+      { kind: 'paragraph', children: [{ kind: 'text', text: 'Here are two:' }] },
+      { kind: 'bullets', items: [[{ kind: 'text', text: 'a' }], [{ kind: 'text', text: 'b' }]] },
+    ]);
+  });
+
+  test('prose after a list line keeps the whole block a paragraph', () => {
+    expect(parseBlocks('- a\nthen prose').map((block) => block.kind)).toEqual(['paragraph']);
+    expect(parseBlocks('Lead:\n- a\nmore prose').map((block) => block.kind)).toEqual(['paragraph']);
   });
 
   test('headings, quotes and fences pass through as text', () => {
-    expect(parseBlock('## Heading')).toEqual({
+    expect(parseBlocks('## Heading')[0]).toEqual({
       kind: 'paragraph',
       children: [{ kind: 'text', text: '## Heading' }],
     });
-    expect(parseBlock('> quoted')?.kind).toBe('paragraph');
+    expect(parseBlocks('> quoted')[0]?.kind).toBe('paragraph');
   });
 });

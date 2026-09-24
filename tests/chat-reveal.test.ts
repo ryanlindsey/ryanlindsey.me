@@ -91,6 +91,42 @@ describe('createPacer', () => {
     expect(settled).toBe(true);
   });
 
+  test('a reveal that throws does not strand the queue or hang idle', async () => {
+    // idle() is awaited before the page re-enables Send, so a stranded queue
+    // would leave the composer disabled until a reload (final review, #403).
+    const shown: string[] = [];
+    const pacer = createPacer(
+      (block) => {
+        if (block === 'b') throw new Error('render failed');
+        shown.push(block);
+      },
+      () => Date.now(),
+    );
+    pacer.push('a');
+    pacer.push('b');
+    pacer.push('c');
+    const idle = pacer.idle();
+    await vi.advanceTimersByTimeAsync(5000);
+    await idle;
+    expect(shown).toEqual(['a', 'c']);
+  });
+
+  test('a reveal that throws during flush still shows the rest', () => {
+    const shown: string[] = [];
+    const pacer = createPacer(
+      (block) => {
+        if (block === 'b') throw new Error('render failed');
+        shown.push(block);
+      },
+      () => Date.now(),
+    );
+    pacer.push('a');
+    pacer.push('b');
+    pacer.push('c');
+    pacer.flush();
+    expect(shown).toEqual(['a', 'c']);
+  });
+
   test('idle on an empty pacer resolves at once', async () => {
     await expect(
       createPacer(

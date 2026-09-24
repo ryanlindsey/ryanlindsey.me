@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, test } from 'vitest';
-import { parseBlock } from '../src/lib/chat/markdown';
+import { parseBlocks } from '../src/lib/chat/markdown';
 import { appendBlock, type ChatSource } from '../src/lib/chat/render';
 
 const SOURCES: ChatSource[] = [
@@ -11,8 +11,7 @@ const SOURCES: ChatSource[] = [
 function render(...blocks: string[]): HTMLElement {
   const container = document.createElement('div');
   for (const source of blocks) {
-    const block = parseBlock(source);
-    if (block) appendBlock(container, block, SOURCES);
+    for (const block of parseBlocks(source)) appendBlock(container, block, SOURCES);
   }
   return container;
 }
@@ -82,9 +81,9 @@ describe('appendBlock', () => {
 
   test('returns what it added, so the caller can fade it in', () => {
     const container = document.createElement('div');
-    const first = appendBlock(container, parseBlock('- a')!, SOURCES);
+    const first = appendBlock(container, parseBlocks('- a')[0], SOURCES);
     expect(first.map((el) => el.tagName)).toEqual(['UL']);
-    const merged = appendBlock(container, parseBlock('- b')!, SOURCES);
+    const merged = appendBlock(container, parseBlocks('- b')[0], SOURCES);
     expect(merged.map((el) => el.tagName)).toEqual(['LI']);
   });
 });

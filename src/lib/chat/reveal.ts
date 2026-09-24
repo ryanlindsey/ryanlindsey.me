@@ -67,7 +67,14 @@ export function createPacer(
     const block = queue.shift();
     if (block === undefined) return;
     last = now();
-    reveal(block);
+    // A block that fails to render is dropped rather than allowed to throw
+    // out of a timer callback: that would strand the rest of the queue and
+    // never settle idle(), which the page awaits before it re-enables Send.
+    try {
+      reveal(block);
+    } catch (error) {
+      console.error(`chat: a block failed to render: ${String(error)}`);
+    }
   };
 
   const pump = () => {
