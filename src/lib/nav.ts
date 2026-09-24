@@ -83,9 +83,17 @@ export const MCP_ENDPOINT = 'https://mcp.ryanlindsey.me/mcp';
  * Feed twin, built by the same module (src/lib/feeds.ts) and still advertised
  * on every page by Base.astro's <link rel="alternate">, so it is reachable
  * without spending a fourth slot in a column the design sized at three.
+ *
+ * #395 moved the MCP entry off the endpoint and onto /connect. The paragraphs
+ * above were right about the address and wrong about the reader: this column
+ * is read by people, and a browser GET on the endpoint answers 405 with JSON
+ * (measured 2026-09-24). /connect publishes the address, with a copy button,
+ * beside how to use it. The link is internal now, so SiteFooter and MobileNav
+ * stop giving it `target="_blank"` through their `isExternal` checks without
+ * any change of their own.
  */
 export const AGENT_LINKS = [
   { href: '/llms.txt', label: 'llms.txt' },
-  { href: MCP_ENDPOINT, label: 'MCP' },
+  { href: '/connect', label: 'MCP' },
   { href: '/rss.xml', label: 'RSS' },
 ] as const;

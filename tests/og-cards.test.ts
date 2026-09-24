@@ -11,6 +11,7 @@ import { afterAll, beforeAll, expect, test } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import {
   CHAT_CARD,
+  CONNECT_CARD,
   HOME_CARD,
   OG_CARD_RENDER_FINGERPRINT,
   OPS_CARD,
@@ -84,7 +85,7 @@ test('a long title steps down, and never below the floor', () => {
   expect(TITLE_FLOOR).toBe(64);
   expect(titleSize(post('Short'))).toBe(84);
   expect(titleSize(post('x'.repeat(300)))).toBe(TITLE_FLOOR);
-  for (const card of [HOME_CARD, CHAT_CARD, OPS_CARD]) {
+  for (const card of [HOME_CARD, CHAT_CARD, OPS_CARD, CONNECT_CARD]) {
     expect(titleSize(card)).toBeGreaterThanOrEqual(TITLE_FLOOR);
   }
 });
@@ -193,8 +194,8 @@ test('the build leaves one 1200 by 630 PNG per card and no manifest', () => {
     readdirSync(new URL(`../src/content/${dir}/`, import.meta.url)).filter((name) =>
       name.endsWith('.mdx'),
     ).length;
-  // Home, chat, ops and the résumé, plus one per entry, drafts included.
-  expect(cards).toHaveLength(4 + entries('posts') + entries('caseStudies'));
+  // Home, chat, ops, connect and the résumé, plus one per entry, drafts included.
+  expect(cards).toHaveLength(5 + entries('posts') + entries('caseStudies'));
   for (const card of cards) {
     expect(card.pathname).toMatch(/\.[0-9a-f]{8}\.png$/);
     expect(pngSize(readFileSync(card)), card.pathname).toEqual([1200, 630]);
@@ -202,7 +203,7 @@ test('the build leaves one 1200 by 630 PNG per card and no manifest', () => {
 });
 
 test('the fixed cards are written where their pages will name them', async () => {
-  for (const card of [HOME_CARD, CHAT_CARD, OPS_CARD]) {
+  for (const card of [HOME_CARD, CHAT_CARD, OPS_CARD, CONNECT_CARD]) {
     expect(existsSync(new URL(`../dist/client${await cardPath(card)}`, import.meta.url))).toBe(
       true,
     );
@@ -225,6 +226,7 @@ test('a card is served for a year, and the manifest is not served at all', async
 test.each([
   ['/chat/', CHAT_CARD],
   ['/ops/', OPS_CARD],
+  ['/connect/', CONNECT_CARD],
   ['/search/', HOME_CARD],
   ['/writing/', HOME_CARD],
   ['/', HOME_CARD],

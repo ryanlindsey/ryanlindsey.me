@@ -3,6 +3,7 @@ import { getCollection } from 'astro:content';
 import { getResume } from '../../lib/resume-collection';
 import {
   CHAT_CARD,
+  CONNECT_CARD,
   HOME_CARD,
   OPS_CARD,
   cardPath,
@@ -26,6 +27,7 @@ export const GET: APIRoute = async () => {
     HOME_CARD,
     CHAT_CARD,
     OPS_CARD,
+    CONNECT_CARD,
     resumeCard(resume.basics),
     ...(await getCollection('posts')).map((entry) => contentCard('post', entry)),
     ...(await getCollection('caseStudies')).map((entry) => contentCard('case-study', entry)),

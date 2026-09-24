@@ -191,6 +191,19 @@
     text-rendering: optimizeLegibility;
   }
 
+  /*
+   * Tailwind v4's preflight gives <button> the browser's default cursor, where
+   * v3's gave it `pointer`, and no button on this site set one of its own, so
+   * every button showed the arrow. This restores v3's rule once, for every
+   * button, rather than a `cursor-pointer` class on each. A disabled button
+   * keeps the arrow, which is how /connect's Say hello reads as unavailable
+   * during its cooldown.
+   */
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
   h1,
   h2,
   h3,

@@ -2273,13 +2273,18 @@ test('buildLlmsFullTxt concatenates a published fixture entry, preceded by its c
   expect(text).toContain('Fixture body text.');
 });
 
-test('footer links /llms.txt and the MCP endpoint, and never links /llms-full.txt', async () => {
+test('footer links /llms.txt and /connect, and never links /llms-full.txt', async () => {
   const page = await html('/');
   const footer = page.slice(page.indexOf('<footer'));
   expect(footer, 'footer should link /llms.txt').toContain('href="/llms.txt"');
-  // Fix round 1 (task-9-report.md): the endpoint is `/mcp` on that domain,
-  // not the bare origin -- the bare origin 404s.
-  expect(footer, 'footer should link the MCP endpoint').toContain(
+  // #395: the footer's MCP link is for a person, and a browser GET on the
+  // endpoint answers 405 with JSON (measured 2026-09-24), so it points at the
+  // page that explains how to connect. The endpoint itself is still asserted
+  // in /llms.txt and robots.txt below, which are read by machines. Why the
+  // endpoint is `/mcp` and not the bare origin is recorded above
+  // AGENT_LINKS in src/lib/nav.ts.
+  expect(footer, 'footer should link /connect').toContain('href="/connect"');
+  expect(footer, 'footer should no longer link the raw endpoint').not.toContain(
     'href="https://mcp.ryanlindsey.me/mcp"',
   );
   // RSS joined this column in the 2026-09 redesign (issue #100), which names
