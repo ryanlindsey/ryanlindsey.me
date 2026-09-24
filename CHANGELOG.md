@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.43.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.42.0...ryanlindsey-me-v1.43.0) (2026-09-24)
+
+
+### Features
+
+* **chat:** show a typing indicator and render answers as paced markdown ([#404](https://github.com/ryanlindsey/ryanlindsey.me/issues/404)) ([0055a09](https://github.com/ryanlindsey/ryanlindsey.me/commit/0055a09f05544439af31fec26892c5125237f20b))
+
+
+### Bug Fixes
+
+* **fit:** mint report ids that workflows accepts as instance ids ([#401](https://github.com/ryanlindsey/ryanlindsey.me/issues/401)) ([a324d79](https://github.com/ryanlindsey/ryanlindsey.me/commit/a324d79c8c564a1713dd489598ce30cf66e7706f))
+
 ## [1.42.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.41.4...ryanlindsey-me-v1.42.0) (2026-09-24)
 
 
