@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.42.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.41.4...ryanlindsey-me-v1.42.0) (2026-09-24)
+
+
+### Features
+
+* **chat:** point the protocol rail at /connect ([#400](https://github.com/ryanlindsey/ryanlindsey.me/issues/400)) ([df37a75](https://github.com/ryanlindsey/ryanlindsey.me/commit/df37a75813d19f2f975a8e1eebfe5751392ca8ed))
+* **connect:** add a setup page for the MCP server ([#398](https://github.com/ryanlindsey/ryanlindsey.me/issues/398)) ([cba1743](https://github.com/ryanlindsey/ryanlindsey.me/commit/cba1743bc7dc054aa7788d56616a56f5f6dff240))
+
 ## [1.41.4](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.41.3...ryanlindsey-me-v1.41.4) (2026-09-24)
 
 
