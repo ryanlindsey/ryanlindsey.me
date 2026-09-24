@@ -107,6 +107,17 @@ export const OPS_CARD: OgCard = {
   footerRight: 'LAST 30 DAYS',
 };
 
+export const CONNECT_CARD: OgCard = {
+  key: 'connect',
+  variant: 'section',
+  kicker: 'MCP',
+  title: 'Connect',
+  standfirst:
+    'One endpoint, no account for the public tier. Point a client at it and let it discover what is there.',
+  footerLeft: SITE_FOOTER,
+  footerRight: 'ONE ENDPOINT',
+};
+
 export function resumeCard(basics: { name: string; label: string }): OgCard {
   return {
     key: 'resume',
