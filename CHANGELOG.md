@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.4](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.41.3...ryanlindsey-me-v1.41.4) (2026-09-24)
+
+
+### Bug Fixes
+
+* **writing:** rewrite the verification post in the house voice ([#393](https://github.com/ryanlindsey/ryanlindsey.me/issues/393)) ([2fdece8](https://github.com/ryanlindsey/ryanlindsey.me/commit/2fdece87631563cc90dce25ac14f15eef177b533)), closes [#392](https://github.com/ryanlindsey/ryanlindsey.me/issues/392)
+
 ## [1.41.3](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.41.2...ryanlindsey-me-v1.41.3) (2026-09-24)
 
 
