@@ -69,6 +69,14 @@ He rejected the first version because it "makes it sound like truly poor design 
 
 **Name the human stakes directly.** Trust, stress, a person holding a link and wanting an answer. Value is stated as what it lets someone else do.
 
+**Argue from what the design lets people do, not from what something cannot do.** When a section justifies a tool, lead with the value it gives the people and agents using it, then show the mechanism. A section built on a limitation invites a factual challenge and undersells the design.
+
+> Before: "Standing inside one checkout, an agent can see the code and the git history and nothing else. It cannot see that the item it is about to pick up has a sibling two repositories over."
+>
+> After: "Every one of those agents needs the same spec and its own share of the implementation detail. A GitHub Project holds both in one place."
+
+He rewrote the whole section, doubting the limitation was even accurate, to say that the plan lives in one place any harness can act on.
+
 ## How he describes himself
 
 "An engineering leader who still ships code." One of several leaders on a team, never the person who runs engineering, never an individual contributor. Side projects are plural, and he founded and manages Pixelsonly Racing. Agents run asynchronously and he checks in on them through the day; nothing about his work is continuously monitored.
