@@ -116,6 +116,40 @@ describe('GET /chat', () => {
     }
   });
 
+  test('an agent turn shows typing dots while it waits, with words for a screen reader', async () => {
+    const page = await html('/chat');
+    const agent = /<template data-turn-template="agent">[\s\S]*?<\/template>/.exec(page)?.[0] ?? '';
+    const pending = /<p[^>]*data-turn-pending[\s\S]*?<\/p>/.exec(agent)?.[0] ?? '';
+    expect(pending, 'no pending element in the agent template').not.toBe('');
+    expect(pending).toMatch(/class="sr-only"[^>]*>\s*Thinking\s*</);
+    expect(
+      pending.match(
+        /aria-hidden="true"[^>]*chat-typing-dot|chat-typing-dot[^>]*aria-hidden="true"/g,
+      ),
+    ).toHaveLength(3);
+  });
+
+  test('the answer container can hold paragraphs and lists', async () => {
+    // A <p> cannot legally contain <p>, <ul> or <ol>, so the rendered answer
+    // needs a <div> around it (#403).
+    const page = await html('/chat');
+    const agent = /<template data-turn-template="agent">[\s\S]*?<\/template>/.exec(page)?.[0] ?? '';
+    expect(agent).toMatch(/<div[^>]*data-turn-text/);
+  });
+
+  test('the typing dots hold still for a reader who asked for less motion', async () => {
+    const page = await html('/chat');
+    const hrefs = [...page.matchAll(/<link[^>]+href="([^"]+\.css)"/g)].map((m) => m[1]);
+    const inline = [...page.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]);
+    const linked = await Promise.all(
+      hrefs.map((href) => server.fetch(href).then((res) => res.text())),
+    );
+    const css = [...inline, ...linked].join('\n');
+    expect(css).toMatch(
+      /prefers-reduced-motion:\s*reduce\)\s*\{[^}]*\.chat-typing-dot[^}]*animation:\s*none/,
+    );
+  });
+
   test('the composer still works without JavaScript', async () => {
     // Rendered markup is the no-JS state. This page is the likeliest in the
     // site to ship a dead form.
