@@ -93,7 +93,7 @@ export async function handleGrantContext(request: Request, env: McpEnv): Promise
   // GUARDED, because a throw here would read as a dead token (#296).
   // `walkCampaigns` (src/lib/tier/campaigns.ts) leaves `KV_CONFIG.list()`
   // outside its own `try`, so a transient KV failure rejects out of this
-  // function; `grantContext` (src/lib/fit/client.ts) catches that as `null`,
+  // function; `grantContext` (src/lib/fit/client.ts) answers that with `null`,
   // and `/fit` answers `null` with the same 404 an expired, revoked or forged
   // token gets. The holder of a live link cannot tell the two apart, and the
   // natural next move, asking for a new token, fixes nothing. FAILS TOWARD NO

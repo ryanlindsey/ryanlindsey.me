@@ -319,7 +319,6 @@ test('a failing campaign read answers the grant with no preload, not the refusal
   // what fails because it is the call `walkCampaigns` leaves outside its `try`.
   const failingKv = {
     list: () => Promise.reject(new Error('KV list unavailable')),
-    get: () => Promise.reject(new Error('KV get unavailable')),
   } as unknown as KVNamespace;
   const env = { ...mcpEnv, KV_CONFIG: failingKv } as McpEnv;
   const token = await grant('fixture-kv-down');
