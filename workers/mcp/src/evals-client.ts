@@ -67,10 +67,15 @@ export interface ChatAnswer {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * The JSON-RPC id. A module-level counter, as in evals/run.mjs, and it means
- * no more here than it does there: this transport is request/response, nothing
- * correlates on the id, and a workflow instance resumed in a fresh isolate
- * restarting the count is harmless for exactly that reason.
+ * The JSON-RPC id. A module-level counter, as in evals/run.mjs, and a workflow
+ * instance resumed in a fresh isolate restarting the count is harmless: the id
+ * only has to tell this request's answer apart from the other frames in its
+ * own response stream, never from another request's.
+ *
+ * THAT IS A CORRECTION. This comment used to say nothing correlates on the id,
+ * which was true and was the defect: `payloadOf` took the first `data:` line
+ * in the stream, so a notification frame ahead of the answer was returned as
+ * the answer (#351). It matches on the id now.
  */
 let rpcId = 1;
 
@@ -85,6 +90,10 @@ export async function rpc(
   params: Record<string, unknown>,
   token?: string,
 ): Promise<RpcResponse> {
+  // HOISTED out of the body below, because the response has to be matched
+  // against it: an SSE stream may carry frames that are not the answer to this
+  // call, and `id` is the only thing that tells them apart.
+  const id = rpcId++;
   const response = await fetcher.fetch(`${MCP_ORIGIN}/mcp`, {
     method: 'POST',
     headers: {
@@ -93,15 +102,15 @@ export async function rpc(
       'user-agent': EVALS_USER_AGENT,
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ jsonrpc: '2.0', id: rpcId++, method, params }),
+    body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
   });
   const text = await response.text();
-  return JSON.parse(payloadOf(response, text)) as RpcResponse;
+  return payloadOf(response, text, id);
 }
 
 /**
- * The JSON body of a Streamable HTTP response, whether it arrived as JSON or as
- * one SSE frame.
+ * The JSON-RPC message answering `id`, whether the response arrived as JSON or
+ * as an SSE stream.
  *
  * DECIDED BY CONTENT-TYPE, not by what the first line happens to be. The version
  * this replaces tested `text.startsWith('event:') || text.startsWith('data:')`,
@@ -119,24 +128,100 @@ export async function rpc(
  * signing-key bug in scripts/token.mjs was fixed -- so the first real `fit` run
  * in this repo's history was also the first thing to meet a keepalive.
  *
- * Comment lines are skipped rather than parsed, which is what the SSE spec says
- * to do with them, and an absent `data:` line is a thrown error naming the
- * status rather than a `TypeError` on `undefined.slice`.
+ * A REAL FRAME WALK rather than a line search, since #351, and that is the
+ * other half of the same lesson. Two frame types break a reader that takes the
+ * first `data:` line in the stream, and the version this replaces was guarded
+ * against only the first:
+ *
+ * KEEP-ALIVES. @modelcontextprotocol/sdk arms
+ * `armSseKeepAlive(options.keepAliveMs ?? DEFAULT_SSE_KEEP_ALIVE_MS)` on the
+ * POST response stream (server/webStandardStreamableHttp.js), the default is
+ * 15,000 ms, and each tick writes `': keepalive\n\n'` -- an SSE COMMENT, which
+ * is the one frame type carrying no `data:` at all.
+ *
+ * NOTIFICATIONS. A frame before the response is still `event: message` with a
+ * `data:` line, so a reader taking the first one gets a message with no
+ * `result`. Matching on `id` is what makes that frame skippable rather than
+ * fatal. The site's `/fit` client learned this at a measured cost:
+ * `fit_reports` held ZERO rows from #37 until its fix, against 28 recorded
+ * `analyze_fit` calls, while the engine itself was working -- trace
+ * 77c557ab4623b2fa059f29c7f75053b2 on 2026-09-18 ran 78,222 ms, recorded
+ * `outcome: 'ok'`, and ended `mcp: unparseable response (200)` on the reading
+ * side. Here nobody would have been watching: a notification ahead of the
+ * answer reads as a bad eval in `eval_runs` rather than as a transport defect.
+ *
+ * MOVED HERE FROM src/lib/fit/client.ts IN #351, where it had had no
+ * production caller since #269 and was exported only so a test could reach it.
+ * This is now the repository's one frame walk, and
+ * tests/evals-client-sse.test.ts drives it.
+ *
+ * A frame carrying no `data:` line, or one whose data is not JSON, is SKIPPED
+ * rather than refused: a comment is a legal frame and an unparseable one is not
+ * ours to fail on. A stream with no frame answering `id` is a thrown error
+ * naming the status -- silently taking the wrong frame would be worse than
+ * saying nothing was found, and a throw is what `run()` turns into an
+ * `incomplete` row (workers/mcp/src/evals-workflow.ts). An SSE error frame
+ * carrying `id: null` is skipped too, so it surfaces as that throw rather than
+ * as its own message; the row is the same either way.
+ *
+ * A JSON BODY IS NOT MATCHED ON `id`, deliberately. That mode carries exactly
+ * one message, and a transport-level refusal -- a 401, a bad session -- comes
+ * back as JSON with `id: null` and belongs in front of the caller rather than
+ * behind a "no message answering" throw.
+ *
+ * THE CONTENT TYPE PICKS THE ORDER, not the only attempt. Streamable HTTP
+ * defines exactly two response modes and names the one it used in this header,
+ * so reading it is reading the contract rather than sniffing the first bytes.
+ * Both are still tried, which the site's reader did as a regression guard: its
+ * predecessor decided by content alone and so read SSE whatever the header
+ * said. The two modes cannot be confused for each other -- an SSE body is never
+ * valid JSON, and a JSON body has no frames -- so trying the second costs
+ * nothing but the call.
  *
  * PORTED WITH ITS COMMENT because the bug it records is the kind that comes
  * back: the scheduled `fit` suite meets a slow `analyze_fit` on exactly this
  * path, and it has no operator watching a terminal when it does.
  */
-export function payloadOf(response: Response, text: string): string {
-  const contentType = response.headers.get('content-type') ?? '';
-  if (!contentType.includes('text/event-stream')) return text;
-  const data = text.split('\n').find((line) => line.startsWith('data:'));
-  if (data === undefined) {
+export function payloadOf(response: Response, text: string, id: number): RpcResponse {
+  const sse = (response.headers.get('content-type') ?? '').includes('text/event-stream');
+  const message = sse
+    ? (sseMessage(text, id) ?? parseJson(text))
+    : (parseJson(text) ?? sseMessage(text, id));
+  if (message === null) {
     throw new Error(
-      `the endpoint answered ${response.status} with an event stream carrying no data line`,
+      `the endpoint answered ${response.status} with no message answering request ${id}`,
     );
   }
-  return data.slice(5).trim();
+  return message;
+}
+
+/** The SSE frame whose JSON-RPC message carries `id`, or `null`. */
+function sseMessage(text: string, id: number): RpcResponse | null {
+  // Frames are separated by a blank line, and a frame's `data:` lines are
+  // joined with newlines -- both per the SSE grammar rather than per what this
+  // server happens to emit today, because the reader is the half that has to
+  // survive the server changing.
+  for (const frame of text.split(/\r?\n\r?\n/)) {
+    const data = frame
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trim())
+      .join('\n');
+    if (data === '') continue;
+    const message = parseJson(data);
+    if (message !== null && (message as { id?: unknown }).id === id) return message;
+  }
+  return null;
+}
+
+/** The whole body as one JSON-RPC message, or `null` if it is not JSON. */
+function parseJson(text: string): RpcResponse | null {
+  try {
+    const value: unknown = JSON.parse(text);
+    return typeof value === 'object' && value !== null ? (value as RpcResponse) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Codes worth retrying: the endpoint could not reach the model, for now. */

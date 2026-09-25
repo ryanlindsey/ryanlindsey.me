@@ -55,15 +55,19 @@ function stubFetcher(answer: (url: string, init?: RequestInit) => Response): {
 }
 
 // --- payloadOf ------------------------------------------------------------
+//
+// The frame walk itself -- notifications, foreign ids, a missing header -- is
+// driven through `rpc` in tests/evals-client-sse.test.ts. These pin the
+// function's own contract: it returns the parsed message answering `id`.
 
-test('payloadOf returns a plain JSON body untouched', () => {
-  const response = jsonResponse({ ok: true });
-  expect(payloadOf(response, '{"ok":true}')).toBe('{"ok":true}');
+test('payloadOf reads a plain JSON body', () => {
+  const response = jsonResponse({ id: 1, ok: true });
+  expect(payloadOf(response, '{"id":1,"ok":true}', 1)).toEqual({ id: 1, ok: true });
 });
 
 test('payloadOf reads the data line out of one SSE frame', () => {
-  const response = sseResponse('event: message\ndata: {"ok":true}\n\n');
-  expect(payloadOf(response, 'event: message\ndata: {"ok":true}\n\n')).toBe('{"ok":true}');
+  const text = 'event: message\ndata: {"id":1,"ok":true}\n\n';
+  expect(payloadOf(sseResponse(text), text, 1)).toEqual({ id: 1, ok: true });
 });
 
 test('payloadOf skips an SSE comment line, which is the bug that already happened', () => {
@@ -71,13 +75,13 @@ test('payloadOf skips an SSE comment line, which is the bug that already happene
   // the body "not SSE" because it began with `:` rather than `event:`, and the
   // whole stream went to JSON.parse. evals/run.mjs records the measurement;
   // this is the assertion that keeps the port from losing the fix.
-  const text = ': keepalive\n\nevent: message\ndata: {"ok":true}\n\n';
-  expect(payloadOf(sseResponse(text), text)).toBe('{"ok":true}');
+  const text = ': keepalive\n\nevent: message\ndata: {"id":1,"ok":true}\n\n';
+  expect(payloadOf(sseResponse(text), text, 1)).toEqual({ id: 1, ok: true });
 });
 
-test('payloadOf throws naming the status when an event stream carries no data line', () => {
+test('payloadOf throws naming the status when an event stream carries no answer', () => {
   const text = ': keepalive\n\n';
-  expect(() => payloadOf(sseResponse(text, 503), text)).toThrow(/503.*no data line/);
+  expect(() => payloadOf(sseResponse(text, 503), text, 1)).toThrow(/503.*no message answering/);
 });
 
 // --- the bearer, present and absent --------------------------------------

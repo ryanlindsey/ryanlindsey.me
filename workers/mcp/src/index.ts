@@ -468,7 +468,10 @@ export default {
     //     chat and leak suites land on that surface, not this one.
     //   - each `analyze_fit` the site runs, over its own `MCP` binding
     //     (src/lib/fit/client.ts's `rpc`). `grantContext` there targets
-    //     `/grant` and so writes nothing here.
+    //     `/grant` and so writes nothing here. OUT OF DATE since #269, and
+    //     corrected in #351, which deleted that `rpc`: the site now opens a
+    //     run at `/fit/start` (./fit-start.ts) rather than calling
+    //     `analyze_fit` over `/mcp`.
     //
     // Both send a `ryanlindsey-me-` user agent, so `FIRST_PARTY`
     // (src/lib/agent-intel/classify.ts) labels them agent `first-party` with
