@@ -61,14 +61,12 @@ test('requireTokens throws naming the missing key', () => {
   expect(requireTokens({ '--rl-bg': '#000000' }, ['--rl-bg'])).toEqual({ '--rl-bg': '#000000' });
 });
 
-test.each([
-  ['favicon-dark.svg', 'dark'],
-  ['favicon-light.svg', 'light'],
-] as const)('%s carries the current token values and outlined letters', (name, theme) => {
-  const svg = publicFile(name).toString('utf8');
-  expect(svg).toContain(`<rect width="64" height="64" fill="${tokens[theme]['--rl-bg']}"/>`);
-  expect(svg).toContain(`d="M13 0h51v64H0V13z" fill="${tokens.dark['--rl-accent-ground']}"`);
-  expect(svg).toMatch(new RegExp(`<path d="M[^"]+" fill="${tokens.dark['--rl-accent-on']}"/>`));
+const inkPattern = () => new RegExp(`<path d="([^"]+)" fill="${tokens.dark['--rl-ink']}"/>`);
+
+test('favicon.svg carries the current token values and outlined letters', () => {
+  const svg = publicFile('favicon.svg').toString('utf8');
+  expect(svg).toContain(`d="M0 0h64v64H0z" fill="${tokens.dark['--rl-accent-ground']}"`);
+  expect(svg).toMatch(inkPattern());
   expect(svg).not.toMatch(/<text\b/);
   expect(svg).not.toMatch(/c2pa/i);
   // XML forbids `--` inside a comment; a browser renders a malformed SVG icon as nothing.
@@ -77,29 +75,46 @@ test.each([
   }
 });
 
-test('the two variants differ in the notch and nothing else', () => {
-  // Measured 2026-09-22: a blanket .replaceAll(bg, 'GROUND') over the whole
-  // file is not safe here. tokens.css gives dark['--rl-bg'] and both themes'
-  // --rl-accent-on the identical hex #0a0a0b, so that replace would also
-  // clobber the ink comment and fill in the dark SVG while leaving the light
-  // SVG's (differently hex'd) ink alone, failing this assertion on a token
-  // coincidence that has nothing to do with the notch. Replacing the two full
-  // lines the ground color actually appears on -- the per-theme comment and
-  // the <rect> fill -- disambiguates it from the ink lines, which read "is
-  // rl-accent-on" and "<path", never "is rl-bg" or "<rect", so this stays
-  // exactly as strict: every other byte, ink included, must still match
-  // verbatim.
-  const normalize = (name: string, theme: 'dark' | 'light') => {
-    const bg = tokens[theme]['--rl-bg'];
-    return publicFile(name)
-      .toString('utf8')
-      .replace(`<!-- ${bg} is rl-bg, ${theme} theme -->`, '<!-- GROUND is rl-bg, THEME theme -->')
-      .replace(
-        `<rect width="64" height="64" fill="${bg}"/>`,
-        '<rect width="64" height="64" fill="GROUND"/>',
-      );
-  };
-  expect(normalize('favicon-dark.svg', 'dark')).toBe(normalize('favicon-light.svg', 'light'));
+/**
+ * One square and one set of letters, and nothing else: no corner cut from the
+ * square and no ground painted behind one. The chamfer's corner showed as
+ * white or black in Safari's tab strip depending on the theme (2026-09-24),
+ * and painting it per theme is what made two variants and a swap necessary.
+ */
+test('favicon.svg is a square and the letters', () => {
+  const svg = publicFile('favicon.svg').toString('utf8');
+  expect(svg).not.toMatch(/<rect\b/);
+  expect(svg.match(/<path\b/g)).toHaveLength(2);
+});
+
+/**
+ * The letter outline's extent, from its coordinates. The quadratic control
+ * points are included, which for these two glyphs lands within a unit of the
+ * true outline.
+ */
+const inkBox = () => {
+  const ink = publicFile('favicon.svg').toString('utf8').match(inkPattern());
+  const numbers = ink![1].match(/-?\d+(\.\d+)?/g)!.map(Number);
+  const xs = numbers.filter((_, i) => i % 2 === 0);
+  const ys = numbers.filter((_, i) => i % 2 === 1);
+  return { x1: Math.min(...xs), x2: Math.max(...xs), y1: Math.min(...ys), y2: Math.max(...ys) };
+};
+
+/**
+ * Legibility in a 16-point tab, pinned as a number. The letters stood 24 units
+ * tall on the 64-unit square until 2026-09-24 and read as a smudge in Safari's
+ * tab strip even on a 5K display; 36 filled the square too far.
+ */
+test('the letters stand between 28 and 34 units tall', () => {
+  const { y1, y2 } = inkBox();
+  expect(y2 - y1).toBeGreaterThanOrEqual(28);
+  expect(y2 - y1).toBeLessThanOrEqual(34);
+});
+
+test('the letters sit in the middle of the square', () => {
+  const { x1, x2, y1, y2 } = inkBox();
+  expect(Math.abs((x1 + x2) / 2 - 32)).toBeLessThanOrEqual(1);
+  expect(Math.abs((y1 + y2) / 2 - 32)).toBeLessThanOrEqual(1);
 });
 
 test('favicon.ico holds a 16 and a 32 frame, both PNG', () => {
@@ -137,8 +152,7 @@ test('the manifest names icons that exist', () => {
  */
 test.each([
   ['/favicon.ico', /^image\/(x-icon|vnd\.microsoft\.icon)/],
-  ['/favicon-dark.svg', /^image\/svg\+xml/],
-  ['/favicon-light.svg', /^image\/svg\+xml/],
+  ['/favicon.svg', /^image\/svg\+xml/],
   ['/apple-touch-icon.png', /^image\/png/],
   ['/icon-192.png', /^image\/png/],
   ['/icon-512.png', /^image\/png/],
@@ -152,7 +166,7 @@ test.each([
 
 test('the home page links the icon, the fallback, the touch icon and the manifest', async () => {
   const html = stripComments(await (await server.fetch('/')).text());
-  expect(html).toContain('<link rel="icon" href="/favicon-dark.svg" type="image/svg+xml">');
+  expect(html).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml">');
   expect(html).toContain('<link rel="icon" href="/favicon.ico" sizes="32x32">');
   expect(html).toContain('<link rel="apple-touch-icon" href="/apple-touch-icon.png">');
   expect(html).toContain('<link rel="manifest" href="/manifest.webmanifest">');

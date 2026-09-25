@@ -20,28 +20,28 @@ const FONT = new URL(
 );
 
 /**
- * The chamfer: 20 percent of a 64-unit edge, drawn at 13, cut from the top
- * left because platform masks eat corners and that is the one most of them
- * leave intact. Moving it is this one constant. The other three, also 20:
- *
- *   top-right     M0 0h51l13 13v51H0z
- *   bottom-right  M0 0h64v51L51 64H0z
- *   bottom-left   M0 0h64v64H13L0 51z
+ * A plain square. The handoff cut a chamfer from the top-left corner, and the
+ * corner it left behind had to be painted in one theme's ground or left
+ * transparent; both read as a mistake in a tab strip (2026-09-24), so the
+ * corner went.
  */
-const CHAMFER = 'M13 0h51v64H0V13z';
+const GROUND = 'M0 0h64v64H0z';
 
-/** The handoff's letter geometry. The center sits one unit right of 32 to counterbalance the weight the chamfer removes. */
-const SIZE = 34;
+/**
+ * The letter size. The handoff drew them at 34, about 24 units of cap height,
+ * and in Safari's 16-point tab that read as a smudge even on a 5K display
+ * (2026-09-24); 50 filled the square too far. The pair is centered on its own
+ * outline rather than on its advance widths, so the ink sits in the middle of
+ * the square whatever the glyphs' side bearings are.
+ */
+const SIZE = 44;
 const TRACKING = -2;
-const CENTER_X = 34;
-const BASELINE = 45;
 
 // requireTokens throws naming whichever key is missing, rather than letting
 // icon() below read an absent one as `undefined` and draw a corner or a
 // letter in no color at all.
-const { light, dark } = readTokens();
-requireTokens(light, ['--rl-bg']);
-requireTokens(dark, ['--rl-bg', '--rl-accent-ground', '--rl-accent-on']);
+const { dark } = readTokens();
+requireTokens(dark, ['--rl-accent-ground', '--rl-ink']);
 
 function lettersPath() {
   const bytes = readFileSync(FONT);
@@ -52,24 +52,23 @@ function lettersPath() {
   const glyphs = font.stringToGlyphs('RL');
   const kern = font.getKerningValue(glyphs[0], glyphs[1]) * scale;
   const advances = glyphs.map((glyph) => glyph.advanceWidth * scale);
-  // SVG letter-spacing follows every glyph, the last one included, and
-  // text-anchor="middle" centers that whole run. Reproduced here so the
-  // outline lands where the handoff's <text> did.
-  //
-  // Checked 2026-09-22 against the handoff's screenshots/icon-dark.png: a
-  // 256px render of this SVG (public/favicon-dark.svg) put the outlined pair
-  // at the same rightward offset from center as the specimen (measured by
-  // the black-pixel bounding box in each, ~5-6% of the square's width in
-  // both), so the trailing `+ TRACKING` this comment already assumed is
-  // correct for opentype.js plus resvg-js and needed no change.
-  const width = advances[0] + kern + TRACKING + advances[1] + TRACKING;
-  let x = CENTER_X - width / 2;
-  return glyphs
-    .map((glyph, i) => {
-      const d = glyph.getPath(x, BASELINE, SIZE).toPathData(2);
+  // Laid out once at the origin to measure the ink, then again offset so the
+  // outline's bounding box sits on the square's center.
+  const layout = (dx, dy) => {
+    let x = dx;
+    return glyphs.map((glyph, i) => {
+      const path = glyph.getPath(x, dy, SIZE);
       x += advances[i] + TRACKING + (i === 0 ? kern : 0);
-      return d;
-    })
+      return path;
+    });
+  };
+  const boxes = layout(0, 0).map((path) => path.getBoundingBox());
+  const x1 = Math.min(...boxes.map((box) => box.x1));
+  const x2 = Math.max(...boxes.map((box) => box.x2));
+  const y1 = Math.min(...boxes.map((box) => box.y1));
+  const y2 = Math.max(...boxes.map((box) => box.y2));
+  return layout(32 - (x1 + x2) / 2, 32 - (y1 + y2) / 2)
+    .map((path) => path.toPathData(2))
     .join('');
 }
 
@@ -77,18 +76,21 @@ const letters = lettersPath();
 
 // Token names are written without their leading `--`: XML forbids `--` inside
 // a comment, and a malformed SVG icon renders as nothing.
-function icon(theme) {
-  const ground = (theme === 'dark' ? dark : light)['--rl-bg'];
+//
+// Until 2026-09-24 there were two SVGs, one per site theme, and a script
+// swapping them (#374). That swap removed and re-inserted the icon link during
+// load, and Safari answered by showing no icon on the home page. A pink square
+// with white letters reads on either chrome, so one static file serves both
+// themes and nothing has to swap.
+function icon() {
   const pink = dark['--rl-accent-ground'];
-  const ink = dark['--rl-accent-on'];
+  const ink = dark['--rl-ink'];
   return [
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="RL">',
     '<!-- Written by scripts/icons.mjs from src/styles/tokens.css. Edit the script and rerun it. -->',
-    `<!-- ${ground} is rl-bg, ${theme} theme -->`,
-    `<rect width="64" height="64" fill="${ground}"/>`,
     `<!-- ${pink} is rl-accent-ground -->`,
-    `<path d="${CHAMFER}" fill="${pink}"/>`,
-    `<!-- ${ink} is rl-accent-on -->`,
+    `<path d="${GROUND}" fill="${pink}"/>`,
+    `<!-- ${ink} is rl-ink, dark theme -->`,
     `<path d="${letters}" fill="${ink}"/>`,
     '</svg>',
     '',
@@ -118,14 +120,12 @@ function ico(frames) {
   return Buffer.concat([header, ...entries, ...frames.map(({ data }) => data)]);
 }
 
-// Every raster comes from the dark variant: a raster cannot follow a theme,
-// and the dark notch holds up against both browser chromes.
-const darkSvg = icon('dark');
+// Every file is the same square, so every raster comes from the one SVG.
+const svg = icon();
 const write = (name, data) => writeFileSync(new URL(name, PUBLIC), data);
-write('favicon-dark.svg', darkSvg);
-write('favicon-light.svg', icon('light'));
-write('favicon.ico', ico([16, 32].map((size) => ({ size, data: png(darkSvg, size) }))));
-write('apple-touch-icon.png', png(darkSvg, 180));
-write('icon-192.png', png(darkSvg, 192));
-write('icon-512.png', png(darkSvg, 512));
-console.log('icons: wrote six files to public/');
+write('favicon.svg', svg);
+write('favicon.ico', ico([16, 32].map((size) => ({ size, data: png(svg, size) }))));
+write('apple-touch-icon.png', png(svg, 180));
+write('icon-192.png', png(svg, 192));
+write('icon-512.png', png(svg, 512));
+console.log('icons: wrote five files to public/');

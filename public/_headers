@@ -244,10 +244,7 @@
 /favicon.ico
   Cache-Control: public, max-age=86400
 
-/favicon-dark.svg
-  Cache-Control: public, max-age=86400
-
-/favicon-light.svg
+/favicon.svg
   Cache-Control: public, max-age=86400
 
 /apple-touch-icon.png

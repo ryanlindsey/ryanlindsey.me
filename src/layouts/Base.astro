@@ -213,12 +213,13 @@ const jsonLdNodes = [
     {referrer && <meta name="referrer" content={referrer} />}
     {refresh !== undefined && <meta http-equiv="refresh" content={String(refresh)} />}
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
-    {/* The site icon (#363). The SVG link is server-rendered as the dark
-       variant, and src/lib/theme-toggle.ts swaps it for the resolved theme on
-       load and on every theme change. The .ico is for browsers that take no SVG
-       icon, and cannot follow a theme at all. The icon files below are written
-       by scripts/icons.mjs; the manifest is hand-written. */}
-    <link rel="icon" href="/favicon-dark.svg" type="image/svg+xml" />
+    {/* The site icon (#363). One static SVG for both themes, and nothing may
+       touch these links after parse: until 2026-09-24
+       src/lib/theme-toggle.ts swapped the SVG link for the resolved theme, and
+       Safari showed no icon at all on the home page (scripts/icons.mjs has the
+       rest). The .ico is for browsers that take no SVG icon. The icon files
+       below are written by scripts/icons.mjs; the manifest is hand-written. */}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
