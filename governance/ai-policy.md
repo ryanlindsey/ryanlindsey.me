@@ -51,7 +51,7 @@ Each window is in the retention table at the top of this page, one row per table
 
 **The tool-call audit trail.** One row per call to the MCP server: the tool, a hash of the arguments, whether the call was public or made under a grant, the audience and token id of that grant, the client's name, version and user agent, the protocol version, the outcome, and the duration. Arguments are stored as a hash, never as text.
 
-**Fit reports.** The description that was submitted, the validated report, the audience of the grant that produced it, the model, and how many citations were checked and dropped. A report has an unguessable permalink, and that link is the only key to it: anyone holding it can read it until the window closes.
+**Fit reports.** The description that was submitted, the validated report, the audience of the grant that produced it, the model, and how many citations were checked and dropped. A report has an unguessable permalink, and that link is the only key to it: anyone holding it can read it until the window closes. The description is stored when the run starts, before there is a report, so a run that produces no report still keeps it: a refused request, a run that errors and a run that is abandoned before it finishes are each kept on the same window as a finished report, and their description is never shown at the permalink.
 
 **Two things have no window, deliberately.** Rows in the token registry — a
 token's id, audience, scopes and timestamps, never its value — are never deleted,
