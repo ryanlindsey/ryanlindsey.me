@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.45.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.44.2...ryanlindsey-me-v1.45.0) (2026-09-25)
+
+
+### Features
+
+* **writing:** publish the skill chaining post ([#416](https://github.com/ryanlindsey/ryanlindsey.me/issues/416)) ([23ac1ed](https://github.com/ryanlindsey/ryanlindsey.me/commit/23ac1ed6c405062a64d3764224b41733bf0c70e4)), closes [#415](https://github.com/ryanlindsey/ryanlindsey.me/issues/415)
+
 ## [1.44.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.44.1...ryanlindsey-me-v1.44.2) (2026-09-25)
 
 
