@@ -305,7 +305,17 @@ export async function limitAndAudit<C, R>(
     return { kind: 'rate_limited' };
   } catch (error) {
     audit('error');
-    console.error(`mcp/${spec.surface}: ${spec.auditName} failed`, error);
+    // The message is interpolated, and that is not a style choice. MEASURED
+    // 2026-09-17 (see `run` in ./fit-workflow.ts): Worker observability
+    // renders `console.error(msg, err)` as the message followed by the stack
+    // and drops `err.message` entirely. This line predated that finding and
+    // logged exactly that way until #354, so every failure caught here read as
+    // `mcp/tool: <name> failed` and a stack. The error still goes second for
+    // the stack it carries; the first argument is what makes the line useful.
+    console.error(
+      `mcp/${spec.surface}: ${spec.auditName} failed: ${error instanceof Error ? error.message : String(error)}`,
+      error,
+    );
     return { kind: 'failed', error };
   }
 }
