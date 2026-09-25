@@ -1,0 +1,132 @@
+---
+title: Chaining skills across plugins
+description: 'Skills from two Claude Code plugins, armature and superpowers, now run as one pipeline from a design conversation to a stack of reviewed pull requests, and neither plugin edits the other. How the handoffs work, what they cost, and six rules for writing skills that compose.'
+standfirst: 'Two Claude Code plugins now run as one pipeline from a design conversation to reviewed pull requests, and neither edits the other.'
+publishedAt: 2026-09-25
+pillar: agentic-engineering
+draft: false
+---
+
+**TL;DR.** Skills from different plugins can form one pipeline from an idea to reviewed pull requests without either plugin modifying the other. [armature](https://github.com/ryanlindsey/armature) and [superpowers](https://github.com/obra/superpowers) now do exactly that: a design conversation becomes a spec and an epic on a GitHub Projects board, and one command works every child of that epic into its own stacked pull request. The handoffs rest on five mechanisms that the skill text states outright, such as overriding a default the other skill invites you to override, and reusing a whole skill as the body of a loop. This post walks the chain, shows each mechanism in the skill text, names what it costs, and ends on six rules for writing skills that compose.
+
+## The authoring side is no longer partial
+
+When I wrote about [armature](/writing/armature), a Claude Code plugin that works a GitHub Projects board across repositories, the reading side was complete and the authoring side was not. Armature could pick the next item off a board, claim it and work it into a pull request, but getting a plan onto the board in the first place was mostly a manual job. A dedicated planning step was designed and not shipped.
+
+It has shipped now, along with a command that works a whole epic in one run. The clearest evidence is the epic that delivered the planning step. It had four children, each a change to armature itself, and one run of the new epic command worked all four in order. Each child got its own branch, stacked on the child before it, and its own pull request. The four merged bottom-up the same evening, within a few minutes of each other.
+
+That epic was filed the old way, by hand, because the skill that files epics was one of its own children. The next plan can be filed by the chain it completed.
+
+The release is not the interesting part. What makes the chain work is that skills from two plugins hand work to each other, and neither plugin contains a line of the other's code or edits the other's text. Superpowers is a third party's plugin. Armature depends on what its skills say, not on changing them.
+
+## The whole chain, from a conversation to a merge
+
+A [skill](https://code.claude.com/docs/en/skills) in Claude Code is a markdown file of instructions that the model loads when a task matches its description, and a plugin is a bundle of them. Skills can name other skills, which is how one skill hands work to the next. Here is the full sequence, from the first question in a design conversation to a person merging the result.
+
+| Plugin      | Skill or command                            | What it hands to the next row                                                                   |
+| ----------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| superpowers | `brainstorming`                             | an approved design, saved to wherever a stated preference says specs go                         |
+| armature    | `filing-a-plan`                             | the spec as a `Spec:` issue on the board, marked as in progress                                 |
+| superpowers | `writing-plans`                             | an implementation plan, saved to wherever a stated preference says plans go                     |
+| armature    | `filing-a-plan`                             | an `Epic:` issue under the spec, with one child issue per task, each linked to what it waits on |
+| armature    | `/armature-epic`                            | the epic's reference, and any instruction such as "no worktree", to the controller skill        |
+| armature    | `working-an-epic`                           | one subagent per child, each with a brief naming its base branch                                |
+| armature    | `working-the-board`, in each subagent       | reads and claims the child, then hands the implementation to superpowers                        |
+| superpowers | `using-git-worktrees`                       | an isolated checkout, branched from the base the brief named                                    |
+| superpowers | `test-driven-development`                   | a failing test, then the code that passes it                                                    |
+| superpowers | `requesting-code-review`                    | a fresh reviewer's findings, fixed before any pull request exists                               |
+| armature    | verify                                      | the repository's own verify commands, run green                                                 |
+| superpowers | `finishing-a-development-branch`            | a pushed branch and an open pull request against the base branch                                |
+| armature    | `working-the-board`, then `working-an-epic` | the child moved on the board, its report back to the controller, and the next child dispatched  |
+| a person    | review and merge                            | the stack, merged bottom-up                                                                     |
+
+The split is consistent. Superpowers owns the doing inside one repository: the design conversation, the plan, the worktree, the tests, the review and the branch. Armature owns the board, the order work happens in, and the handback. Neither reaches into the other's half.
+
+## Five ways one skill hands work to another
+
+Each of these is visible in the skill text. The excerpts are copied from armature at a [pinned commit](https://github.com/ryanlindsey/armature/tree/bff62685bc04fac8e0554cc1294587174f99dc29) and from superpowers v6.4.2.
+
+### Override a default the other skill already invites you to override
+
+Superpowers' `brainstorming` skill ends by writing the approved design to a file under `docs/superpowers/specs/`, and `writing-plans` does the same for plans. Each one follows its default location with the same parenthetical, in [brainstorming](https://github.com/obra/superpowers/blob/v6.4.2/skills/brainstorming/SKILL.md?plain=1#L241-L242):
+
+> (User preferences for spec location override this default)
+
+and in [writing-plans](https://github.com/obra/superpowers/blob/v6.4.2/skills/writing-plans/SKILL.md?plain=1#L16-L17):
+
+> (User preferences for plan location override this default)
+
+That line is an extension point. Armature's `filing-a-plan` skill uses it directly, in its [opening paragraph](https://github.com/ryanlindsey/armature/blob/bff62685bc04fac8e0554cc1294587174f99dc29/skills/filing-a-plan/SKILL.md?plain=1#L13-L16):
+
+> `superpowers:brainstorming` and `superpowers:writing-plans` save to `docs/superpowers/` unless a preference says otherwise. This skill is that preference.
+
+Nothing in superpowers had to change for its specs and plans to land on a board instead of in a docs folder. Before that skill existed, the same redirect lived in a private note to the agent with a hand-run script attached. The script filed the epic and its children correctly, and never mentioned the spec, so every spec it filed stayed off the board. Putting the redirect in a skill made it something that could be tested and versioned, and the spec now lands on the board with everything else.
+
+### Bracket the other plugin's work instead of absorbing it
+
+One run of `/armature-next`, the single-item command, hands off between the two plugins four times. Armature's README lays the run out as a [ten-step table](https://github.com/ryanlindsey/armature/blob/bff62685bc04fac8e0554cc1294587174f99dc29/README.md?plain=1#L42-L53): armature chooses the item, reads it, checks its prerequisites and claims it, superpowers isolates, implements and reviews, armature runs verify, superpowers opens the pull request, and armature moves the item on the board.
+
+Armature reimplements none of the middle. It also does not require it. The same skill carries a table titled "Without Superpowers" that names a plain feature branch, a hand-written failing test, a re-read of the diff and `gh pr create` as the stand-ins for those four steps. A plugin that brackets another one should still work when the other one is not installed, and the table is where that fallback is written down.
+
+### Reuse a whole skill as the body of a loop
+
+`working-an-epic` works every child of an epic. It could have repeated the single-item logic, and it does not. From its [opening lines](https://github.com/ryanlindsey/armature/blob/bff62685bc04fac8e0554cc1294587174f99dc29/skills/working-an-epic/SKILL.md?plain=1#L8-L9):
+
+> `armature:working-the-board` works one item. This works all of them, and uses that skill as its loop body rather than reimplementing any of it.
+
+Each child is dispatched to its own subagent, and the subagent runs `working-the-board` unmodified. The controller never enters a worktree, never runs a test and never reads a diff. The skill gives the reason in [its own words](https://github.com/ryanlindsey/armature/blob/bff62685bc04fac8e0554cc1294587174f99dc29/skills/working-an-epic/SKILL.md?plain=1#L20-L22):
+
+> A controller that reads implementation output is a controller whose context fills up and which then loses its place in the epic. Staying out of the work is what lets you finish one.
+
+A subagent starts with a clean context and hands back a short report: the pull request, its branch, the files it touched, how many review rounds it took. The controller only ever holds those reports, so its context grows by one short report per child rather than by every diff.
+
+### Override narrowly, and name what you override
+
+Composition breaks down where two skills disagree. Superpowers' `subagent-driven-development`, the skill that executes a plan task by task, is explicit that a running plan should not stop to ask. From [its text](https://github.com/obra/superpowers/blob/v6.4.2/skills/subagent-driven-development/SKILL.md?plain=1#L19-L20):
+
+> **Rulings, not stalls.** A running plan does not wait on a human.
+
+For most of an epic run that is right, and `working-an-epic` agrees with it. It disagrees in exactly three places, and it says so in [its red flags section](https://github.com/ryanlindsey/armature/blob/bff62685bc04fac8e0554cc1294587174f99dc29/skills/working-an-epic/SKILL.md?plain=1#L131-L133):
+
+> `superpowers:subagent-driven-development` is right that a running plan should make rulings rather than stall, and this skill overrides that narrowly. These three stop the run. Nothing else does
+
+The three are two children touching the same file, a review that cannot be satisfied, and a red verify. For the second, it adopts superpowers' own limit unchanged: up to five fix rounds, then a ruling on each open finding, and a stop only when every path forward is a guess. It sets no tighter limit of its own.
+
+`working-the-board` makes the same kind of override at the end of a run. Superpowers' `finishing-a-development-branch` offers a menu whose first option merges the branch locally. Armature never merges, so the skill takes the option whose text is "push and create a Pull Request", and it picks by text rather than by number, because on a detached checkout that skill shows a shorter menu where option 2 keeps the branch as it is and opens nothing.
+
+### Put rulings in the brief, not in the skill being called
+
+A controller that reuses a skill unmodified still has to change how that skill behaves for its own situation. `working-an-epic` does that through the brief it hands each subagent. The brief says where to start: at step 2 of `working-the-board`, with this child's reference, so the subagent does not ask the board for the next item and pick a different one. It names the base branch explicitly, so the child branches from its blocker's branch rather than from `main`. The skill calls omitting that "the easiest thing in this skill to get wrong and the hardest to notice": the stack looks right and silently lacks the blocker's work.
+
+The brief also carries a ruling the single-item skill cannot make on its own. `working-the-board` stops on any prerequisite that is not done on the board, and inside a stack the blocker's pull request is deliberately still open. So the brief rules that a prerequisite is satisfied when its work is reachable from the base branch, checked with `git merge-base --is-ancestor`, and the child passes a stacked blocker instead of stopping on it.
+
+The worktree question is settled the same way. `using-git-worktrees` asks before creating a worktree unless a preference is on record, and one missed prompt stalls an unattended run. Armature treats invoking it as that preference, with "no worktree" as a per-run override, and `working-an-epic` settles the answer once for the whole epic and passes it down in every brief rather than letting each child ask.
+
+## The board holds the chain's state
+
+A chain long enough to work a whole epic cannot keep its place in session memory, because a long session gets compacted and whatever it was holding goes with it. `working-an-epic` runs `epic_survey`, armature's tool for reading an epic and its children off the board, at the top of every iteration and re-derives where it is from the answer. As the skill puts it, compaction cannot lose what you never stored.
+
+Two more rules keep the board readable as state. `board_next`, the tool that picks the next piece of work, never returns an item titled `Spec:` or `Epic:`, so a design document is never mistaken for a task. And `filing-a-plan` files a spec in the board's in-progress status rather than its to-do status, because design is under way from the moment the spec is written.
+
+"Never remember anything" had one exception. A child that needs a person, such as one labeled for a human to do, is never claimed, so it stays in to-do. Every fresh survey then names it as next again, and a controller that re-derives everything would dispatch it forever and never finish. So the controller keeps a short record for the run of only what the board cannot hold: children ruled as needing a person, each child's reported pull request and branch, and the files each one touched. If compaction loses that record, the cost is one repeat dispatch, because the child reads its issue again and reports again.
+
+## The chain is held together by prose
+
+Every handoff above is written in prose, and none is enforced by code. An override in a brief works because the model follows the brief over the text of the skill it is running. Armature's own follow-ups file says as much about the stacked-prerequisite ruling: "the child relies on the brief overriding the skill's text. That works, but it is an override the single-item skill never names." There is no type checker for that, and a skill that is edited upstream can change what a brief has to override.
+
+Two behaviors the design depends on have not been confirmed on a live run. GitHub honors a closing keyword such as `Closes #12` only on a pull request that targets the default branch, so a stacked child's pull request probably is not linked to its issue while it waits, and `epic_survey` may not see it. The run's own record covers that within a session, and a resumed session would not have it. The second is permissions: according to the Claude Code documentation, a command's `allowed-tools` do not reach the subagents it dispatches, so every tool a child needs has to be allowed at the session level or it prompts. Armature's README documents both as caveats and its follow-ups file records the first as not yet confirmed.
+
+And superpowers moves. It is someone else's plugin with its own release schedule, and every excerpt above is pinned to one version for that reason. A chain like this one needs rereading against each new release of the plugin it calls.
+
+## What you can check
+
+The epic that delivered the planning step is [ryanlindsey/armature#76](https://github.com/ryanlindsey/armature/issues/76), with its spec at [#75](https://github.com/ryanlindsey/armature/issues/75) and its four stacked pull requests at [#81](https://github.com/ryanlindsey/armature/pull/81), [#82](https://github.com/ryanlindsey/armature/pull/82), [#83](https://github.com/ryanlindsey/armature/pull/83) and [#84](https://github.com/ryanlindsey/armature/pull/84). The epic that built the epic command is [#59](https://github.com/ryanlindsey/armature/issues/59), with its spec at [#58](https://github.com/ryanlindsey/armature/issues/58). The three skills, the README and the follow-ups file are readable at the [pinned commit](https://github.com/ryanlindsey/armature/tree/bff62685bc04fac8e0554cc1294587174f99dc29), and the [release notes](https://github.com/ryanlindsey/armature/releases) for v0.5.0, v0.6.0 and v0.7.0 list each change with the pull request behind it.
+
+These are lessons from one worked example rather than general law. If you are writing skills that another plugin's skills will call, or that call another plugin's, six decisions shaped how well this chain holds together:
+
+1. **Declare where your defaults can be overridden.** A one-line parenthetical after a default, like superpowers' "(User preferences for plan location override this default)", is what let another plugin redirect its output without editing it.
+2. **Call an existing skill instead of copying it.** `working-an-epic` runs `working-the-board` unmodified as its loop body, so a fix to the single-item loop reaches every epic run.
+3. **Make each override narrow, and name the skill you override.** `working-an-epic` overrides `subagent-driven-development` on three stop conditions and says so by name, and adopts its five-round review limit unchanged.
+4. **Keep the controller out of the work.** A controller that never reads a diff holds only short reports, and that is what lets it finish a long epic.
+5. **Keep state somewhere durable.** Re-derive position from the board every iteration, and keep a per-run record only for the rulings the board cannot hold.
+6. **Give each dependency a fallback.** A "Without Superpowers" table names what stands in for each borrowed step, so the plugin still works when the other one is not installed.
