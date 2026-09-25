@@ -146,7 +146,7 @@ built to be crawled is the opposite of confining it.
 ## Models, and the gateway they run through
 
 - Chat runs on `anthropic/claude-sonnet-5`.
-- Fit analysis runs on `anthropic/claude-opus-5`.
+- Fit analysis runs on `anthropic/claude-opus-5.5`.
 - The evaluation judge runs on `anthropic/claude-sonnet-5`.
 - Retrieval embeddings run on `@cf/qwen/qwen3-embedding-0.6b`, a Workers AI
   model, for both the corpus and your query.

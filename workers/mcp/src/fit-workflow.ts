@@ -117,6 +117,12 @@ export interface FitRunParams {
  * measurement, and Cloudflare's own rules-of-workflows page asks for step
  * timeouts of 30 minutes or less. A tighter number here would be a guess at
  * latency dressed as a limit.
+ *
+ * THAT 78,222 MS PREDATES #379, and so does every "seventy-eight seconds" in
+ * this file. It was Opus 5 under an 8192-token cap. #379 moved the engine to
+ * Opus 5.5, whose thinking cannot be switched off, under a 32000-token cap,
+ * so the worst case can now run several times longer, and nothing has timed
+ * it yet. Re-measure from the `fit` eval run before trusting the 7.7.
  */
 const ENGINE_STEP: WorkflowStepConfig = { retries: { limit: 0, delay: 0 } };
 
