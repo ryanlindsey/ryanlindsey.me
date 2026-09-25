@@ -207,8 +207,8 @@ describe('buildCorpusContext', () => {
 // THE ALARM FOR #339. `truncated` reached nothing an operator watches: a
 // `console.warn`, seen only by somebody already tailing the MCP Worker, and
 // `corpus_truncated` in the MCP envelope, which nobody reads in aggregate. The
-// corpus crossed `CONTEXT_CHAR_BUDGET` and stayed over it unnoticed for at
-// least ten days. This reads the corpus `npm run build` just wrote, the same
+// corpus crossed `CONTEXT_CHAR_BUDGET` and nobody noticed until #339 found it
+// on 2026-09-21. This reads the corpus `npm run build` just wrote, the same
 // `/llms.txt` and `.md` assets the deployed Worker fetches over `SITE`, so the
 // pull request that publishes the document which tips it over fails here,
 // before any report is served without it.
@@ -235,6 +235,7 @@ describe('the published corpus', () => {
   }
 
   test('fits the context budget whole, so no report is written without a document', async () => {
+    expect(existsSync(CLIENT), 'this test reads dist/client: run `npm run build` first').toBe(true);
     const env = builtSite();
     const index = await fetchDocumentIndex(env);
     const context = await buildCorpusContext(env);

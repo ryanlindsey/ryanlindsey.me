@@ -16,7 +16,8 @@
 // studies, `work/silent-failure` and `work/delivery-forecasting`, because the
 // index lists `/work/` last. The answer was to move the budget, below, and
 // the argument against retrieval still held at this size.
-// tests/fit-context.test.ts now fails the build that crosses the budget.
+// tests/fit-context.test.ts now fails the check on the pull request that
+// crosses the budget.
 //
 // PUBLIC DOCUMENTS ONLY, and that is a design constraint rather than a
 // simplification: every claim in a report has to cite a URL a reader can open
