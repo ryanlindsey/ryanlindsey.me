@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.44.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.44.0...ryanlindsey-me-v1.44.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* **evals:** match payloadOf on the JSON-RPC id and retire the site's reader ([#412](https://github.com/ryanlindsey/ryanlindsey.me/issues/412)) ([1e88ff9](https://github.com/ryanlindsey/ryanlindsey.me/commit/1e88ff9132bd51c0827ecaf71ac0b232de64717e))
+* **fit:** raise the corpus context budget and fail the check that outgrows it ([#407](https://github.com/ryanlindsey/ryanlindsey.me/issues/407)) ([16214e5](https://github.com/ryanlindsey/ryanlindsey.me/commit/16214e5b303fb15575960774ec0eae268c3f826c))
+* **grant:** answer a live token with no preload when the campaign read fails ([#411](https://github.com/ryanlindsey/ryanlindsey.me/issues/411)) ([e1ed307](https://github.com/ryanlindsey/ryanlindsey.me/commit/e1ed30714c90dd2699f4bdf189e4f153e672ebea))
+* **mcp:** carry the error message in the catch-all failure log ([#409](https://github.com/ryanlindsey/ryanlindsey.me/issues/409)) ([e2f7728](https://github.com/ryanlindsey/ryanlindsey.me/commit/e2f7728e2b422628cd33e6ce6662a9835652d726)), closes [#354](https://github.com/ryanlindsey/ryanlindsey.me/issues/354)
+* **ops:** publish fit reports produced and name the runs that produced none ([#410](https://github.com/ryanlindsey/ryanlindsey.me/issues/410)) ([1ef9846](https://github.com/ryanlindsey/ryanlindsey.me/commit/1ef98469d6ba1db64a5b32ff631a534f5196199e))
+
 ## [1.44.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.43.0...ryanlindsey-me-v1.44.0) (2026-09-25)
 
 
