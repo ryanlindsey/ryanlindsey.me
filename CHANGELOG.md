@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.44.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.43.0...ryanlindsey-me-v1.44.0) (2026-09-25)
+
+
+### Features
+
+* **fit:** run the fit engine on opus 5.5 at medium effort ([#405](https://github.com/ryanlindsey/ryanlindsey.me/issues/405)) ([fa058ea](https://github.com/ryanlindsey/ryanlindsey.me/commit/fa058ea8d080f1b2bf7042f83313ee652cbdbd82))
+
 ## [1.43.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.42.0...ryanlindsey-me-v1.43.0) (2026-09-24)
 
 
