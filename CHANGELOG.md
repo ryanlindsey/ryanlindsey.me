@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.44.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.44.1...ryanlindsey-me-v1.44.2) (2026-09-25)
+
+
+### Bug Fixes
+
+* **design:** serve one static square favicon with white letters ([#413](https://github.com/ryanlindsey/ryanlindsey.me/issues/413)) ([f6ee875](https://github.com/ryanlindsey/ryanlindsey.me/commit/f6ee8755c558b77fc908952ddc866026ce7c8acf))
+
 ## [1.44.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.44.0...ryanlindsey-me-v1.44.1) (2026-09-25)
 
 
