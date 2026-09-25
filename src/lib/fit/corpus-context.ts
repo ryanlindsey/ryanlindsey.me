@@ -8,6 +8,17 @@
 // evidence" gap, which is worse than a slower call. Revisit when the corpus
 // outgrows the budget below, and revisit by measuring rather than by feel.
 //
+// It did outgrow it (#339). Measured 2026-09-21 against the deployed Worker:
+// seven documents, 123,017 characters of raw markdown against a 120,000
+// budget, and every report logged a truncation warning nobody was watching.
+// Re-measured 2026-09-24 through `renderContext` itself: eight documents,
+// 141,874 rendered characters, and the two documents dropped were both case
+// studies, `work/silent-failure` and `work/delivery-forecasting`, because the
+// index lists `/work/` last. The answer was to move the budget, below, and
+// the argument against retrieval still held at this size.
+// tests/fit-context.test.ts now fails the check on the pull request that
+// crosses the budget.
+//
 // PUBLIC DOCUMENTS ONLY, and that is a design constraint rather than a
 // simplification: every claim in a report has to cite a URL a reader can open
 // (03 §4), and a private-tier document has no such URL. The private tier is
@@ -19,14 +30,22 @@ import { fenceFor } from '../fence';
 /**
  * How much corpus text one call may carry.
  *
- * Chosen against the model's context rather than against the corpus: 120k
- * characters is roughly 30k tokens by this repo's own estimator
- * (`CHARS_PER_TOKEN` in src/lib/corpus.ts), which leaves the prompt, the
- * target description and a 4k-token report comfortably inside a 200k window.
- * The live corpus is a small fraction of it today, so this is a ceiling that
- * has not yet been approached -- which is exactly when to write one down.
+ * Chosen against the model's context rather than against the corpus. 240k
+ * characters is roughly 60k tokens by this repo's own estimator
+ * (`CHARS_PER_TOKEN` in src/lib/corpus.ts). Add the largest target description
+ * `analyze_fit` accepts (60k characters, about 15k tokens, in
+ * workers/mcp/src/gated.ts), `prompts/fit.md` (about 1k) and a
+ * `FIT_MAX_TOKENS` report (32k), and the worst case is about 108k tokens,
+ * inside a 200k window with room to spare.
+ *
+ * The first number was 120k, written as a ceiling nobody had approached. The
+ * corpus passed it by 2026-09-21 (#339): 141,874 rendered characters on
+ * 2026-09-24, so this doubling leaves about 98k of room for the corpus to grow
+ * again before it has to be revisited. tests/fit-context.test.ts reads the
+ * built corpus and fails when it no longer fits, so the next crossing is a
+ * red check on the pull request that causes it rather than a log line.
  */
-export const CONTEXT_CHAR_BUDGET = 120_000;
+export const CONTEXT_CHAR_BUDGET = 240_000;
 
 export interface CorpusBlock {
   url: string;

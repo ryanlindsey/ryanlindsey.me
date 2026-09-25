@@ -1,5 +1,7 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import type { DocumentsEnv } from '../src/lib/mcp/documents';
+import { fetchDocumentIndex, type DocumentsEnv } from '../src/lib/mcp/documents';
 import {
   buildCorpusContext,
   CONTEXT_CHAR_BUDGET,
@@ -199,5 +201,52 @@ describe('buildCorpusContext', () => {
     expect(context.allowedUrls.has(`${ORIGIN}/writing/post-one/`)).toBe(true);
     expect(context.allowedUrls.has(`${ORIGIN}/writing/post-two/`)).toBe(false);
     expect(context.truncated).toBe(true);
+  });
+});
+
+// THE ALARM FOR #339. `truncated` reached nothing an operator watches: a
+// `console.warn`, seen only by somebody already tailing the MCP Worker, and
+// `corpus_truncated` in the MCP envelope, which nobody reads in aggregate. The
+// corpus crossed `CONTEXT_CHAR_BUDGET` and nobody noticed until #339 found it
+// on 2026-09-21. This reads the corpus `npm run build` just wrote, the same
+// `/llms.txt` and `.md` assets the deployed Worker fetches over `SITE`, so the
+// pull request that publishes the document which tips it over fails here,
+// before any report is served without it.
+//
+// A failure here is not a reason to cut a document or to reach for retrieval
+// (see the header of src/lib/fit/corpus-context.ts). It is the trigger that
+// header names: re-measure, and move the budget by the same reasoning.
+describe('the published corpus', () => {
+  const CLIENT = resolve(process.cwd(), 'dist/client');
+
+  function builtSite(): DocumentsEnv {
+    return {
+      SITE_ORIGIN: 'https://ryanlindsey.me',
+      SITE: {
+        fetch: async (input: RequestInfo | URL) => {
+          const path = new URL(typeof input === 'string' ? input : input.toString()).pathname;
+          const file = resolve(CLIENT, `.${path}`);
+          return existsSync(file)
+            ? new Response(readFileSync(file, 'utf8'), { status: 200 })
+            : new Response('not found', { status: 404 });
+        },
+      },
+    } as DocumentsEnv;
+  }
+
+  test('fits the context budget whole, so no report is written without a document', async () => {
+    expect(existsSync(CLIENT), 'this test reads dist/client: run `npm run build` first').toBe(true);
+    const env = builtSite();
+    const index = await fetchDocumentIndex(env);
+    const context = await buildCorpusContext(env);
+
+    expect(index.length).toBeGreaterThan(1);
+    expect(
+      context.truncated,
+      `the rendered corpus needs more than CONTEXT_CHAR_BUDGET (${CONTEXT_CHAR_BUDGET}) characters`,
+    ).toBe(false);
+    // Every indexed document fetched AND survived, so a missing asset cannot
+    // pass this by shrinking the corpus under the budget.
+    expect(context.documents).toBe(index.length);
   });
 });
