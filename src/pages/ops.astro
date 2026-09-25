@@ -125,9 +125,14 @@ const [metrics, traffic, spend]: [OpsMetrics | null, AgentTraffic | null, Gatewa
     // so nothing in an entry names the shape or the index it came from, and
     // changing what an entry holds without changing the key keeps serving the
     // old one for a full TTL. This key has the same property and the same
-    // remedy. tests/ops-page.test.ts plants an entry under `ops:metrics:v1` and
-    // fails if the page serves it.
-    readOrNull('ops:metrics:v2', () => readOpsMetrics(env.DB, now, WINDOW_DAYS)),
+    // remedy.
+    //
+    // `v3` SINCE ISSUE #353, for the same reason a second time. `fitRuns` went
+    // from one number to four, and a `v2` entry's bare number has no `reports`
+    // on it, so the fit tile would have rendered its absence, and its note
+    // "null started", while D1 answered perfectly well. tests/ops-page.test.ts
+    // plants an entry under `ops:metrics:v2` and fails if the page serves it.
+    readOrNull('ops:metrics:v3', () => readOpsMetrics(env.DB, now, WINDOW_DAYS)),
     readOrNull('ops:traffic:v1', () => readAnalytics(env, now, WINDOW_DAYS)),
     readOrNull('ops:spend:v1', () => readSpend(env, now, WINDOW_DAYS)),
   ]);
@@ -175,6 +180,10 @@ const GATEWAY_ABSENT = {
 /** A figure with thousands separators, or `null` when there is no figure. */
 const count = (value: number | null | undefined): string | null =>
   value === null || value === undefined ? null : value.toLocaleString('en-US');
+
+/** The runs behind the fit figure: how many started, and how many of those produced no report. */
+const fitNote = ({ started, failed, abandoned, inProgress }: OpsMetrics['fitRuns']): string =>
+  `${count(started)} started, ${count(failed)} failed, ${count(abandoned)} abandoned, ${count(inProgress)} in progress`;
 
 const toolCalls =
   metrics === null ? null : metrics.toolCalls.reduce((total, row) => total + row.calls, 0);
@@ -336,7 +345,7 @@ const LIMIT_ROWS: { cost: ToolCost; what: string }[] = [
 const RETENTION_LABELS: Record<string, string> = {
   chat_turns: 'Chat questions and answers',
   mcp_tool_calls: 'The MCP audit log',
-  fit_reports: 'Stored analysis reports',
+  fit_reports: 'Fit runs and their reports',
 };
 
 const releases = recentReleases(changelog, 5);
@@ -656,10 +665,16 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
           source="D1"
           {...D1_ABSENT}
         />
+        {/*
+            REPORTS PRODUCED, NOT RUNS STARTED (issue #353). The note is what
+            keeps a failed or abandoned run on the page rather than silently
+            filtered out of it; src/lib/ops/metrics.ts's `fitRuns` has why.
+          */}
         <OpsMetric
-          label="Fit analyses run"
-          value={count(metrics?.fitRuns)}
+          label="Fit reports produced"
+          value={count(metrics?.fitRuns.reports)}
           source="D1"
+          note={metrics === null ? undefined : fitNote(metrics.fitRuns)}
           {...D1_ABSENT}
         />
         {/*

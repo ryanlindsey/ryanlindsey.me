@@ -46,6 +46,7 @@
 // actually matters, and `migrations/0001` guarantees the column is never NULL.
 
 import { EVALS_AGENT, EVALS_SURFACE } from '../evals/plan';
+import { STALE_AFTER_MS } from '../fit/report-status';
 
 export interface EvalRunRow {
   ranAt: string;
@@ -77,10 +78,39 @@ export interface OpsMetrics {
   /**
    * Counted and NOT broken down by audience. Every `fit_reports` row carries
    * the audience of the grant that produced it (migrations/0002), which is a
-   * campaign label; a total is the largest thing this page can say about them
+   * campaign label; totals are the largest thing this page can say about them
    * without naming one.
+   *
+   * BROKEN DOWN BY STATUS INSTEAD, since issue #353. This used to be one
+   * number counting every row, and a row is written when a run STARTS
+   * (migrations/0006), so a run cancelled while `pending` or ended `failed`
+   * published exactly like one that produced a report. During #349 production
+   * held a `pending` row that never would finish, and /ops counted it: the page
+   * read healthiest at the moment the feature was producing nothing.
+   *
+   * `reports` answers the question a reader asks of this figure, whether the
+   * feature produced anything. The others keep the runs that did not from
+   * vanishing into it. `started` counts every row, so a status this code has
+   * not been told about still appears there rather than nowhere, and the parts
+   * can then sum to less than it.
+   *
+   * `pending` IS SPLIT BY THE RULE /fit/r/<id> ALREADY APPLIES TO THE SAME ROW.
+   * `isStale` in src/lib/fit/report-status.ts calls a pending row older than
+   * `STALE_AFTER_MS` abandoned and tells its reader so, while a live run sits
+   * in `pending` for about ninety seconds. One bucket for both would have
+   * published the #349 row, the case this issue was filed over, as a run still
+   * in progress, and the permalink and this page would have described one run
+   * two ways. The cutoff is bound from the same constant rather than copied,
+   * and `created_at` is written by `toISOString`, so comparing it as text
+   * orders it correctly.
    */
-  fitRuns: number;
+  fitRuns: {
+    started: number;
+    reports: number;
+    failed: number;
+    inProgress: number;
+    abandoned: number;
+  };
   /** The latest run per suite, which is what 04 §4 asks /ops to publish. */
   evalRuns: EvalRunRow[];
 }
@@ -92,6 +122,9 @@ export async function readOpsMetrics(
 ): Promise<OpsMetrics> {
   const since = new Date(now.getTime() - windowDays * 86_400_000).toISOString();
   const until = now.toISOString();
+  // `<=` for abandoned because `isStale` is `>=`: a row exactly
+  // `STALE_AFTER_MS` old is stale on the permalink, so it is here too.
+  const staleBefore = new Date(now.getTime() - STALE_AFTER_MS).toISOString();
 
   // `LIKE` rather than equality on the tool-call side, and the asymmetry is
   // deliberate. `user_agent` holds what a client sent, verbatim and versioned,
@@ -125,9 +158,18 @@ export async function readOpsMetrics(
              AND surface <> ?`,
       )
       .bind(since, until, EVALS_SURFACE),
+    // `TOTAL` rather than `SUM`: over no rows `SUM` is NULL and `TOTAL` is
+    // 0.0, so an empty window reads as zeros without a guard on each field.
     db
-      .prepare(`SELECT COUNT(*) AS runs FROM fit_reports WHERE created_at >= ? AND created_at <= ?`)
-      .bind(since, until),
+      .prepare(
+        `SELECT COUNT(*) AS started,
+                TOTAL(status = 'ok') AS reports,
+                TOTAL(status = 'failed') AS failed,
+                TOTAL(status = 'pending' AND created_at > ?) AS in_progress,
+                TOTAL(status = 'pending' AND created_at <= ?) AS abandoned
+           FROM fit_reports WHERE created_at >= ? AND created_at <= ?`,
+      )
+      .bind(staleBefore, staleBefore, since, until),
     // The latest row per suite. A correlated subquery rather than a window
     // function: D1 is SQLite and supports both, and this shape reads the same to
     // whoever checks it against the table by hand.
@@ -168,7 +210,7 @@ export async function readOpsMetrics(
     })),
     chatSessions: Number((chat.results[0] as { sessions?: number })?.sessions ?? 0),
     chatTurns: Number((chat.results[0] as { turns?: number })?.turns ?? 0),
-    fitRuns: Number((fit.results[0] as { runs?: number })?.runs ?? 0),
+    fitRuns: fitRuns(fit.results[0] as Record<string, unknown> | undefined),
     evalRuns: (evals.results as Record<string, unknown>[]).map((row) => ({
       ranAt: String(row.ran_at),
       suite: String(row.suite),
@@ -177,5 +219,16 @@ export async function readOpsMetrics(
       failed: Number(row.failed),
       status: String(row.status),
     })),
+  };
+}
+
+function fitRuns(row: Record<string, unknown> | undefined): OpsMetrics['fitRuns'] {
+  const figure = (key: string) => Number(row?.[key] ?? 0);
+  return {
+    started: figure('started'),
+    reports: figure('reports'),
+    failed: figure('failed'),
+    inProgress: figure('in_progress'),
+    abandoned: figure('abandoned'),
   };
 }

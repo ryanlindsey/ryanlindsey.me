@@ -21,7 +21,7 @@ import { BANNED_PATTERNS } from './candidacy-patterns';
  * that renders every column of an empty table.
  *
  * THE ORDER ALSO PINS THE CACHE. /ops caches each of its three reads under its
- * OWN KV key for 60 seconds (`ops:metrics:v2`, `ops:traffic:v1`,
+ * OWN KV key for 60 seconds (`ops:metrics:v3`, `ops:traffic:v1`,
  * `ops:spend:v1`), so if the failed metrics read had been stored, the second
  * fetch would still be showing "could not be read" a minute later -- a
  * transient D1 blip pinned as a state. It is not stored because `cached`
@@ -75,6 +75,24 @@ beforeAll(async () => {
     )
     .bind(new Date().toISOString())
     .run();
+  // One fit run in each status `fit_reports` can hold (migrations/0006), and
+  // a second `pending` row ten minutes old, past `STALE_AFTER_MS`, so the fit
+  // tile has a failure, an abandoned run and a live one to name (issue #353).
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  for (const [id, status, createdAt] of [
+    ['fit-ok', 'ok', new Date().toISOString()],
+    ['fit-failed', 'failed', new Date().toISOString()],
+    ['fit-pending', 'pending', new Date().toISOString()],
+    ['fit-abandoned', 'pending', tenMinutesAgo],
+  ]) {
+    await db
+      .prepare(
+        `INSERT INTO fit_reports (id, created_at, status, audience, target_description)
+         VALUES (?, ?, ?, 'label-a', 'a-posting')`,
+      )
+      .bind(id, createdAt, status)
+      .run();
+  }
   html = await (await server.fetch('/ops')).text();
 });
 
@@ -299,7 +317,7 @@ describe('/ops', () => {
     // against the thing it is a window FOR.
     expect(row('Chat questions and answers')).toContain('30 days');
     expect(row('The MCP audit log')).toContain('1 year');
-    expect(row('Stored analysis reports')).toContain('1 year');
+    expect(row('Fit runs and their reports')).toContain('1 year');
   });
 
   test('the architecture diagram is selectable text built from rules, not a drawing', () => {
@@ -437,7 +455,7 @@ describe('/ops', () => {
       'Public MCP tool calls',
       'Chat sessions',
       'Chat turns',
-      'Fit analyses run',
+      'Fit reports produced',
     ]) {
       const metric = tile(label, degraded);
       expect(metric, `${label} must render its absence`).toContain('not available');
@@ -472,6 +490,16 @@ describe('/ops', () => {
    * place the reasoning survives.
    */
 
+  test('the fit tile counts reports and names the runs that produced none', () => {
+    // Issue #353. The figure is the question a reader actually asks of this
+    // page, whether the feature produced anything, and the note is what keeps
+    // a failed or abandoned run from disappearing into it.
+    const metric = tile('Fit reports produced');
+    expect(metric).toMatch(/data-numeric[^>]*>\s*1\s*</);
+    expect(metric).toContain('4 started, 1 failed, 1 abandoned, 1 in progress');
+    expect(metric).not.toContain('a-posting');
+  });
+
   test('an entry written under the previous cache version is not served', async () => {
     // WHAT WOULD HAVE SHIPPED WITHOUT THE BUMP. `OpsMetrics` gained `status`
     // (migrations/0005), and for up to `CACHE_TTL_SECONDS` after a deploy the
@@ -485,11 +513,17 @@ describe('/ops', () => {
     // changes, the key has to change too, or entries written before the change
     // keep being served for a full TTL.
     //
+    // AND IT HAPPENED AGAIN IN ISSUE #353, which is why the planted key is `v2`
+    // now rather than `v1`. `fitRuns` went from one number to four, and a `v2`
+    // entry's bare number has no `reports` on it, so the fit tile would have
+    // rendered its absence for a minute after the deploy while D1 answered
+    // perfectly well.
+    //
     // The planted value is the OLD shape, and the tool-call figure is what the
     // assertion reads: a number that exists nowhere in D1, so finding it on the
     // page can only mean the old key was read.
     await kv.put(
-      'ops:metrics:v1',
+      'ops:metrics:v2',
       JSON.stringify({
         windowDays: 30,
         toolCalls: [{ tool: 'get_resume', calls: 4242 }],
@@ -497,7 +531,14 @@ describe('/ops', () => {
         chatTurns: 0,
         fitRuns: 0,
         evalRuns: [
-          { ranAt: '2026-09-01T00:00:00.000Z', suite: 'tier', total: 3, passed: 3, failed: 0 },
+          {
+            ranAt: '2026-09-01T00:00:00.000Z',
+            suite: 'tier',
+            total: 3,
+            passed: 3,
+            failed: 0,
+            status: 'ran',
+          },
         ],
       }),
       { expirationTtl: 60 },
