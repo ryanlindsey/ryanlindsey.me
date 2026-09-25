@@ -70,7 +70,7 @@ export const FIT_EFFORT = 'medium';
  *
  * 32000 SINCE #379, because thinking now spends from the same budget. Opus
  * 5.5's adaptive thinking cannot be switched off and counts toward
- * `max_tokens`, so the 8192 below the truncation guard was sized for a report
+ * `max_tokens`, so the 8192 recorded at the truncation guard was sized for a report
  * alone and would be spent partly on reasoning the reader never sees. 32000 is
  * the top of the range the issue named rather than a measured ceiling: the
  * cap bounds the worst request, not the typical one, and the `fit` eval suite
@@ -120,7 +120,8 @@ export const BREAKER_KEY = 'breaker:inference';
  * rejects forced tool use: MEASURED 2026-09-24, that body answered `7003`
  * through the gateway, and the same prompt under `output_config.format` with
  * the real `FIT_REPORT_JSON_SCHEMA` answered `200` and a JSON `text` block
- * that parsed. So `minLength` and `format: uri` pass through as well.
+ * that parsed. So `minLength` and `format: uri` are accepted as well; zod
+ * below is still what enforces them.
  */
 type FitModelInput = {
   max_tokens: number;
@@ -214,16 +215,17 @@ export interface FitResult {
  * the judge imports it from here, and it breaks the same way the day the
  * judge moves off Sonnet 5.
  *
- * Structured output through this binding is a forced `tool_choice` emitting a
- * schema, NOT `response_format` -- 10 §5 measured that, and `response_format`
- * is an OpenAI field Anthropic does not have. So the answer arrives as a
- * `tool_use` content block, and it may sit beside a `text` block the model
- * produced anyway; this searches rather than indexing `content[0]`.
+ * Structured output through this binding (on Sonnet 5, and on Opus 5 until
+ * #379) is a forced `tool_choice` emitting a schema, NOT `response_format` --
+ * 10 §5 measured that, and `response_format` is an OpenAI field Anthropic does
+ * not have. So the answer arrives as a `tool_use` content block, and it may
+ * sit beside a `text` block the model produced anyway; this searches rather
+ * than indexing `content[0]`.
  *
  * `name` IS CHECKED, BUT ONLY WHEN PRESENT, and the asymmetry is deliberate
  * (fix round 1, finding 9). Checking it when present means a `tools` array
  * that ever grows a second entry cannot silently feed the wrong tool's input
- * to `FitReport.safeParse` -- a plausible future edit, since a "cannot comply"
+ * to the caller's parse (`JudgeVerdict` today) -- a plausible future edit, since a "cannot comply"
  * tool is the obvious next one. Not REQUIRING it is the measured half: Task
  * 10's probe measured a `text` response through this gateway route and never a
  * `tool_use` one, so whether the block carries `name` here is unverified, and
@@ -482,8 +484,9 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
   // 8192 then, doubled rather than tuned to a measured ceiling, because the
   // number that matters is "comfortably more than the longest report" and the
   // suite is what tells us if it is not. #379 raised it again for Opus 5.5,
-  // whose thinking spends from the same cap; see `FIT_MAX_TOKENS`. If a twelve-requirement report ever
-  // trips this again, raise it again -- the guard failing loudly is the system
+  // whose thinking spends from the same cap; see `FIT_MAX_TOKENS`. If a
+  // twelve-requirement report ever trips this again, raise it again -- the
+  // guard failing loudly is the system
   // working, and a truncated report rendered as a whole one is the outcome it
   // exists to prevent.
   if (raw.stop_reason === 'max_tokens') {

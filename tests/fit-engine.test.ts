@@ -344,6 +344,23 @@ test('a text answer that is not JSON is a FitUnavailable', async () => {
   await expect(result).rejects.toBeInstanceOf(FitUnavailable);
 });
 
+test('a refusal is a FitUnavailable, not a report', async () => {
+  // A refusal ends the turn with prose rather than schema-conforming JSON. It
+  // already fails closed through the parse; this pins that path.
+  const result = analyzeFit(
+    env({
+      AI: {
+        run: async () => ({
+          stop_reason: 'refusal',
+          content: [{ type: 'text', text: 'I cannot help with that.' }],
+        }),
+      } as unknown as Ai,
+    }),
+    'A target description.',
+  );
+  await expect(result).rejects.toBeInstanceOf(FitUnavailable);
+});
+
 test('a response that does not match the schema is a FitUnavailable, not a partial report', async () => {
   // Fails CLOSED. Half a report rendered as a whole one is the failure this
   // whole feature cannot afford -- the reader has no way to see what is
