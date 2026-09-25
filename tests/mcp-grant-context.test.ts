@@ -1,9 +1,11 @@
-import { afterAll, beforeAll, expect, test } from 'vitest';
+import { afterAll, beforeAll, expect, test, vi } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import { MCP_HARNESS_WORKERS } from './workers';
 import { mintToken, newJti, type Scope } from '../src/lib/tier/token';
 import { recordIssue } from '../src/lib/tier/registry';
 import { TEST_SIGNING_KEY } from '../src/lib/tier/grant';
+import { handleGrantContext, type GrantContext } from '../workers/mcp/src/grant-context';
+import type { McpEnv } from '../workers/mcp/src/env';
 
 // `POST /grant` (04 §2): what one bearer unlocks, answered by the Worker that
 // owns the question. It exists so the site can preload a campaign's target
@@ -14,16 +16,17 @@ import { TEST_SIGNING_KEY } from '../src/lib/tier/grant';
 const server = createTestHarness({ workers: MCP_HARNESS_WORKERS });
 let db: D1Database;
 let kv: KVNamespace;
+let mcpEnv: McpEnv;
 let origin = '';
 
 beforeAll(async () => {
   const { url } = await server.listen();
   origin = url.origin;
-  const mcp = server.getWorker<{ DB: D1Database; KV_CONFIG: KVNamespace }>('ryanlindsey-me-mcp');
+  const mcp = server.getWorker<McpEnv>('ryanlindsey-me-mcp');
   await mcp.applyD1Migrations('DB');
-  const env = await mcp.getEnv();
-  db = env.DB;
-  kv = env.KV_CONFIG;
+  mcpEnv = await mcp.getEnv();
+  db = mcpEnv.DB;
+  kv = mcpEnv.KV_CONFIG;
 });
 afterAll(async () => {
   await server.close();
@@ -305,4 +308,43 @@ test('a retired campaign carries no hero line, but keeps its preload', async () 
 test('a GET matches a genuinely unrouted path, like any other method this Worker refuses', async () => {
   const response = await fetch(`${origin}/grant`);
   await expectSameRefusal(response, 'GET');
+});
+
+test('a failing campaign read answers the grant with no preload, not the refusal', async () => {
+  // Called directly rather than over `fetch`, because the harness has no lever
+  // that makes the Worker's own `KV_CONFIG.list` reject: the namespace a suite
+  // holds is a separate handle from the object the Worker calls, the same wall
+  // `src/pages/fit/r/[id].astro` records for its own guard. Here there IS a
+  // function to import, so only the env is forged, and only its KV. `list` is
+  // what fails because it is the call `walkCampaigns` leaves outside its `try`.
+  const failingKv = {
+    list: () => Promise.reject(new Error('KV list unavailable')),
+    get: () => Promise.reject(new Error('KV get unavailable')),
+  } as unknown as KVNamespace;
+  const env = { ...mcpEnv, KV_CONFIG: failingKv } as McpEnv;
+  const token = await grant('fixture-kv-down');
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    const response = await handleGrantContext(
+      new Request('https://mcp.test/grant', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      env,
+    );
+    // Not `null`: `null` is the refusal, which the site renders as the 404 a
+    // dead token gets, and this token is live.
+    expect(response).not.toBeNull();
+    expect(response!.status).toBe(200);
+    const body = (await response!.json()) as GrantContext;
+    expect(body.audience).toBe('fixture-kv-down');
+    expect(body.tools).toContain('analyze_fit');
+    expect(body.preload).toBe('');
+    expect(body.heroLine).toBe('');
+    // The cause is interpolated into the message, because a Worker log shows
+    // only the stack of an error passed as a second argument.
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('KV list unavailable'));
+  } finally {
+    warn.mockRestore();
+  }
 });

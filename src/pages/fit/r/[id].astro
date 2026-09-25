@@ -311,7 +311,9 @@ const generated = dateLabel(row.created_at);
  * `workers/mcp/src/grant-context.ts` calls the same function unguarded too,
  * on the OTHER Worker, and is intentionally NOT touched here -- a different
  * failure surface (a grant resolution, not a page render) that is out of this
- * task's scope.
+ * task's scope. GUARDED SINCE #296, on the same rule, and that one IS asserted:
+ * `handleGrantContext` is a function a test can import and hand a failing KV,
+ * which is exactly what this frontmatter is not.
  */
 let campaign: CampaignConfig | null = null;
 try {

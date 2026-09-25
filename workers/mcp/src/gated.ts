@@ -329,6 +329,17 @@ export interface NarrativeResolution {
  * The `console.warn` stays HERE rather than in either caller, because it is
  * the operator's only signal that a campaign entry is wrong and both readers
  * want it fired exactly once, on the resolution that found the problem.
+ *
+ * THE CAMPAIGN READ IS DELIBERATELY UNGUARDED, unlike the same call in
+ * `handleGrantContext` (./grant-context.ts) and `/fit/r/<id>`, which both fail
+ * toward no campaign (#296, which asked for this one to be checked in the same
+ * pass). Those two lose optional decoration when the read fails. This one
+ * would lose the configured key and fall back to the convention key: the
+ * narrative tool would answer `NOT_DEPLOYED` for a document that is deployed,
+ * and the brief would tell an author to write to a key the reader does not
+ * follow, which is the silent mismatch this function exists to prevent. A
+ * rejection instead reaches `defineTool` (./define.ts), which answers the
+ * generic failure sentence -- the true answer to a read that could not run.
  */
 export async function resolveNarrativeKey(
   env: CampaignEnv,
