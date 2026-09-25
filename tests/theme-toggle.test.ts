@@ -15,7 +15,7 @@
  */
 import { beforeEach, expect, test } from 'vitest';
 import { builtHeaderMarkup } from './markup';
-import { initThemeToggle, setFavicon } from '../src/lib/theme-toggle';
+import { initThemeToggle } from '../src/lib/theme-toggle';
 
 const headerMarkup = builtHeaderMarkup();
 
@@ -54,9 +54,10 @@ beforeEach(() => {
   localStorage.clear();
   document.documentElement.removeAttribute('data-theme');
   installMatchMedia();
-  // The link Base.astro server-renders, verbatim, so the swap is tested
-  // against the element it will actually meet.
-  document.head.innerHTML = '<link rel="icon" href="/favicon-dark.svg" type="image/svg+xml">';
+  // The links Base.astro server-renders, verbatim, so the test below meets
+  // the elements the toggle would.
+  document.head.innerHTML =
+    '<link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="icon" href="/favicon.ico" sizes="32x32">';
   document.body.innerHTML = headerMarkup;
   initThemeToggle();
 });
@@ -126,44 +127,22 @@ test('an explicit choice is not overridden when the OS flips', () => {
   expect(labels()).toEqual(['LIGHT', 'LIGHT']);
 });
 
-const svgIcons = () => [
-  ...document.head.querySelectorAll<HTMLLinkElement>('link[rel="icon"][type="image/svg+xml"]'),
-];
-
-test('cycling the toggle swaps the SVG icon for the resolved theme, and leaves exactly one', () => {
-  toggles()[0].click(); // system -> light
-  expect(svgIcons().map((link) => link.getAttribute('href'))).toEqual(['/favicon-light.svg']);
-  toggles()[0].click(); // light -> dark
-  expect(svgIcons().map((link) => link.getAttribute('href'))).toEqual(['/favicon-dark.svg']);
-});
-
-test('the swap replaces the element rather than editing its href', () => {
-  // Safari caches the bitmap against the element, and Firefox ignores an
-  // in-place href change, so an edited node would look right here and wrong
-  // in both browsers.
-  const before = svgIcons()[0];
-  setFavicon('light');
-  expect(svgIcons()[0]).not.toBe(before);
-  expect(before.isConnected).toBe(false);
-});
-
-test('on load the icon matches the theme the head script already resolved', () => {
+/**
+ * The toggle swapped the SVG icon for the resolved theme from #374 until
+ * 2026-09-24, and that swap is what left Safari's homepage tab with no icon at
+ * all: removing and re-inserting an icon link during load is not something
+ * WebKit recovers from reliably. The icon now serves both themes from one
+ * static file, so the toggle must not touch the head.
+ */
+test('the toggle never touches the tab icon links', () => {
+  const before = [...document.head.querySelectorAll('link[rel="icon"]')];
   document.documentElement.setAttribute('data-theme', 'light');
   initThemeToggle();
-  expect(svgIcons().map((link) => link.getAttribute('href'))).toEqual(['/favicon-light.svg']);
-});
-
-test('an OS flip while following the system swaps the icon too', () => {
+  toggles()[0].click(); // system -> light
+  toggles()[0].click(); // light -> dark
   osPrefersDark = true;
   for (const listener of mediaListeners) listener();
-  expect(svgIcons().map((link) => link.getAttribute('href'))).toEqual(['/favicon-dark.svg']);
-});
-
-test('the .ico fallback is left alone', () => {
-  document.head.insertAdjacentHTML(
-    'beforeend',
-    '<link rel="icon" href="/favicon.ico" sizes="32x32">',
-  );
-  setFavicon('light');
-  expect(document.head.querySelectorAll('link[href="/favicon.ico"]')).toHaveLength(1);
+  expect([...document.head.querySelectorAll('link[rel="icon"]')]).toEqual(before);
+  expect(before.every((link) => link.isConnected)).toBe(true);
+  expect(before.map((link) => link.getAttribute('href'))).toEqual(['/favicon.svg', '/favicon.ico']);
 });
