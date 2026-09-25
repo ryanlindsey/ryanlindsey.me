@@ -62,9 +62,13 @@ export const WEBMCP_TOOLS: readonly WebMcpTool[] = [
  * MEASURED against node_modules/agents/dist/mcp/index.js, which sets
  * `Content-Type: text/event-stream` unconditionally on this path even though
  * the request accepts JSON too -- so this unwraps that frame exactly the way
- * tests/mcp-tools.test.ts's `rpc` and src/lib/fit/client.ts's `rpc` already do.
- * The `?? '{}'` fallback is the same one src/lib/fit/client.ts's `rpc` uses,
- * for the same reason: a `data:` line that never arrives should fail as
+ * tests/mcp-tools.test.ts's `rpc` does. src/lib/fit/client.ts's `rpc` was the
+ * other precedent named here; it had moved on to a frame walk that matches on
+ * the JSON-RPC id, and #351 moved that walk to `payloadOf` in
+ * workers/mcp/src/evals-client.ts and deleted the site's copy. This one still
+ * takes the first `data:` line, which a notification frame ahead of the answer
+ * would defeat. The `?? '{}'` fallback is kept for its own reason: a `data:`
+ * line that never arrives should fail as
  * "the server answered nothing usable" rather than as a bare `JSON.parse('')`
  * `SyntaxError` with no context.
  *
