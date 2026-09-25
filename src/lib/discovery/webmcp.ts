@@ -66,11 +66,15 @@ export const WEBMCP_TOOLS: readonly WebMcpTool[] = [
  * other precedent named here; it had moved on to a frame walk that matches on
  * the JSON-RPC id, and #351 moved that walk to `payloadOf` in
  * workers/mcp/src/evals-client.ts and deleted the site's copy. This one still
- * takes the first `data:` line, which a notification frame ahead of the answer
- * would defeat. The `?? '{}'` fallback is kept for its own reason: a `data:`
- * line that never arrives should fail as
- * "the server answered nothing usable" rather than as a bare `JSON.parse('')`
- * `SyntaxError` with no context.
+ * carries both defects that walk was written against: it decides SSE by the
+ * first bytes, so a leading `: keepalive` sends the whole stream to
+ * `JSON.parse`, and it takes the first `data:` line, which a notification
+ * frame ahead of the answer would defeat.
+ *
+ * The `?? '{}'` fallback was meant to make a `data:` line that never arrives
+ * fail as "the server answered nothing usable" rather than as a bare
+ * `JSON.parse('')` `SyntaxError`. It does not: `'{}'.slice(5)` is `''`, so
+ * that is exactly the error it throws (found in the review of #351).
  *
  * `defineTool` (workers/mcp/src/define.ts) answers BOTH a limiter refusal and
  * a thrown `ToolError` as an ordinary JSON-RPC `result` with `isError: true`

@@ -160,7 +160,14 @@ export async function rpc(
  * ours to fail on. A stream with no frame answering `id` is a thrown error
  * naming the status -- silently taking the wrong frame would be worse than
  * saying nothing was found, and a throw is what `run()` turns into an
- * `incomplete` row (workers/mcp/src/evals-workflow.ts).
+ * `incomplete` row (workers/mcp/src/evals-workflow.ts). An SSE error frame
+ * carrying `id: null` is skipped too, so it surfaces as that throw rather than
+ * as its own message; the row is the same either way.
+ *
+ * A JSON BODY IS NOT MATCHED ON `id`, deliberately. That mode carries exactly
+ * one message, and a transport-level refusal -- a 401, a bad session -- comes
+ * back as JSON with `id: null` and belongs in front of the caller rather than
+ * behind a "no message answering" throw.
  *
  * THE CONTENT TYPE PICKS THE ORDER, not the only attempt. Streamable HTTP
  * defines exactly two response modes and names the one it used in this header,

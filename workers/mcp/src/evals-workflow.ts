@@ -74,9 +74,11 @@ export interface EvalsRunParams {
  * alone. A third is strictly worse than that, and it is not free: a case step
  * that throws is a case that was about to be paid for again, five more times.
  *
- * THE CONCRETE EXPOSURE IS `fit`. `payloadOf` throws on an event stream
- * carrying no data line, which is the exact failure its own comment records,
- * and `rpc`'s `JSON.parse` throws on a malformed body. Under the default, each
+ * THE CONCRETE EXPOSURE IS `fit`. `payloadOf` throws when no message in the
+ * response answers the request's id -- an event stream carrying only
+ * keep-alives or notifications, or a body that is not JSON at all -- which
+ * since #351 covers both what it used to throw on and what `rpc`'s own
+ * `JSON.parse` used to throw on. Under the default, each
  * throw sends the step back through another `analyze_fit` -- an Opus call over
  * the whole corpus -- five more times, each doing its own client retry, each
  * of those fanning out at the gateway.
