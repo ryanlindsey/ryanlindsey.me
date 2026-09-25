@@ -1,5 +1,5 @@
 import { resolveGrant } from '../../../src/lib/tier/grant';
-import { readCampaignForAudience } from '../../../src/lib/tier/campaigns';
+import { readCampaignForAudience, type CampaignConfig } from '../../../src/lib/tier/campaigns';
 import { grantedToolNames } from './gated';
 import type { McpEnv } from './env';
 
@@ -89,7 +89,28 @@ export async function handleGrantContext(request: Request, env: McpEnv): Promise
   // Matched on `token_audience`, exactly as `get_application_narrative` does
   // (./gated.ts). Not on `id`: 00 §5 lists them as separate fields and they are
   // allowed to differ.
-  const campaign = await readCampaignForAudience(env, grant.audience);
+  //
+  // GUARDED, because a throw here would read as a dead token (#296).
+  // `walkCampaigns` (src/lib/tier/campaigns.ts) leaves `KV_CONFIG.list()`
+  // outside its own `try`, so a transient KV failure rejects out of this
+  // function; `grantContext` (src/lib/fit/client.ts) answers that with `null`,
+  // and `/fit` answers `null` with the same 404 an expired, revoked or forged
+  // token gets. The holder of a live link cannot tell the two apart, and the
+  // natural next move, asking for a new token, fixes nothing. FAILS TOWARD NO
+  // PRELOAD, NEVER TOWARD NO GRANT: the access decision is `tools`, which does
+  // not depend on the campaign, so the grant still answers with an empty
+  // `preload` and `heroLine`. The same rule every other remote read on this
+  // path follows: `readHeroIndex`, the `304` re-fetch in `withCampaignHero`,
+  // and `/fit/r/<id>`'s own guard around this same call, whose docblock also
+  // records why the cause is interpolated rather than passed as an argument.
+  let campaign: CampaignConfig | null = null;
+  try {
+    campaign = await readCampaignForAudience(env, grant.audience);
+  } catch (error) {
+    console.warn(
+      `grant: the campaign read failed; answering with no preload: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 
   const body: GrantContext = {
     tools: grantedToolNames(grant),
