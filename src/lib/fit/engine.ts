@@ -29,27 +29,57 @@ import FIT_PROMPT from '../../../prompts/fit.md?raw';
  * Both work, so 03 §4's choice stands and the fallback below is a real
  * alternative rather than a hypothetical one.
  *
+ * MOVED TO OPUS 5.5 by #379, re-probed the same way from a scratch Worker
+ * against the `ryanlindsey-me` gateway, 2026-09-23 and 2026-09-24:
+ *   anthropic/claude-opus-5-5 -> `7003: User Input Error`, with and without
+ *                                `output_config`
+ *   anthropic/claude-opus-5   -> the same body answered `200`, `end_turn`
+ *   anthropic/claude-opus-5.5 -> content[0] thinking, then text 'ok', `end_turn`
+ * THE CATALOGUE ID HAS A DOT. `claude-opus-5-5` is Anthropic's own spelling,
+ * and the gateway rejects it with the same `7003` it gives a malformed body,
+ * so a day of "the gateway does not serve it yet" was a spelling mistake. The
+ * id to copy is the one on developers.cloudflare.com/ai/models, not the one
+ * in Anthropic's docs. Opus 5.5 is also cheaper per token than Opus 5 ($4 /
+ * $20 per MTok against $5 / $25).
+ *
  * The spacing is not superstition: 10 §5 records the gateway capping at 50
  * requests/minute and answering an exceeded cap with `2018: Invalid User
  * Credentials`, which READS AS AN AUTH FAILURE AND IS NOT. Two passes of spike
  * conclusions were wrong before that was spotted. Anyone re-probing these
  * values should space the calls and disbelieve a 2018.
  */
-export const FIT_MODEL = 'anthropic/claude-opus-5';
+export const FIT_MODEL = 'anthropic/claude-opus-5.5';
+/**
+ * Kept on Sonnet 5 by #379, and still with no call site. Whether Sonnet 5
+ * honours `output_config.format` through this gateway is UNPROBED, so this is
+ * no longer the drop-in alternative the paragraph above describes: probe that
+ * before wiring it anywhere.
+ */
 export const FIT_FALLBACK_MODEL = 'anthropic/claude-sonnet-5';
+
+/**
+ * Set explicitly although it is Opus 5.5's default, so the cost of a report
+ * cannot move because a default did.
+ */
+export const FIT_EFFORT = 'medium';
 
 /**
  * Required by this binding, and the ONLY sampling-adjacent parameter it
  * accepts: 10 §5 measured `temperature`, `top_p` and `top_k` being rejected
  * with `7003: User Input Error`, deterministically. Do not add them.
+ *
+ * 32000 SINCE #379, because thinking now spends from the same budget. Opus
+ * 5.5's adaptive thinking cannot be switched off and counts toward
+ * `max_tokens`, so the 8192 below the truncation guard was sized for a report
+ * alone and would be spent partly on reasoning the reader never sees. 32000 is
+ * the top of the range the issue named rather than a measured ceiling: the
+ * cap bounds the worst request, not the typical one, and the `fit` eval suite
+ * is what says whether a long report still fits.
  */
-export const FIT_MAX_TOKENS = 8192;
+export const FIT_MAX_TOKENS = 32000;
 
 /** The daily breaker flag (04 §5). Any value at all means tripped. */
 export const BREAKER_KEY = 'breaker:inference';
-
-/** The forced tool's name. The model returns the report as this tool's input. */
-const EMIT_TOOL = 'emit_fit_report';
 
 /**
  * The request body this module sends, named so that the shape is checked.
@@ -65,7 +95,7 @@ const EMIT_TOOL = 'emit_fit_report';
  *   ): Promise<Record<string, unknown>>
  *
  * and its own comment names third-party gateway models as its purpose. So
- * `'anthropic/claude-opus-5'` -- not a key of `AiModelList`, the generated map
+ * `'anthropic/claude-opus-5.5'` -- not a key of `AiModelList`, the generated map
  * of Cloudflare's own catalogue -- routes here rather than having no overload
  * at all. Fix round 1, finding 3: this file previously claimed there was no
  * overload and cast `env.AI` through `as unknown as`, which threw away the
@@ -79,19 +109,27 @@ const EMIT_TOOL = 'emit_fit_report';
  *
  * The shape IS the measurement. `temperature`, `top_p` and `top_k` are ABSENT
  * rather than optional -- 10 §5 measured all three being rejected with
- * `7003: User Input Error` -- and `tool_choice` is required rather than
- * optional, because a forced tool call is the whole mechanism by which this
- * call returns structured output. There is no `response_format`: that is an
- * OpenAI field, and Anthropic does not have it. A future edit that adds a
- * sampling knob now has to add it to a type whose comment says why it is not
- * there.
+ * `7003: User Input Error` -- and `output_config.format` is required rather
+ * than optional, because it is the whole mechanism by which this call returns
+ * structured output. There is no `response_format`: that is an OpenAI field,
+ * and Anthropic does not have it. A future edit that adds a sampling knob now
+ * has to add it to a type whose comment says why it is not there.
+ *
+ * `tools` and `tool_choice` are absent too, since #379. Until then the report
+ * came back as the input of a forced `emit_fit_report` call, and Opus 5.5
+ * rejects forced tool use: MEASURED 2026-09-24, that body answered `7003`
+ * through the gateway, and the same prompt under `output_config.format` with
+ * the real `FIT_REPORT_JSON_SCHEMA` answered `200` and a JSON `text` block
+ * that parsed. So `minLength` and `format: uri` pass through as well.
  */
 type FitModelInput = {
   max_tokens: number;
   system: string;
   messages: { role: 'user'; content: string }[];
-  tools: { name: string; description: string; input_schema: Record<string, unknown> }[];
-  tool_choice: { type: 'tool'; name: string };
+  output_config: {
+    effort: typeof FIT_EFFORT;
+    format: { type: 'json_schema'; schema: Record<string, unknown> };
+  };
 };
 
 export interface FitEnv extends DocumentsEnv {
@@ -170,6 +208,12 @@ export interface FitResult {
 /**
  * The forced tool call's input, or `null`.
  *
+ * THE JUDGE IS ITS ONLY CALLER since #379 moved this engine to Opus 5.5, which
+ * rejects forced tool use; the fit report now arrives through
+ * `extractStructuredOutput` below. It stays here rather than moving because
+ * the judge imports it from here, and it breaks the same way the day the
+ * judge moves off Sonnet 5.
+ *
  * Structured output through this binding is a forced `tool_choice` emitting a
  * schema, NOT `response_format` -- 10 §5 measured that, and `response_format`
  * is an OpenAI field Anthropic does not have. So the answer arrives as a
@@ -197,6 +241,35 @@ export function extractToolInput(raw: unknown, toolName: string): unknown {
     if (entry.type !== 'tool_use' || entry.input === undefined) continue;
     if (entry.name !== undefined && entry.name !== toolName) continue;
     return entry.input;
+  }
+  return null;
+}
+
+/**
+ * The structured answer, parsed from its JSON `text` block, or `null`.
+ *
+ * Under `output_config.format` the report arrives as a string in a `text`
+ * block, and on Opus 5.5 that block is not `content[0]`: adaptive thinking is
+ * always on, and a `thinking` block (whose text arrives empty) comes first. So
+ * this searches rather than indexing. The first `text` block is the answer,
+ * because a constrained response has exactly one.
+ *
+ * Text that is not JSON is `null` rather than a throw, so it reaches the same
+ * fail-closed branch as JSON that does not match the schema.
+ */
+export function extractStructuredOutput(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const content = (raw as { content?: unknown }).content;
+  if (!Array.isArray(content)) return null;
+  for (const block of content) {
+    if (typeof block !== 'object' || block === null) continue;
+    const entry = block as { type?: unknown; text?: unknown };
+    if (entry.type !== 'text' || typeof entry.text !== 'string') continue;
+    try {
+      return JSON.parse(entry.text) as unknown;
+    } catch {
+      return null;
+    }
   }
   return null;
 }
@@ -365,14 +438,10 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
     max_tokens: FIT_MAX_TOKENS,
     system: FIT_PROMPT,
     messages: [{ role: 'user', content: user }],
-    tools: [
-      {
-        name: EMIT_TOOL,
-        description: 'Return the completed fit report.',
-        input_schema: FIT_REPORT_JSON_SCHEMA,
-      },
-    ],
-    tool_choice: { type: 'tool', name: EMIT_TOOL },
+    output_config: {
+      effort: FIT_EFFORT,
+      format: { type: 'json_schema', schema: FIT_REPORT_JSON_SCHEMA },
+    },
   };
 
   let raw: Record<string, unknown>;
@@ -410,9 +479,10 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
   // at least five requirements with two rated strong, and `partial` is built to
   // surface gaps on top of matches. So 4096 was sized for the smallest case.
   //
-  // 8192 now, doubled rather than tuned to a measured ceiling, because the
+  // 8192 then, doubled rather than tuned to a measured ceiling, because the
   // number that matters is "comfortably more than the longest report" and the
-  // suite is what tells us if it is not. If a twelve-requirement report ever
+  // suite is what tells us if it is not. #379 raised it again for Opus 5.5,
+  // whose thinking spends from the same cap; see `FIT_MAX_TOKENS`. If a twelve-requirement report ever
   // trips this again, raise it again -- the guard failing loudly is the system
   // working, and a truncated report rendered as a whole one is the outcome it
   // exists to prevent.
@@ -421,7 +491,7 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
     throw new FitUnavailable('The fit engine returned an incomplete answer. Try again shortly.');
   }
 
-  const parsed = FitReport.safeParse(extractToolInput(raw, EMIT_TOOL));
+  const parsed = FitReport.safeParse(extractStructuredOutput(raw));
   if (!parsed.success) {
     // FAILS CLOSED. A partial report rendered as a whole one is the one
     // failure this feature cannot afford: the reader cannot see what is

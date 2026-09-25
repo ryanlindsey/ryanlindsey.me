@@ -278,7 +278,7 @@ describe('/ops', () => {
 
   test('every model in use is named, from the constants rather than by hand', () => {
     expect(html).toContain('anthropic/claude-sonnet-5');
-    expect(html).toContain('anthropic/claude-opus-5');
+    expect(html).toContain('anthropic/claude-opus-5.5');
     expect(html).toContain('@cf/qwen/qwen3-embedding-0.6b');
     // THE JUDGE ROW, which the three assertions above cannot see: `JUDGE_MODEL`
     // is the same string as `CHAT_MODEL` today, so dropping the row would leave

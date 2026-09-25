@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 import {
   analyzeFit,
   BREAKER_KEY,
+  extractStructuredOutput,
   extractToolInput,
   fenceFor,
   FIT_MAX_TOKENS,
@@ -29,6 +30,24 @@ const REPORT = {
   gaps: [{ requirement: 'Field service', why: 'Not evidenced.' }],
   questions_to_ask: ['How is on-call staffed?'],
 };
+
+/**
+ * The envelope Opus 5.5 answers with under `output_config.format`, in the shape
+ * MEASURED through the gateway on 2026-09-24: a `thinking` block (adaptive
+ * thinking cannot be switched off, and its text arrives empty) and then ONE
+ * `text` block carrying the report as a JSON string. Not a `tool_use` block --
+ * that was the Opus 5 mechanism, and Opus 5.5 answers forced tool use with
+ * `7003`.
+ */
+function reply(report: unknown, stopReason = 'end_turn'): Record<string, unknown> {
+  return {
+    stop_reason: stopReason,
+    content: [
+      { type: 'thinking', thinking: '', signature: 'sig' },
+      { type: 'text', text: JSON.stringify(report) },
+    ],
+  };
+}
 
 /**
  * A site stand-in serving one document and the `/llms.txt` that indexes it.
@@ -95,9 +114,7 @@ function env(over: Partial<FitEnv> = {}): FitEnv {
     RLME_AI_GATEWAY_ID: 'ryanlindsey-me',
     KV_CONFIG: { get: async () => null } as unknown as KVNamespace,
     AI: {
-      run: async () => ({
-        content: [{ type: 'tool_use', name: 'emit_fit_report', input: REPORT }],
-      }),
+      run: async () => reply(REPORT),
     } as unknown as Ai,
     ...over,
   };
@@ -205,7 +222,7 @@ test('the target description and the prompt both reach the model call', async ()
       AI: {
         run: async (_model: unknown, input: Record<string, unknown>) => {
           seen = input;
-          return { content: [{ type: 'tool_use', input: REPORT }] };
+          return reply(REPORT);
         },
       } as unknown as Ai,
     }),
@@ -213,23 +230,29 @@ test('the target description and the prompt both reach the model call', async ()
   );
 
   expect(String(seen.system)).toContain('Fit analysis prompt');
-  expect(String(seen.system)).toContain('emit_fit_report');
+  // The prompt used to tell the model to call a tool that no longer exists.
+  expect(String(seen.system)).not.toContain('emit_fit_report');
   const messages = seen.messages as { content: string }[];
   expect(messages[0]!.content).toContain('Runs a distributed platform group.');
   expect(messages[0]!.content).toContain('https://site.test/resume');
 
-  // Fix round 1, finding 7: the forced-tool mechanism and the per-call cost cap
-  // were both unpinned. Structured output here is a forced `tool_choice` over a
-  // tool whose `input_schema` is the DERIVED schema (never a hand-written
-  // second copy), and `max_tokens` is the only thing standing between one
-  // request and an unbounded bill. Nothing else in this file would notice
-  // either of them being dropped.
-  expect(seen.tool_choice).toEqual({ type: 'tool', name: 'emit_fit_report' });
+  // Fix round 1, finding 7: the structured-output mechanism and the per-call
+  // cost cap were both unpinned. Structured output is `output_config.format`
+  // carrying the DERIVED schema (never a hand-written second copy), effort is
+  // set explicitly rather than inherited from a default that can move, and
+  // `max_tokens` is the only thing standing between one request and an
+  // unbounded bill. Nothing else in this file would notice any of them being
+  // dropped. Forced tool use is ABSENT: Opus 5.5 rejects it.
+  expect(seen.output_config).toEqual({
+    effort: 'medium',
+    format: { type: 'json_schema', schema: FIT_REPORT_JSON_SCHEMA },
+  });
+  expect((seen.output_config as { format: { schema: unknown } }).format.schema).toBe(
+    FIT_REPORT_JSON_SCHEMA,
+  );
   expect(seen.max_tokens).toBe(FIT_MAX_TOKENS);
-  const tools = seen.tools as { name: string; input_schema: Record<string, unknown> }[];
-  expect(tools).toHaveLength(1);
-  expect(tools[0]!.name).toBe('emit_fit_report');
-  expect(tools[0]!.input_schema).toBe(FIT_REPORT_JSON_SCHEMA);
+  expect(seen).not.toHaveProperty('tools');
+  expect(seen).not.toHaveProperty('tool_choice');
 });
 
 test('the fence around the description survives a description containing a fence', async () => {
@@ -254,7 +277,7 @@ test('the fence around the description survives a description containing a fence
       AI: {
         run: async (_model: unknown, input: Record<string, unknown>) => {
           seen = input;
-          return { content: [{ type: 'tool_use', input: REPORT }] };
+          return reply(REPORT);
         },
       } as unknown as Ai,
     }),
@@ -277,13 +300,48 @@ test('a fabricated citation is dropped and counted', async () => {
   const result = await analyzeFit(
     env({
       AI: {
-        run: async () => ({ content: [{ type: 'tool_use', input: fabricated }] }),
+        run: async () => reply(fabricated),
       } as unknown as Ai,
     }),
     'A target description.',
   );
   expect(result.citations.dropped).toBe(1);
   expect(result.report.requirement_map[0]!.strength).toBe('none');
+});
+
+test('extractStructuredOutput reads the JSON text block past the thinking block', () => {
+  expect(extractStructuredOutput(reply({ a: 1 }))).toEqual({ a: 1 });
+});
+
+test('extractStructuredOutput returns null for every shape that is not a JSON answer', () => {
+  for (const shape of [
+    null,
+    'text',
+    {},
+    { content: 'text' },
+    { content: [] },
+    { content: [{ type: 'thinking', thinking: '' }] },
+    { content: [{ type: 'text', text: 'not json {' }] },
+    { content: [{ type: 'text' }] },
+    { content: [{ type: 'tool_use', input: { a: 1 } }] },
+  ]) {
+    expect(extractStructuredOutput(shape)).toBeNull();
+  }
+});
+
+test('a text answer that is not JSON is a FitUnavailable', async () => {
+  const result = analyzeFit(
+    env({
+      AI: {
+        run: async () => ({
+          stop_reason: 'end_turn',
+          content: [{ type: 'text', text: 'Here is your report: it went well.' }],
+        }),
+      } as unknown as Ai,
+    }),
+    'A target description.',
+  );
+  await expect(result).rejects.toBeInstanceOf(FitUnavailable);
 });
 
 test('a response that does not match the schema is a FitUnavailable, not a partial report', async () => {
@@ -293,7 +351,7 @@ test('a response that does not match the schema is a FitUnavailable, not a parti
   const result = analyzeFit(
     env({
       AI: {
-        run: async () => ({ content: [{ type: 'tool_use', input: { nope: true } }] }),
+        run: async () => reply({ nope: true }),
       } as unknown as Ai,
     }),
     'A target description.',
@@ -313,10 +371,7 @@ test('a report truncated by the token cap is refused even though it parses', asy
   const result = analyzeFit(
     env({
       AI: {
-        run: async () => ({
-          stop_reason: 'max_tokens',
-          content: [{ type: 'tool_use', name: 'emit_fit_report', input: REPORT }],
-        }),
+        run: async () => reply(REPORT, 'max_tokens'),
       } as unknown as Ai,
     }),
     'A target description.',
@@ -332,10 +387,7 @@ test('an ordinary end_turn report is not mistaken for a truncated one', async ()
   const result = await analyzeFit(
     env({
       AI: {
-        run: async () => ({
-          stop_reason: 'end_turn',
-          content: [{ type: 'tool_use', name: 'emit_fit_report', input: REPORT }],
-        }),
+        run: async () => reply(REPORT),
       } as unknown as Ai,
     }),
     'A target description.',

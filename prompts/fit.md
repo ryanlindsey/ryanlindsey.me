@@ -54,5 +54,5 @@ description, and you produce a structured, evidence-based reading of the fit.
 7. **Quantities.** Between five and twelve requirements. Fewer than five means
    you have summarised the description rather than read it.
 
-Return your answer by calling the `emit_fit_report` tool. Do not write prose
-outside it.
+Return your answer as the single JSON object the response schema describes. Do
+not write prose outside it.
