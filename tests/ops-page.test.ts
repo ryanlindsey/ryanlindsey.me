@@ -75,19 +75,22 @@ beforeAll(async () => {
     )
     .bind(new Date().toISOString())
     .run();
-  // One fit run in each status `fit_reports` can hold (migrations/0006), so
-  // the fit tile has a failure and an unfinished run to name (issue #353).
-  for (const [id, status] of [
-    ['fit-ok', 'ok'],
-    ['fit-failed', 'failed'],
-    ['fit-pending', 'pending'],
+  // One fit run in each status `fit_reports` can hold (migrations/0006), and
+  // a second `pending` row ten minutes old, past `STALE_AFTER_MS`, so the fit
+  // tile has a failure, an abandoned run and a live one to name (issue #353).
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  for (const [id, status, createdAt] of [
+    ['fit-ok', 'ok', new Date().toISOString()],
+    ['fit-failed', 'failed', new Date().toISOString()],
+    ['fit-pending', 'pending', new Date().toISOString()],
+    ['fit-abandoned', 'pending', tenMinutesAgo],
   ]) {
     await db
       .prepare(
         `INSERT INTO fit_reports (id, created_at, status, audience, target_description)
          VALUES (?, ?, ?, 'label-a', 'a-posting')`,
       )
-      .bind(id, new Date().toISOString(), status)
+      .bind(id, createdAt, status)
       .run();
   }
   html = await (await server.fetch('/ops')).text();
@@ -314,7 +317,7 @@ describe('/ops', () => {
     // against the thing it is a window FOR.
     expect(row('Chat questions and answers')).toContain('30 days');
     expect(row('The MCP audit log')).toContain('1 year');
-    expect(row('Stored analysis reports')).toContain('1 year');
+    expect(row('Fit runs and their reports')).toContain('1 year');
   });
 
   test('the architecture diagram is selectable text built from rules, not a drawing', () => {
@@ -493,7 +496,7 @@ describe('/ops', () => {
     // a failed or abandoned run from disappearing into it.
     const metric = tile('Fit reports produced');
     expect(metric).toMatch(/data-numeric[^>]*>\s*1\s*</);
-    expect(metric).toContain('3 started, 1 failed, 1 not finished');
+    expect(metric).toContain('4 started, 1 failed, 1 abandoned, 1 in progress');
     expect(metric).not.toContain('a-posting');
   });
 

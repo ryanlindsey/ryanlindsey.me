@@ -121,7 +121,12 @@ beforeAll(async () => {
         ['fit-ok-1', '2026-09-09T08:00:00.000Z', 'ok', null],
         ['fit-ok-2', '2026-09-09T08:05:00.000Z', 'ok', null],
         ['fit-failed', '2026-09-09T08:10:00.000Z', 'failed', 'errored'],
+        // Three pending rows either side of `STALE_AFTER_MS` against the
+        // 12:00 `now` every test here passes: long abandoned, abandoned at
+        // exactly the threshold (`isStale` is `>=`), and still in flight.
         ['fit-pending', '2026-09-09T08:15:00.000Z', 'pending', null],
+        ['fit-pending-edge', '2026-09-09T11:55:00.000Z', 'pending', null],
+        ['fit-pending-live', '2026-09-09T11:58:00.000Z', 'pending', null],
         ['fit-ok-old', old, 'ok', null],
       ] as const
     ).map(([id, createdAt, status, failureCode]) =>
@@ -215,7 +220,13 @@ describe('readOpsMetrics', () => {
     expect(metrics.toolCalls).toEqual([]);
     expect(metrics.chatSessions).toBe(0);
     expect(metrics.chatTurns).toBe(0);
-    expect(metrics.fitRuns).toEqual({ started: 0, reports: 0, failed: 0, unfinished: 0 });
+    expect(metrics.fitRuns).toEqual({
+      started: 0,
+      reports: 0,
+      failed: 0,
+      inProgress: 0,
+      abandoned: 0,
+    });
   });
 
   test('fit runs separate the reports produced from the runs that produced none', async () => {
@@ -224,7 +235,16 @@ describe('readOpsMetrics', () => {
     // like one that produced a report -- the page reading healthiest at the
     // moment the feature was producing nothing.
     const metrics = await readOpsMetrics(db, new Date('2026-09-09T12:00:00.000Z'), 30);
-    expect(metrics.fitRuns).toEqual({ started: 4, reports: 2, failed: 1, unfinished: 1 });
+    // `pending` is split by the rule /fit/r/<id> already applies to the same
+    // row (`isStale` in src/lib/fit/report-status.ts), so the permalink and
+    // this page cannot describe one run two ways.
+    expect(metrics.fitRuns).toEqual({
+      started: 6,
+      reports: 2,
+      failed: 1,
+      inProgress: 1,
+      abandoned: 2,
+    });
     // A campaign label is in every row and must not be in the result.
     const rendered = JSON.stringify(metrics);
     expect(rendered).not.toContain('a-posting');

@@ -181,9 +181,9 @@ const GATEWAY_ABSENT = {
 const count = (value: number | null | undefined): string | null =>
   value === null || value === undefined ? null : value.toLocaleString('en-US');
 
-/** What the fit figure leaves out, as a count of each. */
-const fitNote = ({ started, failed, unfinished }: OpsMetrics['fitRuns']): string =>
-  `${count(started)} started, ${count(failed)} failed, ${count(unfinished)} not finished`;
+/** The runs behind the fit figure: how many started, and how many of those produced no report. */
+const fitNote = ({ started, failed, abandoned, inProgress }: OpsMetrics['fitRuns']): string =>
+  `${count(started)} started, ${count(failed)} failed, ${count(abandoned)} abandoned, ${count(inProgress)} in progress`;
 
 const toolCalls =
   metrics === null ? null : metrics.toolCalls.reduce((total, row) => total + row.calls, 0);
@@ -345,7 +345,7 @@ const LIMIT_ROWS: { cost: ToolCost; what: string }[] = [
 const RETENTION_LABELS: Record<string, string> = {
   chat_turns: 'Chat questions and answers',
   mcp_tool_calls: 'The MCP audit log',
-  fit_reports: 'Stored analysis reports',
+  fit_reports: 'Fit runs and their reports',
 };
 
 const releases = recentReleases(changelog, 5);
