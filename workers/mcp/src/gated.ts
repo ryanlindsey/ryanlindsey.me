@@ -438,8 +438,10 @@ export function fitToolError(error: unknown): ToolError {
   // an unwrapped throw could carry a gateway error code, an internal origin or
   // a stack, and a raw `2018` would tell a stranger a rate limit was hit
   // rather than that the engine is unavailable, which is both a disclosure and
-  // a lie.
-  if (error instanceof FitUnavailable) return new ToolError(error.message);
+  // a lie. Every `FitUnavailable` also means no report was produced, which is
+  // what `unavailable` tells an eval runner; the generic branch below is not
+  // known to mean that, so it carries no reason and stays a graded failure.
+  if (error instanceof FitUnavailable) return new ToolError(error.message, 'unavailable');
   console.error(
     'mcp/gated: analyze_fit failed with a cause the engine did not wrap; the caller was told nothing about it',
     error,
