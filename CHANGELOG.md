@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.45.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.45.0...ryanlindsey-me-v1.45.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **policy:** disclose that a fit run with no report keeps its description ([#418](https://github.com/ryanlindsey/ryanlindsey.me/issues/418)) ([7f87244](https://github.com/ryanlindsey/ryanlindsey.me/commit/7f87244257359e1c1237980ee0ae52ec9a8d05ba)), closes [#357](https://github.com/ryanlindsey/ryanlindsey.me/issues/357)
+
+
+### Documentation
+
+* **fit:** correct the comments still naming writeFitReport and the pre-[#275](https://github.com/ryanlindsey/ryanlindsey.me/issues/275) write path ([#420](https://github.com/ryanlindsey/ryanlindsey.me/issues/420)) ([4bbb56d](https://github.com/ryanlindsey/ryanlindsey.me/commit/4bbb56db9968bb28e4ec0b4a9a0864ca57fb4a04)), closes [#352](https://github.com/ryanlindsey/ryanlindsey.me/issues/352)
+
 ## [1.45.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.44.2...ryanlindsey-me-v1.45.0) (2026-09-25)
 
 
