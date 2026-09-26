@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.46.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.45.2...ryanlindsey-me-v1.46.0) (2026-09-26)
+
+
+### Features
+
+* **mcp:** mark an analyze_fit refusal that produced no report as unavailable ([#429](https://github.com/ryanlindsey/ryanlindsey.me/issues/429)) ([5d9e40d](https://github.com/ryanlindsey/ryanlindsey.me/commit/5d9e40da6ccea06ddbfaccad8796d3a5ee9849b3))
+
+
+### Bug Fixes
+
+* **evals:** count a case that could not run apart from a graded failure ([#430](https://github.com/ryanlindsey/ryanlindsey.me/issues/430)) ([b188b8d](https://github.com/ryanlindsey/ryanlindsey.me/commit/b188b8d5c0224b21999c993bee52959c90401da6))
+* **ops:** publish graded and couldn't-run eval counts and explain them ([#431](https://github.com/ryanlindsey/ryanlindsey.me/issues/431)) ([193ee6e](https://github.com/ryanlindsey/ryanlindsey.me/commit/193ee6e3f935cf11b197a1e18f5bf042a60aa4ce))
+* **ops:** rewrite the ops page copy in plain terms ([#433](https://github.com/ryanlindsey/ryanlindsey.me/issues/433)) ([127197f](https://github.com/ryanlindsey/ryanlindsey.me/commit/127197f3e6fbb4211d1f43fdb5c9cc9d05277af2))
+
 ## [1.45.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.45.1...ryanlindsey-me-v1.45.2) (2026-09-26)
 
 
