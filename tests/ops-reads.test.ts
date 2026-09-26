@@ -62,10 +62,13 @@ test('readOrNull degrades a rejected read to null and writes nothing', async () 
   const kv = { get, put } as unknown as KVNamespace;
   const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-  await expect(
-    readOrNull(kv, 'ops:test', () => Promise.reject(new Error('D1 is down'))),
-  ).resolves.toBeNull();
-  expect(put).not.toHaveBeenCalled();
-
-  error.mockRestore();
+  try {
+    await expect(
+      readOrNull(kv, 'ops:test', () => Promise.reject(new Error('D1 is down'))),
+    ).resolves.toBeNull();
+    expect(put).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith('ops: ops:test could not be read', expect.any(Error));
+  } finally {
+    error.mockRestore();
+  }
 });
