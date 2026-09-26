@@ -131,8 +131,16 @@ const [metrics, traffic, spend]: [OpsMetrics | null, AgentTraffic | null, Gatewa
     // from one number to four, and a `v2` entry's bare number has no `reports`
     // on it, so the fit tile would have rendered its absence, and its note
     // "null started", while D1 answered perfectly well. tests/ops-page.test.ts
-    // plants an entry under `ops:metrics:v2` and fails if the page serves it.
-    readOrNull('ops:metrics:v3', () => readOpsMetrics(env.DB, now, WINDOW_DAYS)),
+    // once planted an entry under `ops:metrics:v2` and failed if the page
+    // served it.
+    //
+    // `v4` SINCE ISSUE #428, a third time. Eval rows gained `unreached`
+    // (migrations/0008), and a `v3` entry's rows have none. `undefined === 0`
+    // is false, so every Couldn't-run cell would have rendered empty and in
+    // warn ink, a column of unexplained amber on every row, where the column
+    // promises a number. tests/ops-page.test.ts now plants an entry under
+    // `ops:metrics:v3`.
+    readOrNull('ops:metrics:v4', () => readOpsMetrics(env.DB, now, WINDOW_DAYS)),
     readOrNull('ops:traffic:v1', () => readAnalytics(env, now, WINDOW_DAYS)),
     readOrNull('ops:spend:v1', () => readSpend(env, now, WINDOW_DAYS)),
   ]);
@@ -289,6 +297,12 @@ const maxValue = (rows: { value: number }[]): number =>
  * a healthy one. The amber band is "some passed", and danger is the majority
  * failing, which is the shape of a suite that could not run properly rather
  * than one with a bad case in it.
+ *
+ * That last reason held for rows written before migrations/0008, which
+ * counted a case whose model call never came back as a failure. Since #427
+ * such a case is counted in `unreached` and kept out of all three figures
+ * here, so on a newer row danger means most of the answers that were graded
+ * were wrong. The rule did not change; only what reaches it did.
  */
 function evalTone(passed: number, total: number, failed: number): string {
   if (failed === 0) return 'text-ok';
@@ -969,10 +983,15 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
           <span class={KICKER}>· Latest run per suite · D1</span>
         </div>
         <p class="mt-5 max-w-[70ch] text-small text-ink-muted">
-          The suites that run against the deployed endpoints: grounded answers, citation integrity,
-          and the checks that the private surfaces stay invisible to an unscoped caller. A row can
-          also say that a suite did not run at all, which is a different statement from a suite that
-          ran and failed.
+          These are automated checks that run on a schedule against the live site and its MCP
+          server, covering grounded answers, citation integrity, and whether the private surfaces
+          stay invisible to an unscoped caller. A graded case is a real answer checked against
+          expectations written down in advance, and the{' '}
+          <span class="font-mono text-ink">Graded</span> column scores those cases alone.{' '}
+          <span class="font-mono text-ink">Couldn't run</span> counts the cases where the model call
+          never came back, which says nothing about answer quality, because there was no answer to
+          judge. A suite that did not run at all says so on its row rather than showing its last
+          good result.
         </p>
 
         {metrics === null ? (
@@ -996,10 +1015,10 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
                     Ran
                   </th>
                   <th scope="col" class="py-2 pr-6 font-normal">
-                    Pass
+                    Graded
                   </th>
                   <th scope="col" class="py-2 font-normal">
-                    Fail
+                    Couldn't run
                   </th>
                 </tr>
               </thead>
@@ -1022,6 +1041,16 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
                       bare glyph standing in for one would read as a value --
                       the same invisible-zero failure `OpsMetric`'s absence
                       states exist to prevent, one column over.
+
+                      On a 'ran' row, Graded is `passed/total` over the graded
+                      cases alone (migrations/0008), so `failed` is always
+                      `total - passed` and has no column of its own. Couldn't
+                      run is `unreached`, cases whose model call never came
+                      back. It is amber when above 0 and never red: it says the
+                      system could not be asked, not that an answer was wrong,
+                      and the graded score beside it already carries any
+                      failure. A zero stays a printed 0 in muted ink, the same
+                      rule as the words above.
                     */}
                     <td
                       class:list={[
@@ -1037,11 +1066,13 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
                     <td
                       class:list={[
                         'py-2.5 font-mono',
-                        run.status === 'ran' ? 'text-ink-muted' : 'text-warn',
+                        run.status === 'ran' && run.unreached === 0
+                          ? 'text-ink-muted'
+                          : 'text-warn',
                       ]}
                       data-numeric
                     >
-                      {run.status === 'ran' ? run.failed : 'not recorded'}
+                      {run.status === 'ran' ? run.unreached : 'not recorded'}
                     </td>
                   </tr>
                 ))}

@@ -55,6 +55,30 @@ export function stripComments(html: string): string {
 }
 
 /**
+ * Markup with every tag removed, for comparing a cell's text.
+ *
+ * THE LOOP IS FOR THE SCANNER, NOT FOR A SEAM THIS PATTERN HAS. CodeQL raised
+ * js/incomplete-multi-character-sanitization twice against the single-pass
+ * `.replace(/<[^>]*>/g, '')` tests/ops-page.test.ts first shipped with (#431),
+ * and it recognizes replace-until-unchanged as complete. Unlike
+ * `stripComments`, one pass here cannot glue a new tag together: a match
+ * starts at the leftmost `<` and `[^>]*` absorbs any `<` inside it, so
+ * `<<b>td>` loses `<<b>` whole and leaves `td>`. An unclosed `<script`
+ * survives either way, which is harmless: the input is this site's own build
+ * output, and the result is only compared as text. The loop was chosen over
+ * dismissing the alerts because a dismissal lives outside the repository.
+ */
+export function stripTags(html: string): string {
+  let stripped = html;
+  let previous;
+  do {
+    previous = stripped;
+    stripped = stripped.replace(/<[^>]*>/g, '');
+  } while (stripped !== previous);
+  return stripped;
+}
+
+/**
  * The site header as it was BUILT, for the jsdom suites to drive.
  *
  * A function rather than a module constant so the harness suites that import

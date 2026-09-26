@@ -68,6 +68,13 @@ export interface EvalRunRow {
    * SQLite already accepted.
    */
   status: string;
+  /**
+   * Cases whose model call never came back (migrations/0008). `total`,
+   * `passed` and `failed` count graded cases only on a row that sets this.
+   * 0 is the value for every row written before 0008, whose `failed` still
+   * counts such a case, because nothing then set it apart.
+   */
+  unreached: number;
 }
 
 export interface OpsMetrics {
@@ -198,7 +205,7 @@ export async function readOpsMetrics(
     // timestamps actually happened in. `id` is `INTEGER PRIMARY KEY
     // AUTOINCREMENT` (migrations/0002), so it is never reused and never NULL.
     db.prepare(
-      `SELECT ran_at, suite, total, passed, failed, status FROM eval_runs
+      `SELECT ran_at, suite, total, passed, failed, status, unreached FROM eval_runs
         WHERE id = (SELECT id FROM eval_runs AS latest
                      WHERE latest.suite = eval_runs.suite
                      ORDER BY latest.ran_at DESC, latest.id DESC
@@ -223,6 +230,7 @@ export async function readOpsMetrics(
       passed: Number(row.passed),
       failed: Number(row.failed),
       status: String(row.status),
+      unreached: Number(row.unreached ?? 0),
     })),
   };
 }

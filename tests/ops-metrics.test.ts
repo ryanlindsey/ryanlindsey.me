@@ -183,6 +183,15 @@ beforeAll(async () => {
       `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, status)
          VALUES ('2026-09-08T12:00:00.000Z', 'fit', NULL, 0, 0, 0, 'incomplete')`,
     ),
+    // A partly-run suite (migrations/0008): one case graded and passed, two
+    // whose model call never came back. `total`, `passed` and `failed` count
+    // the graded case alone, which is what `summarize()` writes since #427.
+    // Every other eval row in this file omits `unreached`, so they are the
+    // pre-0008 rows that rely on its default.
+    db.prepare(
+      `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, status, unreached)
+         VALUES ('2026-09-05T00:00:00.000Z', 'leak', 'm', 1, 1, 0, 'ran', 2)`,
+    ),
   ]);
 });
 
@@ -296,7 +305,7 @@ describe('readOpsMetrics', () => {
   });
 
   test('eval runs are the LATEST run per suite, not every run', async () => {
-    // Seven seeded rows across four suites: the older `chat` run must not
+    // Eight seeded rows across five suites: the older `chat` run must not
     // appear at all, `bisect`'s two tied rows must appear as one, and `fit`'s
     // latest row is the INCOMPLETE one that displaces its own older pass.
     const metrics = await readOpsMetrics(db, new Date('2026-09-09T12:00:00.000Z'), 30);
@@ -308,6 +317,7 @@ describe('readOpsMetrics', () => {
         passed: 6,
         failed: 0,
         status: 'ran',
+        unreached: 0,
       },
       {
         ranAt: '2026-09-08T00:00:00.000Z',
@@ -316,6 +326,7 @@ describe('readOpsMetrics', () => {
         passed: 9,
         failed: 1,
         status: 'ran',
+        unreached: 0,
       },
       {
         ranAt: '2026-09-08T12:00:00.000Z',
@@ -324,6 +335,16 @@ describe('readOpsMetrics', () => {
         passed: 0,
         failed: 0,
         status: 'incomplete',
+        unreached: 0,
+      },
+      {
+        ranAt: '2026-09-05T00:00:00.000Z',
+        suite: 'leak',
+        total: 1,
+        passed: 1,
+        failed: 0,
+        status: 'ran',
+        unreached: 2,
       },
       {
         ranAt: '2026-09-07T00:00:00.000Z',
@@ -332,6 +353,7 @@ describe('readOpsMetrics', () => {
         passed: 4,
         failed: 0,
         status: 'ran',
+        unreached: 0,
       },
     ]);
   });
@@ -356,6 +378,7 @@ describe('readOpsMetrics', () => {
       passed: 0,
       failed: 0,
       status: 'incomplete',
+      unreached: 0,
     });
   });
 
@@ -380,7 +403,19 @@ describe('readOpsMetrics', () => {
       passed: 6,
       failed: 0,
       status: 'ran',
+      unreached: 0,
     });
+  });
+
+  test('a partly-run suite carries its unreached count beside graded-only totals', async () => {
+    // Review focus 5 of epic #425 is the other half: the rows above omit
+    // `unreached`, and each reads 0, which is what a pre-0008 row means.
+    const metrics = await readOpsMetrics(db, new Date('2026-09-09T12:00:00.000Z'), 30);
+    const leak = metrics.evalRuns.find((run) => run.suite === 'leak');
+    expect(leak).toMatchObject({ total: 1, passed: 1, failed: 0, unreached: 2, status: 'ran' });
+    for (const run of metrics.evalRuns.filter((run) => run.suite !== 'leak')) {
+      expect(run.unreached, run.suite).toBe(0);
+    }
   });
 
   test('the eval table is NOT windowed, unlike the other three', async () => {
@@ -392,6 +427,12 @@ describe('readOpsMetrics', () => {
     const narrow = await readOpsMetrics(db, new Date('2026-09-20T00:00:00.000Z'), 1);
     expect(narrow.toolCalls).toEqual([]);
     expect(narrow.chatTurns).toBe(0);
-    expect(narrow.evalRuns.map((run) => run.suite)).toEqual(['bisect', 'chat', 'fit', 'tier']);
+    expect(narrow.evalRuns.map((run) => run.suite)).toEqual([
+      'bisect',
+      'chat',
+      'fit',
+      'leak',
+      'tier',
+    ]);
   });
 });
