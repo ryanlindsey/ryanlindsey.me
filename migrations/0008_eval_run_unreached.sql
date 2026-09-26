@@ -1,0 +1,21 @@
+-- eval_runs gains an unreached count (issue #427, spec #424). Like 0001, 0002,
+-- 0004 and 0005, this schema is a published governance artifact (06 §2):
+-- treat a change here as a change to a public document.
+--
+-- `fit` row 41, recorded 2026-09-20, published 1/3. Two of its three cases
+-- never got a model answer: `analyze_fit` refused with nothing to grade, and
+-- the row counted both as graded failures beside the one case that actually
+-- ran. /ops showed an outage as a regression in the prompt. 0005's
+-- `status` could not say it, because it describes the whole row, and one case
+-- that reached the model rightly keeps the row a gate result.
+--
+-- So `src/lib/evals/record.ts`'s `summarize()` now writes `total`, `passed`
+-- and `failed` over the graded cases only, and counts the rest here. A row
+-- where no case reached the model is still `status = 'incomplete'` with every
+-- count zero, this one included.
+--
+-- DEFAULT 0, so every row already in this table keeps meaning what it meant:
+-- before this migration an unreached case was counted in `failed`, and an old
+-- row reading zero unreached with its old `failed` is exactly what it
+-- recorded. It never claims that a case it graded did not run.
+ALTER TABLE eval_runs ADD COLUMN unreached INTEGER NOT NULL DEFAULT 0;

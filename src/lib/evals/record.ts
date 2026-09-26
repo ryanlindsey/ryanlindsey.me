@@ -35,10 +35,12 @@ export const fail = (id: string, notes: string, local: boolean): CaseResult => (
 });
 
 /**
- * A failed case whose request never reached the model: the endpoint answered
- * `unreachable` past every retry and returned no answer text. Still a failure
- * in the counts, since an operator reading the terminal needs to see it, but
- * see `summarize` for what a suite made only of these records.
+ * A failed case whose request never reached the model: the chat endpoint
+ * answered `unreachable` past every retry and returned no answer text, or
+ * `analyze_fit` refused with the `unavailable` reason (`toolUnavailable` in
+ * ./checks.ts). Still `ok: false`, since an operator reading the terminal
+ * needs to see it, but `summarize` counts it in `unreached` rather than in
+ * `failed`, and records a suite made only of these as one that did not run.
  */
 export const unreached = (id: string, notes: string, local: boolean): CaseResult => ({
   ...fail(id, notes, local),
@@ -64,6 +66,12 @@ export interface EvalRunRecord {
   failed: number;
   notes: string;
   status: EvalRunStatus;
+  /**
+   * Cases that never reached the model, kept out of `total`, `passed` and
+   * `failed` (issue #427). Zero on an `incomplete` row: that row's `status`
+   * already says nothing ran, and its notes say why.
+   */
+  unreached: number;
 }
 
 export const localCount = (results: CaseResult[]): number =>
@@ -98,9 +106,9 @@ export function redactedNotes(results: CaseResult[]): string {
 
 /**
  * The row for a suite that ran. A `local` result still counts toward
- * `total`/`passed`/`failed` -- a count leaks nothing a real id or a fragment
- * of model output would -- and only its redaction, never its exclusion, is
- * what keeps it out of `notes`.
+ * `total`/`passed`/`failed`, or toward `unreached` -- a count leaks nothing a
+ * real id or a fragment of model output would -- and only its redaction,
+ * never its exclusion, is what keeps it out of `notes`.
  *
  * A SUITE WHERE NO CASE REACHED THE MODEL DID NOT RUN, and the row says so
  * rather than reporting zero of n (issue #341). `leak` rows 32, 34 and 43
@@ -112,23 +120,33 @@ export function redactedNotes(results: CaseResult[]): string {
  *
  * ONLY EVERY CASE, NOT ANY. One case that reached the model makes the rest of
  * the row a real, if partial, gate result: a suite where seven probes timed
- * out and one leaked has found a leak. The unreached cases in such a row still
- * count as failures, and their notes say why.
+ * out and one leaked has found a leak.
+ *
+ * An earlier version of this comment said the unreached cases in such a row
+ * still count as failures, and until issue #427 they did. `fit` row 41, on
+ * 2026-09-20, published 1/3 for a run where two `analyze_fit` calls never
+ * returned a model answer, and /ops showed that outage as a regression in the
+ * prompt. Now `total`, `passed` and `failed` count only the graded cases, and
+ * the rest are counted in `unreached`. Their notes still say why, redacted
+ * like any other failure's, since `redactedNotes` reads `ok` and an unreached
+ * case is never ok.
  */
 export function summarize(suite: string, results: CaseResult[], ranAt: string): EvalRunRecord {
   if (results.length > 0 && results.every((result) => result.unreached)) {
     const reason = `no case reached the model: ${redactedNotes(results)}`.slice(0, 900);
     return incompleteRow(suite, reason, ranAt);
   }
-  const passed = results.filter((result) => result.ok).length;
+  const graded = results.filter((result) => !result.unreached);
+  const passed = graded.filter((result) => result.ok).length;
   return {
     ranAt,
     suite,
-    total: results.length,
+    total: graded.length,
     passed,
-    failed: results.length - passed,
+    failed: graded.length - passed,
     notes: redactedNotes(results),
     status: 'ran',
+    unreached: results.length - graded.length,
   };
 }
 
@@ -153,5 +171,14 @@ export function summarize(suite: string, results: CaseResult[], ranAt: string): 
  * `report()` in evals/run.mjs, which says the same thing from the other side.
  */
 export function incompleteRow(suite: string, reason: string, ranAt: string): EvalRunRecord {
-  return { ranAt, suite, total: 0, passed: 0, failed: 0, notes: reason, status: 'incomplete' };
+  return {
+    ranAt,
+    suite,
+    total: 0,
+    passed: 0,
+    failed: 0,
+    notes: reason,
+    status: 'incomplete',
+    unreached: 0,
+  };
 }

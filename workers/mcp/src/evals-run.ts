@@ -24,6 +24,7 @@ import {
   leakProblems,
   reachedNoModel,
   tierProblems,
+  toolUnavailable,
 } from '../../../src/lib/evals/checks';
 import type {
   ChatCase,
@@ -81,11 +82,20 @@ export async function runTierCase(
 /**
  * `fit`: one `analyze_fit` call, judged by `fitProblems`.
  *
- * THE THREE BRANCHES BEFORE THE CHECKS ARE TRANSPORT FAILURES, and they stay
- * here rather than moving into src/lib/evals/checks.ts with the rest: a
- * refused tool, a payload that is not JSON and a report that fails the schema
- * are all facts about what came back over the wire, and `fitProblems` is a
- * function of a report that already parsed. The wording of each is
+ * THE THREE BRANCHES BEFORE THE CHECKS ARE ABOUT WHAT CAME BACK OVER THE
+ * WIRE, and they stay here rather than moving into src/lib/evals/checks.ts
+ * with the rest: a refused tool, a payload that is not JSON and a report that
+ * fails the schema are all facts about the response, and `fitProblems` is a
+ * function of a report that already parsed.
+ *
+ * An earlier version of this comment called all three transport failures, and
+ * a refused tool is not always one. A refusal carrying the `unavailable`
+ * reason (`toolUnavailable`) means no model answer exists, and it is recorded
+ * as `unreached` so `summarize` keeps it out of the graded counts (issue
+ * #427). Every other refusal, a truncated or unparseable answer among them, is
+ * a graded failure, because those are what this suite exists to catch.
+ *
+ * The wording of each is
  * evals/run.mjs's, unchanged, because the two runners write into one
  * `eval_runs` table and a reader should not have to know which one produced a
  * row.
@@ -102,7 +112,8 @@ export async function runFitCase(
     token,
   );
   if (answer.result?.isError) {
-    return fail(
+    const outcome = toolUnavailable(answer) ? unreached : fail;
+    return outcome(
       testCase.id,
       `tool refused: ${answer.result.content?.[0]?.text ?? ''}`,
       testCase.local,

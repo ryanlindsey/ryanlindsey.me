@@ -12,6 +12,7 @@
 // model call to learn nothing.
 
 import type { FitReport } from '../fit/schema';
+import { TOOL_REASON_META_KEY } from '../mcp/tool-reason';
 import type { ChatCase, FitCase, LeakCase, TierCase } from './cases';
 
 /**
@@ -154,6 +155,28 @@ export function chatProblems(
  */
 export function reachedNoModel(answer: { answer: string; error: string | null }): boolean {
   return answer.error === 'unreachable' && answer.answer === '';
+}
+
+/**
+ * Whether an `analyze_fit` call refused because no model answer exists: the
+ * fit-side equivalent of `reachedNoModel`, read from the refusal's `_meta`
+ * reason rather than its text, which is written for people and free to
+ * change (src/lib/mcp/tool-reason.ts).
+ *
+ * A truncated or unparseable answer, a rate-limit refusal and an input-schema
+ * refusal carry no reason, so each stays a graded failure: the first two are
+ * exactly the regressions the `fit` suite exists to catch.
+ *
+ * The parameter admits the rest of a JSON-RPC result (`content`, and anything
+ * else a server sends) without naming `RpcResponse`, which lives in
+ * workers/mcp and which nothing under src/lib imports from.
+ */
+export function toolUnavailable(answer: {
+  result?: { isError?: boolean; _meta?: Record<string, unknown>; [key: string]: unknown };
+}): boolean {
+  return (
+    answer.result?.isError === true && answer.result._meta?.[TOOL_REASON_META_KEY] === 'unavailable'
+  );
 }
 
 /**

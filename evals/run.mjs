@@ -35,6 +35,7 @@ import {
   leakProblems,
   reachedNoModel,
   tierProblems,
+  toolUnavailable,
 } from '../src/lib/evals/checks.ts';
 import { BACKOFF_MS, PACE_MS, RETRIES } from '../src/lib/evals/plan.ts';
 import { fail, localCount, pass, summarize, unreached } from '../src/lib/evals/record.ts';
@@ -185,8 +186,12 @@ async function runFit() {
       token,
     );
     if (answer.result?.isError) {
+      // `unreached` rather than `fail` when the refusal says no model answer
+      // exists, the same split `runFitCase` in workers/mcp/src/evals-run.ts
+      // makes, so an outage is not published as a graded failure (#427).
+      const outcome = toolUnavailable(answer) ? unreached : fail;
       results.push(
-        fail(
+        outcome(
           testCase.id,
           `tool refused: ${answer.result.content?.[0]?.text ?? ''}`,
           testCase.local,
@@ -487,9 +492,9 @@ function report(suite, results) {
     // not run", caused by an unset variable in one person's shell. A stale pass
     // is a worse thing to publish than a genuine one, and an unset variable is
     // not evidence that anything is wrong with the deployed system.
-    const sql = `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, status, notes)
+    const sql = `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, status, notes, unreached)
        VALUES ('${row.ranAt}', '${suite}', NULL, ${row.total}, ${row.passed},
-               ${row.failed}, '${row.status}', '${notes}')`;
+               ${row.failed}, '${row.status}', '${notes}', ${row.unreached})`;
     // SWALLOWED AFTER LOGGING, and the results above are already on stdout by
     // the time this runs -- which is the whole point of the ordering.
     //
