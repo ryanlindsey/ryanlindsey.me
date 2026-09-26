@@ -14,7 +14,7 @@
 // `## [1.47.0](...) (2026-09-27T10:00Z)`, would have been passed over and the
 // tile would have shown the release before it as the latest. That is a
 // confident wrong answer where an absence is the honest one. The changelog's
-// `# Changelog` title has one `#` and is not a candidate, and the release
+// `# Changelog` title has one `#` and is never read, and the release
 // sections' `### ` headings are excluded by the `[ \t]` after the second `#`.
 
 import { recentReleases } from '../ops/changelog';
