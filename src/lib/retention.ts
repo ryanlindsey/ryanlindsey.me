@@ -19,6 +19,26 @@ export const RETENTION = [
    * cleanup. A fit report is a work product whose whole point is that somebody
    * was invited to circulate the link (04 §2), so a thirty-day window would
    * break the promise the permalink's own footer makes.
+   *
+   * EVERY ROW, WHATEVER ITS STATUS, and that was decided on 2026-09-25 (#357)
+   * rather than inherited a second time. Since #274 the row is opened BEFORE
+   * the run, so a refused, errored or abandoned run keeps the pasted
+   * `target_description` on this same clock, where before it left no row at
+   * all. The change arrived as a side effect of moving the insert; this note
+   * is where it stops being one. Two alternatives were weighed and not taken:
+   *
+   * - Nulling the description when a run closes `failed`. The column is
+   *   `NOT NULL` in 0006, so that is another table rebuild, and it would still
+   *   miss the abandoned run: a `pending` row that nothing ever closes, like
+   *   the one #349's confirmation left behind.
+   * - A shorter window for non-`ok` rows. That splits one table across two
+   *   clocks, which this array, `PUBLISHED_AS` and the table /ai-policy and
+   *   /ops render are all keyed against as one row per table.
+   *
+   * What makes keeping it acceptable is that the text is out of every read
+   * path a reader reaches: /fit/r/<id> does not select it. /ai-policy's "Fit
+   * reports" paragraph says out loud that a run with no report keeps it, and
+   * tests/governance.test.ts holds that sentence in place.
    */
   { table: 'fit_reports', column: 'created_at', days: 365 },
 ] as const;

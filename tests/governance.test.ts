@@ -220,6 +220,20 @@ describe('the policy', () => {
     }
   });
 
+  test('says a fit run that produced no report still keeps its description', () => {
+    // Issue #357. Since #274 the `fit_reports` row is opened BEFORE the run,
+    // so a refused, errored or abandoned run keeps the pasted description on
+    // the same window as a finished report. That was decided rather than
+    // patched (see the `fit_reports` entry in src/lib/retention.ts), and the
+    // reader who watched their run fail is the one who would assume nothing
+    // was kept, so the policy has to say it where they would look.
+    const paragraph = policy.split('\n').find((line) => line.startsWith('**Fit reports.**'));
+    expect(paragraph, 'the policy has no Fit reports paragraph').toBeDefined();
+    expect(paragraph).toMatch(/produce(s|d)? no report/);
+    expect(paragraph).toMatch(/refused/);
+    expect(paragraph).toMatch(/same window/);
+  });
+
   test('spells a distinct window as a distinct phrase', () => {
     // The property the assertion above rests on, pinned directly: no two windows
     // may share a phrase, or a changed window can land on the sentence already
