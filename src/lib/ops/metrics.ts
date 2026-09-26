@@ -33,9 +33,14 @@
 // runner counted: it sets no user agent of ours and files as `'direct'`.
 //
 // TWO FILTERS AND NOT THREE, checked rather than assumed. `fit_reports` is
-// written by src/pages/fit/run.ts and by nothing else: `analyze_fit` returns a
-// report and stores none, so a run that reaches the tool over `/mcp` -- which
-// is what both eval runners do -- produces no row in that table at all. The
+// written by the `/fit/start` path and by nothing else: `handleFitStart` in
+// workers/mcp/src/fit-start.ts inserts the row, and `FitWorkflow` and
+// `abandonRun` in workers/mcp/src/fit-workflow.ts close it. `analyze_fit` over
+// `/mcp` returns a report and stores none, so a run that reaches the tool that
+// way -- which is what both eval runners do -- produces no row in that table
+// at all. This premise used to name src/pages/fit/run.ts as the writer, which
+// stopped being true in #275; the conclusion survived the move, rechecked for
+// #352 against every `fit_reports` write in src and workers. The
 // gated tool calls the weekly run makes are `tier = 'private'` besides, so the
 // allowlist above has already excluded them.
 //

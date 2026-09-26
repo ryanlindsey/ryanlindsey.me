@@ -62,19 +62,23 @@ const { id } = Astro.params;
  * `audience` IS now selected (04 §3), and the paragraph above is not a rule
  * against selecting anything new -- it is specific to `target_description`,
  * whose whole risk was rendering submitter-pasted text verbatim. `audience`
- * carries no such text: `src/pages/fit/run.ts` writes it from the grant that
- * created the row, it is a short label an operator assigns per campaign, and
+ * carries no such text: `handleFitStart` in workers/mcp/src/fit-start.ts
+ * writes it from the grant that created the row (src/pages/fit/run.ts did
+ * until #275), it is a short label an operator assigns per campaign, and
  * it is never rendered directly -- only fed to `readCampaignForAudience`
  * below, which resolves it into a hero line already written to be shown to a
  * stranger (see the note beside `CampaignBand` further down).
  *
  * `status` and `failure_code` join them for #276, and they clear the same bar
  * `audience` did rather than a lower one. Both are written by this build
- * alone -- `writeFitReport` in workers/mcp/src/fit-start.ts opens the row
- * `pending` and closes it `ok` or `failed` -- and neither is ever rendered
- * verbatim: `status` selects a branch, and `failure_code` is looked up in the
- * closed map in src/lib/fit/report-status.ts, which answers `null` for
- * anything it does not recognise. The column that would put submitter-pasted
+ * alone -- `handleFitStart` in workers/mcp/src/fit-start.ts opens the row
+ * `pending`, and `FitWorkflow` in workers/mcp/src/fit-workflow.ts closes it
+ * `ok` or `failed`, with `abandonRun` in the same file setting `failed` for
+ * a run whose instance never started. An earlier version of this sentence
+ * named a `writeFitReport`, which has never existed (#352). Neither column is
+ * ever rendered verbatim: `status` selects a branch, and `failure_code` is
+ * looked up in the closed map in src/lib/fit/report-status.ts, which answers
+ * `null` for anything it does not recognise. The column that would put submitter-pasted
  * text on this page is still exactly one, and it is still not selected.
  *
  * THE FOUR REPORT COLUMNS ARE NULLABLE NOW (0006), and the row shape below
@@ -380,8 +384,11 @@ const heroLine = campaign?.status === 'active' ? campaign.heroLine : '';
         branches and renders the eyebrow and nothing else. That is the safe
         direction to fail in -- a page showing no heading tells a reader less
         than a page showing the wrong one -- and it stays remote because the
-        writer set is closed (`writeFitReport` in workers/mcp/src/fit-start.ts
-        is the only thing that sets this column). Written down because
+        writer set is closed (`handleFitStart` in workers/mcp/src/fit-start.ts
+        writes `pending`, and `FitWorkflow` and `abandonRun` in
+        workers/mcp/src/fit-workflow.ts write `ok` and `failed`; nothing else
+        sets this column, and this once named a `writeFitReport` that never
+        existed). Written down because
         "exactly one" is conditional on that, and whoever adds a fifth status
         should know which way this breaks before they find out.
       */}
