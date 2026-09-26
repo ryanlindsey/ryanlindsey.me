@@ -1233,7 +1233,8 @@ test('each requirement shows its strength as its own column', async () => {
  * fixture's whole body is a finished report, and serving both shapes would
  * make every one of its eight bound values optional to express the one case
  * where four of them are NULL -- which is the shape 0006 made possible and
- * the shape `writeFitReport` (workers/mcp/src/fit-start.ts) actually writes.
+ * the shape `handleFitStart` (workers/mcp/src/fit-start.ts) actually writes,
+ * and the shape a `failed` close from workers/mcp/src/fit-workflow.ts leaves.
  *
  * `createdAt` is a parameter here and a constant there for the reason 0006
  * records: on a pending row it is the moment the run STARTED, and the page

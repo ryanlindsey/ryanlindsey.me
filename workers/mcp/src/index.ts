@@ -458,8 +458,10 @@ export default {
     //
     // "DIRECT" INCLUDES THIS SYSTEM'S OWN TRAFFIC, which the paragraph above
     // does not say and a reader would otherwise have to discover from the
-    // panel. Two first-party callers reach `/mcp` unmarked, both READ OFF
-    // THEIR CALL SITES on 2026-09-20 rather than measured on /ops:
+    // panel. One first-party caller reaches `/mcp` unmarked now, READ OFF ITS
+    // CALL SITE on 2026-09-20 rather than measured on /ops. The list below
+    // said two until #352; the second entry is kept, marked, as the record of
+    // the caller that left:
     //
     //   - the scheduled eval run, over the `SELF` binding. Every `/mcp` call
     //     it makes goes through ./evals-client.ts's `rpc`; `runTierCase`
@@ -471,12 +473,13 @@ export default {
     //     `/grant` and so writes nothing here. OUT OF DATE since #269, and
     //     corrected in #351, which deleted that `rpc`: the site now opens a
     //     run at `/fit/start` (./fit-start.ts) rather than calling
-    //     `analyze_fit` over `/mcp`.
+    //     `analyze_fit` over `/mcp`, and since #349 the run itself happens
+    //     in a Workflow, so no site-initiated fit traffic reaches `/mcp`.
     //
-    // Both send a `ryanlindsey-me-` user agent, so `FIRST_PARTY`
-    // (src/lib/agent-intel/classify.ts) labels them agent `first-party` with
+    // The eval run sends a `ryanlindsey-me-` user agent, so `FIRST_PARTY`
+    // (src/lib/agent-intel/classify.ts) labels it agent `first-party` with
     // `agentClass: 'agent'` -- which is exactly what /ops's agent breakdown
-    // groups by, so they appear there under that name.
+    // groups by, so it appears there under that name.
     //
     // KEPT, DELIBERATELY. Ruling 1, quoted in ./chat.ts's `firstOfSession`
     // doc, is that the AE row stays UNCONDITIONAL so evals and every direct
@@ -485,11 +488,12 @@ export default {
     // worth naming rather than leaving to be found: the two halves of /ops
     // disagree about first-party traffic. Its D1 metrics exclude the EVAL
     // runner in SQL (src/lib/ops/metrics.ts, the `EVALS_AGENT` prefix and
-    // `EVALS_SURFACE`) and do not exclude the fit caller; its Analytics
-    // Engine panels (src/lib/ops/analytics.ts) exclude neither, and have no
-    // equivalent filter. So a "did the panel move after my call" check can be
-    // satisfied by this Worker's own housekeeping: read the `first-party` row
-    // before believing a visitor moved it.
+    // `EVALS_SURFACE`); its Analytics Engine panels (src/lib/ops/analytics.ts)
+    // do not, and have no equivalent filter. (This said the D1 metrics kept
+    // "the fit caller" too, which stopped meaning anything on `/mcp` once
+    // that caller left, #352.) So a "did the panel move after my call" check
+    // can be satisfied by this Worker's own housekeeping: read the
+    // `first-party` row before believing a visitor moved it.
     if (new URL(request.url).pathname === '/mcp' && !forwardedBySite(request)) {
       recordAgentEvent(env, mcpAgentEvent(request, response.status, Date.now() - started));
     }
