@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.45.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.45.1...ryanlindsey-me-v1.45.2) (2026-09-26)
+
+
+### Bug Fixes
+
+* **fit:** refuse a fit_reports status outside pending, ok and failed ([#421](https://github.com/ryanlindsey/ryanlindsey.me/issues/421)) ([898c060](https://github.com/ryanlindsey/ryanlindsey.me/commit/898c060f7540a9a34ac335302ca5eeb5c1c0b277)), closes [#355](https://github.com/ryanlindsey/ryanlindsey.me/issues/355)
+
 ## [1.45.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.45.0...ryanlindsey-me-v1.45.1) (2026-09-26)
 
 
