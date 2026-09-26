@@ -21,7 +21,7 @@ import { BANNED_PATTERNS } from './candidacy-patterns';
  * that renders every column of an empty table.
  *
  * THE ORDER ALSO PINS THE CACHE. /ops caches each of its three reads under its
- * OWN KV key for 60 seconds (`ops:metrics:v3`, `ops:traffic:v1`,
+ * OWN KV key for 60 seconds (`ops:metrics:v4`, `ops:traffic:v1`,
  * `ops:spend:v1`), so if the failed metrics read had been stored, the second
  * fetch would still be showing "could not be read" a minute later -- a
  * transient D1 blip pinned as a state. It is not stored because `cached`
@@ -75,6 +75,31 @@ beforeAll(async () => {
     )
     .bind(new Date().toISOString())
     .run();
+  // Three RAN rows beside it (migrations/0008). `fit` and `chat` are partly-run
+  // suites, each with one graded case and two whose model call never came
+  // back: `fit`'s graded case passed and `chat`'s failed, so the couldn't-run
+  // count has to stay amber beside both a green and a red score. `tier` names
+  // no `unreached`, so it is a row written before 0008 and relies on the
+  // column's default.
+  for (const [suite, total, passed, failed, unreached] of [
+    ['fit', 1, 1, 0, 2],
+    ['chat', 1, 0, 1, 2],
+  ] as const) {
+    await db
+      .prepare(
+        `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, status, unreached)
+         VALUES (?, ?, 'm', ?, ?, ?, 'ran', ?)`,
+      )
+      .bind(new Date().toISOString(), suite, total, passed, failed, unreached)
+      .run();
+  }
+  await db
+    .prepare(
+      `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed)
+       VALUES (?, 'tier', 'm', 4, 4, 0)`,
+    )
+    .bind(new Date().toISOString())
+    .run();
   // One fit run in each status `fit_reports` can hold (migrations/0006), and
   // a second `pending` row ten minutes old, past `STALE_AFTER_MS`, so the fit
   // tile has a failure, an abandoned run and a live one to name (issue #353).
@@ -125,6 +150,37 @@ function breakdown(title: string, doc: string = html): string {
   return hooked('data-ops-breakdown', title, doc);
 }
 
+/** Markup as a reader sees its text: Astro escapes an apostrophe in text. */
+function text(markup: string): string {
+  return markup.replace(/&#39;|&#x27;|&apos;/g, "'");
+}
+
+/** The Evals section's markup. */
+function evalsSection(): string {
+  const section = /<section aria-labelledby="evals"[\s\S]*?<\/section>/.exec(html);
+  expect(section, 'no evals section').not.toBeNull();
+  return section![0];
+}
+
+/**
+ * One eval row's `<td>` elements, each from its opening tag to its closing
+ * one, looked up by the suite named in its first cell.
+ */
+function evalCells(suite: string): string[] {
+  const evals = evalsSection();
+  const body = evals.slice(evals.indexOf('<tbody'), evals.indexOf('</tbody>'));
+  for (const tr of body.match(/<tr[\s\S]*?<\/tr>/g) ?? []) {
+    const cells = tr.match(/<td[\s\S]*?<\/td>/g) ?? [];
+    if (cells[0]?.replace(/<[^>]*>/g, '').trim() === suite) return cells;
+  }
+  throw new Error(`no eval row for ${suite}`);
+}
+
+/** A cell's text content, trimmed. */
+function cellText(cell: string): string {
+  return text(cell.replace(/<[^>]*>/g, '')).trim();
+}
+
 /** One `<li>` of a definition list, looked up by the text in it. */
 function row(text: string): string {
   const at = html.indexOf(text);
@@ -149,7 +205,9 @@ describe('/ops', () => {
   test('an incomplete eval run renders as words in text-warn, never a dash or a zero', () => {
     // The ruling this task shipped against its own brief's contradictory
     // sentence: an 'incomplete' row (migrations/0005) renders Pass as "did
-    // not run" and Fail as "not recorded", both in `text-warn`. No em dash and
+    // not run" and Fail as "not recorded", both in `text-warn`. Since #428
+    // those columns are Graded and Couldn't run, and the two words moved with
+    // them unchanged. No em dash and
     // no lone glyph -- every other cell in these two columns is a number, and
     // a bare dash there would read as a value.
     const section = /<section aria-labelledby="evals"[\s\S]*?<\/section>/.exec(html);
@@ -166,12 +224,60 @@ describe('/ops', () => {
     expect(evals.slice(evals.lastIndexOf('<td', passAt), passAt)).toContain('text-warn');
 
     const failAt = evals.indexOf('not recorded', tbodyAt);
-    expect(failAt, 'Fail cell must say not recorded').toBeGreaterThan(-1);
+    expect(failAt, "Couldn't-run cell must say not recorded").toBeGreaterThan(-1);
     expect(evals.slice(evals.lastIndexOf('<td', failAt), failAt)).toContain('text-warn');
 
     // The Ran column keeps its date: when a suite could not run is exactly
     // the fact this row exists to carry.
     expect(evals).toContain(new Date().toISOString().slice(0, 10));
+  });
+
+  test("the eval table heads its columns Graded and Couldn't run, with no Fail column", () => {
+    const evals = evalsSection();
+    const head = text(evals.slice(evals.indexOf('<thead'), evals.indexOf('</thead>')));
+    expect(head).toContain('Graded');
+    expect(head).toContain("Couldn't run");
+    expect(head).not.toMatch(/>\s*Fail\s*</);
+    expect(head).not.toMatch(/>\s*Pass\s*</);
+  });
+
+  test("a partly-run suite shows its graded score and a couldn't-run count in warn, never danger", () => {
+    // Review focus 2 of epic #425: `chat`'s one graded case failed, so its
+    // Graded cell is red, and the two cases that never reached the model stay
+    // amber beside it rather than inheriting the red.
+    const [, , fitGraded, fitUnreached] = evalCells('fit');
+    expect(cellText(fitGraded)).toBe('1/1');
+    expect(fitGraded).toContain('text-ok');
+    expect(cellText(fitUnreached)).toBe('2');
+    expect(fitUnreached).toContain('text-warn');
+    expect(fitUnreached).not.toContain('text-danger');
+
+    const [, , chatGraded, chatUnreached] = evalCells('chat');
+    expect(cellText(chatGraded)).toBe('0/1');
+    expect(chatGraded).toContain('text-danger');
+    expect(cellText(chatUnreached)).toBe('2');
+    expect(chatUnreached).toContain('text-warn');
+    expect(chatUnreached).not.toContain('text-danger');
+  });
+
+  test('a suite with nothing unreached shows 0 in muted ink', () => {
+    // `tier` is seeded without naming `unreached`, as every row before 0008
+    // was, so this is also review focus 5: an old row renders as it did.
+    const [, , graded, unreached] = evalCells('tier');
+    expect(cellText(graded)).toBe('4/4');
+    expect(cellText(unreached)).toBe('0');
+    expect(unreached).toContain('text-ink-muted');
+    expect(unreached).not.toContain('text-warn');
+  });
+
+  test("the Evals intro says what couldn't run means", () => {
+    // The paragraph went through the house-style skill and its check-prose.mjs
+    // when it was written (#428). This asserts the one phrase that ties it to
+    // the column it explains, not the wording around it.
+    const evals = evalsSection();
+    const intro = /<p[^>]*>([\s\S]*?)<\/p>/.exec(evals);
+    expect(intro, 'no intro paragraph').not.toBeNull();
+    expect(text(intro![1]).toLowerCase()).toContain("couldn't run");
   });
 
   test('no gated tool name and no audience label reaches the page', () => {
@@ -513,23 +619,30 @@ describe('/ops', () => {
     // changes, the key has to change too, or entries written before the change
     // keep being served for a full TTL.
     //
-    // AND IT HAPPENED AGAIN IN ISSUE #353, which is why the planted key is `v2`
-    // now rather than `v1`. `fitRuns` went from one number to four, and a `v2`
+    // AND IT HAPPENED AGAIN IN ISSUE #353, which is why the planted key moved
+    // from `v1` to `v2` then. `fitRuns` went from one number to four, and a `v2`
     // entry's bare number has no `reports` on it, so the fit tile would have
     // rendered its absence for a minute after the deploy while D1 answered
     // perfectly well.
+    //
+    // AND A THIRD TIME IN ISSUE #428, which is why the planted key is `v3`
+    // now. Eval rows gained `unreached` (migrations/0008), and a `v3` entry's
+    // rows have none, so for a minute after the deploy every Couldn't-run cell
+    // would have rendered an empty string where the page promises a number.
+    // The planted entry is `v3`'s own shape, `fitRuns` as four figures and no
+    // `unreached`, so the only thing that can keep it off the page is the key.
     //
     // The planted value is the OLD shape, and the tool-call figure is what the
     // assertion reads: a number that exists nowhere in D1, so finding it on the
     // page can only mean the old key was read.
     await kv.put(
-      'ops:metrics:v2',
+      'ops:metrics:v3',
       JSON.stringify({
         windowDays: 30,
         toolCalls: [{ tool: 'get_resume', calls: 4242 }],
         chatSessions: 0,
         chatTurns: 0,
-        fitRuns: 0,
+        fitRuns: { started: 0, reports: 0, failed: 0, inProgress: 0, abandoned: 0 },
         evalRuns: [
           {
             ranAt: '2026-09-01T00:00:00.000Z',
