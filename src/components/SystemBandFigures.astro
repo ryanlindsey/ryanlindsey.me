@@ -1,0 +1,102 @@
+---
+import { env } from 'cloudflare:workers';
+import OpsMetric from './OpsMetric.astro';
+import {
+  CACHE_TTL_SECONDS,
+  formatCount as count,
+  publicToolCalls,
+  readOpsReads,
+} from '../lib/ops/reads';
+
+/**
+ * The five live figures in the home page's system band, rendered as a server
+ * island (`server:defer` in src/components/SystemBand.astro).
+ *
+ * AN ISLAND SO THAT `/` STAYS PRERENDERED. The home page is the busiest route
+ * on the site, and the alternative, `prerender = false` on `/`, would give up
+ * static-first for five numbers and let AI Search index a day-old count. The
+ * island is fetched from `/_server-islands/<id>` after the page loads; a
+ * crawler and a visitor without JavaScript see the fallback instead, which has
+ * no figures in it on purpose.
+ *
+ * IT TAKES NO PROPS, AND THAT DOES NOT TAKE THE BUILD KEY OUT OF PLAY. The
+ * spec (#434) assumed it did. Read in Astro 7.3.3 on 2026-09-26: the island URL
+ * carries `e=`, the component's export name encrypted with the per-build key
+ * (node_modules/astro/dist/runtime/server/render/server-islands.js), and the
+ * endpoint answers 400 when it cannot decrypt it
+ * (node_modules/astro/dist/core/server-islands/endpoint.js). So a copy of `/`
+ * built before a deploy asks for an island the new build refuses, and that
+ * visitor keeps the fallback. That is the honest state rather than a broken
+ * one, and the window is short because `/` sets no long `Cache-Control` of its
+ * own. An `ASTRO_KEY` fixed across builds would close it, and is an owner's
+ * change to the build environment rather than to this file.
+ *
+ * THE SAME READS AND THE SAME KV ENTRIES AS /ops, through `readOpsReads`. The
+ * two surfaces cannot disagree about a figure for longer than one
+ * `CACHE_TTL_SECONDS`, and the next cache-key bump in src/lib/ops/reads.ts
+ * moves both. Each value expression below is copied from src/pages/ops.astro's
+ * tile of the same label, and the labels are verbatim too, so a reader never
+ * meets one number under two names.
+ *
+ * ONE ABSENCE FOR ALL FIVE, and it points rather than explains. /ops carries
+ * three different reasons because it is the page that has room to say which
+ * system failed and what that means; a home page tile repeating "this needs
+ * the read-only analytics token" would be the wrong sentence for the D1 tiles
+ * and too much sentence for the band. The state still says `not available`
+ * rather than `0`, which is the rule `OpsMetric` exists to keep.
+ */
+
+// The same number the KV entries live for, so an intermediary never holds the
+// island longer than its figures are fresh. Astro's island endpoint copies the
+// headers the component sets and adds `X-Robots-Tag: noindex` itself
+// (node_modules/astro/dist/core/server-islands/endpoint.js).
+Astro.response.headers.set('Cache-Control', `public, max-age=${CACHE_TTL_SECONDS}`);
+
+const { metrics, traffic, spend } = await readOpsReads(env, new Date());
+
+const ABSENT = { absentState: 'not available', absentReason: 'the ops page says why' };
+
+const FIGURES: {
+  label: string;
+  value: string | null;
+  source: 'D1' | 'Analytics Engine' | 'AI Gateway';
+}[] = [
+  {
+    label: 'Public MCP tool calls',
+    value: count(metrics === null ? null : publicToolCalls(metrics)),
+    source: 'D1',
+  },
+  { label: 'Chat sessions', value: count(metrics?.chatSessions), source: 'D1' },
+  {
+    label: 'Requests from agents',
+    value: count(traffic?.agentRequests),
+    source: 'Analytics Engine',
+  },
+  { label: 'Requests through the AI Gateway', value: count(spend?.requests), source: 'AI Gateway' },
+  {
+    label: 'Requests that reached the Worker',
+    value: count(traffic?.requests),
+    source: 'Analytics Engine',
+  },
+];
+---
+
+{/*
+    NO WRAPPER AROUND THE FIVE, and the grid is why. The island's HTML
+    replaces the fallback in place, between Astro's start comment and its
+    script (node_modules/astro/dist/runtime/server/render/server-islands.js,
+    `replaceServerIsland`), so these cells become direct children of the band's
+    `hairline-grid` and take its tracks. One wrapping element would be one grid
+    cell holding five tiles.
+
+    `data-band-figure` is the band's own test hook, on a wrapper because
+    `OpsMetric` already spends `data-ops-metric` on /ops's tests, and a band
+    test keyed on that would pass against /ops markup just as happily. `grid`
+    lets the tile fill the cell's height, so a short tile never shows the rule
+    ground beneath it.
+  */}
+{FIGURES.map(({ label, value, source }) => (
+  <div data-band-figure={label} class="grid">
+    <OpsMetric label={label} value={value} source={source} {...ABSENT} />
+  </div>
+))}
