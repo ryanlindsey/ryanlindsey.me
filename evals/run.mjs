@@ -35,6 +35,7 @@ import {
   leakProblems,
   reachedNoModel,
   tierProblems,
+  toolUnavailable,
 } from '../src/lib/evals/checks.ts';
 import { BACKOFF_MS, PACE_MS, RETRIES } from '../src/lib/evals/plan.ts';
 import { fail, localCount, pass, summarize, unreached } from '../src/lib/evals/record.ts';
@@ -185,8 +186,12 @@ async function runFit() {
       token,
     );
     if (answer.result?.isError) {
+      // `unreached` rather than `fail` when the refusal says no model answer
+      // exists, the same split `runFitCase` in workers/mcp/src/evals-run.ts
+      // makes, so an outage is not published as a graded failure (#427).
+      const outcome = toolUnavailable(answer) ? unreached : fail;
       results.push(
-        fail(
+        outcome(
           testCase.id,
           `tool refused: ${answer.result.content?.[0]?.text ?? ''}`,
           testCase.local,
@@ -427,21 +432,29 @@ async function runLeak() {
 }
 
 /**
- * Prints and records one suite's results, and says what they amount to: `true`
- * for a clean run, `false` for a real failure, and `null` for a suite where no
- * case reached the model. The caller treats `null` as a suite that did not
- * execute, so a transport fault exits 2 rather than 1 (issue #341).
+ * Prints and records one suite's results, and returns the row it recorded so
+ * `tally` can say what they amount to. A suite where no case reached the model
+ * is `incomplete`, and the caller treats it as a suite that did not execute,
+ * so a transport fault exits 2 rather than 1 (issue #341).
+ *
+ * THE TERMINAL PRINTS THE ROW'S NUMBERS, NOT ITS OWN. Until issue #427 this
+ * printed `passed/results.length`, which was the row's `passed/total` because
+ * the row counted every case. Now the row grades only the cases that reached
+ * the model, and a summary line that disagreed with the published row would
+ * leave the operator reading a different result from /ops.
  */
 function report(suite, results) {
-  const passed = results.filter((r) => r.ok).length;
   const row = summarize(suite, results, new Date().toISOString());
   for (const result of results) {
-    process.stdout.write(`${result.ok ? 'PASS' : 'FAIL'} ${suite}/${result.id} ${result.notes}\n`);
+    const label = result.ok ? 'PASS' : result.unreached ? 'UNREACHED' : 'FAIL';
+    process.stdout.write(`${label} ${suite}/${result.id} ${result.notes}\n`);
   }
   process.stdout.write(
     row.status === 'incomplete'
       ? `${suite}: incomplete -- no case reached the model, so this is not a gate result\n`
-      : `${suite}: ${passed}/${results.length}\n`,
+      : `${suite}: ${row.passed}/${row.total}` +
+          (row.unreached > 0 ? ` (${row.unreached} could not run)` : '') +
+          '\n',
   );
 
   if (record) {
@@ -487,9 +500,9 @@ function report(suite, results) {
     // not run", caused by an unset variable in one person's shell. A stale pass
     // is a worse thing to publish than a genuine one, and an unset variable is
     // not evidence that anything is wrong with the deployed system.
-    const sql = `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, status, notes)
+    const sql = `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, status, notes, unreached)
        VALUES ('${row.ranAt}', '${suite}', NULL, ${row.total}, ${row.passed},
-               ${row.failed}, '${row.status}', '${notes}')`;
+               ${row.failed}, '${row.status}', '${notes}', ${row.unreached})`;
     // SWALLOWED AFTER LOGGING, and the results above are already on stdout by
     // the time this runs -- which is the whole point of the ordering.
     //
@@ -528,16 +541,26 @@ function report(suite, results) {
       process.stderr.write(`${suite}: the eval_runs row could not be written\n`);
     }
   }
-  return row.status === 'incomplete' ? null : passed === results.length;
+  return row;
 }
 
-/** Folds one `report()` outcome into the run's exit state. */
-function tally(suite, outcome, green) {
-  if (outcome === null) {
+/**
+ * Folds one `report()` row into the run's exit state.
+ *
+ * A GRADED FAILURE IS EXIT 1; A CASE THAT COULD NOT RUN IS EXIT 2. Before
+ * issue #427 an unreached case in a partly-run suite counted as a failure and
+ * exited 1 with it. The row now records it apart from the graded cases, and
+ * the exit code follows the row: a suite whose graded cases all passed but
+ * which could not run some of them proves less than a clean `0`, which is
+ * exactly what `2` already means for a suite that could not run at all.
+ */
+function tally(suite, row, green) {
+  if (row.status === 'incomplete') {
     skipped.push(suite);
     return green;
   }
-  return outcome && green;
+  if (row.unreached > 0) partial.push(suite);
+  return row.failed === 0 && green;
 }
 
 // `skipped` is what makes a run that proves less than it looks like
@@ -546,6 +569,10 @@ function tally(suite, outcome, green) {
 // drops) and must move the exit code off 0, even when every suite that DID
 // run passed outright.
 const skipped = [];
+// Suites that ran but could not run every case (#427). Kept apart from
+// `skipped` so the closing line says which suites ran partly rather than
+// claiming they did not execute.
+const partial = [];
 
 let green = true;
 if (only === null || only === 'tier') green = tally('tier', report('tier', await runTier()), green);
@@ -585,8 +612,11 @@ if (!green) {
   // run is wrong, which is the more urgent fact.
   process.exit(1);
 }
-if (skipped.length > 0) {
-  process.stdout.write(`evals: incomplete run -- ${skipped.join(', ')} did not execute (exit 2)\n`);
+if (skipped.length > 0 || partial.length > 0) {
+  const parts = [];
+  if (skipped.length > 0) parts.push(`${skipped.join(', ')} did not execute`);
+  if (partial.length > 0) parts.push(`${partial.join(', ')} could not run every case`);
+  process.stdout.write(`evals: incomplete run -- ${parts.join('; ')} (exit 2)\n`);
   process.exit(2);
 }
 process.exit(0);

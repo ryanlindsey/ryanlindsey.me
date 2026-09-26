@@ -415,10 +415,19 @@ async function record(env: McpEnv, step: WorkflowStep, row: EvalRunRecord): Prom
   try {
     await step.do(`${row.suite}/record`, RECORD_STEP, async () => {
       await env.DB.prepare(
-        `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, status, notes)
-         VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`,
+        `INSERT INTO eval_runs (ran_at, suite, model, total, passed, failed, status, notes, unreached)
+         VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
       )
-        .bind(row.ranAt, row.suite, row.total, row.passed, row.failed, row.status, row.notes)
+        .bind(
+          row.ranAt,
+          row.suite,
+          row.total,
+          row.passed,
+          row.failed,
+          row.status,
+          row.notes,
+          row.unreached,
+        )
         .run();
       return row.suite;
     });

@@ -181,8 +181,15 @@ test('a real suite runs its case step and its record step under the step configs
   const row = await until(
     () =>
       env.DB.prepare(
-        "SELECT suite, status, total, passed, model FROM eval_runs WHERE suite = 'tier' ORDER BY id DESC",
-      ).first<{ suite: string; status: string; total: number; passed: number; model: null }>(),
+        "SELECT suite, status, total, passed, model, unreached FROM eval_runs WHERE suite = 'tier' ORDER BY id DESC",
+      ).first<{
+        suite: string;
+        status: string;
+        total: number;
+        passed: number;
+        model: null;
+        unreached: number;
+      }>(),
     (value) => value !== null,
     40_000,
   );
@@ -197,6 +204,9 @@ test('a real suite runs its case step and its record step under the step configs
   // one case in it.
   expect(row?.status).toBe('ran');
   expect(row?.total).toBe(1);
+  // Bound by `record`, not left to the column's DEFAULT: migration 0008 has to
+  // have reached this D1 for the insert to land at all (#427).
+  expect(row?.unreached).toBe(0);
   // `model` is written as an explicit NULL, exactly as evals/run.mjs writes it.
   expect(row?.model).toBeNull();
 });

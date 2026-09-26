@@ -7,7 +7,9 @@ import {
   leakProblems,
   reachedNoModel,
   tierProblems,
+  toolUnavailable,
 } from '../src/lib/evals/checks';
+import { TOOL_REASON_META_KEY } from '../src/lib/mcp/tool-reason';
 import type { ChatCase, FitCase, LeakCase, TierCase } from '../src/lib/evals/cases';
 import type { FitReport } from '../src/lib/fit/schema';
 
@@ -259,6 +261,42 @@ test('reachedNoModel: an unreachable error after deltas did reach the model', ()
 test('reachedNoModel: a refusal for any other reason is a result, not a transport fault', () => {
   expect(reachedNoModel({ answer: '', error: 'paused' })).toBe(false);
   expect(reachedNoModel({ answer: '', error: null })).toBe(false);
+});
+
+// --- toolUnavailable ------------------------------------------------------
+
+// Issue #427: the fit-side equivalent of `reachedNoModel`. The marker is the
+// contract, never the refusal's wording, which is written for people.
+
+test('toolUnavailable: an error result carrying the unavailable reason is true', () => {
+  expect(
+    toolUnavailable({
+      result: { isError: true, _meta: { [TOOL_REASON_META_KEY]: 'unavailable' } },
+    }),
+  ).toBe(true);
+});
+
+test('toolUnavailable: the refusal text without the marker is false', () => {
+  expect(
+    toolUnavailable({
+      result: {
+        isError: true,
+        content: [{ text: 'The fit engine could not be reached right now. Try again shortly.' }],
+      },
+    }),
+  ).toBe(false);
+});
+
+test('toolUnavailable: a success result is false even with the marker', () => {
+  expect(
+    toolUnavailable({
+      result: { isError: false, _meta: { [TOOL_REASON_META_KEY]: 'unavailable' } },
+    }),
+  ).toBe(false);
+});
+
+test('toolUnavailable: an answer with no result at all is false', () => {
+  expect(toolUnavailable({})).toBe(false);
 });
 
 // --- leakProblems ------------------------------------------------------------

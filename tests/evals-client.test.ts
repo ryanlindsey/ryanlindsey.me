@@ -1,9 +1,10 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from 'vitest';
 import { askOnce, payloadOf, rpc, type EvalsFetcher } from '../workers/mcp/src/evals-client';
-import { runTierCase } from '../workers/mcp/src/evals-run';
+import { runFitCase, runTierCase } from '../workers/mcp/src/evals-run';
 import { BUNDLED_CASES } from '../workers/mcp/src/evals-cases';
 import { EVALS_USER_AGENT } from '../src/lib/evals/plan';
+import { TOOL_REASON_META_KEY } from '../src/lib/mcp/tool-reason';
 
 /**
  * The transport half of the scheduled runner (issue #291, task 4), which is
@@ -236,4 +237,50 @@ test('the tier suite collects the same surfaces in both runners', async () => {
   const filter = '(tool.inputSchema?.required ?? []).length > 0';
   expect(manual, `evals/run.mjs no longer carries ${filter}`).toContain(filter);
   expect(scheduled, `evals-run.ts no longer carries ${filter}`).toContain(filter);
+});
+
+// --- runFitCase's refusal branch (issue #427) --------------------------------
+//
+// `toolUnavailable` is unit-tested in tests/evals-checks.test.ts; these pin
+// the wiring, so a refusal saying no model answer exists is recorded as
+// `unreached` and every other refusal stays a graded failure. The refusal is
+// echoed under the request's own id, because `payloadOf` matches on it.
+
+function refusingFetcher(meta: Record<string, unknown> | undefined): EvalsFetcher {
+  return stubFetcher((_url, init) => {
+    const { id } = JSON.parse(String(init?.body)) as { id: number };
+    return jsonResponse({
+      jsonrpc: '2.0',
+      id,
+      result: {
+        isError: true,
+        content: [{ type: 'text', text: 'The fit engine could not be reached right now.' }],
+        ...(meta ? { _meta: meta } : {}),
+      },
+    });
+  }).fetcher;
+}
+
+const FIT_CASE = { id: 'fit/strong', target_description: 'x', expect: {}, local: false };
+
+test('runFitCase: a refusal carrying the unavailable reason is unreached, not a graded failure', async () => {
+  const result = await runFitCase(
+    refusingFetcher({ [TOOL_REASON_META_KEY]: 'unavailable' }),
+    FIT_CASE,
+    'token',
+  );
+  expect(result).toEqual({
+    id: 'fit/strong',
+    ok: false,
+    notes: 'tool refused: The fit engine could not be reached right now.',
+    local: false,
+    unreached: true,
+  });
+});
+
+test('runFitCase: a refusal without the reason stays a graded failure', async () => {
+  const result = await runFitCase(refusingFetcher(undefined), FIT_CASE, 'token');
+  expect(result.ok).toBe(false);
+  expect(result.unreached).toBeUndefined();
+  expect(result.notes).toBe('tool refused: The fit engine could not be reached right now.');
 });

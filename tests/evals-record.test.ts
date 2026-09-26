@@ -103,6 +103,7 @@ test('summarize: totals count every result, local or not, and status is "ran"', 
     failed: 1,
     notes: 'c: broke',
     status: 'ran',
+    unreached: 0,
   });
 });
 
@@ -153,6 +154,7 @@ test('summarize: a suite where every case never reached the model is incomplete,
     notes:
       'no case reached the model: leak/probes[0]: the endpoint refused with "unreachable" | <local case, redacted>',
     status: 'incomplete',
+    unreached: 0,
   });
 });
 
@@ -163,8 +165,11 @@ test('summarize: one case that reached the model keeps the row a gate result', (
   ];
   const row = summarize('leak', results, '2026-09-18T00:00:00.000Z');
   expect(row.status).toBe('ran');
-  expect(row.total).toBe(2);
-  expect(row.failed).toBe(2);
+  // Issue #427: the reached case alone is graded; the unreached one is
+  // counted apart rather than as a second failure.
+  expect(row.total).toBe(1);
+  expect(row.failed).toBe(1);
+  expect(row.unreached).toBe(1);
 });
 
 test('summarize: an incomplete row notes stay within the 900-character limit', () => {
@@ -173,7 +178,43 @@ test('summarize: an incomplete row notes stay within the 900-character limit', (
 });
 
 test('summarize: a suite with no cases is still a ran row, as before', () => {
-  expect(summarize('tier', [], '2026-09-18T00:00:00.000Z').status).toBe('ran');
+  expect(summarize('tier', [], '2026-09-18T00:00:00.000Z')).toMatchObject({
+    status: 'ran',
+    unreached: 0,
+  });
+});
+
+// Issue #427: fit row 41 (2026-09-20) published 1/3 for a run where two
+// `analyze_fit` calls never returned a model answer. An outage is not a
+// regression, so a partly-run row grades only the cases that ran.
+
+const AT = '2026-09-20T00:00:00.000Z';
+
+test('summarize: unreached cases are counted apart from graded ones', () => {
+  const row = summarize(
+    'fit',
+    [
+      pass('mismatch', false),
+      unreached('partial', 'tool refused: x', false),
+      unreached('strong', 'tool refused: x', false),
+    ],
+    AT,
+  );
+  expect(row).toMatchObject({ status: 'ran', total: 1, passed: 1, failed: 0, unreached: 2 });
+  expect(row.notes).toContain('partial: tool refused: x');
+  expect(row.notes).toContain('strong: tool refused: x');
+});
+
+test('summarize: a graded failure beside unreached cases stays a failure', () => {
+  expect(
+    summarize('fit', [fail('a', 'wrong', false), unreached('b', 'x', false)], AT),
+  ).toMatchObject({ total: 1, passed: 0, failed: 1, unreached: 1 });
+});
+
+test('summarize: a local unreached case is counted and redacted', () => {
+  const row = summarize('fit', [pass('a', false), unreached('secret', 'model text', true)], AT);
+  expect(row.unreached).toBe(1);
+  expect(row.notes).toBe('<local case, redacted>');
 });
 
 // --- incompleteRow ------------------------------------------------------
@@ -192,5 +233,6 @@ test('incompleteRow: zeroed counts, the reason in notes, and status "incomplete"
     failed: 0,
     notes: 'RLME_EVAL_TOKEN is not set in this shell',
     status: 'incomplete',
+    unreached: 0,
   });
 });
