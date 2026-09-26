@@ -157,7 +157,7 @@ const WORKERS: { number: string; role: string; host: string; what: string; route
     number: '03',
     role: 'MCP Worker',
     host: 'mcp.ryanlindsey.me',
-    what: 'Everything that spends inference, plus the one Durable Object',
+    what: "The MCP server and every call that spends inference, plus the rate limiter's Durable Object",
     routes: [
       '/mcp endpoint, stateless per request',
       'POST /chat, the streamed inference',

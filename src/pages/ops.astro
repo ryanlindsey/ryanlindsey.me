@@ -346,7 +346,7 @@ const limitPhrase = (cost: ToolCost): string =>
  */
 const LIMIT_ROWS: { cost: ToolCost; what: string }[] = [
   { cost: 'cheap', what: 'Reading a published document over MCP' },
-  { cost: 'inference', what: 'Semantic search over the corpus' },
+  { cost: 'inference', what: 'Semantic search over the published pages' },
   { cost: 'conversation', what: 'A chat message' },
 ];
 
@@ -478,7 +478,7 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
 
 <Shell
   title="Ops"
-  description="What this site is running, what it has served in the last 30 days, which models it spends, how it degrades, and what shipped: every figure labeled with the system it was read from."
+  description="The architecture behind this site and its MCP server, with thirty days of traffic, model costs, eval results, failure behavior and release history. Every figure names the system it was read from."
   ogCard={OPS_CARD}
 >
   {/*
@@ -555,7 +555,9 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
             <span class="opacity-[.7]">· Last {formatWindow(WINDOW_DAYS)}</span>
           </p>
         </div>
-        <h1 class="mt-5 font-display text-headline">What's running and what it costs</h1>
+        <h1 class="mt-5 font-display text-headline">
+          How this site and its agents work in production
+        </h1>
         {/*
             The index, and it is deliberately built from the same parts as the
             drawing one section below: the cell is the ingress row's padding,
@@ -619,8 +621,8 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
         </h2>
       </div>
       <p class="text-small text-ink-muted">
-        One serverless Worker handles the site; the other handles the MCP. Each calls the other
-        directly, with no extra hops.
+        Two Workers: one serves the site, the other serves the MCP server, chat and fit analysis.
+        They call each other through service bindings, without a public network hop.
       </p>
     </div>
     <div class:list={[COLUMN, 'pb-16']}>
@@ -776,7 +778,7 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
           label="Inference spend"
           value={spend === null ? null : `$${spend.costUsd.toFixed(2)}`}
           source="AI Gateway"
-          note="Includes Chat, Fit analysis, and Eval judging. The embedding calls pass no gateway option, so they are billed but not attributed here."
+          note="Covers chat, fit analysis and eval judging. Search embeddings do not go through the gateway, so they are billed but not counted here."
           {...GATEWAY_ABSENT}
         />
         <OpsMetric
@@ -821,15 +823,11 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
     <div class:list={[COLUMN, 'pt-9']}>
       <p class={KICKER}>AI Gateway</p>
       <p class="mt-4 text-small text-ink-muted lg:columns-2 lg:gap-x-16 xl:columns-3">
-        The three gateway figures are its own accounting over the same window as everything above:
-        its computed cost for the calls it was asked to record, which is a closer thing to an
-        invoice than an estimate made here from token counts, and not the invoice itself. When they
-        are blank, the read did not produce a figure: no token, a response this build would not
-        read, or a window it could not tell from a misdirected query. A blank is not a claim that
-        nothing was spent, because the two look identical from here, which is why neither is
-        rendered as a zero. The token counts behind the cost are deliberately not published: the
-        dollar figure is the one that means anything to a reader, and the rest is detail about other
-        people's questions.
+        These three figures are AI Gateway's own accounting for the same window: the cost it
+        computed for the calls it recorded. That is closer to the invoice than an estimate from
+        token counts, but it is not the invoice. A blank figure means the read failed, not that
+        nothing was spent, so a blank is never shown as zero. Token counts are not published. The
+        dollar figure is what matters to a reader, and the rest describes other people's questions.
       </p>
     </div>
 
@@ -852,8 +850,7 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
               <p class="mt-5 font-mono text-small text-ink-muted">{breakdown.absentState}</p>
             ) : breakdown.rows.length === 0 ? (
               <p class="mt-5 text-small text-ink-muted">
-                Nothing recorded in this window, which is a different statement from a read that
-                failed.
+                Nothing recorded in this window. The read worked, and there was nothing to count.
               </p>
             ) : (
               <ul class="mt-5">
@@ -924,9 +921,9 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
           <span class={KICKER}>· Constants in this build</span>
         </div>
         <p class="mt-5 max-w-[70ch] text-small text-ink-muted">
-          Every model this system calls, named from the constant the calling code passes rather than
-          typed out here, so this list cannot describe a model the site has stopped using. Chat
-          answers and eval judging are separate constants that name the same model today.
+          Every model the site calls. Each name is read from the constant the calling code uses, so
+          the list cannot name a model the site has stopped using. Chat answers and eval judging are
+          set separately and currently use the same model.
         </p>
 
         {/*
@@ -965,7 +962,7 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
             { what: 'Chat answers', model: CHAT_MODEL },
             { what: 'Fit analysis', model: FIT_MODEL },
             { what: 'Eval judging', model: JUDGE_MODEL },
-            { what: 'Corpus embeddings', model: CORPUS_EMBEDDING_MODEL },
+            { what: 'Search embeddings', model: CORPUS_EMBEDDING_MODEL },
           ].map((row) => (
             <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
               <dt class="text-small text-ink-muted">{row.what}</dt>
@@ -996,12 +993,11 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
 
         {metrics === null ? (
           <p class="mt-6 font-mono text-small text-ink-muted">
-            not available — the metrics store could not be read
+            not available: the metrics store could not be read
           </p>
         ) : metrics.evalRuns.length === 0 ? (
           <p class="mt-6 text-small text-ink-muted">
-            No runs recorded yet. The table exists and is empty, which is a different statement from
-            a run that failed.
+            No runs recorded yet. A run that failed would still appear here as a row.
           </p>
         ) : (
           <div class="mt-6 overflow-x-auto">
@@ -1095,8 +1091,8 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
           <span class={KICKER}>· What happens when something fails</span>
         </div>
         <p class="mt-5 max-w-[70ch] text-small text-ink-muted">
-          This system degrades gracefully and tells you when it does. This is the ladder, in the
-          order a user would meet it.
+          When a part fails, the site says so and keeps serving what it can. These are the failures
+          in the order a visitor would meet them.
         </p>
 
         <dl class="mt-6 divide-y divide-rule border-t border-rule">
@@ -1107,23 +1103,23 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
           <div class="py-4">
             <dt class="font-mono text-micro uppercase text-ink">A read this page needs fails</dt>
             <dd class="mt-2 text-small text-ink-muted">
-              No section here ever shows a zero standing in for a number nobody could read, because
-              a zero is the one wrong answer a reader has no way to spot.
+              The figure it feeds shows as unavailable, never as zero. A wrong zero is the one error
+              a reader cannot spot.
             </dd>
           </div>
           <div class="py-4">
             <dt class="font-mono text-micro uppercase text-ink">Retrieval finds nothing</dt>
             <dd class="mt-2 text-small text-ink-muted">
-              The answer says the published work does not cover it rather than filling the gap.
-              Everything published is plain text at{' '}
+              Chat says the published work does not cover the question instead of guessing.
+              Everything published is also plain text at{' '}
               <a class="text-accent" href="/llms.txt">
                 /llms.txt
               </a>
               , and the{' '}
               <a class="text-accent" href="/mcp">
-                MCP endpoint
+                MCP server
               </a>{' '}
-              answers the same questions over a protocol.
+              answers the same questions for agents.
             </dd>
           </div>
         </dl>
@@ -1140,7 +1136,7 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
           ))}
           <li class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 py-3">
             <span class="text-small text-ink-muted">
-              Chat, across everyone, before the breaker trips
+              Chat, across all visitors, before the breaker trips
             </span>
             <span class="font-mono text-small text-ink" data-numeric>
               {GLOBAL_LIMITS.chat.limit} per {per(GLOBAL_LIMITS.chat.periodSeconds)}
@@ -1164,9 +1160,9 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
           ))}
         </ul>
         <p class="mt-3 font-mono text-micro text-ink-muted">
-          A daily job enfores these and the{' '}
+          A daily job enforces these, and the{' '}
           <a class="text-accent" href="/ai-policy">
-            policy
+            AI policy
           </a>{' '}
           states them.
         </p>
@@ -1180,7 +1176,7 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
         </div>
 
         {releases.length === 0 ? (
-          <p class="mt-6 text-small text-ink-muted">No releases parsed from this build.</p>
+          <p class="mt-6 text-small text-ink-muted">No releases found in this build's changelog.</p>
         ) : (
           <ul class="mt-6 divide-y divide-rule border-t border-rule">
             {releases.map((release) => (

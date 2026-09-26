@@ -102,7 +102,7 @@ export const OPS_CARD: OgCard = {
   kicker: 'OPS',
   title: 'Ops',
   standfirst:
-    'What this site runs, what it served in the last thirty days, which models it spends and how it degrades.',
+    'The architecture, traffic, model costs, eval results and failure behavior behind this site and its agents.',
   footerLeft: SITE_FOOTER,
   footerRight: 'LAST 30 DAYS',
 };

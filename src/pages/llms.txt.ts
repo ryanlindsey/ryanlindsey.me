@@ -134,7 +134,7 @@ const SITE_LINKS: LlmsLink[] = [
     title: 'Ops dashboard',
     url: `${SITE_ORIGIN}/ops`,
     description:
-      'Live operations: what this site has served over the last 30 days, which models it spends on, how it degrades, and what shipped -- every figure labelled with the system it was read from.',
+      'The architecture behind this site and its MCP server, with thirty days of traffic, model costs, eval results, failure behavior and release history. Every figure names the system it was read from.',
   },
   {
     title: 'AI policy and risk register',
