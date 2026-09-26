@@ -135,9 +135,11 @@ const [metrics, traffic, spend]: [OpsMetrics | null, AgentTraffic | null, Gatewa
     // served it.
     //
     // `v4` SINCE ISSUE #428, a third time. Eval rows gained `unreached`
-    // (migrations/0008), and a `v3` entry's rows have none, so every
-    // Couldn't-run cell would have rendered empty where the column promises a
-    // number. tests/ops-page.test.ts now plants an entry under `ops:metrics:v3`.
+    // (migrations/0008), and a `v3` entry's rows have none. `undefined === 0`
+    // is false, so every Couldn't-run cell would have rendered empty and in
+    // warn ink, a column of unexplained amber on every row, where the column
+    // promises a number. tests/ops-page.test.ts now plants an entry under
+    // `ops:metrics:v3`.
     readOrNull('ops:metrics:v4', () => readOpsMetrics(env.DB, now, WINDOW_DAYS)),
     readOrNull('ops:traffic:v1', () => readAnalytics(env, now, WINDOW_DAYS)),
     readOrNull('ops:spend:v1', () => readSpend(env, now, WINDOW_DAYS)),
@@ -295,6 +297,12 @@ const maxValue = (rows: { value: number }[]): number =>
  * a healthy one. The amber band is "some passed", and danger is the majority
  * failing, which is the shape of a suite that could not run properly rather
  * than one with a bad case in it.
+ *
+ * That last reason held for rows written before migrations/0008, which
+ * counted a case whose model call never came back as a failure. Since #427
+ * such a case is counted in `unreached` and kept out of all three figures
+ * here, so on a newer row danger means most of the answers that were graded
+ * were wrong. The rule did not change; only what reaches it did.
  */
 function evalTone(passed: number, total: number, failed: number): string {
   if (failed === 0) return 'text-ok';

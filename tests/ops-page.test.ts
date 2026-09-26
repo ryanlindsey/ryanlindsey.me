@@ -207,9 +207,9 @@ describe('/ops', () => {
     // sentence: an 'incomplete' row (migrations/0005) renders Pass as "did
     // not run" and Fail as "not recorded", both in `text-warn`. Since #428
     // those columns are Graded and Couldn't run, and the two words moved with
-    // them unchanged. No em dash and
-    // no lone glyph -- every other cell in these two columns is a number, and
-    // a bare dash there would read as a value.
+    // them unchanged. No em dash and no lone glyph -- every other cell in
+    // these two columns is a number, and a bare dash there would read as a
+    // value.
     const section = /<section aria-labelledby="evals"[\s\S]*?<\/section>/.exec(html);
     expect(section, 'no evals section').not.toBeNull();
     const evals = section![0];
@@ -220,7 +220,7 @@ describe('/ops', () => {
     expect(tbodyAt, 'no table body').toBeGreaterThan(-1);
 
     const passAt = evals.indexOf('did not run', tbodyAt);
-    expect(passAt, 'Pass cell must say did not run').toBeGreaterThan(-1);
+    expect(passAt, 'Graded cell must say did not run').toBeGreaterThan(-1);
     expect(evals.slice(evals.lastIndexOf('<td', passAt), passAt)).toContain('text-warn');
 
     const failAt = evals.indexOf('not recorded', tbodyAt);
@@ -278,6 +278,8 @@ describe('/ops', () => {
     const intro = /<p[^>]*>([\s\S]*?)<\/p>/.exec(evals);
     expect(intro, 'no intro paragraph').not.toBeNull();
     expect(text(intro![1]).toLowerCase()).toContain("couldn't run");
+    // The one house-style rule that holds for page copy without exception.
+    expect(intro![1]).not.toMatch(/[\u2013\u2014]/);
   });
 
   test('no gated tool name and no audience label reaches the page', () => {
