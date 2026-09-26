@@ -14,8 +14,10 @@
 export const TOOL_REASON_META_KEY = 'me.ryanlindsey/reason';
 
 /**
- * `unavailable`: the tool produced no answer at all. Only a `FitUnavailable`
- * carries it (workers/mcp/src/gated.ts, `fitToolError`); a rate-limit refusal,
- * a schema refusal and an unwrapped throw carry no reason, and stay graded.
+ * `unavailable`: no model answer exists. Only a `FitUnavailable` marked
+ * `noAnswer` carries it (src/lib/fit/engine.ts, mapped by `fitToolError` in
+ * workers/mcp/src/gated.ts). A model answer that came back truncated or
+ * unparseable carries none, and neither does a rate-limit refusal, a schema
+ * refusal or an unwrapped throw: all of those stay graded.
  */
 export type ToolErrorReason = 'unavailable';

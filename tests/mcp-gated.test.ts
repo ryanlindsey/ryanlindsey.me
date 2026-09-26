@@ -1548,7 +1548,9 @@ describe('analyze_fit', () => {
   });
 
   test('fitToolError shows a FitUnavailable message and quarantines anything else', () => {
-    const safe = fitToolError(new FitUnavailable('The corpus is empty right now.'));
+    const safe = fitToolError(
+      new FitUnavailable('The corpus is empty right now.', { noAnswer: true }),
+    );
     expect(safe).toBeInstanceOf(ToolError);
     expect(safe.message).toBe('The corpus is empty right now.');
     expect(safe.reason).toBe('unavailable');
@@ -1565,6 +1567,28 @@ describe('analyze_fit', () => {
     // have produced nothing, so it stays a graded failure rather than an
     // unreached case.
     expect(generic.reason).toBeUndefined();
+  });
+
+  test('fitToolError gives no reason to a model answer that came back unusable', () => {
+    // The model DID answer on both of these, so they stay graded failures
+    // rather than couldn't-run. The 2026-09-10 run's `fit/strong` and
+    // `fit/partial` hit the token cap, and that regression is visible only
+    // because it was graded. Each is constructed exactly as the engine throws
+    // it, with no `noAnswer`; tests/fit-engine.test.ts pins that the engine's
+    // own truncation and schema paths leave the field false.
+    const truncated = fitToolError(
+      new FitUnavailable('The fit engine returned an incomplete answer. Try again shortly.'),
+    );
+    expect(truncated).toBeInstanceOf(ToolError);
+    expect(truncated.message).toMatch(/incomplete answer/);
+    expect(truncated.reason).toBeUndefined();
+
+    const unusable = fitToolError(
+      new FitUnavailable('The fit engine returned an unusable answer. Try again shortly.'),
+    );
+    expect(unusable).toBeInstanceOf(ToolError);
+    expect(unusable.message).toMatch(/unusable answer/);
+    expect(unusable.reason).toBeUndefined();
   });
 
   test('fitToolError logs the cause it refuses to show, so its sentence is true', () => {
