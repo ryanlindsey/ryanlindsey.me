@@ -89,9 +89,13 @@ const FIGURES: { label: string; value: string | null }[] = [
     test keyed on that would pass against /ops markup just as happily. `grid`
     lets the tile fill the cell's height, so a short tile never shows the rule
     ground beneath it.
+
+    `*:max-sm:px-4` narrows the one element `OpsMetric` renders to the band's
+    phone padding (SystemBand.astro's CELL), without giving the shared
+    component a prop /ops would never pass.
   */}
 {FIGURES.map(({ label, value }) => (
-  <div data-band-figure={label} class="grid">
+  <div data-band-figure={label} class="grid *:max-sm:px-4">
     <OpsMetric label={label} value={value} {...ABSENT} />
   </div>
 ))}
