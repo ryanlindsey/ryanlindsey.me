@@ -10,15 +10,15 @@ import { CORPUS_EMBEDDING_MODEL } from '../lib/corpus';
 import { FIT_MODEL } from '../lib/fit/engine';
 import { JUDGE_MODEL } from '../lib/judge/engine';
 import { GLOBAL_LIMITS, LIMITS, type ToolCost } from '../lib/mcp/limits';
-import {
-  readAnalytics,
-  readSpend,
-  type AgentTraffic,
-  type GatewaySpend,
-} from '../lib/ops/analytics';
-import { cached } from '../lib/ops/cache';
 import { recentReleases } from '../lib/ops/changelog';
-import { readOpsMetrics, type OpsMetrics } from '../lib/ops/metrics';
+import type { OpsMetrics } from '../lib/ops/metrics';
+import {
+  CACHE_TTL_SECONDS,
+  formatCount as count,
+  publicToolCalls,
+  readOpsReads,
+  WINDOW_DAYS,
+} from '../lib/ops/reads';
 import { formatWindow, RETENTION } from '../lib/retention';
 import { OPS_CARD } from '../lib/og/cards';
 
@@ -40,110 +40,10 @@ import { OPS_CARD } from '../lib/og/cards';
  */
 export const prerender = false;
 
-/**
- * How long a figure on this page may be, in one place: the KV entries below and
- * the `Cache-Control` header are the same number and must never be two.
- *
- * An intermediary holding the page longer than the cache holds its figures
- * would be publishing numbers this Worker has already replaced.
- */
-const CACHE_TTL_SECONDS = 60;
-
 Astro.response.headers.set('Cache-Control', `public, max-age=${CACHE_TTL_SECONDS}`);
 
-/** The window every counted figure on this page is measured over. */
-const WINDOW_DAYS = 30;
-
-/**
- * One read, cached under its own key, degrading to `null` on anything that
- * throws.
- *
- * THREE KEYS RATHER THAN ONE, which the plan spelled as a single `ops:v1`. The
- * key shape turned out to be load-bearing in two directions the single entry
- * got wrong, and neither is theoretical:
- *
- *   - IT MISLABELLED WHICH SYSTEM WAS BROKEN. One `try` around all three reads
- *     means a D1 rejection nulls `traffic` and `spend` as well, so the three
- *     Analytics Engine tiles fall through to their default absence -- "this
- *     needs the read-only analytics token" -- which is a FALSE sentence about
- *     what is wrong. That is the exact error `D1_ABSENT` below was invented to
- *     prevent, reintroduced one level up. It is harmless only while the token
- *     is unconfigured and becomes a live falsehood the day it is populated.
- *   - IT AMPLIFIED A D1 OUTAGE INTO AN API ONE. The `try` is outside `cached`
- *     (see below), so a rejection means NOTHING is written -- including the
- *     analytics half that answered perfectly well. Every request during a D1
- *     blip would then re-run `readAnalytics`'s three api.cloudflare.com queries
- *     uncached, against a rate-limited token, which is precisely the
- *     amplification src/lib/ops/cache.ts exists to prevent.
- *
- * Per-key caching also restores the property that module documents and the
- * single entry silently lost: `cached` never stores a bare `null`, so an
- * unconfigured or failed read is retried on the next request rather than pinned
- * as "not configured" for the whole TTL. Folded into a composite object, a
- * `null` half was just a field and was stored with the rest.
- *
- * THE TRY IS AROUND THE CACHE CALL RATHER THAN INSIDE IT, and that placement is
- * still the point. `readOpsMetrics` returns `Promise<OpsMetrics>`, not `| null`,
- * and carries no internal try -- deliberately, since a caller that wants the
- * numbers should hear about a D1 outage rather than receive a shape that looks
- * like zero traffic. This page is the caller, and what it wants is to degrade:
- * an unhandled rejection here is a 500 on a public page whose entire premise is
- * that it tells you what it knows.
- *
- * WHAT THE PLACEMENT DOES NOT BUY, recorded rather than deleted because an
- * earlier version of this comment claimed it did (final-review Minor 6): it is
- * not what keeps a failed read out of the cache. `cached` awaits `fn` before it
- * writes anything, so a rejection leaves the function before the `put` no
- * matter where the caller's `try` sits. Not being pinned is
- * src/lib/ops/cache.ts's own structure, and so is the separate property that a
- * bare `null` is never stored. The 500 is the whole reason this `try` is here.
- */
-async function readOrNull<T>(key: string, read: () => Promise<T>): Promise<T | null> {
-  try {
-    return await cached<T | null>(env.KV_CACHE, key, CACHE_TTL_SECONDS, read);
-  } catch (error) {
-    // The operator gets the exception in Workers observability; the reader gets
-    // a sentence saying that figure is not available. A stack trace on a public
-    // page would be both a worse answer and a disclosure.
-    console.error(`ops: ${key} could not be read`, error);
-    return null;
-  }
-}
-
 const now = new Date();
-const [metrics, traffic, spend]: [OpsMetrics | null, AgentTraffic | null, GatewaySpend | null] =
-  await Promise.all([
-    // `v2` SINCE ISSUE #291, AND THE BUMP IS THE POINT RATHER THAN THE NUMBER.
-    // `OpsMetrics` gained `status` (migrations/0005), and an entry written by
-    // the previous build has no such field: `run.status === 'ran'` is false for
-    // `undefined`, so every suite in the table would have rendered "did not
-    // run" for the whole `CACHE_TTL_SECONDS` after the deploy. The page would
-    // have been reporting a broken eval pipeline, from its own cache.
-    //
-    // THE SAME LESSON, ALREADY LEARNED ONCE HERE. CLAUDE.md records it about
-    // `SEARCH_CACHE_VERSION`: `searchCacheKey` is built from the query alone,
-    // so nothing in an entry names the shape or the index it came from, and
-    // changing what an entry holds without changing the key keeps serving the
-    // old one for a full TTL. This key has the same property and the same
-    // remedy.
-    //
-    // `v3` SINCE ISSUE #353, for the same reason a second time. `fitRuns` went
-    // from one number to four, and a `v2` entry's bare number has no `reports`
-    // on it, so the fit tile would have rendered its absence, and its note
-    // "null started", while D1 answered perfectly well. tests/ops-page.test.ts
-    // once planted an entry under `ops:metrics:v2` and failed if the page
-    // served it.
-    //
-    // `v4` SINCE ISSUE #428, a third time. Eval rows gained `unreached`
-    // (migrations/0008), and a `v3` entry's rows have none. `undefined === 0`
-    // is false, so every Couldn't-run cell would have rendered empty and in
-    // warn ink, a column of unexplained amber on every row, where the column
-    // promises a number. tests/ops-page.test.ts now plants an entry under
-    // `ops:metrics:v3`.
-    readOrNull('ops:metrics:v4', () => readOpsMetrics(env.DB, now, WINDOW_DAYS)),
-    readOrNull('ops:traffic:v1', () => readAnalytics(env, now, WINDOW_DAYS)),
-    readOrNull('ops:spend:v1', () => readSpend(env, now, WINDOW_DAYS)),
-  ]);
+const { metrics, traffic, spend } = await readOpsReads(env, now);
 
 /**
  * The absence wording for the uncredentialed half. Different from the default
@@ -185,16 +85,11 @@ const GATEWAY_ABSENT = {
     'this needs the read-only analytics token, and a gateway response this build can read',
 };
 
-/** A figure with thousands separators, or `null` when there is no figure. */
-const count = (value: number | null | undefined): string | null =>
-  value === null || value === undefined ? null : value.toLocaleString('en-US');
-
 /** The runs behind the fit figure: how many started, and how many of those produced no report. */
 const fitNote = ({ started, failed, abandoned, inProgress }: OpsMetrics['fitRuns']): string =>
   `${count(started)} started, ${count(failed)} failed, ${count(abandoned)} abandoned, ${count(inProgress)} in progress`;
 
-const toolCalls =
-  metrics === null ? null : metrics.toolCalls.reduce((total, row) => total + row.calls, 0);
+const toolCalls = metrics === null ? null : publicToolCalls(metrics);
 
 /**
  * The three breakdown lists, in the shape the panels below render.
