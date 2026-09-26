@@ -104,11 +104,11 @@ there should be the last thing on screen rather than scrolled past. **A red
 
 ## Exit codes
 
-| Code | Meaning                                                                                                                                                                                                |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `0`  | every requested suite ran, and everything passed                                                                                                                                                       |
-| `1`  | a requested suite ran and something failed                                                                                                                                                             |
-| `2`  | a requested suite could not run at all (see the `SKIP` line), or ran and no case reached the model (see the `incomplete` line) — nothing failed, but the run proves less than a bare `0` would suggest |
+| Code | Meaning                                                                                                                                                                                                                                                                           |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`  | every requested suite ran, and everything passed                                                                                                                                                                                                                                  |
+| `1`  | a requested suite ran and something failed                                                                                                                                                                                                                                        |
+| `2`  | a requested suite could not run at all (see the `SKIP` line), ran and no case reached the model (see the `incomplete` line), or ran with some cases that could not run (see the `UNREACHED` lines) — nothing graded failed, but the run proves less than a bare `0` would suggest |
 
 A real failure always wins over an incomplete run: `1` outranks `2`. Running
 the first usage example above with `RLME_EVAL_TOKEN` unset prints
@@ -172,7 +172,7 @@ that channel does not know about `.gitignore`. So the runner enforces the
 redaction itself rather than trusting this paragraph — a case loaded from a
 `*.local.json` file never contributes its real id or its failure text to a
 recorded row; both are replaced with an opaque `<local case, redacted>`
-marker. It still counts toward that row's `total`/`passed`/`failed` numbers,
+marker. It still counts toward that row's `total`/`passed`/`failed` numbers, or toward `unreached` if it never reached the model,
 because a count leaks nothing a real id or a fragment of model output would.
 
 ## The judge

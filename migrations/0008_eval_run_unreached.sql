@@ -14,8 +14,8 @@
 -- where no case reached the model is still `status = 'incomplete'` with every
 -- count zero, this one included.
 --
--- DEFAULT 0, so every row already in this table keeps meaning what it meant:
--- before this migration an unreached case was counted in `failed`, and an old
--- row reading zero unreached with its old `failed` is exactly what it
--- recorded. It never claims that a case it graded did not run.
+-- DEFAULT 0, so every row already in this table keeps meaning what it meant.
+-- Both writers name this column, so only rows written before this migration
+-- rely on the default. Those rows counted an unreached case in `failed`, and
+-- zero here says exactly that: nothing was set apart from the graded counts.
 ALTER TABLE eval_runs ADD COLUMN unreached INTEGER NOT NULL DEFAULT 0;
