@@ -621,6 +621,15 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
             than a truer one. Whether the two routes above should join the list
             is a deployed-behaviour change and the owner's call, not this
             sentence's.
+
+            SINCE THE HOME PAGE'S SYSTEM BAND (issue #437), THE BAND ITSELF IS
+            A WORKER REQUEST. Its five figures are a server island, fetched
+            from `/_server-islands/...` after `/` loads, and that path has no
+            asset, so it reaches src/worker.ts and is counted here under the
+            `site` surface: roughly one more request per home page view with
+            JavaScript on. The measurement was left as it was. Excluding the
+            island fetch would change a deployed figure, and that is the
+            owner's call.
           */}
         <OpsMetric
           label="Requests that reached the Worker"

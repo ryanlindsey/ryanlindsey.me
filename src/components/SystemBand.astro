@@ -64,7 +64,17 @@ const CELL = 'bg-surface px-6 pb-7 pt-[26px]';
       that answers from what is published here.
     </p>
 
-    <div class="hairline-grid mt-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+    {/*
+        `auto-rows-fr` MAKES EVERY ROW AS TALL AS THE TALLEST, and that is
+        what keeps the swap from moving a row. Measured in Chrome against
+        `wrangler dev` on 2026-09-26: a fallback tile is 144px, and so is the
+        release tile, but a live tile rendering its absence is 137px, because
+        `OpsMetric`'s absent arm sets `text-heading` where the figure sets
+        `text-figure`. Without this, a row of absences shrank by 7px when the
+        island arrived. The release tile is built with the page and sits in
+        the grid in both states, so it sets the floor at every breakpoint.
+      */}
+    <div class="hairline-grid mt-6 auto-rows-fr grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
       <SystemBandFigures server:defer>
         <Fragment slot="fallback">
           {/*
@@ -84,18 +94,6 @@ const CELL = 'bg-surface px-6 pb-7 pt-[26px]';
               <p aria-hidden="true" class="mt-1 h-[1lh] font-mono text-micro" />
             </div>
           ))}
-          {/*
-              A FULL-WIDTH ROW, PLACED LAST WITH `order-last`. It has to be
-              inside the fallback, because it is only true until the figures
-              arrive, and the fallback is a run of the grid's own children
-              (the island replaces it in place), so it is a cell. `order-last`
-              moves it below the release tile, which comes after the island in
-              the markup, so the six tiles stay two rows of three.
-            */}
-          <p class={`${CELL} order-last col-span-full text-small text-ink-muted`}>
-            These figures load after the page does, and they are always on the{' '}
-            <a href="/ops#live-metrics">ops page</a>.
-          </p>
         </Fragment>
       </SystemBandFigures>
 
@@ -132,5 +130,19 @@ const CELL = 'bg-surface px-6 pb-7 pt-[26px]';
         )}
       </div>
     </div>
+    {/*
+        OUTSIDE THE ISLAND, AND PERMANENT. It sat in the fallback slot first,
+        as a full-width grid row, and the row vanished when the figures
+        arrived. Measured in Chrome against `wrangler dev` on 2026-09-26, band
+        height before and after the swap: 572px to 489px at `lg`, 701px to
+        611px at `md`, 1185px to 1052px at 500px wide, a shift of everything
+        below the band on every page view with JavaScript. The sentence stays
+        true once the figures are in: they still arrived after the page, and
+        /ops still carries them.
+      */}
+    <p data-band-note class="mt-4 text-small text-ink-muted">
+      These figures load after the page does, and they are always on the{' '}
+      <a href="/ops#live-metrics">ops page</a>.
+    </p>
   </div>
 </section>

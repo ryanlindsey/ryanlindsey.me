@@ -143,10 +143,14 @@ describe('the system band on /', () => {
     }
   });
 
-  test('the fallback says where the figures always are', () => {
+  test('says, under the grid, where the figures always are', () => {
+    const note = elementWith(home, 'p', 'data-band-note');
+    expect(note).toContain('href="/ops#live-metrics"');
+    expect(text(note)).toContain('These figures load after the page does');
+    // Outside the island, so the swap cannot remove it.
     const band = elementWith(home, 'section', 'data-system-band');
-    expect(band).toContain('href="/ops#live-metrics"');
-    expect(text(band)).toContain('These figures load after the page does');
+    expect(band.indexOf('data-band-note')).toBeGreaterThan(band.indexOf('data-release-tile'));
+    expect(degradedHtml).not.toContain('data-band-note');
   });
 
   test('links to every figure on /ops', () => {
@@ -166,6 +170,8 @@ describe('the system band on /', () => {
 describe('the island', () => {
   test('answers 200 with every tile absent when D1 cannot be read, never 0', () => {
     expect(degraded.status).toBe(200);
+    expect(degraded.headers.get('cache-control')).toBe('public, max-age=60');
+    expect(degraded.headers.get('x-robots-tag')).toBe('noindex');
     expect(degradedHtml.match(/data-band-figure="/g) ?? []).toHaveLength(5);
     for (const label of LABELS) {
       const tile = cell(degradedHtml, 'data-band-figure', label);
