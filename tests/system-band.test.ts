@@ -171,7 +171,7 @@ describe('the system band on /', () => {
     // muted dot. The release tile is `data-numeric` too, which is why the
     // selector must name `data-band-figure`.
     const LIVE = 'group-has-[[data-band-figure]_[data-numeric]]/band:';
-    expect(dot).toContain(`${LIVE}bg-ok`);
+    expect(dot).toContain(`${LIVE}bg-ok-ground`);
     expect(dot).toContain(`${LIVE}inline-flex`);
     expect(dot).toContain('bg-ink-muted');
     expect(dot).toContain('motion-safe:animate-ping');
@@ -180,7 +180,7 @@ describe('the system band on /', () => {
     const [, pulse, steady] = [...dot.matchAll(/<span[^>]*class="([^"]*)"/g)].map((m) => m[1]);
     expect(pulse).toMatch(/(^|\s)hidden(\s|$)/);
     expect(steady).toMatch(/(^|\s)bg-ink-muted(\s|$)/);
-    expect(steady).not.toMatch(/(^|\s)bg-ok(\s|$)/);
+    expect(steady).not.toMatch(/(^|\s)bg-ok(-ground)?(\s|$)/);
     expect(elementWith(home, 'section', 'data-system-band')).toContain('group/band');
     // The island renders a data-numeric value for a figure it read, and none
     // for an absence, which is the state the selector keys on.

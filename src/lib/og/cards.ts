@@ -20,8 +20,13 @@ import { readingTimeFor } from '../reading-time';
  * src/lib/og/render.ts reads), or the fonts render.ts loads -- moves no hash
  * on its own. Bump this alongside any of those, or the old image keeps
  * serving under its old URL.
+ *
+ * 2 SINCE #440, for a token the cards do not draw: `--rl-ok-ground` joined
+ * tokens.css, and the fingerprint below hashes the whole dark palette rather
+ * than the keys `cardTree` reads. The bump follows the rule rather than a
+ * visible change, so every card moves once to a byte-identical image.
  */
-export const OG_CARD_CONTRACT_VERSION = 1;
+export const OG_CARD_CONTRACT_VERSION = 2;
 
 /**
  * A fingerprint of every input OG_CARD_CONTRACT_VERSION's own comment names as
@@ -48,7 +53,7 @@ export const OG_CARD_CONTRACT_VERSION = 1;
  * fingerprint.
  */
 export const OG_CARD_RENDER_FINGERPRINT =
-  'bd7dacdb7def5aa7a7ba23692aa79b697f9b6eabdea2b6a9403b33d1c9846a52';
+  'a4162c2dd0ee4081ac0f08231ad392f019dbbcb3587524d0a8d0b7594382c438';
 
 export const CARD_WIDTH = 1200;
 export const CARD_HEIGHT = 630;

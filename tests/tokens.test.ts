@@ -77,6 +77,20 @@ describe('token contrast', () => {
   });
 });
 
+describe('fill greens', () => {
+  // `--rl-ok-ground` is the live dot's and the /ops status square's fill,
+  // bright in both themes on purpose (tokens.css's header, #440). It is not a
+  // text token: 1.30:1 on the light ground would fail every text threshold.
+  test('--rl-ok-ground is the same bright green in light and dark', () => {
+    expect(light['--rl-ok-ground']).toBe('#00ff66');
+    expect(dark['--rl-ok-ground']).toBe(light['--rl-ok-ground']);
+  });
+
+  test('--rl-ok-ground is not listed as a text token', () => {
+    expect(TEXT_TOKENS).not.toContain('--rl-ok-ground');
+  });
+});
+
 describe('theme parity', () => {
   test('light and dark declare exactly the same token names', () => {
     expect(Object.keys(dark).sort()).toEqual(Object.keys(light).sort());

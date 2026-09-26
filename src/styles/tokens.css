@@ -10,6 +10,16 @@
  * finger or mouse is down, never for long enough to sit next to a status badge
  * and be misread as one. The ramp itself is unchanged everywhere else.
  *
+ * `--rl-ok-ground` IS THE GREEN FOR A FILL, and it is the same bright value in
+ * both themes, the way `--rl-accent-ground` is for pink. Added in the owner's
+ * review of the home page's system band (#440), which asked for the live dot
+ * to be bright green in light mode too. `--rl-ok` stays the green for TEXT,
+ * and it is darker in light mode because it has to clear 4.5:1 on a
+ * near-white ground, which #00ff66 does not come close to: 1.30:1 on
+ * `--rl-bg`. So `-ground` is never text, and on a light ground it is used only
+ * beside words that carry the same meaning, such as the band's "Live" and
+ * /ops's status label, where a faint dot loses nothing a reader needs.
+ *
  * Nothing else in this repo declares a color -- including the forced-light
  * print palette below, which needs values that hold independent of the
  * visitor's theme rather than inherited from it. Everywhere else, components
@@ -33,6 +43,7 @@
   --rl-accent-ground: #ff2d95;
   --rl-accent-on: #0a0a0b;
   --rl-ok: #007a3d;
+  --rl-ok-ground: #00ff66;
   --rl-warn: #8a5a00;
   --rl-danger: #b3261e;
 }
@@ -50,6 +61,7 @@
   --rl-accent-ground: #ff2d95;
   --rl-accent-on: #0a0a0b;
   --rl-ok: #00ff66;
+  --rl-ok-ground: #00ff66;
   --rl-warn: #ffc53d;
   --rl-danger: #ff6b6b;
 }
@@ -75,6 +87,7 @@
     --rl-accent-ground: #ff2d95;
     --rl-accent-on: #0a0a0b;
     --rl-ok: #00ff66;
+    --rl-ok-ground: #00ff66;
     --rl-warn: #ffc53d;
     --rl-danger: #ff6b6b;
   }

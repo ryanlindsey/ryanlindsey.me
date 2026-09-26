@@ -37,6 +37,7 @@
   --color-accent-ground: var(--rl-accent-ground);
   --color-accent-on: var(--rl-accent-on);
   --color-ok: var(--rl-ok);
+  --color-ok-ground: var(--rl-ok-ground);
   --color-warn: var(--rl-warn);
   --color-danger: var(--rl-danger);
 
