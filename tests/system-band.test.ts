@@ -159,6 +159,35 @@ describe('the system band on /', () => {
     expect(text(links)).toContain('All metrics');
   });
 
+  test('the live dot turns green and pulses only once a live figure is on the page', () => {
+    const heading = elementWith(home, 'h2', 'id="system-band-heading"');
+    const dot = elementWith(heading, 'span', 'data-live-dot');
+    expect(dot).toContain('aria-hidden="true"');
+    // The heading still reads as its words alone.
+    expect(text(heading)).toBe(text(heading).replace(/\s+/g, ' ').trim());
+    expect(text(heading)).toMatch(/^Live · last /);
+    // Green and the pulse are behind the has-a-live-figure variant only, so
+    // the fallback, a no-JS visit and an all-absent island show a still,
+    // muted dot. The release tile is `data-numeric` too, which is why the
+    // selector must name `data-band-figure`.
+    const LIVE = 'group-has-[[data-band-figure]_[data-numeric]]/band:';
+    expect(dot).toContain(`${LIVE}bg-ok`);
+    expect(dot).toContain(`${LIVE}inline-flex`);
+    expect(dot).toContain('bg-ink-muted');
+    expect(dot).toContain('motion-safe:animate-ping');
+    // The pulse layer is green but hidden until a figure is live; the
+    // steady dot is muted until then.
+    const [, pulse, steady] = [...dot.matchAll(/<span[^>]*class="([^"]*)"/g)].map((m) => m[1]);
+    expect(pulse).toMatch(/(^|\s)hidden(\s|$)/);
+    expect(steady).toMatch(/(^|\s)bg-ink-muted(\s|$)/);
+    expect(steady).not.toMatch(/(^|\s)bg-ok(\s|$)/);
+    expect(elementWith(home, 'section', 'data-system-band')).toContain('group/band');
+    // The island renders a data-numeric value for a figure it read, and none
+    // for an absence, which is the state the selector keys on.
+    expect(liveHtml).toMatch(/data-band-figure[\s\S]*?data-numeric/);
+    expect(degradedHtml).not.toContain('data-numeric');
+  });
+
   test('carries no <h1> of its own, and the page keeps exactly one <main>', () => {
     const band = elementWith(home, 'section', 'data-system-band');
     expect(band).not.toMatch(/<h1[\s>]/);

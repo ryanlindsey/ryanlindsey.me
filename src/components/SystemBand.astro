@@ -40,7 +40,7 @@ const CELL = 'bg-surface px-6 pb-7 pt-[26px]';
 ---
 
 <section data-system-band aria-labelledby="system-band-heading" class="border-b border-rule">
-  <div class="mx-auto max-w-[1440px] px-5 py-10 lg:px-10 lg:py-12">
+  <div class="group/band mx-auto max-w-[1440px] px-5 py-10 lg:px-10 lg:py-12">
     {/*
         The kicker and the link row copy "More writing" further down this
         page: the same quiet mono heading on the left and the same accent link
@@ -50,8 +50,33 @@ const CELL = 'bg-surface px-6 pb-7 pt-[26px]';
         to it.
       */}
     <div class="flex flex-wrap items-baseline justify-between gap-4">
-      <h2 id="system-band-heading" class="font-mono text-micro uppercase text-ink-muted">
-        Live · last {formatWindow(WINDOW_DAYS)}
+      {/*
+          THE DOT IS GREEN ONLY WHILE A LIVE FIGURE IS ON THE PAGE, the rule
+          /ops's status square keeps: that square turns amber when the page
+          degrades rather than always reading nominal. This frame is
+          prerendered and cannot know whether the island arrived, so the
+          selector asks the page instead. `group-has-[…]/band` matches once a
+          `data-band-figure` tile holds a `data-numeric` value, which only the
+          island renders and only for a figure it read. Before the island
+          arrives, without JavaScript, or with every read absent, the dot is
+          muted ink and still. The release tile is `data-numeric` too, which
+          is why the selector names `data-band-figure` and not the grid.
+
+          `--rl-ok` and nothing else, the one green in tokens.css. The pulse
+          is Tailwind's `animate-ping`, a scale and fade on a second dot
+          behind the first: flat colour, no glow, which is the palette's rule.
+          `motion-safe:` drops it for a reader who asked for reduced motion,
+          and the steady dot still says live.
+        */}
+      <h2
+        id="system-band-heading"
+        class="flex items-center gap-2 font-mono text-micro uppercase text-ink-muted"
+      >
+        <span data-live-dot aria-hidden="true" class="relative flex h-2 w-2 shrink-0">
+          <span class="absolute hidden h-full w-full rounded-full bg-ok opacity-75 group-has-[[data-band-figure]_[data-numeric]]/band:inline-flex motion-safe:animate-ping" />
+          <span class="relative inline-flex h-2 w-2 rounded-full bg-ink-muted group-has-[[data-band-figure]_[data-numeric]]/band:bg-ok" />
+        </span>
+        <span>Live · last {formatWindow(WINDOW_DAYS)}</span>
       </h2>
       <div data-system-band-links class="flex flex-wrap gap-5">
         <a href="/ops#live-metrics" class="font-mono text-micro uppercase text-accent">
