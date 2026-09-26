@@ -378,19 +378,22 @@ const heroLine = campaign?.status === 'active' ? campaign.heroLine : '';
         worth holding for the reader and for the skip link either way; the
         citation was just false.
 
-        AT MOST ONE, NOT EXACTLY ONE, and the gap is a real row rather than a
-        hypothetical. 0006 declares `status TEXT NOT NULL` with no CHECK
-        constraint and no default, so a fifth value falls through all four
-        branches and renders the eyebrow and nothing else. That is the safe
-        direction to fail in -- a page showing no heading tells a reader less
-        than a page showing the wrong one -- and it stays remote because the
-        writer set is closed (`handleFitStart` in workers/mcp/src/fit-start.ts
-        writes `pending`, and `FitWorkflow` and `abandonRun` in
-        workers/mcp/src/fit-workflow.ts write `ok` and `failed`; nothing else
-        sets this column, and this once named a `writeFitReport` that never
-        existed). Written down because
-        "exactly one" is conditional on that, and whoever adds a fifth status
-        should know which way this breaks before they find out.
+        AT MOST ONE, NOT EXACTLY ONE, on any database 0007 (below) has not
+        reached. A fourth status falls through all four branches and renders
+        the eyebrow and nothing else. That is the safe direction to
+        fail in -- a page showing no heading tells a reader less than a page
+        showing the wrong one. 0006 declared `status TEXT NOT NULL` with no
+        CHECK constraint, so until #355 the only thing keeping a fourth value
+        out was that the writer set is closed (`handleFitStart` in
+        workers/mcp/src/fit-start.ts writes `pending`, and `FitWorkflow` and
+        `abandonRun` in workers/mcp/src/fit-workflow.ts write `ok` and
+        `failed`; nothing else sets this column, and this once named a
+        `writeFitReport` that never existed).
+        migrations/0007_fit_report_status_check.sql now refuses any other
+        value at the write, and tests/fit-report-schema.test.ts pins that. So
+        "exactly one" holds wherever 0007 has been applied, and whoever adds
+        a fourth status has to change that CHECK, which is where they learn
+        this page breaks for it.
       */}
       {pending && (
         <>
