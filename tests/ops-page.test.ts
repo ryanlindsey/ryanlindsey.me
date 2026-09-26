@@ -2,6 +2,7 @@ import { createTestHarness } from 'wrangler';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { SITE_HARNESS_WORKERS } from './workers';
 import { BANNED_PATTERNS } from './candidacy-patterns';
+import { stripTags } from './markup';
 
 /**
  * The public /ops page (06 §1), rendered by the real Worker against a real D1.
@@ -171,14 +172,14 @@ function evalCells(suite: string): string[] {
   const body = evals.slice(evals.indexOf('<tbody'), evals.indexOf('</tbody>'));
   for (const tr of body.match(/<tr[\s\S]*?<\/tr>/g) ?? []) {
     const cells = tr.match(/<td[\s\S]*?<\/td>/g) ?? [];
-    if (cells[0]?.replace(/<[^>]*>/g, '').trim() === suite) return cells;
+    if (stripTags(cells[0] ?? '').trim() === suite) return cells;
   }
   throw new Error(`no eval row for ${suite}`);
 }
 
 /** A cell's text content, trimmed. */
 function cellText(cell: string): string {
-  return text(cell.replace(/<[^>]*>/g, '')).trim();
+  return text(stripTags(cell)).trim();
 }
 
 /** One `<li>` of a definition list, looked up by the text in it. */

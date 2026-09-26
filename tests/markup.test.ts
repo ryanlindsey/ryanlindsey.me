@@ -7,7 +7,7 @@
  * ways nobody notices until an assertion quietly stops looking at anything.
  */
 import { expect, test } from 'vitest';
-import { elementWith, stripComments } from './markup';
+import { elementWith, stripComments, stripTags } from './markup';
 
 test('a comment that reassembles itself after one pass is still removed', () => {
   // CodeQL js/incomplete-multi-character-sanitization, alert #5, raised
@@ -51,4 +51,8 @@ test('elementWith returns the whole element, not the first closing tag it meets'
 
 test('elementWith says which thing it could not find', () => {
   expect(() => elementWith('<div></div>', 'div', 'id="nope"')).toThrow(/id="nope"/);
+});
+
+test('stripTags leaves only the text of nested markup', () => {
+  expect(stripTags('<td class="text-ok"><span data-numeric>1/1</span></td>')).toBe('1/1');
 });
