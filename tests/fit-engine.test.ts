@@ -361,6 +361,8 @@ test('a refusal is a FitUnavailable, not a report', async () => {
     'A target description.',
   );
   await expect(result).rejects.toBeInstanceOf(FitUnavailable);
+  // Prose in place of a report is still the model answering: graded.
+  await expect(result).rejects.toHaveProperty('noAnswer', false);
 });
 
 test('a response that does not match the schema is a FitUnavailable, not a partial report', async () => {
@@ -505,6 +507,36 @@ test('a corpus that will not load is a FitUnavailable naming no internals', asyn
   await expect(result).rejects.toHaveProperty('noAnswer', true);
   await expect(result).rejects.toThrow(/published work could not be read/i);
   await expect(result).rejects.not.toThrow(/522|llms\.txt|site\.test/);
+});
+
+test('an index that yields no document is a no-answer FitUnavailable, before inference', async () => {
+  // `/llms.txt` answers, but the one document every index carries (`/resume.md`,
+  // prepended by `fetchDocumentIndex`) does not fetch, so the corpus is empty
+  // and the model is never asked. No model answer exists, which is what
+  // `noAnswer` says and what makes an eval case here couldn't-run.
+  let called = false;
+  const result = analyzeFit(
+    env({
+      SITE: {
+        fetch: async (input: RequestInfo | URL) => {
+          const path = new URL(typeof input === 'string' ? input : input.toString()).pathname;
+          if (path === '/llms.txt') return new Response('# Ryan Lindsey\n\n> summary\n');
+          return new Response('not found', { status: 404 });
+        },
+      },
+      AI: {
+        run: async () => {
+          called = true;
+          return reply(REPORT);
+        },
+      } as unknown as Ai,
+    }),
+    'A target description.',
+  );
+  await expect(result).rejects.toBeInstanceOf(FitUnavailable);
+  await expect(result).rejects.toThrow(/no published work/i);
+  await expect(result).rejects.toHaveProperty('noAnswer', true);
+  expect(called).toBe(false);
 });
 
 test('a breaker flag that cannot be read fails closed, without spending inference', async () => {

@@ -1378,7 +1378,7 @@ describe('analyze_fit', () => {
     expect(text).toMatch(/not available/i);
     expect(text, 'a refusal must not leak internals').not.toMatch(/TypeError|\.ts:|Fetcher/);
     // The same refusal, readable by a machine: `FIT_ENGINE: 'off'` throws a
-    // `FitUnavailable`, and no report was produced.
+    // `FitUnavailable` marked `noAnswer`, because no model answer exists.
     expect(result.result._meta?.[TOOL_REASON_META_KEY]).toBe('unavailable');
   });
 
@@ -1589,6 +1589,14 @@ describe('analyze_fit', () => {
     expect(unusable).toBeInstanceOf(ToolError);
     expect(unusable.message).toMatch(/unusable answer/);
     expect(unusable.reason).toBeUndefined();
+
+    // And an explicit `false` is the same as leaving it out.
+    const explicit = fitToolError(
+      new FitUnavailable('The fit engine returned an unusable answer. Try again shortly.', {
+        noAnswer: false,
+      }),
+    );
+    expect(explicit.reason).toBeUndefined();
   });
 
   test('fitToolError logs the cause it refuses to show, so its sentence is true', () => {
