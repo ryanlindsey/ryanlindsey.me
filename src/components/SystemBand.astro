@@ -103,9 +103,10 @@ const CELL = 'bg-surface px-6 pb-7 pt-[26px]';
           `recentReleases` already enforces (10 §1.4).
 
           THE ABSENCE HAS NO LINK. `latestRelease` returns `null` when the
-          changelog's first heading does not parse, and a link built from a
-          version that is not there would point at a release that does not
-          exist. So the null arm is the same muted absence `OpsMetric`
+          changelog has no `## ` heading or its first one does not parse,
+          rather than falling through to an older release. A link built from
+          a version that is not there would point at a release that does not
+          exist, so the null arm is the same muted absence `OpsMetric`
           renders, in the same box.
         */}
       <div data-release-tile class="grid bg-surface">
@@ -136,12 +137,14 @@ const CELL = 'bg-surface px-6 pb-7 pt-[26px]';
         arrived. Measured in Chrome against `wrangler dev` on 2026-09-26, band
         height before and after the swap: 572px to 489px at `lg`, 701px to
         611px at `md`, 1185px to 1052px at 500px wide, a shift of everything
-        below the band on every page view with JavaScript. The sentence stays
-        true once the figures are in: they still arrived after the page, and
-        /ops still carries them.
+        below the band on every page view with JavaScript. Its first wording
+        opened with "These figures load after the page does", which was false
+        for exactly the readers who never get them, a visitor without
+        JavaScript and a crawler, so it now says only what is true in every
+        state.
       */}
     <p data-band-note class="mt-4 text-small text-ink-muted">
-      These figures load after the page does, and they are always on the{' '}
+      The live figures, and the system each one is read from, are always on the{' '}
       <a href="/ops#live-metrics">ops page</a>.
     </p>
   </div>

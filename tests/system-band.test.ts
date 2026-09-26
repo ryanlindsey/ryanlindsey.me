@@ -146,7 +146,9 @@ describe('the system band on /', () => {
   test('says, under the grid, where the figures always are', () => {
     const note = elementWith(home, 'p', 'data-band-note');
     expect(note).toContain('href="/ops#live-metrics"');
-    expect(text(note)).toContain('These figures load after the page does');
+    expect(text(note)).toBe(
+      'The live figures, and the system each one is read from, are always on the ops page.',
+    );
     // Outside the island, so the swap cannot remove it.
     const band = elementWith(home, 'section', 'data-system-band');
     expect(band.indexOf('data-band-note')).toBeGreaterThan(band.indexOf('data-release-tile'));
@@ -219,8 +221,12 @@ describe('the island', () => {
       }),
       { expirationTtl: 60 },
     );
-    const after = await (await server.fetch(islandUrl)).text();
+    const response = await server.fetch(islandUrl);
+    const after = await response.text();
+    expect(response.status).toBe(200);
     expect(after).not.toContain('4,242');
+    // The D1 row planted in setup, so the fresh read is what won.
+    expect(figure(after, 'Public MCP tool calls')).toBe('1');
   });
 
   test('reads the same cache entry /ops reads', async () => {

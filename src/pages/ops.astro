@@ -622,12 +622,17 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
             is a deployed-behaviour change and the owner's call, not this
             sentence's.
 
-            SINCE THE HOME PAGE'S SYSTEM BAND (issue #437), THE BAND ITSELF IS
-            A WORKER REQUEST. Its five figures are a server island, fetched
-            from `/_server-islands/...` after `/` loads, and that path has no
-            asset, so it reaches src/worker.ts and is counted here under the
-            `site` surface: roughly one more request per home page view with
-            JavaScript on. The measurement was left as it was. Excluding the
+            CORRECTION, 2026-09-26: the paragraph above is stale. `/` IS on
+            `run_worker_first` (wrangler.jsonc), and has been since markdown
+            negotiation on the home page (#187, 2026-09-14), so every home
+            page view has been counted here since then.
+
+            SINCE THE HOME PAGE'S SYSTEM BAND (issue #437), A HOME PAGE VIEW
+            CAN BE TWO WORKER REQUESTS. The band's five figures are a server
+            island, fetched from `/_server-islands/...` after `/` loads, and
+            that path has no asset, so it reaches src/worker.ts and is counted
+            here under the `site` surface: a second request per home page view
+            with JavaScript on. The measurement was left as it was. Excluding the
             island fetch would change a deployed figure, and that is the
             owner's call.
           */}
