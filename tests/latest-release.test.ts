@@ -44,15 +44,22 @@ describe('latestRelease', () => {
     expect(latestRelease(FIXTURE_NO_RELEASES)).toBeNull();
   });
 
-  test('against the real CHANGELOG.md, version matches the first heading and date is YYYY-MM-DD', () => {
-    const result = latestRelease(readFileSync('CHANGELOG.md', 'utf8'));
-    expect(result).not.toBeNull();
-    if (result) {
-      expect(result.version).toMatch(/^\d+\.\d+\.\d+/);
-      expect(result.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(result.url).toMatch(
-        /^https:\/\/github\.com\/ryanlindsey\/ryanlindsey\.me\/releases\/tag\/.+/,
-      );
+  test('against the real CHANGELOG.md, version equals the first heading and date is YYYY-MM-DD', () => {
+    const changelog = readFileSync('CHANGELOG.md', 'utf8');
+    const firstHeadingMatch = /^##[ \t]+\[(\d+\.\d+\.\d+)\]/m.exec(changelog);
+    expect(firstHeadingMatch).not.toBeNull();
+
+    if (firstHeadingMatch) {
+      const expectedVersion = firstHeadingMatch[1];
+      const result = latestRelease(changelog);
+      expect(result).not.toBeNull();
+      if (result) {
+        expect(result.version).toBe(expectedVersion);
+        expect(result.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        expect(result.url).toBe(
+          `https://github.com/ryanlindsey/ryanlindsey.me/releases/tag/${RELEASE_TAG_PREFIX}${expectedVersion}`,
+        );
+      }
     }
   });
 });
