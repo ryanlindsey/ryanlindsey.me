@@ -143,22 +143,20 @@ describe('the system band on /', () => {
     }
   });
 
-  test('says, under the grid, where the figures always are', () => {
-    const note = elementWith(home, 'p', 'data-band-note');
-    expect(note).toContain('href="/ops#live-metrics"');
-    expect(text(note)).toBe(
-      'The live figures, and the system each one is read from, are always on the ops page.',
-    );
-    // Outside the island, so the swap cannot remove it.
+  test('names no source system under any tile, and carries no note under the grid', () => {
+    // The owner's review of #440 dropped both: provenance stays on /ops, one
+    // link away, and the band carries only the figure and what it counts.
     const band = elementWith(home, 'section', 'data-system-band');
-    expect(band.indexOf('data-band-note')).toBeGreaterThan(band.indexOf('data-release-tile'));
-    expect(degradedHtml).not.toContain('data-band-note');
+    for (const html of [band, liveHtml, degradedHtml]) {
+      expect(text(html)).not.toMatch(/\bD1\b|Analytics Engine|CHANGELOG\.md|says why/);
+    }
+    expect(band).not.toContain('data-band-note');
   });
 
   test('links to every figure on /ops', () => {
     const links = elementWith(home, 'div', 'data-system-band-links');
     expect(links).toContain('href="/ops#live-metrics"');
-    expect(text(links)).toContain('All figures');
+    expect(text(links)).toContain('All metrics');
   });
 
   test('carries no <h1> of its own, and the page keeps exactly one <main>', () => {

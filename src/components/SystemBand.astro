@@ -55,7 +55,7 @@ const CELL = 'bg-surface px-6 pb-7 pt-[26px]';
       </h2>
       <div data-system-band-links class="flex flex-wrap gap-5">
         <a href="/ops#live-metrics" class="font-mono text-micro uppercase text-accent">
-          All figures &rarr;
+          All metrics &rarr;
         </a>
       </div>
     </div>
@@ -67,7 +67,8 @@ const CELL = 'bg-surface px-6 pb-7 pt-[26px]';
     {/*
         `auto-rows-fr` MAKES EVERY ROW AS TALL AS THE TALLEST, and that is
         what keeps the swap from moving a row. Measured in Chrome against
-        `wrangler dev` on 2026-09-26: a fallback tile is 144px, and so is the
+        `wrangler dev` on 2026-09-26, while every tile still carried a third,
+        provenance line: a fallback tile is 144px, and so is the
         release tile, but a live tile rendering its absence is 137px, because
         `OpsMetric`'s absent arm sets `text-heading` where the figure sets
         `text-figure`. Without this, a row of absences shrank by 7px when the
@@ -84,22 +85,20 @@ const CELL = 'bg-surface px-6 pb-7 pt-[26px]';
               stale number presented as a live one. Each cell keeps its label
               and holds the figure's space empty: `h-[1lh]` on an element set
               in the figure's own type is exactly one line of that type, so
-              the tile arriving does not move the label. The source line gets
-              the same treatment for the same reason.
+              the tile arriving does not move the label.
             */}
           {LABELS.map((label) => (
             <div data-band-fallback={label} class={CELL}>
               <p aria-hidden="true" class="h-[1lh] font-display text-figure" />
               <p class="mt-3 text-small text-ink-muted">{label}</p>
-              <p aria-hidden="true" class="mt-1 h-[1lh] font-mono text-micro" />
             </div>
           ))}
         </Fragment>
       </SystemBandFigures>
 
       {/*
-          The release tile, in `OpsMetric`'s three lines: the figure, what it
-          is, where it came from. A DATE AND NEVER A TIME, which
+          The release tile, in the band's two lines: the figure, and what it
+          is. Its source is the link. A DATE AND NEVER A TIME, which
           `recentReleases` already enforces (10 §1.4).
 
           THE ABSENCE HAS NO LINK. `latestRelease` returns `null` when the
@@ -114,9 +113,6 @@ const CELL = 'bg-surface px-6 pb-7 pt-[26px]';
           <div class="px-6 pb-7 pt-[26px]">
             <p class="font-mono text-heading text-ink-muted">not available</p>
             <p class="mt-3 text-small text-ink-muted">Latest release</p>
-            <p class="mt-1 font-mono text-micro text-ink-muted">
-              CHANGELOG.md — the ops page says why
-            </p>
           </div>
         ) : (
           <a href={release.url} class="block px-6 pb-7 pt-[26px] no-underline">
@@ -126,26 +122,9 @@ const CELL = 'bg-surface px-6 pb-7 pt-[26px]';
             <p class="mt-3 text-small text-ink-muted">
               Latest release · <time datetime={release.date}>{release.date}</time>
             </p>
-            <p class="mt-1 font-mono text-micro text-ink-muted">CHANGELOG.md</p>
           </a>
         )}
       </div>
     </div>
-    {/*
-        OUTSIDE THE ISLAND, AND PERMANENT. It sat in the fallback slot first,
-        as a full-width grid row, and the row vanished when the figures
-        arrived. Measured in Chrome against `wrangler dev` on 2026-09-26, band
-        height before and after the swap: 572px to 489px at `lg`, 701px to
-        611px at `md`, 1185px to 1052px at 500px wide, a shift of everything
-        below the band on every page view with JavaScript. Its first wording
-        opened with "These figures load after the page does", which was false
-        for exactly the readers who never get them, a visitor without
-        JavaScript and a crawler, so it now says only what is true in every
-        state.
-      */}
-    <p data-band-note class="mt-4 text-small text-ink-muted">
-      The live figures, and the system each one is read from, are always on the{' '}
-      <a href="/ops#live-metrics">ops page</a>.
-    </p>
   </div>
 </section>

@@ -38,12 +38,13 @@ import {
  * tile of the same label, and the labels are verbatim too, so a reader never
  * meets one number under two names.
  *
- * ONE ABSENCE FOR ALL FIVE, and it points rather than explains. /ops carries
- * three different reasons because it is the page that has room to say which
- * system failed and what that means; a home page tile repeating "this needs
- * the read-only analytics token" would be the wrong sentence for the D1 tiles
- * and too much sentence for the band. The state still says `not available`
- * rather than `0`, which is the rule `OpsMetric` exists to keep.
+ * ONE ABSENCE FOR ALL FIVE, and no reason beside it. /ops carries three
+ * different reasons because it is the page that has room to say which system
+ * failed and what that means. The band passes no `source`, so `OpsMetric`
+ * renders no provenance line and no reason: the owner's review dropped that
+ * line from the band (issue #437), and the first version's "the ops page says
+ * why" went with it. The state still says `not available` rather than `0`,
+ * which is the rule `OpsMetric` exists to keep.
  */
 
 // The same number the KV entries live for, so an intermediary never holds the
@@ -54,29 +55,23 @@ Astro.response.headers.set('Cache-Control', `public, max-age=${CACHE_TTL_SECONDS
 
 const { metrics, traffic, spend } = await readOpsReads(env, new Date());
 
-const ABSENT = { absentState: 'not available', absentReason: 'the ops page says why' };
+const ABSENT = { absentState: 'not available' };
 
-const FIGURES: {
-  label: string;
-  value: string | null;
-  source: 'D1' | 'Analytics Engine' | 'AI Gateway';
-}[] = [
+// Each figure's source is still named on /ops, in the tile of the same label.
+const FIGURES: { label: string; value: string | null }[] = [
   {
     label: 'Public MCP tool calls',
     value: count(metrics === null ? null : publicToolCalls(metrics)),
-    source: 'D1',
   },
-  { label: 'Chat sessions', value: count(metrics?.chatSessions), source: 'D1' },
+  { label: 'Chat sessions', value: count(metrics?.chatSessions) },
   {
     label: 'Requests from agents',
     value: count(traffic?.agentRequests),
-    source: 'Analytics Engine',
   },
-  { label: 'Requests through the AI Gateway', value: count(spend?.requests), source: 'AI Gateway' },
+  { label: 'Requests through the AI Gateway', value: count(spend?.requests) },
   {
     label: 'Requests that reached the Worker',
     value: count(traffic?.requests),
-    source: 'Analytics Engine',
   },
 ];
 ---
@@ -95,8 +90,8 @@ const FIGURES: {
     lets the tile fill the cell's height, so a short tile never shows the rule
     ground beneath it.
   */}
-{FIGURES.map(({ label, value, source }) => (
+{FIGURES.map(({ label, value }) => (
   <div data-band-figure={label} class="grid">
-    <OpsMetric label={label} value={value} source={source} {...ABSENT} />
+    <OpsMetric label={label} value={value} {...ABSENT} />
   </div>
 ))}
