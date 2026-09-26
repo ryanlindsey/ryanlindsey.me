@@ -95,9 +95,9 @@ export async function runTierCase(
  * #427). Every other refusal, a truncated or unparseable answer among them, is
  * a graded failure, because those are what this suite exists to catch.
  *
- * The wording of each is evals/run.mjs's, unchanged, because the two runners write into one
- * `eval_runs` table and a reader should not have to know which one produced a
- * row.
+ * The wording of each is evals/run.mjs's, unchanged, because the two runners
+ * write into one `eval_runs` table and a reader should not have to know which
+ * one produced a row.
  */
 export async function runFitCase(
   fetcher: EvalsFetcher,
