@@ -18,6 +18,7 @@ import { FitUnavailable, type FitResult } from '../src/lib/fit/engine';
 import type { McpEnv } from '../workers/mcp/src/env';
 import { LIMITS, limitKeyFor, type ToolCost } from '../src/lib/mcp/limits';
 import { BANNED_PATTERNS } from './candidacy-patterns';
+import { TOOL_REASON_META_KEY } from '../src/lib/mcp/tool-reason';
 
 const server = createTestHarness({ workers: SITE_HARNESS_WORKERS });
 // The whole `McpEnv`, not the three bindings the fixtures below write to. The
@@ -544,6 +545,10 @@ describe('with a grant', () => {
     );
     expect(result.result.isError).toBe(true);
     expect(result.result.content[0].text).not.toMatch(/at .*\.ts:|R2Bucket|TypeError/);
+    // A plain ToolError refusal carries no reason. The eval runners read the
+    // reason as "no answer was produced", so a refusal outside `analyze_fit`
+    // gaining one by accident would move graded failures out of the count.
+    expect(result.result._meta?.[TOOL_REASON_META_KEY]).toBeUndefined();
   });
 
   test('every gated call is audited as private, with its audience and jti', async () => {
@@ -1372,6 +1377,9 @@ describe('analyze_fit', () => {
     const text = result.result.content[0].text as string;
     expect(text).toMatch(/not available/i);
     expect(text, 'a refusal must not leak internals').not.toMatch(/TypeError|\.ts:|Fetcher/);
+    // The same refusal, readable by a machine: `FIT_ENGINE: 'off'` throws a
+    // `FitUnavailable` marked `noAnswer`, because no model answer exists.
+    expect(result.result._meta?.[TOOL_REASON_META_KEY]).toBe('unavailable');
   });
 
   test('a description too short to analyse is refused by the schema, before the tool', async () => {
@@ -1540,9 +1548,12 @@ describe('analyze_fit', () => {
   });
 
   test('fitToolError shows a FitUnavailable message and quarantines anything else', () => {
-    const safe = fitToolError(new FitUnavailable('The corpus is empty right now.'));
+    const safe = fitToolError(
+      new FitUnavailable('The corpus is empty right now.', { noAnswer: true }),
+    );
     expect(safe).toBeInstanceOf(ToolError);
     expect(safe.message).toBe('The corpus is empty right now.');
+    expect(safe.reason).toBe('unavailable');
 
     // The exact failure the mapping exists for: AI Gateway answers an
     // exceeded cap with `2018: Invalid User Credentials` (10 §5), which READS
@@ -1552,6 +1563,40 @@ describe('analyze_fit', () => {
     expect(generic).toBeInstanceOf(ToolError);
     expect(generic.message).toBe('Fit analysis failed. The error was logged.');
     expect(generic.message).not.toMatch(/2018|AiError/);
+    // No reason on the quarantined branch: an unwrapped throw is not known to
+    // have produced nothing, so it stays a graded failure rather than an
+    // unreached case.
+    expect(generic.reason).toBeUndefined();
+  });
+
+  test('fitToolError gives no reason to a model answer that came back unusable', () => {
+    // The model DID answer on both of these, so they stay graded failures
+    // rather than couldn't-run. The 2026-09-10 run's `fit/strong` and
+    // `fit/partial` hit the token cap, and that regression is visible only
+    // because it was graded. Each is constructed exactly as the engine throws
+    // it, with no `noAnswer`; tests/fit-engine.test.ts pins that the engine's
+    // own truncation and schema paths leave the field false.
+    const truncated = fitToolError(
+      new FitUnavailable('The fit engine returned an incomplete answer. Try again shortly.'),
+    );
+    expect(truncated).toBeInstanceOf(ToolError);
+    expect(truncated.message).toMatch(/incomplete answer/);
+    expect(truncated.reason).toBeUndefined();
+
+    const unusable = fitToolError(
+      new FitUnavailable('The fit engine returned an unusable answer. Try again shortly.'),
+    );
+    expect(unusable).toBeInstanceOf(ToolError);
+    expect(unusable.message).toMatch(/unusable answer/);
+    expect(unusable.reason).toBeUndefined();
+
+    // And an explicit `false` is the same as leaving it out.
+    const explicit = fitToolError(
+      new FitUnavailable('The fit engine returned an unusable answer. Try again shortly.', {
+        noAnswer: false,
+      }),
+    );
+    expect(explicit.reason).toBeUndefined();
   });
 
   test('fitToolError logs the cause it refuses to show, so its sentence is true', () => {

@@ -175,8 +175,33 @@ export interface FitEnv extends DocumentsEnv {
  * a lie again.
  */
 export class FitUnavailable extends Error {
-  constructor(message: string) {
+  /**
+   * True only where NO MODEL ANSWER EXISTS: the engine is off, the breaker is
+   * tripped or unreadable, the corpus is unreadable or empty, or the model
+   * call itself threw. `fitToolError` (workers/mcp/src/gated.ts) turns it into
+   * the `unavailable` reason, which the eval runners count as a case that
+   * could not run rather than a graded failure (#424).
+   *
+   * False, and deliberately, where the model DID answer and the answer was
+   * unusable: truncated at the token cap, or failing the parse or the schema.
+   * Those are findings about the prompt or `FIT_MAX_TOKENS`, not outages. The
+   * 2026-09-10 eval run is where `fit/strong` and `fit/partial` hit the cap,
+   * and it was the graded failure that surfaced it; marking the same thing
+   * couldn't-run would hide exactly that regression behind a green graded
+   * cell. The caller-input refusal is false too, since nothing was attempted.
+   *
+   * It defaults to false, so a new throw site is graded until someone decides
+   * otherwise: a failure wrongly graded is loud, and one wrongly excused is
+   * not. Carried by the error rather than by its sentence, because the
+   * sentences are copy and free to change. It does not survive the
+   * structured clone across a service binding, and nothing on that side reads
+   * it: `name` is still what the far side recognises (see below).
+   */
+  readonly noAnswer: boolean;
+
+  constructor(message: string, options: { noAnswer?: boolean } = {}) {
     super(message);
+    this.noAnswer = options.noAnswer ?? false;
     // `Error` sets `name` from the prototype, so a subclass serialises as
     // plain "Error" without this. Task 11 hands these across a service
     // binding, where the instance is structured-cloned and `instanceof` does
@@ -361,7 +386,9 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
   // for; reading it here is what keeps a future member from being committed to
   // refusing by a condition written somewhere else.
   if (env.FIT_ENGINE !== undefined && FIT_ENGINE_MODES.includes(env.FIT_ENGINE)) {
-    throw new FitUnavailable('Fit analysis is not available in this environment.');
+    throw new FitUnavailable('Fit analysis is not available in this environment.', {
+      noAnswer: true,
+    });
   }
 
   const description = targetDescription.trim();
@@ -383,11 +410,14 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
     tripped = await env.KV_CONFIG.get(BREAKER_KEY);
   } catch (error) {
     console.error('fit: the breaker flag could not be read', error);
-    throw new FitUnavailable('Fit analysis is unavailable right now. Try again shortly.');
+    throw new FitUnavailable('Fit analysis is unavailable right now. Try again shortly.', {
+      noAnswer: true,
+    });
   }
   if (tripped !== null) {
     throw new FitUnavailable(
       'Fit analysis is paused: the daily inference budget breaker is tripped. It resets automatically.',
+      { noAnswer: true },
     );
   }
 
@@ -402,10 +432,14 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
     corpus = await buildCorpusContext(env);
   } catch (error) {
     console.error('fit: the corpus could not be read', error);
-    throw new FitUnavailable('The published work could not be read right now. Try again shortly.');
+    throw new FitUnavailable('The published work could not be read right now. Try again shortly.', {
+      noAnswer: true,
+    });
   }
   if (corpus.documents === 0) {
-    throw new FitUnavailable('There is no published work to compare against right now.');
+    throw new FitUnavailable('There is no published work to compare against right now.', {
+      noAnswer: true,
+    });
   }
   if (corpus.truncated) {
     // WARN, not throw: a truncated corpus still produces an honest report of
@@ -460,7 +494,9 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
     });
   } catch (error) {
     console.error('fit: model call failed', error);
-    throw new FitUnavailable('The fit engine could not be reached right now. Try again shortly.');
+    throw new FitUnavailable('The fit engine could not be reached right now. Try again shortly.', {
+      noAnswer: true,
+    });
   }
 
   // TRUNCATION IS NOT A SCHEMA ERROR, so zod must not be the only judge of

@@ -342,6 +342,8 @@ test('a text answer that is not JSON is a FitUnavailable', async () => {
     'A target description.',
   );
   await expect(result).rejects.toBeInstanceOf(FitUnavailable);
+  // The model answered, so this stays a graded failure: no `noAnswer`.
+  await expect(result).rejects.toHaveProperty('noAnswer', false);
 });
 
 test('a refusal is a FitUnavailable, not a report', async () => {
@@ -359,6 +361,8 @@ test('a refusal is a FitUnavailable, not a report', async () => {
     'A target description.',
   );
   await expect(result).rejects.toBeInstanceOf(FitUnavailable);
+  // Prose in place of a report is still the model answering: graded.
+  await expect(result).rejects.toHaveProperty('noAnswer', false);
 });
 
 test('a response that does not match the schema is a FitUnavailable, not a partial report', async () => {
@@ -374,6 +378,8 @@ test('a response that does not match the schema is a FitUnavailable, not a parti
     'A target description.',
   );
   await expect(result).rejects.toBeInstanceOf(FitUnavailable);
+  // The model answered, so this stays a graded failure: no `noAnswer`.
+  await expect(result).rejects.toHaveProperty('noAnswer', false);
 });
 
 test('a report truncated by the token cap is refused even though it parses', async () => {
@@ -395,6 +401,9 @@ test('a report truncated by the token cap is refused even though it parses', asy
   );
   await expect(result).rejects.toBeInstanceOf(FitUnavailable);
   await expect(result).rejects.toThrow(/incomplete/i);
+  // Graded, not couldn't-run: the 2026-09-10 run's `fit/strong` and
+  // `fit/partial` hit this cap, and only a graded failure surfaced it.
+  await expect(result).rejects.toHaveProperty('noAnswer', false);
 });
 
 test('an ordinary end_turn report is not mistaken for a truncated one', async () => {
@@ -424,6 +433,8 @@ test('a model error becomes a FitUnavailable whose message names no internals', 
     'A target description.',
   );
   await expect(result).rejects.toBeInstanceOf(FitUnavailable);
+  // The call threw, so no model answer exists.
+  await expect(result).rejects.toHaveProperty('noAnswer', true);
   await expect(result).rejects.toThrow(/^(?!.*2018).*$/s);
 });
 
@@ -446,7 +457,7 @@ test('the breaker refuses before the corpus is fetched and before inference is s
       }),
       'A target description.',
     ),
-  ).rejects.toBeInstanceOf(FitUnavailable);
+  ).rejects.toSatisfy((error) => error instanceof FitUnavailable && error.noAnswer);
   expect(called, 'the breaker must be checked BEFORE the model call').toBe(false);
   // Fix round 1, finding 6: the model assertion alone cannot fail for the right
   // reason. Moving the breaker below `buildCorpusContext` keeps `called` false
@@ -493,8 +504,39 @@ test('a corpus that will not load is a FitUnavailable naming no internals', asyn
     'A target description.',
   );
   await expect(result).rejects.toBeInstanceOf(FitUnavailable);
+  await expect(result).rejects.toHaveProperty('noAnswer', true);
   await expect(result).rejects.toThrow(/published work could not be read/i);
   await expect(result).rejects.not.toThrow(/522|llms\.txt|site\.test/);
+});
+
+test('an index that yields no document is a no-answer FitUnavailable, before inference', async () => {
+  // `/llms.txt` answers, but the one document every index carries (`/resume.md`,
+  // prepended by `fetchDocumentIndex`) does not fetch, so the corpus is empty
+  // and the model is never asked. No model answer exists, which is what
+  // `noAnswer` says and what makes an eval case here couldn't-run.
+  let called = false;
+  const result = analyzeFit(
+    env({
+      SITE: {
+        fetch: async (input: RequestInfo | URL) => {
+          const path = new URL(typeof input === 'string' ? input : input.toString()).pathname;
+          if (path === '/llms.txt') return new Response('# Ryan Lindsey\n\n> summary\n');
+          return new Response('not found', { status: 404 });
+        },
+      },
+      AI: {
+        run: async () => {
+          called = true;
+          return reply(REPORT);
+        },
+      } as unknown as Ai,
+    }),
+    'A target description.',
+  );
+  await expect(result).rejects.toBeInstanceOf(FitUnavailable);
+  await expect(result).rejects.toThrow(/no published work/i);
+  await expect(result).rejects.toHaveProperty('noAnswer', true);
+  expect(called).toBe(false);
 });
 
 test('a breaker flag that cannot be read fails closed, without spending inference', async () => {
@@ -522,6 +564,7 @@ test('a breaker flag that cannot be read fails closed, without spending inferenc
     'A target description.',
   );
   await expect(result).rejects.toBeInstanceOf(FitUnavailable);
+  await expect(result).rejects.toHaveProperty('noAnswer', true);
   await expect(result).rejects.not.toThrow(/KV|aa1dd780/);
   expect(called).toBe(false);
   expect(site.touched()).toBe(false);
@@ -535,6 +578,9 @@ test('a FitUnavailable is recognisable after it stops being an instance', async 
   const caught = await analyzeFit(env(), '   ').catch((error: unknown) => error);
   expect((caught as Error).name).toBe('FitUnavailable');
   expect(String(caught)).toMatch(/^FitUnavailable: /);
+  // The caller-input refusal: nothing was attempted, so it is not a case that
+  // could not run either.
+  expect((caught as FitUnavailable).noAnswer).toBe(false);
 });
 
 test('the FIT_ENGINE seam refuses without touching the corpus, and rejects any other value', async () => {
@@ -544,9 +590,9 @@ test('the FIT_ENGINE seam refuses without touching the corpus, and rejects any o
   // engine in production is the failure this shape exists to make impossible.
   const site = watchedSite();
 
-  await expect(
-    analyzeFit(env({ FIT_ENGINE: 'off', SITE: site.site }), 'A target description.'),
-  ).rejects.toBeInstanceOf(FitUnavailable);
+  const off = analyzeFit(env({ FIT_ENGINE: 'off', SITE: site.site }), 'A target description.');
+  await expect(off).rejects.toBeInstanceOf(FitUnavailable);
+  await expect(off).rejects.toHaveProperty('noAnswer', true);
   expect(site.touched(), 'a refused run must not even fetch the corpus').toBe(false);
 
   // `'off-after-delay'` (#274) refuses identically and a few hundred

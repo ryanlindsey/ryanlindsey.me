@@ -13,6 +13,7 @@ import {
 import type { z } from 'zod';
 import { hashArgs, recordToolCall, type AuditRow } from '../../../src/lib/mcp/audit';
 import { checkLimit, retryHint, type ToolCost } from '../../../src/lib/mcp/limits';
+import { TOOL_REASON_META_KEY, type ToolErrorReason } from '../../../src/lib/mcp/tool-reason';
 import { hasScope, type Grant } from '../../../src/lib/tier/grant';
 import type { Scope } from '../../../src/lib/tier/token';
 import type { McpEnv } from './env';
@@ -51,8 +52,22 @@ export interface ToolContext {
   grant: Grant | null;
 }
 
-/** A failure whose message is safe to show the caller. Anything else is not. */
-export class ToolError extends Error {}
+/**
+ * A failure whose message is safe to show the caller. Anything else is not.
+ *
+ * `reason` is for a machine rather than a person: `fail` below copies it into
+ * the result's `_meta` so an eval runner can tell a call that produced nothing
+ * from one that produced a wrong answer (src/lib/mcp/tool-reason.ts). Most
+ * refusals carry none, and a missing reason means "grade it as usual".
+ */
+export class ToolError extends Error {
+  constructor(
+    message: string,
+    readonly reason?: ToolErrorReason,
+  ) {
+    super(message);
+  }
+}
 
 /**
  * What `args_hash` says when the call failed before the hash could be taken.
@@ -497,12 +512,20 @@ export function defineTool<A>(
         }),
         // Only a ToolError's message reaches the caller. Anything else could
         // carry an internal path or a stack, and this surface is public.
+        // A reason, when there is one, rides in `_meta` and is added only then,
+        // so every refusal without one keeps the shape it always had.
         fail: (error) => {
           const text =
             error instanceof ToolError
               ? error.message
               : `${spec.name} failed. The error was logged.`;
-          return { isError: true, content: [{ type: 'text' as const, text }] };
+          return {
+            isError: true,
+            content: [{ type: 'text' as const, text }],
+            ...(error instanceof ToolError && error.reason
+              ? { _meta: { [TOOL_REASON_META_KEY]: error.reason } }
+              : {}),
+          };
         },
       },
       params,
