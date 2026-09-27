@@ -1027,3 +1027,44 @@
     animation: none;
   }
 }
+
+/*
+ * The home page's system band: each live figure rises into place when the
+ * server island delivers it, one tile after another (owner's review of pull request 440; the hash spelling reads as a colour to tests/tokens.test.ts).
+ *
+ * A FADE, WHICH 05 §4's MOTION BUDGET DOES NOT ALLOW, and the /chat block
+ * fade above is the precedent for departing from it. The budget's three
+ * signature moments are cuts; this is a fourth moment and it is not a cut.
+ * The owner chose a CSS-only reveal over a counting script.
+ *
+ * ONLY THE FIGURE MOVES. The fallback already shows each label in the same
+ * box, so animating the whole tile would blink the label out and back in; the
+ * value line is the only part of the tile the island adds. `both` holds the
+ * figure invisible through its delay, so a late tile never shows its number
+ * early. `--band-delay` is set per tile in src/components/SystemBandFigures.astro.
+ *
+ * The reduced-motion rule is stated on purpose, as chat's is, and
+ * tests/system-band.test.ts asserts it.
+ */
+@keyframes band-figure-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.35em);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility band-figure-in {
+  & [data-metric-value] {
+    animation: band-figure-in 420ms cubic-bezier(0.2, 0, 0, 1) var(--band-delay, 0ms) both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    & [data-metric-value] {
+      animation: none;
+    }
+  }
+}

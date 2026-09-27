@@ -57,6 +57,12 @@ const { metrics, traffic, spend } = await readOpsReads(env, new Date());
 
 const ABSENT = { absentState: 'not available' };
 
+/**
+ * The gap between one tile's figure rising in and the next, in reading order.
+ * global.css's `band-figure-in` owns the animation; this only staggers it.
+ */
+const REVEAL_STEP_MS = 60;
+
 // Each figure's source is still named on /ops, in the tile of the same label.
 const FIGURES: { label: string; value: string | null }[] = [
   {
@@ -94,8 +100,12 @@ const FIGURES: { label: string; value: string | null }[] = [
     phone padding (SystemBand.astro's CELL), without giving the shared
     component a prop /ops would never pass.
   */}
-{FIGURES.map(({ label, value }) => (
-  <div data-band-figure={label} class="grid *:max-sm:px-4">
+{FIGURES.map(({ label, value }, index) => (
+  <div
+    data-band-figure={label}
+    class="band-figure-in grid *:max-sm:px-4"
+    style={`--band-delay: ${index * REVEAL_STEP_MS}ms`}
+  >
     <OpsMetric label={label} value={value} {...ABSENT} />
   </div>
 ))}

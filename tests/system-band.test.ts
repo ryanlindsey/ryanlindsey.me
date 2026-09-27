@@ -188,6 +188,24 @@ describe('the system band on /', () => {
     expect(degradedHtml).not.toContain('data-numeric');
   });
 
+  test('each live figure rises in, staggered, and holds still under reduced motion', () => {
+    const tiles = [...liveHtml.matchAll(/<div[^>]*data-band-figure="[^"]*"[^>]*>/g)].map(
+      (m) => m[0],
+    );
+    expect(tiles).toHaveLength(5);
+    tiles.forEach((tile, index) => {
+      expect(tile).toContain('band-figure-in');
+      expect(tile).toContain(`--band-delay: ${index * 60}ms`);
+    });
+    // The release tile is built with the page and never animates.
+    expect(elementWith(home, 'div', 'data-release-tile')).not.toContain('band-figure-in');
+
+    const css = readFileSync('src/styles/global.css', 'utf8');
+    const utility = /@utility band-figure-in \{[\s\S]*?\n\}/.exec(css)?.[0] ?? '';
+    expect(utility).toContain('[data-metric-value]');
+    expect(utility).toMatch(/prefers-reduced-motion: reduce[\s\S]*animation: none/);
+  });
+
   test('carries no <h1> of its own, and the page keeps exactly one <main>', () => {
     const band = elementWith(home, 'section', 'data-system-band');
     expect(band).not.toMatch(/<h1[\s>]/);
