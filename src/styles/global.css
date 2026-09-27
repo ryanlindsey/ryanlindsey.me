@@ -559,6 +559,87 @@
 }
 
 /*
+ * The home page's Now strip, rotating: one clause at a time, at every width,
+ * looping the set. The owner's call, in place of the joined line that ran the
+ * clauses together and the stack that made the strip five lines tall on a
+ * phone. src/pages/index.astro's script sets `data-now-rotating` and moves
+ * `data-now-active`; nothing here applies until it does, so the static strip
+ * is what a visitor without the script gets.
+ *
+ * ONE GRID CELL FOR EVERY CLAUSE, which is what keeps the strip from changing
+ * height as the clauses change. The cell is as tall as the longest clause at
+ * the current width, so the page under the strip never moves.
+ *
+ * A FADE, WHICH 05 §4's MOTION BUDGET DOES NOT ALLOW, on the precedent the
+ * system band's figures set below. The outgoing clause leaves first and the
+ * incoming one waits for it, through the delay on the active rule, because
+ * two clauses crossing in the same cell read as one garbled line.
+ *
+ * SCOPED TO `screen`: stacked in one cell, a printed strip would carry one
+ * clause and lose the rest. Print keeps the joined line, and the print block
+ * hides the pause control the script revealed.
+ */
+@media screen {
+  [data-now-strip][data-now-rotating] > div {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'chip . pause'
+      'items items items';
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+  }
+
+  [data-now-strip][data-now-rotating] > div > :first-child {
+    grid-area: chip;
+  }
+
+  [data-now-strip][data-now-rotating] [data-now-pause] {
+    grid-area: pause;
+  }
+
+  [data-now-strip][data-now-rotating] [data-now-items] {
+    grid-area: items;
+    display: grid;
+  }
+
+  /* The middots stay in the markup for extracted text, as they do on a phone
+     in the static strip; between clauses that are never side by side they
+     separate nothing. */
+  [data-now-strip][data-now-rotating] [data-now-items] > [aria-hidden='true'] {
+    display: none;
+  }
+
+  [data-now-strip][data-now-rotating] [data-now-item] {
+    grid-area: 1 / 1;
+    display: block;
+    margin-top: 0;
+    opacity: 0;
+    transform: translateY(0.25rem);
+    transition:
+      opacity 250ms ease-in,
+      transform 250ms ease-in;
+  }
+
+  [data-now-strip][data-now-rotating] [data-now-item][data-now-active] {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity 400ms cubic-bezier(0.2, 0, 0, 1) 250ms,
+      transform 400ms cubic-bezier(0.2, 0, 0, 1) 250ms;
+  }
+
+  /* From `sm` up there is room for one row: chip, clause, control. Baseline,
+     so the chip sits on the clause's first line when a long one wraps. */
+  @media (width >= 40rem) {
+    [data-now-strip][data-now-rotating] > div {
+      grid-template-areas: 'chip items pause';
+      align-items: baseline;
+    }
+  }
+}
+
+/*
  * Article prose. Tailwind Typography's defaults are recognisably Tailwind, so
  * every colour and rule it draws is remapped onto the token layer (05 §1).
  */
@@ -853,6 +934,12 @@
   [data-masthead='case-study'] {
     background-color: var(--rl-ink);
     color: var(--rl-bg);
+  }
+
+  /* Revealed by the rotation script, which print does not run: the rotating
+     layout is screen-only, so on paper there is nothing for it to pause. */
+  [data-now-pause] {
+    display: none;
   }
 
   [data-masthead='case-study'] [data-masthead-meta] p {

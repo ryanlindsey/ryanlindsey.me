@@ -6,6 +6,7 @@ import { PILLAR_LABELS } from '../lib/pillars';
 import { readingTimeFor } from '../lib/reading-time';
 import { getResume } from '../lib/resume-collection';
 import { getNowItems } from '../lib/now-collection';
+import { splitNowItem } from '../lib/now-links';
 
 // Queried once and sliced, rather than two `getCollection` calls with
 // different filters: the lead and the cells have to agree about which post is
@@ -78,9 +79,21 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
       So below `sm` the row becomes a column, the chip sits on its own line at
       its own width, and each clause takes a line. From `sm` up the design is
       exactly what it was: one row, one line, middots between the items.
+
+      ALL OF THAT IS NOW THE FALLBACK. The script at the foot of this page
+      rotates the clauses one at a time at every width, and global.css lays the
+      rotating strip out as a grid keyed off `data-now-rotating`. What is
+      described above is what a visitor with JavaScript off, a visitor asking
+      for reduced motion, and a printed page still get.
     */}
     <div class="mx-auto flex max-w-[1440px] flex-col gap-2 px-5 py-4 sm:flex-row sm:items-baseline sm:gap-3 lg:px-10">
-      <span class="w-fit shrink-0 bg-accent-ground px-[7px] py-[3px] font-mono text-micro text-accent-on">
+      {/*
+        No text colour of its own: the label inherits the strip's ink, light in
+        both themes, rather than `text-accent-on`. The owner chose it knowing
+        light ink on this pink measures about 3.3:1, under AA for text this
+        size.
+      */}
+      <span class="w-fit shrink-0 bg-accent-ground px-[7px] py-[3px] font-mono text-micro">
         NOW
       </span>
       {/*
@@ -96,7 +109,7 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
         are in the markup at every width for the same reason and are hidden
         with CSS, so extracted text still reads `a · b · c` on a phone.
       */}
-      <p class="text-small">
+      <p class="text-small" data-now-items>
         {nowItems.map((item, index) => (
           <Fragment>
             {index > 0 && (
@@ -118,11 +131,49 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
               above its first line.
             */}
             <span data-now-item class="mt-1.5 block first:mt-0 sm:mt-0 sm:inline">
-              {item}
+              {splitNowItem(item).map((segment) =>
+                segment.href ? <a href={segment.href}>{segment.text}</a> : segment.text,
+              )}
             </span>
           </Fragment>
         ))}
       </p>
+      {/*
+        WCAG 2.2.2: the rotation updates on its own for longer than five
+        seconds, so it needs a pause a keyboard or a finger can reach, and the
+        hover pause in the script reaches neither. `hidden` until the script
+        starts the rotation, because the static strip has nothing to pause.
+        An icon with no border and at 60% of the strip's ink, per the owner's
+        review: as text in a box it outweighed the clause it controls. The
+        accessible name is `aria-label`, which names the action and changes with
+        the icon, rather than a fixed name with `aria-pressed`. The icon is
+        10px; the padding keeps the target at 24px, the WCAG 2.5.8 minimum.
+      */}
+      <button
+        type="button"
+        data-now-pause
+        hidden
+        aria-label="Pause"
+        class="grid size-6 shrink-0 cursor-pointer place-items-center opacity-60 hover:opacity-100 focus-visible:opacity-100"
+      >
+        <svg
+          data-now-icon="pause"
+          aria-hidden="true"
+          viewBox="0 0 10 10"
+          class="size-2.5 fill-current"
+        >
+          <rect x="1.5" y="1" width="2.5" height="8" />
+          <rect x="6" y="1" width="2.5" height="8" />
+        </svg>
+        <svg
+          data-now-icon="play"
+          aria-hidden="true"
+          viewBox="0 0 10 10"
+          class="hidden size-2.5 fill-current"
+        >
+          <path d="M2 1 9 5 2 9Z" />
+        </svg>
+      </button>
     </div>
   </section>
 
@@ -327,6 +378,100 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
     </section>
   )}
 
+  <script>
+    // THE NOW STRIP ROTATION. The markup is the static strip and stays the
+    // fallback: this only runs for a visitor with JavaScript who has not asked
+    // for reduced motion, and everything it changes is an attribute that
+    // global.css keys the rotating layout off. The clauses stay in the DOM and
+    // in the accessibility tree the whole time, so a screen reader reads all of
+    // them once rather than hearing a live region every few seconds.
+    //
+    // Checked once, at load, rather than on change: the global reduced-motion
+    // rule in global.css only shortens transitions, so without this the clauses
+    // would still swap on the timer, just with no fade.
+    const DWELL_MS = 5000;
+    const nowStrip = document.querySelector<HTMLElement>('[data-now-strip]');
+    const nowItems = [...(nowStrip?.querySelectorAll<HTMLElement>('[data-now-item]') ?? [])];
+    const nowPause = nowStrip?.querySelector<HTMLButtonElement>('[data-now-pause]');
+    if (
+      nowStrip &&
+      nowPause &&
+      nowItems.length > 1 &&
+      !matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      let active = 0;
+      let paused = false;
+      let hovered = false;
+      let focused = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+
+      // Rescheduled from scratch on every state change, rather than an
+      // interval that skips ticks while paused: an interval hands the next
+      // clause over the moment a pointer leaves, however little of the dwell
+      // was left.
+      const schedule = () => {
+        clearTimeout(timer);
+        if (!paused && !hovered && !focused && !document.hidden)
+          timer = setTimeout(advance, DWELL_MS);
+      };
+      const show = (index: number) => {
+        nowItems[active].removeAttribute('data-now-active');
+        active = index;
+        nowItems[active].setAttribute('data-now-active', '');
+      };
+      const advance = () => {
+        show((active + 1) % nowItems.length);
+        schedule();
+      };
+
+      nowItems[0].setAttribute('data-now-active', '');
+      nowStrip.setAttribute('data-now-rotating', '');
+      nowPause.hidden = false;
+      nowPause.addEventListener('click', () => {
+        paused = !paused;
+        nowPause.setAttribute('aria-label', paused ? 'Play' : 'Pause');
+        nowPause
+          .querySelector<SVGElement>('[data-now-icon="pause"]')
+          ?.classList.toggle('hidden', paused);
+        nowPause
+          .querySelector<SVGElement>('[data-now-icon="play"]')
+          ?.classList.toggle('hidden', !paused);
+        schedule();
+      });
+      // Mouse only. A tap fires `pointerenter` and, on most touch browsers,
+      // never the matching `pointerleave`, which would pause the strip for good
+      // on the first touch.
+      nowStrip.addEventListener('pointerenter', (event) => {
+        if (event.pointerType !== 'mouse') return;
+        hovered = true;
+        schedule();
+      });
+      nowStrip.addEventListener('pointerleave', (event) => {
+        if (event.pointerType !== 'mouse') return;
+        hovered = false;
+        schedule();
+      });
+      // A link in a clause the rotation has faded out still takes keyboard
+      // focus, and focus on something invisible is a focus a reader cannot
+      // see. So the clause holding focus is the one shown, and the rotation
+      // waits until focus leaves the clauses.
+      nowStrip.addEventListener('focusin', (event) => {
+        const item = (event.target as Element).closest<HTMLElement>('[data-now-item]');
+        if (!item) return;
+        show(nowItems.indexOf(item));
+        focused = true;
+        schedule();
+      });
+      nowStrip.addEventListener('focusout', (event) => {
+        const next = event.relatedTarget as Element | null;
+        if (next?.closest('[data-now-item]')) return;
+        focused = false;
+        schedule();
+      });
+      document.addEventListener('visibilitychange', schedule);
+      schedule();
+    }
+  </script>
   <script>
     import { WEBMCP_TOOLS, callMcp } from '../lib/discovery/webmcp';
 
