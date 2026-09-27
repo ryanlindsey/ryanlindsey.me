@@ -269,6 +269,52 @@ test('the Now items are one copy of the content, separators included', async () 
   }
 });
 
+test('the Now strip ships a pause control that only the rotation reveals', async () => {
+  // The rotation replaces the clauses on a timer, which WCAG 2.2.2 treats as
+  // auto-updating content: past five seconds it needs a way to pause that a
+  // keyboard or a finger can reach, and pausing on hover reaches neither.
+  //
+  // `hidden` IN THE SHIPPED MARKUP, and the script removes it only when it
+  // starts the rotation. A visitor with JavaScript off, or with reduced motion
+  // asked for, sees the static strip and has nothing to pause, so a button
+  // there would be a control that does nothing.
+  const strip = elementWith(await html('/'), 'section', 'data-now-strip');
+  //
+  // An icon with no border since the owner's review, so the accessible name is
+  // `aria-label` and there is no text to match on.
+  const button = /<button([^>]*data-now-pause[^>]*)>([\s\S]*?)<\/button>/.exec(strip);
+  expect(button, 'no pause control in the Now strip').not.toBeNull();
+  expect(button![1]).toMatch(/\stype="button"/);
+  expect(button![1]).toMatch(/\shidden[\s>=]|\shidden$/);
+  expect(button![1]).toMatch(/\saria-label="Pause"/);
+  expect(button![2]).toMatch(/<svg[^>]*data-now-icon="pause"/);
+  expect(button![2]).toMatch(/<svg[^>]*data-now-icon="play"[^>]*class="hidden\s/);
+});
+
+test('the Now chip takes the strip ink rather than the accent-on ink', async () => {
+  // Owner's call on this change: light text on the pink chip, which is the
+  // strip's own ink in both themes, so the chip inherits it rather than naming
+  // a colour. `text-accent-on` coming back would be the old near-black label.
+  const strip = elementWith(await html('/'), 'section', 'data-now-strip');
+  const chip = /<span class="([^"]*bg-accent-ground[^"]*)"[^>]*>\s*NOW/.exec(strip);
+  expect(chip, 'no NOW chip').not.toBeNull();
+  expect(chip![1].split(/\s+/)).not.toContain('text-accent-on');
+});
+
+test('the Now rotation is screen-only, and never starts under reduced motion', async () => {
+  // Stacking the clauses in one cell shows one of them. On paper that is two
+  // clauses lost, so the rule is scoped to `screen` and print keeps the joined
+  // line. The reduced-motion check lives in the script rather than in CSS
+  // because the global rule only shortens transitions to 0.01ms: the clauses
+  // would still swap every few seconds, just without the fade.
+  const css = sourceOf('src/styles/global.css');
+  const rule = /@media screen \{\s*\[data-now-strip\]\[data-now-rotating\][\s\S]*?\n\}/.exec(css);
+  expect(rule, 'the rotation styles are not scoped to screen').not.toBeNull();
+  expect(sourceOf('src/pages/index.astro')).toMatch(
+    /matchMedia\('\(prefers-reduced-motion: reduce\)'\)\.matches/,
+  );
+});
+
 test('the bio column keeps a rule where the vertical one cannot reach', async () => {
   // The divider between the lead story and the bio is `lg:border-l`, so below
   // `lg` -- where the two blocks stack -- there is no divider at all, and 40px
