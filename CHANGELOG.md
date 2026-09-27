@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.47.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.46.0...ryanlindsey-me-v1.47.0) (2026-09-27)
+
+
+### Features
+
+* **home:** add the live system band ([#440](https://github.com/ryanlindsey/ryanlindsey.me/issues/440)) ([eab6ec8](https://github.com/ryanlindsey/ryanlindsey.me/commit/eab6ec8cf17645afdcd9f104e08112e3476319dc))
+
 ## [1.46.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.45.2...ryanlindsey-me-v1.46.0) (2026-09-26)
 
 
