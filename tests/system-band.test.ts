@@ -195,7 +195,7 @@ describe('the system band on /', () => {
     expect(tiles).toHaveLength(5);
     tiles.forEach((tile, index) => {
       expect(tile).toContain('band-figure-in');
-      expect(tile).toContain(`--band-delay: ${index * 60}ms`);
+      expect(tile).toContain(`--band-delay: ${index * 200}ms`);
     });
     // The release tile is built with the page and never animates.
     expect(elementWith(home, 'div', 'data-release-tile')).not.toContain('band-figure-in');
