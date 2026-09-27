@@ -15,7 +15,11 @@
 #
 # One clause per item, sentence-cased. The template joins them with a middot, so
 # no item carries the separator itself.
+#
+# A markdown link, `[text](/path)`, is the one markup an item may carry. The home
+# page renders it as a link and /index.md prints it as written
+# (src/lib/now-links.ts).
 items:
-  - Grading this site's chat agent against its own evals every week
-  - Measuring Core Web Vitals before touching how fonts load
+  - Tuning the evals that grade this site's agents
+  - Showing how to connect an MCP client to this site at [/connect](/connect)
   - Shipping armature, a Claude Code plugin that works an epic end to end
