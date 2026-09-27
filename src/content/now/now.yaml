@@ -16,6 +16,6 @@
 # One clause per item, sentence-cased. The template joins them with a middot, so
 # no item carries the separator itself.
 items:
-  - Tuning the RAG pipeline behind this site's search, defect by defect
-  - Shipping armature, the Claude Code plugin that gives an agent an epic
-  - Building Pixelsonly Racing solo
+  - Grading this site's chat agent against its own evals every week
+  - Measuring Core Web Vitals before touching how fonts load
+  - Shipping armature, a Claude Code plugin that works an epic end to end
