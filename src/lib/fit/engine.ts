@@ -122,6 +122,11 @@ export const BREAKER_KEY = 'breaker:inference';
  * the real `FIT_REPORT_JSON_SCHEMA` answered `200` and a JSON `text` block
  * that parsed. So `minLength` and `format: uri` are accepted as well; zod
  * below is still what enforces them.
+ *
+ * `format: uri` IS NO LONGER SENT (#446). Accepted was not the same as
+ * harmless: on 2026-09-27 every citation of a URL ending in `/` came back
+ * with a stray token after the slash, and src/lib/fit/schema.ts now strips
+ * `format` from the schema the model is handed. zod still enforces the rule.
  */
 type FitModelInput = {
   max_tokens: number;

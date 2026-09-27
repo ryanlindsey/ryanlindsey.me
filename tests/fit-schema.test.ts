@@ -217,3 +217,40 @@ test('describe strings survive at every nesting level, including inside evidence
   // since z.toJSONSchema emits no pattern for the protocol constraint.
   expect(evidence.citation_url!.description).toMatch(/https/i);
 });
+
+test('the JSON Schema sent to the model carries no `format` keyword anywhere', () => {
+  // Issue #446. `z.url()` converts to `{ "type": "string", "format": "uri" }`,
+  // and since #405 that schema is enforced by constrained decoding through
+  // `output_config.format`. MEASURED 2026-09-27 in the AI Gateway logs: every
+  // `citation_url` ending in `/` came back with a stray token after the slash
+  // (`.../work/silent-failure/r`, `.../work/delivery-forecasting/Human`), 12 of
+  // 12, while all 23 citations of `/resume` came back intact, and
+  // `enforceCitations` dropped every corrupted one. The scheme check is zod's
+  // job, below, not the decoder's.
+  const formats: string[] = [];
+  const walk = (node: unknown, path: string): void => {
+    if (Array.isArray(node)) node.forEach((child, index) => walk(child, `${path}[${index}]`));
+    else if (node !== null && typeof node === 'object') {
+      for (const [key, value] of Object.entries(node)) {
+        if (key === 'format') formats.push(`${path}.format = ${JSON.stringify(value)}`);
+        walk(value, `${path}.${key}`);
+      }
+    }
+  };
+  walk(FIT_REPORT_JSON_SCHEMA, '$');
+  expect(formats).toEqual([]);
+});
+
+test('dropping `format` from the model schema leaves the zod https fence in place', () => {
+  // The stored-XSS fence `parseStoredReport` relies on is the zod schema, not
+  // the JSON Schema, so taking `format` out of what the model sees must not
+  // loosen what a report is validated against.
+  const withCitation = (url: string) => {
+    const one = report();
+    one.requirement_map[0].evidence = [{ claim: 'A claim', citation_url: url }];
+    return FitReport.safeParse(one).success;
+  };
+  expect(withCitation('https://ryanlindsey.me/work/silent-failure/')).toBe(true);
+  expect(withCitation('javascript:alert(1)')).toBe(false);
+  expect(withCitation('http://ryanlindsey.me/resume')).toBe(false);
+});

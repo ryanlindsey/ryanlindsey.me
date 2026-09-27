@@ -3,7 +3,8 @@
 //
 // ONE schema, two consumers. The zod object below validates whatever the
 // model returns; `FIT_REPORT_JSON_SCHEMA` is DERIVED from it and is what the
-// model is handed as a forced tool's `input_schema`. Deriving rather than
+// model is handed as `output_config.format`, less its `format` keywords (see
+// the constant, and #446). Deriving rather than
 // hand-writing the second copy is the whole reason both can be believed: two
 // maintained copies drift, and the drift is silent -- the model emits exactly
 // what the JSON Schema asked for and zod rejects it, which reads as a model
@@ -89,13 +90,44 @@ export const FitReport = z.object({
 export type FitReport = z.infer<typeof FitReport>;
 
 /**
- * The same shape as JSON Schema, for the forced tool the model emits through.
+ * The same shape as JSON Schema, sent as `output_config.format` (#405). It was
+ * the input schema of a forced tool until Opus 5.5 refused forced tool use.
  *
  * `z.toJSONSchema` is zod 4's own converter, so the `.describe()` calls above
  * become field descriptions the model actually reads -- which is why the
  * descriptions are written as instructions rather than as documentation.
+ *
+ * `format` IS STRIPPED, AND THAT IS WHAT KEEPS CITATIONS INTACT (#446). The
+ * converter turns `citation_url`'s `z.url()` into `"format": "uri"`, and under
+ * `output_config.format` the schema is enforced by constrained decoding.
+ * MEASURED 2026-09-27 in the AI Gateway logs, on `anthropic/claude-opus-5.5`:
+ * every citation of a URL ending in `/` came back with a stray token appended
+ * (`.../work/silent-failure/r`, `.../work/delivery-forecasting/Human`), 12 of
+ * 12, while all 23 citations of `/resume`, which has no trailing slash, came
+ * back intact. `enforceCitations` dropped every corrupted one, so each case
+ * study and post fell out of the report as evidence. The forced-tool path on
+ * Opus 5 had cited the same URLs cleanly.
+ *
+ * Nothing is lost by the strip. The scheme rule never lived in the JSON Schema
+ * -- `format: "uri"` admits `javascript:` as readily as `https:` -- it lives in
+ * the zod schema above, which every report is still parsed with, including by
+ * `parseStoredReport`. The model is steered by `citation_url`'s description.
+ *
+ * SCHEMA-WIDE, NOT `citation_url` ALONE, ON PURPOSE. `citation_url` is the
+ * only field that emits a `format` today, but a later `z.email()` or
+ * `z.iso.datetime()` would put the same keyword under the same decoder, and
+ * zod is what validates every field anyway. tests/fit-schema.test.ts asserts
+ * no `format` survives anywhere.
+ *
+ * WHAT IS NOT MEASURED: that `format` alone is the trigger. This is the fix
+ * the evidence above points to, and the scheduled `fit` suite's
+ * `max_dropped_citations: 0` is what will say whether it held.
  */
-export const FIT_REPORT_JSON_SCHEMA = z.toJSONSchema(FitReport) as Record<string, unknown>;
+export const FIT_REPORT_JSON_SCHEMA = z.toJSONSchema(FitReport, {
+  override: (ctx) => {
+    delete ctx.jsonSchema.format;
+  },
+}) as Record<string, unknown>;
 
 export interface CitationAudit {
   checked: number;
