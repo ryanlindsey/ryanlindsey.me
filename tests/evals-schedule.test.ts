@@ -4,9 +4,8 @@ import { createTestHarness } from 'wrangler';
 import { MCP_HARNESS_WORKERS, MCP_WORKER } from './workers';
 import {
   CORPUS_CRON,
-  EVALS_DAILY_CRON,
+  EVALS_CRONS,
   EVALS_USER_AGENT,
-  EVALS_WEEKLY_CRON,
   evalsRunEnabled,
   suitesForCron,
 } from '../src/lib/evals/plan';
@@ -481,7 +480,7 @@ test('the corpus cron starts no evals instance', async () => {
   expect(await until(tokenRows, (seen) => seen > before, 1000)).toBe(before);
 });
 
-test.each([EVALS_DAILY_CRON, EVALS_WEEKLY_CRON])(
+test.each(Object.values(EVALS_CRONS))(
   'the evals cron %s starts no instance while EVALS_RUNNER is off',
   async (cron) => {
     const before = await tokenRows();
@@ -506,7 +505,7 @@ test('the corpus refresh runs for its own cron, and for no other', async () => {
   const corpus = await worker.scheduled({ cron: CORPUS_CRON, scheduledTime: new Date() });
   expect(corpus.outcome, 'the corpus cron did not reach the corpus branch').toBe('exception');
 
-  for (const cron of [EVALS_DAILY_CRON, EVALS_WEEKLY_CRON]) {
+  for (const cron of Object.values(EVALS_CRONS)) {
     const evals = await worker.scheduled({ cron, scheduledTime: new Date() });
     expect(evals.outcome, `${cron} reached the corpus branch`).toBe('ok');
   }
@@ -531,12 +530,12 @@ test('every MCP cron trigger has a job, and every job has a trigger', async () =
   const declared = [...crons![1]!.matchAll(/"([^"]+)"/g)].map((match) => match[1]!);
   expect(declared.length, 'no cron expressions parsed out of the config').toBeGreaterThan(0);
 
-  // The three constants in src/lib/evals/plan.ts are the other spelling of
+  // `CORPUS_CRON` and `EVALS_CRONS` in src/lib/evals/plan.ts are the other spelling of
   // this list, and `suitesForCron` is the mapping that reads it. Drift either
   // way is a cron that fires with nothing registered for it, or a job whose
   // trigger was never declared -- the same pair tests/site-crons.test.ts pins
   // for the site Worker.
-  expect([...declared].sort()).toEqual([CORPUS_CRON, EVALS_DAILY_CRON, EVALS_WEEKLY_CRON].sort());
+  expect([...declared].sort()).toEqual([CORPUS_CRON, ...Object.values(EVALS_CRONS)].sort());
 
   // And the mapping agrees about which of them is not an evals trigger.
   expect(suitesForCron(CORPUS_CRON)).toEqual([]);

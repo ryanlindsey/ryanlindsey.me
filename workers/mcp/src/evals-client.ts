@@ -24,7 +24,7 @@
 // publish this Worker's own housekeeping as visitor traffic. The constant and
 // the full reasoning are in src/lib/evals/plan.ts.
 
-import { BACKOFF_MS, EVALS_USER_AGENT, RETRIES } from '../../../src/lib/evals/plan';
+import { EVALS_USER_AGENT, RETRIES, SCHEDULED_BACKOFF_MS } from '../../../src/lib/evals/plan';
 import { MCP_ORIGIN } from './origin';
 
 /**
@@ -288,9 +288,16 @@ export async function askOnce(
  *
  * THIS BACKOFF IS A `setTimeout` AND THE PACING IS NOT, and the difference is
  * deliberate. The wait belongs to one attempt inside one case's `step.do`; the
- * twenty-five seconds between cases is the workflow's own `step.sleep`, which
+ * ninety seconds between cases is the workflow's own `step.sleep`, which
  * suspends the instance instead of holding an invocation open. See
  * workers/mcp/src/evals-workflow.ts.
+ *
+ * `SCHEDULED_BACKOFF_MS`, sixty seconds, not evals/run.mjs's ten: on
+ * 2026-09-27 a retry ten seconds after a 429 was refused every time. A case
+ * that retries both its answer and its judge now holds its step for about two
+ * minutes, inside the ten-minute default `CASE_STEP` inherits
+ * (developers.cloudflare.com/workflows/build/sleeping-and-retrying, read
+ * 2026-09-27).
  */
 export async function ask(
   fetcher: EvalsFetcher,
@@ -303,7 +310,7 @@ export async function ask(
     attempt <= RETRIES && result.error !== null && TRANSIENT.has(result.error);
     attempt += 1
   ) {
-    await sleep(BACKOFF_MS * attempt);
+    await sleep(SCHEDULED_BACKOFF_MS * attempt);
     result = await askOnce(fetcher, question, token);
   }
   return result;
@@ -343,7 +350,7 @@ export async function askJudge(
     attempt <= RETRIES && Boolean(answer.error || answer.result?.isError);
     attempt += 1
   ) {
-    await sleep(BACKOFF_MS * attempt);
+    await sleep(SCHEDULED_BACKOFF_MS * attempt);
     answer = await call();
   }
   if (answer.error || answer.result?.isError) return null;
