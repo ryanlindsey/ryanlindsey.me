@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.48.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.48.0...ryanlindsey-me-v1.48.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* **evals:** give each scheduled suite its own cron, spaced and paced for the gateway ([#444](https://github.com/ryanlindsey/ryanlindsey.me/issues/444)) ([f61b074](https://github.com/ryanlindsey/ryanlindsey.me/commit/f61b074f2376af6db08e1ee0e00da0200af98180))
+* **fit:** stop sending format keywords in the model's report schema ([#447](https://github.com/ryanlindsey/ryanlindsey.me/issues/447)) ([d0337c3](https://github.com/ryanlindsey/ryanlindsey.me/commit/d0337c32e3c24b4ac53ab09b21c7f9cdb7dc83c6)), closes [#446](https://github.com/ryanlindsey/ryanlindsey.me/issues/446)
+
 ## [1.48.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.47.0...ryanlindsey-me-v1.48.0) (2026-09-27)
 
 
