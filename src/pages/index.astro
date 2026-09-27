@@ -1,6 +1,7 @@
 ---
 import { getCollection } from 'astro:content';
 import Shell from '../layouts/Shell.astro';
+import SystemBand from '../components/SystemBand.astro';
 import { PILLAR_LABELS } from '../lib/pillars';
 import { readingTimeFor } from '../lib/reading-time';
 import { getResume } from '../lib/resume-collection';
@@ -124,6 +125,8 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
       </p>
     </div>
   </section>
+
+  <SystemBand />
 
   <section class="mx-auto grid max-w-[1440px] gap-10 border-b border-rule px-5 pb-11 pt-10 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] lg:gap-16 lg:px-10 lg:pt-12">
     {lead ? (

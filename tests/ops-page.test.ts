@@ -478,6 +478,20 @@ describe('/ops', () => {
     expect(html).toMatch(/data-status-pill[^>]*data-status="(nominal|degraded)"/);
   });
 
+  test("the status pill carries the home band's dot, pulsing only when nominal", () => {
+    const pill = /<p[^>]*data-status-pill[\s\S]*?<\/p>/.exec(html)?.[0] ?? '';
+    const status = /data-status="(nominal|degraded)"/.exec(pill)?.[1];
+    const dot = /data-live-dot="(live|degraded)"/.exec(pill)?.[1];
+    expect(dot).toBe(status === 'nominal' ? 'live' : 'degraded');
+    if (dot === 'degraded') {
+      expect(pill).not.toContain('animate-ping');
+      expect(pill).toContain('bg-warn');
+    } else {
+      expect(pill).toContain('motion-safe:animate-ping');
+      expect(pill).toContain('bg-ok-ground');
+    }
+  });
+
   test('no metric cell renders a bare zero where a figure could not be read', () => {
     const band = /data-metrics-band[\s\S]*?<\/section>/.exec(html);
     expect(band, 'no metrics band').not.toBeNull();

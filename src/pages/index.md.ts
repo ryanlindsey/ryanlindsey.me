@@ -39,6 +39,17 @@ function renderNow(items: readonly string[]): string {
   return `## Now\n\n${escapeMarkdown(items.join(' · '))}`;
 }
 
+// No figure, on purpose. The band on the page shows five live counts from a
+// server island, and this document is prerendered, so any number printed here
+// would be the one the build machine saw, served as current for as long as the
+// deploy lives. The pointer is what stays true.
+function renderLiveFigures(): string {
+  return (
+    '## Live figures\n\n' +
+    'The live figures for this site are published on the ops page, at https://ryanlindsey.me/ops, with the system each one is read from.'
+  );
+}
+
 // The heading matches the kicker src/pages/index.astro renders over the same
 // block, and has to: this document is that page, exported. It read "Who is
 // writing" in both places until this change, which was a line written for a
@@ -106,6 +117,7 @@ export const GET: APIRoute = async () => {
   const sections = [
     `# ${escapeMarkdown(basics.name)}`,
     renderNow(nowItems),
+    renderLiveFigures(),
     renderLead(lead),
     renderBio(basics),
     renderMore(more),

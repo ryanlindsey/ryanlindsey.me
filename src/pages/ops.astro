@@ -2,6 +2,7 @@
 import { env } from 'cloudflare:workers';
 import Shell from '../layouts/Shell.astro';
 import ArchitectureDiagram from '../components/ArchitectureDiagram.astro';
+import LiveDot from '../components/LiveDot.astro';
 import OpsMetric from '../components/OpsMetric.astro';
 import changelog from '../../CHANGELOG.md?raw';
 import { CHAT_MODEL } from '../lib/chat/engine';
@@ -421,13 +422,22 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
         <div class="flex flex-wrap items-baseline justify-between gap-x-10 gap-y-3">
           <p class="font-mono text-micro uppercase text-accent-ground">System &amp; Agents</p>
           {/*
-              THE STATUS WORDS ARE NOT COLOURED AND THE SQUARE IS, WHICH IS A
+              THE STATUS WORDS ARE NOT COLOURED AND THE DOT IS, WHICH IS A
               MEASUREMENT RATHER THAN A PREFERENCE. Against the light panel's
               own ground, #0a0a0b: `--rl-ok` is 3.63:1 and `--rl-warn` is
               3.34:1. Both fail AA for 12px text, and both clear the 3:1
               threshold that governs a non-text indicator, so the colour goes
               where it is legible and the words take the panel's own near-white.
               The label states the count in words either way.
+
+              THE NOMINAL SQUARE IS `--rl-ok-ground` SINCE #440, the bright fill
+              green, where it was `--rl-ok`, and it is no longer a square: it
+              is src/components/LiveDot.astro, the home band's round pulsing
+              dot, still when degraded. On this panel's #0a0a0b ground that
+              is 14.60:1 rather than 3.63:1, and in dark mode the two tokens are
+              the same value, so the square only got easier to see. The 3.63:1
+              above is the old text green's figure, kept because it is why the
+              words are not coloured.
 
               `data-status-pill` and `data-status` are TEST HOOKS, the same
               declared convention as `data-ops-metric` below. The pair is what
@@ -442,10 +452,7 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
             data-status={status.state}
             class="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-micro uppercase"
           >
-            <span
-              aria-hidden="true"
-              class:list={['h-2 w-2 shrink-0', status.state === 'nominal' ? 'bg-ok' : 'bg-warn']}
-            ></span>
+            <LiveDot state={status.state === 'nominal' ? 'live' : 'degraded'} />
             <span>{status.label}</span>
             <span class="opacity-[.7]">· Last {formatWindow(WINDOW_DAYS)}</span>
           </p>
@@ -621,6 +628,20 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
             than a truer one. Whether the two routes above should join the list
             is a deployed-behaviour change and the owner's call, not this
             sentence's.
+
+            CORRECTION, 2026-09-26: the paragraph above is stale. `/` IS on
+            `run_worker_first` (wrangler.jsonc), and has been since markdown
+            negotiation on the home page (#187, 2026-09-14), so every home
+            page view has been counted here since then.
+
+            SINCE THE HOME PAGE'S SYSTEM BAND (issue #437), A HOME PAGE VIEW
+            CAN BE TWO WORKER REQUESTS. The band's five figures are a server
+            island, fetched from `/_server-islands/...` after `/` loads, and
+            that path has no asset, so it reaches src/worker.ts and is counted
+            here under the `site` surface: a second request per home page view
+            with JavaScript on. The measurement was left as it was. Excluding the
+            island fetch would change a deployed figure, and that is the
+            owner's call.
           */}
         <OpsMetric
           label="Requests that reached the Worker"
@@ -675,7 +696,7 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
           {...GATEWAY_ABSENT}
         />
         <OpsMetric
-          label="Requests through the gateway"
+          label="Requests through the AI Gateway"
           value={count(spend?.requests)}
           source="AI Gateway"
           {...GATEWAY_ABSENT}

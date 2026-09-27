@@ -43,8 +43,15 @@ interface Props {
    * hand-written provenance line. A stated closed set with a member nothing can
    * reach is a small false claim about the page, which is the class of defect
    * /ops exists to avoid.
+   *
+   * OPTIONAL SINCE THE HOME PAGE'S SYSTEM BAND (issue #437). /ops passes it on
+   * every tile, because naming the system is the point of that page. The band
+   * omits it, and the owner's review dropped the line there: a visitor reading
+   * five counts on the home page is served by the label, and /ops is one link
+   * away for the provenance. With no `source` the third line is not rendered
+   * at all, so `absentReason` goes with it.
    */
-  source: 'D1' | 'Analytics Engine' | 'AI Gateway';
+  source?: 'D1' | 'Analytics Engine' | 'AI Gateway';
   /** The absence, in the two words that go where the figure was. */
   absentState?: string;
   /** Why it is absent, rendered after the source so the two read as one line. */
@@ -126,14 +133,16 @@ const {
       READ-ONLY ANALYTICS TOKEN" shouts an apology across the band. Uppercasing
       is CSS either way, so the text a test reads is the same in both arms.
     */}
-  <p
-    class:list={[
-      'mt-1 font-mono text-micro text-ink-muted',
-      value === null ? 'normal-case' : 'uppercase',
-    ]}
-  >
-    {source}
-    {value === null ? ` — ${absentReason}` : ''}
-  </p>
+  {source && (
+    <p
+      class:list={[
+        'mt-1 font-mono text-micro text-ink-muted',
+        value === null ? 'normal-case' : 'uppercase',
+      ]}
+    >
+      {source}
+      {value === null ? ` — ${absentReason}` : ''}
+    </p>
+  )}
   {note && <p class="mt-4 text-micro text-ink-muted">{note}</p>}
 </div>
