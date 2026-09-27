@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.48.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.47.0...ryanlindsey-me-v1.48.0) (2026-09-27)
+
+
+### Features
+
+* **home:** rotate the now strip one clause at a time ([#442](https://github.com/ryanlindsey/ryanlindsey.me/issues/442)) ([20d52ad](https://github.com/ryanlindsey/ryanlindsey.me/commit/20d52ad19d9b1b79e28091ed13fb99e2e7e55a88))
+
 ## [1.47.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.46.0...ryanlindsey-me-v1.47.0) (2026-09-27)
 
 
