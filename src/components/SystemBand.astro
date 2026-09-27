@@ -1,4 +1,5 @@
 ---
+import LiveDot from './LiveDot.astro';
 import SystemBandFigures from './SystemBandFigures.astro';
 import changelog from '../../CHANGELOG.md?raw';
 import { latestRelease } from '../lib/home/latest-release';
@@ -68,21 +69,14 @@ const CELL = 'bg-surface px-4 pb-7 pt-[26px] sm:px-6';
           muted ink and still. The release tile is `data-numeric` too, which
           is why the selector names `data-band-figure` and not the grid.
 
-          `--rl-ok-ground`, tokens.css's green for a fill: bright in both
-          themes, where `--rl-ok` darkens in light mode for text contrast. The pulse
-          is Tailwind's `animate-ping`, a scale and fade on a second dot
-          behind the first: flat colour, no glow, which is the palette's rule.
-          `motion-safe:` drops it for a reader who asked for reduced motion,
-          and the steady dot still says live.
+          The dot itself, its colours and its pulse, is
+          src/components/LiveDot.astro, shared with /ops's masthead.
         */}
       <h2
         id="system-band-heading"
         class="flex items-center gap-2 font-mono text-micro uppercase text-ink-muted"
       >
-        <span data-live-dot aria-hidden="true" class="relative flex h-2 w-2 shrink-0">
-          <span class="absolute hidden h-full w-full rounded-full bg-ok-ground opacity-75 group-has-[[data-band-figure]_[data-numeric]]/band:inline-flex motion-safe:animate-ping" />
-          <span class="relative inline-flex h-2 w-2 rounded-full bg-ink-muted group-has-[[data-band-figure]_[data-numeric]]/band:bg-ok-ground" />
-        </span>
+        <LiveDot state="until-live" />
         <span>Live · last {formatWindow(WINDOW_DAYS)}</span>
       </h2>
       <div data-system-band-links class="flex flex-wrap gap-5">

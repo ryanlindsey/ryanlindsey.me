@@ -1,0 +1,49 @@
+---
+/**
+ * The round status dot the home page's system band introduced, shared with
+ * /ops's masthead so the two surfaces signal "live" the same way.
+ *
+ * `--rl-ok-ground`, tokens.css's green for a fill: bright in both themes,
+ * where `--rl-ok` darkens in light mode for text contrast. The pulse is
+ * Tailwind's `animate-ping`, a scale and fade on a second dot behind the
+ * first: flat colour, no glow, which is the palette's rule. `motion-safe:`
+ * drops it for a reader who asked for reduced motion, and the steady dot
+ * still says live.
+ *
+ * THREE STATES, AND THE THIRD IS THE BAND'S ALONE.
+ *
+ *   - `live`: green, pulsing. /ops when every read answered.
+ *   - `degraded`: `--rl-warn`, still. /ops when a read did not answer; a
+ *     pulse there would read as activity rather than as a problem.
+ *   - `until-live`: muted and still, turning `live` once a `group/band`
+ *     ancestor holds a `data-band-figure` tile with a `data-numeric` value.
+ *     src/components/SystemBand.astro says why the band cannot pass `live`
+ *     itself: it is prerendered and cannot know whether the island arrived.
+ *
+ * The classes are spelled whole rather than assembled because Tailwind scans
+ * this file as text and never sees a class name built at runtime.
+ */
+interface Props {
+  state: 'live' | 'degraded' | 'until-live';
+}
+
+const { state } = Astro.props;
+
+const PULSE = {
+  live: 'inline-flex bg-ok-ground motion-safe:animate-ping',
+  degraded: 'hidden',
+  'until-live':
+    'hidden bg-ok-ground group-has-[[data-band-figure]_[data-numeric]]/band:inline-flex motion-safe:animate-ping',
+}[state];
+
+const STEADY = {
+  live: 'bg-ok-ground',
+  degraded: 'bg-warn',
+  'until-live': 'bg-ink-muted group-has-[[data-band-figure]_[data-numeric]]/band:bg-ok-ground',
+}[state];
+---
+
+<span data-live-dot={state} aria-hidden="true" class="relative flex h-2 w-2 shrink-0">
+  <span class:list={['absolute h-full w-full rounded-full opacity-75', PULSE]}></span>
+  <span class:list={['relative inline-flex h-2 w-2 rounded-full', STEADY]}></span>
+</span>
