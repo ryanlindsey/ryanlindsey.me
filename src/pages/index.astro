@@ -6,6 +6,7 @@ import { PILLAR_LABELS } from '../lib/pillars';
 import { readingTimeFor } from '../lib/reading-time';
 import { getResume } from '../lib/resume-collection';
 import { getNowItems } from '../lib/now-collection';
+import { splitNowItem } from '../lib/now-links';
 
 // Queried once and sliced, rather than two `getCollection` calls with
 // different filters: the lead and the cells have to agree about which post is
@@ -130,7 +131,9 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
               above its first line.
             */}
             <span data-now-item class="mt-1.5 block first:mt-0 sm:mt-0 sm:inline">
-              {item}
+              {splitNowItem(item).map((segment) =>
+                segment.href ? <a href={segment.href}>{segment.text}</a> : segment.text,
+              )}
             </span>
           </Fragment>
         ))}
@@ -399,6 +402,7 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
       let active = 0;
       let paused = false;
       let hovered = false;
+      let focused = false;
       let timer: ReturnType<typeof setTimeout> | undefined;
 
       // Rescheduled from scratch on every state change, rather than an
@@ -407,12 +411,16 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
       // was left.
       const schedule = () => {
         clearTimeout(timer);
-        if (!paused && !hovered && !document.hidden) timer = setTimeout(advance, DWELL_MS);
+        if (!paused && !hovered && !focused && !document.hidden)
+          timer = setTimeout(advance, DWELL_MS);
+      };
+      const show = (index: number) => {
+        nowItems[active].removeAttribute('data-now-active');
+        active = index;
+        nowItems[active].setAttribute('data-now-active', '');
       };
       const advance = () => {
-        nowItems[active].removeAttribute('data-now-active');
-        active = (active + 1) % nowItems.length;
-        nowItems[active].setAttribute('data-now-active', '');
+        show((active + 1) % nowItems.length);
         schedule();
       };
 
@@ -441,6 +449,23 @@ const moreColumns = COLUMNS[more.length] ?? 'lg:grid-cols-3';
       nowStrip.addEventListener('pointerleave', (event) => {
         if (event.pointerType !== 'mouse') return;
         hovered = false;
+        schedule();
+      });
+      // A link in a clause the rotation has faded out still takes keyboard
+      // focus, and focus on something invisible is a focus a reader cannot
+      // see. So the clause holding focus is the one shown, and the rotation
+      // waits until focus leaves the clauses.
+      nowStrip.addEventListener('focusin', (event) => {
+        const item = (event.target as Element).closest<HTMLElement>('[data-now-item]');
+        if (!item) return;
+        show(nowItems.indexOf(item));
+        focused = true;
+        schedule();
+      });
+      nowStrip.addEventListener('focusout', (event) => {
+        const next = event.relatedTarget as Element | null;
+        if (next?.closest('[data-now-item]')) return;
+        focused = false;
         schedule();
       });
       document.addEventListener('visibilitychange', schedule);

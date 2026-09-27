@@ -301,6 +301,15 @@ test('the Now chip takes the strip ink rather than the accent-on ink', async () 
   expect(chip![1].split(/\s+/)).not.toContain('text-accent-on');
 });
 
+test('a link written in a Now item renders as a link inside that item', async () => {
+  // A link in a clause the rotation has faded out can still take keyboard
+  // focus, so the script shows the clause that holds focus and pauses there.
+  const strip = elementWith(await html('/'), 'section', 'data-now-strip');
+  expect(strip).toMatch(/<span data-now-item[^>]*>[^<]*<a href="\/connect"[^>]*>\/connect<\/a>/);
+  expect(strip).not.toContain('](/connect)');
+  expect(sourceOf('src/pages/index.astro')).toMatch(/addEventListener\('focusin'/);
+});
+
 test('the Now rotation is screen-only, and never starts under reduced motion', async () => {
   // Stacking the clauses in one cell shows one of them. On paper that is two
   // clauses lost, so the rule is scoped to `screen` and print keeps the joined
