@@ -1,8 +1,9 @@
 // The scheduled eval run (issue #291), as a Cloudflare Workflow.
 //
-// WHY A WORKFLOW AND NOT A CRON HANDLER DOING THE WORK. A full weekly run is
+// WHY A WORKFLOW AND NOT A CRON HANDLER DOING THE WORK. The weekly suites are
 // `fit`, `chat` and `leak` -- fifteen cases, each an inference call, paced
-// twenty-five seconds apart (PACE_MS, src/lib/evals/plan.ts). That is minutes
+// ninety seconds apart within a suite (SCHEDULED_PACE_MS,
+// src/lib/evals/plan.ts), one instance per suite since 2026-09-27. That is minutes
 // of wall clock spent mostly waiting, which no single Worker invocation should
 // hold open. A workflow's `step.sleep` SUSPENDS the instance rather than
 // blocking one, and its `step.do` persists each case's result, so an instance
@@ -38,7 +39,7 @@ import {
   type WorkflowStep,
   type WorkflowStepConfig,
 } from 'cloudflare:workers';
-import { isSuiteName, PACE_MS, type SuiteName } from '../../../src/lib/evals/plan';
+import { isSuiteName, SCHEDULED_PACE_MS, type SuiteName } from '../../../src/lib/evals/plan';
 import {
   incompleteRow,
   summarize,
@@ -445,7 +446,7 @@ interface Unit {
 }
 
 /**
- * Runs units in order, one `step.do` each, `PACE_MS` apart.
+ * Runs units in order, one `step.do` each, `SCHEDULED_PACE_MS` apart.
  *
  * NOT BEFORE THE FIRST, which is where the pacing arithmetic in
  * `PACE_MS`'s own comment comes from: the gaps are `cases - 1` summed, two
@@ -454,12 +455,17 @@ interface Unit {
  * preceding request for it to space this one away from.
  *
  * `step.sleep` rather than a `setTimeout`: it suspends the instance instead of
- * holding an invocation open for twenty-five seconds at a time.
+ * holding an invocation open for ninety seconds at a time.
+ *
+ * `SCHEDULED_PACE_MS`, NOT evals/run.mjs's `PACE_MS`, since 2026-09-27: at the
+ * manual runner's twenty-five seconds the gateway refused every scheduled call
+ * after the first. The gap arithmetic below still counts in `PACE_MS`'s terms,
+ * `cases - 1` summed; only the length of each gap differs.
  */
 async function runPaced(step: WorkflowStep, units: Unit[]): Promise<CaseResult[]> {
   const results: CaseResult[] = [];
   for (const [index, unit] of units.entries()) {
-    if (index > 0) await step.sleep(`pace before ${unit.name}`, PACE_MS);
+    if (index > 0) await step.sleep(`pace before ${unit.name}`, SCHEDULED_PACE_MS);
     results.push(await step.do(unit.name, CASE_STEP, unit.run));
   }
   return results;
@@ -477,7 +483,7 @@ async function runSuite(
       // NOT PACED, mirroring `runTier` in evals/run.mjs, and it looks like an
       // omission so it is worth saying why: `tier` spends no inference at all.
       // Its calls are the handshake, two listings and the no-argument tools,
-      // so it puts nothing on the AI Gateway quota `PACE_MS` exists to respect
+      // so it puts nothing on the AI Gateway quota `SCHEDULED_PACE_MS` exists to respect
       // -- which is why the twelve gaps that comment counts are fit's, chat's
       // and leak's, and none of them are here.
       const results: CaseResult[] = [];

@@ -1,10 +1,12 @@
 // Pacing and scheduling for the eval suites (04 §4). Pure constants and pure
 // mappings: nothing here sleeps, fetches, or reads a binding. The pacing
 // numbers were measured against evals/run.mjs's actual runs against the
-// deployed MCP Worker, and both runners -- evals/run.mjs today, the MCP
-// Worker's scheduled runner in Task 4 -- read the same numbers rather than
-// each tuning its own, because a quota measured once should not need
-// re-discovering twice.
+// deployed MCP Worker, and both runners -- evals/run.mjs and the MCP Worker's
+// scheduled runner -- read them from here rather than each tuning its own,
+// because a quota measured once should not need re-discovering twice. They
+// share `RETRIES`, but since 2026-09-27 the scheduled runner paces and backs
+// off on its own wider pair, `SCHEDULED_PACE_MS` and `SCHEDULED_BACKOFF_MS`,
+// for the reason recorded on those constants.
 //
 // IT ALSO HOLDS THE TWO STRINGS THE SCHEDULED RUN IDENTIFIES ITSELF BY, which
 // are constants of the same kind and belong here for the same reason: three
@@ -141,6 +143,33 @@ export const BACKOFF_MS = 10_000;
 export const PACE_MS = 25000;
 
 /**
+ * The scheduled run's own gap between cases and its own retry backoff, wider
+ * than `PACE_MS` and `BACKOFF_MS` above, which stay what evals/run.mjs uses.
+ *
+ * MEASURED 2026-09-27 against the `ryanlindsey-me` gateway, and the reason the
+ * two runners no longer share a number. At 25s between cases and a 10s
+ * backoff, the scheduled `chat` and `leak` suites had every call after the
+ * first answered HTTP 429, `Wholesale rate limit exceeded for this gateway`;
+ * the one probe that got through mid-run did so after a 34s gap, and a lone
+ * visitor's call minutes later succeeded. The manual run on 2026-09-23 had
+ * passed at the same 25s, with five 429s its retry absorbed, so the limit
+ * moves and nothing here knows its size or window. See `EVALS_CRONS`.
+ *
+ * NINETY SECONDS AND SIXTY ARE HEADROOM, NOT A MEASURED FLOOR. They were
+ * chosen to sit well past the one gap that was seen to work, and they fit:
+ * `leak`, the longest suite, is seven gaps, about eleven minutes of sleeping
+ * plus its cases, inside the hour `EVALS_CRONS` leaves it. The manual runner
+ * keeps the old pair because somebody is waiting on it before a merge, and
+ * nobody is waiting on this one.
+ *
+ * THE BACKOFF ALSO COVERS THE JUDGE, which is not paced (see `PACE_MS`) and
+ * which the 2026-09-27 run saw refused one second after the answer it was
+ * scoring had succeeded.
+ */
+export const SCHEDULED_PACE_MS = 90_000;
+export const SCHEDULED_BACKOFF_MS = 60_000;
+
+/**
  * The four suites, in the order a full run executes them. `leak` runs LAST
  * deliberately (evals/README.md): it is the private-tier disclosure gate, and
  * a failure there should be the last thing on screen rather than scrolled
@@ -175,20 +204,34 @@ export function isSuiteName(value: unknown): value is SuiteName {
 export const CORPUS_CRON = '32 5 * * *';
 
 /**
- * `tier` alone, daily: the cheapest suite, needs no token, and is the one
- * check the deployed private tier can fail silently between the runs a person
- * remembers to do by hand.
- */
-export const EVALS_DAILY_CRON = '52 5 * * *';
-
-/**
- * `fit`, `chat` and `leak`, weekly: the suites that spend inference and need
- * `RLME_EVAL_TOKEN`-equivalent access, run less often for the same reason
- * evals/README.md paces cases twenty-five seconds apart -- fewer requests is
- * what a shared quota actually wants.
+ * One cron per suite, each starting its own Workflow instance for that suite
+ * alone: `tier` daily at 07:07 UTC, then `fit`, `chat` and `leak` on Sundays
+ * at 08:07, 09:07 and 10:07 UTC. 07:07 UTC is 00:07 Pacific while daylight
+ * time is in force and 23:07 in winter; cron runs in UTC and cannot follow the
+ * change, and the summer reading was the one chosen (2026-09-27).
  *
- * NINETY-FIVE MINUTES BEHIND `CORPUS_CRON`, AND THAT NUMBER IS SLACK RATHER
- * THAN MEASUREMENT. Two of these three suites are graded against the Vectorize
+ * WHY ONE INSTANCE PER SUITE, AN HOUR APART. Until 2026-09-27 the three
+ * inference suites shared one instance at 07:07 on Sundays, and neither of its
+ * scheduled runs produced a single graded `chat` or `leak` case. The gateway
+ * logs for 2026-09-20 and 2026-09-27 show the first call of the run answered
+ * and every call after it refused with HTTP 429, `Wholesale rate limit
+ * exceeded for this gateway`, at a request every ten to twenty-five seconds. A
+ * confirmation instance that ran `chat` and `leak` without `fit` failed the same
+ * way, so the order was not the cause, and a lone call from a visitor five
+ * minutes later succeeded. What the limit admits is an isolated call; what it
+ * refuses is a steady stream. Cloudflare publishes neither the number nor the
+ * window, so an hour between suites is room rather than a measurement, and
+ * `SCHEDULED_PACE_MS` widens the gaps inside each one for the same reason.
+ *
+ * `tier` DAILY, THE OTHER THREE WEEKLY, AND THAT IS A COST DECISION. `tier`
+ * makes no model call, so a daily run costs one D1 write. The other three run
+ * Opus and Sonnet calls through the gateway, and daily would have cost about
+ * seven times as much for a corpus and a set of prompts that do not move on a
+ * daily rhythm. A suite's cadence is its own day-of-week field and nothing
+ * else, so changing one is a one-line change here and in the test that pins it.
+ *
+ * NINETY-FIVE MINUTES OR MORE BEHIND `CORPUS_CRON`, AND THAT NUMBER IS SLACK
+ * RATHER THAN MEASUREMENT. `fit` and `chat` are graded against the Vectorize
  * index the corpus job re-embeds and upserts the same morning, and a Vectorize
  * `upsert` is asynchronous: it returns a mutation id and the index reflects the
  * change some time afterwards. A `chat` case carrying a `min_sources`
@@ -209,7 +252,7 @@ export const EVALS_DAILY_CRON = '52 5 * * *';
  * one.
  *
  * THE `1` IS SUNDAY. Cloudflare numbers the day-of-week field 1 = Sunday to
- * 7 = Saturday, not the Unix 0 = Sunday, so this fires on Sundays. Every
+ * 7 = Saturday, not the Unix 0 = Sunday, so these fire on Sundays. Every
  * comment and document said Monday until issue #340: the first scheduled weekly
  * rows in `eval_runs` (ids 41 to 43) are dated 2026-09-20, a Sunday, at 07:07
  * UTC, and reading them against "Mondays" cost an hour chasing a Workflow that
@@ -219,17 +262,23 @@ export const EVALS_DAILY_CRON = '52 5 * * *';
  * abbreviation back verbatim; a mismatch returns `[]` and the weekly run
  * disappears without a row. Measure that before adopting it.
  */
-export const EVALS_WEEKLY_CRON = '7 7 * * 1';
+export const EVALS_CRONS: Readonly<Record<SuiteName, string>> = {
+  tier: '7 7 * * *',
+  fit: '7 8 * * 1',
+  chat: '7 9 * * 1',
+  leak: '7 10 * * 1',
+};
 
 /**
- * The suites a cron expression asks for, in run order, or `[]` for one that
- * asks for none -- including `CORPUS_CRON`, which is a different job on the
- * same Worker and never an evals trigger.
+ * The suites a cron expression asks for, or `[]` for one that asks for none --
+ * including `CORPUS_CRON`, which is a different job on the same Worker and
+ * never an evals trigger. Since 2026-09-27 that is at most one suite: each has
+ * its own expression in `EVALS_CRONS`. It stays a list because
+ * `EvalsWorkflow`'s params are one, and a hand-started instance
+ * (evals/README.md) can still ask for several.
  */
 export function suitesForCron(cron: string): SuiteName[] {
-  if (cron === EVALS_DAILY_CRON) return ['tier'];
-  if (cron === EVALS_WEEKLY_CRON) return ['fit', 'chat', 'leak'];
-  return [];
+  return SUITE_ORDER.filter((suite) => EVALS_CRONS[suite] === cron);
 }
 
 /**
