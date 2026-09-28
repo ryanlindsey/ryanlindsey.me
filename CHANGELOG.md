@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.48.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.48.1...ryanlindsey-me-v1.48.2) (2026-09-28)
+
+
+### Bug Fixes
+
+* **home:** keep the system band's island key stable across deploys ([#449](https://github.com/ryanlindsey/ryanlindsey.me/issues/449)) ([d0d377a](https://github.com/ryanlindsey/ryanlindsey.me/commit/d0d377a377b95af471f9613823406de075cd3634))
+
 ## [1.48.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.48.0...ryanlindsey-me-v1.48.1) (2026-09-27)
 
 
