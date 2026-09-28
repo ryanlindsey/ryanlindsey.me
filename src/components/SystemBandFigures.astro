@@ -26,10 +26,14 @@ import {
  * endpoint answers 400 when it cannot decrypt it
  * (node_modules/astro/dist/core/server-islands/endpoint.js). So a copy of `/`
  * built before a deploy asks for an island the new build refuses, and that
- * visitor keeps the fallback. That is the honest state rather than a broken
- * one, and the window is short because `/` sets no long `Cache-Control` of its
- * own. An `ASTRO_KEY` fixed across builds would close it, and is an owner's
- * change to the build environment rather than to this file.
+ * visitor keeps the fallback.
+ *
+ * THIS COMMENT FIRST CALLED THAT WINDOW SHORT, because `/` sets no long
+ * `Cache-Control` of its own. It was not: on 2026-09-27 the owner saw the
+ * fallback's blank tiles on a phone and on a desktop after a cold start, and a
+ * refresh filled them. A restored tab can render the HTML it already holds. The
+ * fix is an `ASTRO_KEY` fixed across builds, set in Workers Builds, and
+ * src/lib/astro-key.mjs fails that build when the variable is missing.
  *
  * THE SAME READS AND THE SAME KV ENTRIES AS /ops, through `readOpsReads`. The
  * two surfaces cannot disagree about a figure for longer than one
