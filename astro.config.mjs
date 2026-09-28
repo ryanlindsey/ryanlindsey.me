@@ -12,6 +12,11 @@ import { literalDirectives } from './src/lib/literal-directives.mjs';
 import { isUnindexed } from './src/lib/unindexed-routes.mjs';
 import { sitemapLastmods } from './src/lib/sitemap-lastmod.mjs';
 import { ogCards } from './src/lib/og/integration';
+import { assertAstroKey } from './src/lib/astro-key.mjs';
+
+// Before anything else is read: a Workers Builds build with no fixed key would
+// strand every copy of `/` already served (src/lib/astro-key.mjs says how).
+assertAstroKey(process.env);
 
 // Read once at config-eval time -- src/lib/sitemap-lastmod.mjs's own header
 // says why this reads the filesystem directly rather than through
