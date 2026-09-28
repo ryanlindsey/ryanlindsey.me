@@ -17,8 +17,17 @@ updates:
       prefix: deps
       prefix-development: deps-dev
     groups:
+      # agents declares exact peers on @modelcontextprotocol/client, /server and /sdk (0.24.0
+      # pins 2.0.0, 2.0.0 and 1.30.0), and the MCP SDK ships ahead of it. Inside `all`, an
+      # MCP release that agents has not caught up to fails `npm ci` with ERESOLVE and holds
+      # back every other update in the PR (#452). Dependabot puts a dependency in the first
+      # group it matches, so this group has to come before `all`; its PR can sit red until
+      # agents moves its pins without blocking anything else.
+      mcp-stack:
+        patterns: ['agents', '@modelcontextprotocol/*']
       all:
         patterns: ['*']
+        exclude-patterns: ['agents', '@modelcontextprotocol/*']
     ignore:
       # @astrojs/check declares peer typescript '^5.0.0 || ^6.0.0', so a major bump
       # fails `npm ci` with ERESOLVE before any check runs. Because every npm update
@@ -51,5 +60,9 @@ updates:
       prefix: deps
       prefix-development: deps-dev
     groups:
+      # Same split as the root entry, for the same reason.
+      mcp-stack:
+        patterns: ['agents', '@modelcontextprotocol/*']
       all:
         patterns: ['*']
+        exclude-patterns: ['agents', '@modelcontextprotocol/*']
