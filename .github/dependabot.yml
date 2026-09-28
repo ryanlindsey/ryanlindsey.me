@@ -25,14 +25,21 @@ updates:
       # agents moves its pins without blocking anything else.
       mcp-stack:
         patterns: ['agents', '@modelcontextprotocol/*']
-      all:
+      # Majors match no group, so each one arrives as its own PR. Every hand intervention
+      # on a grouped PR before this split was one package the rest could not move with:
+      # TypeScript 7 against @astrojs/check's peer range (#4), prettier-plugin-astro 1.0
+      # reformatting 24 files (#163), and the MCP SDK against agents' pins (#452). A major
+      # that fails now fails alone, and can wait or be worked on its own branch.
+      minor-and-patch:
         patterns: ['*']
         exclude-patterns: ['agents', '@modelcontextprotocol/*']
+        update-types: ['minor', 'patch']
     ignore:
       # @astrojs/check declares peer typescript '^5.0.0 || ^6.0.0', so a major bump
-      # fails `npm ci` with ERESOLVE before any check runs. Because every npm update
-      # is grouped into one PR above, leaving this unignored blocks *all* npm updates,
-      # not just this one. Drop this entry once @astrojs/check supports TypeScript 7.
+      # fails `npm ci` with ERESOLVE before any check runs. Since majors stopped being
+      # grouped, that PR would fail on its own rather than block every npm update, and
+      # this entry now only keeps a PR that cannot pass from being opened each week.
+      # Drop it once @astrojs/check supports TypeScript 7.
       - dependency-name: typescript
         update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
@@ -60,9 +67,10 @@ updates:
       prefix: deps
       prefix-development: deps-dev
     groups:
-      # Same split as the root entry, for the same reason.
+      # Same groups as the root entry, for the same reasons.
       mcp-stack:
         patterns: ['agents', '@modelcontextprotocol/*']
-      all:
+      minor-and-patch:
         patterns: ['*']
         exclude-patterns: ['agents', '@modelcontextprotocol/*']
+        update-types: ['minor', 'patch']
