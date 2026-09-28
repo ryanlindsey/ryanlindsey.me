@@ -31,6 +31,16 @@ jobs:
 
       - run: npm ci
 
+      # workers/mcp carries its own manifest (#6), and nothing else here installs
+      # it: every step below runs at the root, and on 2026-09-28 the MCP Worker's
+      # Workers Build was installing from `/` as well. So #451 merged a lockfile
+      # that fails `npm ci` with ERESOLVE (agents pins its MCP SDK peers exactly)
+      # on green checks. Installing it is the whole test, and --ignore-scripts
+      # keeps it one.
+      - name: Install workers/mcp
+        working-directory: workers/mcp
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
       - name: Typecheck
         run: npm run check
 
