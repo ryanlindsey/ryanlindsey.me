@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest';
-import { cached, MIN_TTL_SECONDS } from '../src/lib/ops/cache';
+import { cached, MIN_TTL_SECONDS, STALE_SECONDS } from '../src/lib/ops/cache';
 
 /**
  * The /ops read-through cache.
@@ -34,22 +34,103 @@ const kv = (over: { get?: KvGet; put?: KvPut } = {}) => {
 
 const asNamespace = (stub: ReturnType<typeof kv>) => stub as unknown as KVNamespace;
 
+/** An entry as `cached` stores it, written `ageSeconds` before `NOW`. */
+const NOW = Date.parse('2026-09-28T12:00:00.000Z');
+const entry = (value: unknown, ageSeconds: number) =>
+  JSON.stringify({ at: NOW - ageSeconds * 1000, value });
+
 test('a miss computes, stores and returns', async () => {
   const store = kv();
   const fn = vi.fn(async () => ({ requests: 7 }));
 
   expect(await cached(asNamespace(store), 'ops:traffic', 60, fn)).toEqual({ requests: 7 });
   expect(fn).toHaveBeenCalledTimes(1);
-  expect(store.put).toHaveBeenCalledWith('ops:traffic', '{"requests":7}', { expirationTtl: 60 });
+  expect(store.put).toHaveBeenCalledWith('ops:traffic', expect.any(String), {
+    expirationTtl: STALE_SECONDS,
+  });
+  expect(JSON.parse(store.store.get('ops:traffic') ?? 'null')).toMatchObject({
+    value: { requests: 7 },
+  });
 });
 
 test('a hit returns the stored value and does NOT call the reader', async () => {
   const store = kv();
-  store.store.set('ops:traffic', '{"requests":7}');
+  store.store.set('ops:traffic', entry({ requests: 7 }, 10));
   const fn = vi.fn(async () => ({ requests: 999 }));
+  const defer = vi.fn();
 
-  expect(await cached(asNamespace(store), 'ops:traffic', 60, fn)).toEqual({ requests: 7 });
+  expect(
+    await cached(asNamespace(store), 'ops:traffic', 60, fn, { defer, now: () => NOW }),
+  ).toEqual({ requests: 7 });
   expect(fn).not.toHaveBeenCalled();
+  expect(defer).not.toHaveBeenCalled();
+});
+
+test('a stale hit returns the stored value at once and refreshes it in the background', async () => {
+  // THE REASON THE ENTRY OUTLIVES ITS FRESHNESS. The site's traffic is thin
+  // enough that most visitors arrive more than a minute after the last, and a
+  // miss costs the visitor the D1 batch and two api.cloudflare.com round trips
+  // (0.72s and 0.87s measured on 2026-09-28, against 0.2s to 0.4s for a hit).
+  const store = kv();
+  store.store.set('ops:traffic', entry({ requests: 7 }, 120));
+  const fn = vi.fn(async () => ({ requests: 8 }));
+  const deferred: Promise<unknown>[] = [];
+
+  expect(
+    await cached(asNamespace(store), 'ops:traffic', 60, fn, {
+      defer: (p) => deferred.push(p),
+      now: () => NOW,
+    }),
+  ).toEqual({ requests: 7 });
+  expect(deferred).toHaveLength(1);
+  await Promise.all(deferred);
+  expect(fn).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(store.store.get('ops:traffic') ?? 'null')).toEqual({
+    at: NOW,
+    value: { requests: 8 },
+  });
+});
+
+test('a stale hit with nowhere to defer the refresh is read inline, as a miss', async () => {
+  const store = kv();
+  store.store.set('ops:traffic', entry({ requests: 7 }, 120));
+
+  expect(
+    await cached(asNamespace(store), 'ops:traffic', 60, async () => ({ requests: 8 }), {
+      now: () => NOW,
+    }),
+  ).toEqual({ requests: 8 });
+});
+
+test('a background refresh that fails keeps the stale entry and rejects nothing', async () => {
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const store = kv();
+  const stale = entry({ requests: 7 }, 120);
+  store.store.set('ops:traffic', stale);
+  const deferred: Promise<unknown>[] = [];
+
+  const read = async () => {
+    throw new Error('D1 is unreachable');
+  };
+  expect(
+    await cached(asNamespace(store), 'ops:traffic', 60, read, {
+      defer: (p) => deferred.push(p),
+      now: () => NOW,
+    }),
+  ).toEqual({ requests: 7 });
+  await expect(Promise.all(deferred)).resolves.toBeDefined();
+  expect(store.store.get('ops:traffic')).toBe(stale);
+  expect(error).toHaveBeenCalled();
+  error.mockRestore();
+});
+
+test('an entry in the old bare shape is a miss, not a value', async () => {
+  const store = kv();
+  store.store.set('ops:traffic', '{"requests":7}');
+
+  expect(
+    await cached(asNamespace(store), 'ops:traffic', 60, async () => ({ requests: 8 })),
+  ).toEqual({ requests: 8 });
 });
 
 test('a TTL below the KV floor is raised rather than silently rejected', async () => {
@@ -58,8 +139,8 @@ test('a TTL below the KV floor is raised rather than silently rejected', async (
   // anything and says nothing about it. Raising the value is the lesser
   // surprise, and this test is where a reader finds that out.
   const store = kv();
-  await cached(asNamespace(store), 'ops:traffic', 30, async () => 1);
-  expect(store.put).toHaveBeenCalledWith('ops:traffic', '1', {
+  await cached(asNamespace(store), 'ops:traffic', 30, async () => 1, { staleSeconds: 30 });
+  expect(store.put).toHaveBeenCalledWith('ops:traffic', expect.any(String), {
     expirationTtl: MIN_TTL_SECONDS,
   });
 });

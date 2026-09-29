@@ -22,8 +22,8 @@ import { stripTags } from './markup';
  * that renders every column of an empty table.
  *
  * THE ORDER ALSO PINS THE CACHE. /ops caches each of its three reads under its
- * OWN KV key for 60 seconds (`ops:metrics:v4`, `ops:traffic:v1`,
- * `ops:spend:v1`), so if the failed metrics read had been stored, the second
+ * OWN KV key, fresh for 60 seconds (`ops:metrics:v5`, `ops:traffic:v2`,
+ * `ops:spend:v2`), so if the failed metrics read had been stored, the second
  * fetch would still be showing "could not be read" a minute later -- a
  * transient D1 blip pinned as a state. It is not stored because `cached`
  * (src/lib/ops/cache.ts) awaits its `fn` before it writes anything, so a

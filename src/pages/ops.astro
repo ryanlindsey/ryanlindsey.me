@@ -1,5 +1,5 @@
 ---
-import { env } from 'cloudflare:workers';
+import { env, waitUntil } from 'cloudflare:workers';
 import Shell from '../layouts/Shell.astro';
 import ArchitectureDiagram from '../components/ArchitectureDiagram.astro';
 import LiveDot from '../components/LiveDot.astro';
@@ -44,7 +44,7 @@ export const prerender = false;
 Astro.response.headers.set('Cache-Control', `public, max-age=${CACHE_TTL_SECONDS}`);
 
 const now = new Date();
-const { metrics, traffic, spend } = await readOpsReads(env, now);
+const { metrics, traffic, spend } = await readOpsReads(env, now, waitUntil);
 
 /**
  * The absence wording for the uncredentialed half. Different from the default

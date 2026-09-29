@@ -1130,11 +1130,15 @@
  * figure invisible through its delay, so a late tile never shows its number
  * early. `--band-delay` is set per tile in src/components/SystemBandFigures.astro.
  *
- * 700ms AND A 200ms STEP, SLOWED IN REVIEW. The first cut was 420ms with a
- * 60ms step, and on an iPhone it finished before a reader noticed it had
- * started. Now each figure is most of the way in before the next begins, so
- * the five read as a sequence rather than one flicker, and the last lands
- * about 1.5 seconds after the figures arrive.
+ * 500ms AND A 100ms STEP, BETWEEN THE TWO EARLIER CUTS. The first was 420ms
+ * with a 60ms step, and on an iPhone it finished before a reader noticed it had
+ * started. Review slowed it to 700ms and a 200ms step, so each figure was most
+ * of the way in before the next began and the five read as a sequence, with the
+ * last landing about 1.5 seconds after the figures arrived. On 2026-09-28 the
+ * owner found the band slow to fill, and that 1.5 seconds was the larger part
+ * of it: the island answered in 0.2s to 0.4s from a live cache entry. Now the
+ * last figure lands about 0.9 seconds after arrival, and each still starts
+ * while the one before it is visibly moving.
  *
  * The reduced-motion rule is stated on purpose, as chat's is, and
  * tests/system-band.test.ts asserts it.
@@ -1152,7 +1156,7 @@
 
 @utility band-figure-in {
   & [data-metric-value] {
-    animation: band-figure-in 700ms cubic-bezier(0.2, 0, 0, 1) var(--band-delay, 0ms) both;
+    animation: band-figure-in 500ms cubic-bezier(0.2, 0, 0, 1) var(--band-delay, 0ms) both;
   }
 
   @media (prefers-reduced-motion: reduce) {

@@ -1,5 +1,5 @@
 ---
-import { env } from 'cloudflare:workers';
+import { env, waitUntil } from 'cloudflare:workers';
 import OpsMetric from './OpsMetric.astro';
 import {
   CACHE_TTL_SECONDS,
@@ -57,7 +57,7 @@ import {
 // (node_modules/astro/dist/core/server-islands/endpoint.js).
 Astro.response.headers.set('Cache-Control', `public, max-age=${CACHE_TTL_SECONDS}`);
 
-const { metrics, traffic, spend } = await readOpsReads(env, new Date());
+const { metrics, traffic, spend } = await readOpsReads(env, new Date(), waitUntil);
 
 const ABSENT = { absentState: 'not available' };
 
@@ -65,7 +65,7 @@ const ABSENT = { absentState: 'not available' };
  * The gap between one tile's figure rising in and the next, in reading order.
  * global.css's `band-figure-in` owns the animation; this only staggers it.
  */
-const REVEAL_STEP_MS = 200;
+const REVEAL_STEP_MS = 100;
 
 // Each figure's source is still named on /ops, in the tile of the same label.
 const FIGURES: { label: string; value: string | null }[] = [
