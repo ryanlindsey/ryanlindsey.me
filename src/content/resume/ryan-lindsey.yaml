@@ -8,7 +8,7 @@ basics:
     management for an entire engineering organization, I build the agentic
     tooling that other managers choose to adopt, and I still ship the code. The
     habit underneath all of it is to measure a process before improving it,
-    because the constraint is rarely where everyone assumes it is.
+    because the constraint is not always where it is assumed to be.
   email: hello@ryanlindsey.me
   url: https://ryanlindsey.me
   location:
@@ -371,5 +371,5 @@ skills:
       - '*nix shell'
 
 meta:
-  version: 0.7.0
-  lastModified: '2026-09-20'
+  version: 0.7.1
+  lastModified: '2026-09-28'
