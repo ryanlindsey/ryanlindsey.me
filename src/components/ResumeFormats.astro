@@ -1,5 +1,7 @@
 ---
-// 02 §1's format bar: "Prefer JSON? Markdown? You're my kind of reader."
+// 02 §1's format bar: "Prefer JSON? Markdown? You're my kind of reader." The
+// line now stops after the two questions, a departure from that section made
+// on 2026-09-28 and recorded here because the docs repo is no longer updated.
 // Shipped dark on day 2 because /resume.md, /resume.json and /resume.pdf did
 // not exist yet. Task 3 created the first two and Task 5 the third, so all
 // three now resolve and the bar is on -- the `SHOW_FORMAT_BAR` flag that used
@@ -32,9 +34,7 @@ const BUTTON =
 ---
 
 <div data-format-bar>
-  <p class="max-w-[34ch] font-mono text-micro uppercase text-ink-muted">
-    Prefer JSON? Markdown? You're my kind of reader.
-  </p>
+  <p class="max-w-[34ch] font-mono text-micro uppercase text-ink-muted">Prefer JSON? Markdown?</p>
   <div class="mt-4 grid grid-cols-2 gap-3">
     {FORMATS.map((format) => (
       <a href={format.href} class={`${BUTTON} border border-ink text-ink`}>

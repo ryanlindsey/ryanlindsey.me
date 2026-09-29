@@ -20,7 +20,7 @@ Bullet markers: 32
 
 --- page 1 of 4 ---
 
-RÉSUMÉ · RYAN LINDSEY REV 0.7.0 · 2026-09-20
+RÉSUMÉ · RYAN LINDSEY REV 0.7.1 · 2026-09-28
 Ryan Lindsey
 SENIOR ENGINEERING MANAGER, AGENTIC ENGINEERING
 BASED Laguna Niguel, CA
@@ -32,8 +32,8 @@ LINKEDIN linkedin.com/in/ryanclindsey
 Agentic engineering is making engineers dramatically faster. I build the instruments that let the organization around
 them keep pace. Nineteen years in software, a decade of it leading engineering teams: I own incident management
 for an entire engineering organization, I build the agentic tooling that other managers choose to adopt, and I still ship
-the code. The habit underneath all of it is to measure a process before improving it, because the constraint is rarely
-where everyone assumes it is.
+the code. The habit underneath all of it is to measure a process before improving it, because the constraint is not
+always where it is assumed to be.
 EXPERIENCE
 Weedmaps IRVINE, CA MAR 2016 — PRESENT
 Senior Engineering Manager FEB 2021 — PRESENT
