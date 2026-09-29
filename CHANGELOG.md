@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.49.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.48.2...ryanlindsey-me-v1.49.0) (2026-09-29)
+
+
+### Features
+
+* **copy:** refresh résumé summary, footer, writing and format-bar text ([#460](https://github.com/ryanlindsey/ryanlindsey.me/issues/460)) ([14956cf](https://github.com/ryanlindsey/ryanlindsey.me/commit/14956cfff56541401828880d9a21ee153fa38f8f))
+
+
+### Dependencies
+
+* bump the all group across 1 directory with 11 updates ([#456](https://github.com/ryanlindsey/ryanlindsey.me/issues/456)) ([19e7d51](https://github.com/ryanlindsey/ryanlindsey.me/commit/19e7d51b971de16fdefff94169ec597e0b4eaa8a))
+* bump the all group in /workers/mcp with 4 updates ([#451](https://github.com/ryanlindsey/ryanlindsey.me/issues/451)) ([265d69a](https://github.com/ryanlindsey/ryanlindsey.me/commit/265d69a3bce902c1f4cb4abf351c39e06c138422))
+
 ## [1.48.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.48.1...ryanlindsey-me-v1.48.2) (2026-09-28)
 
 
