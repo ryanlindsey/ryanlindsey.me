@@ -98,7 +98,10 @@
 // bump. It is made anyway for the reason version 3's note gives: the inputs and
 // the contract are independent, and the gate requires the constant to move
 // whenever the golden does.
-export const RESUME_PDF_CONTRACT_VERSION = 8;
+//
+// 9 since 2026-09-28: the summary's closing clause was reworded and the record
+// moved to 0.7.1. Content only, bumped because the golden moved.
+export const RESUME_PDF_CONTRACT_VERSION = 9;
 
 const encoder = new TextEncoder();
 
