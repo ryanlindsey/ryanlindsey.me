@@ -5,15 +5,22 @@ import {
   type AnalyticsEnv,
   type GatewaySpend,
 } from './analytics';
-import { cached } from './cache';
+import { cached, type CachedOptions } from './cache';
 import { readOpsMetrics, type OpsMetrics } from './metrics';
 
 /**
- * How long a figure on /ops may be, in one place: the KV entries below and
- * the `Cache-Control` header are the same number and must never be two.
+ * How long a figure on /ops is served before it is recomputed, in one place:
+ * the KV entries below and the `Cache-Control` header are the same number and
+ * must never be two.
  *
  * An intermediary holding the page longer than the cache holds its figures
  * would be publishing numbers this Worker has already replaced.
+ *
+ * NOT HOW OLD A FIGURE CAN BE, SINCE 2026-09-28. An entry is kept for
+ * `STALE_SECONDS` (src/lib/ops/cache.ts) and a stale one is served while its
+ * refresh runs behind the response, so the first reader after a quiet spell
+ * sees the figure as the previous reader left it, and the next sees it fresh.
+ * A figure is at most one request behind this window, and never a day old.
  */
 export const CACHE_TTL_SECONDS = 60;
 
@@ -52,9 +59,14 @@ export const OPS_CACHE_KEYS = {
   // warn ink, a column of unexplained amber on every row, where the column
   // promises a number. tests/ops-page.test.ts now plants an entry under
   // `ops:metrics:v3`.
-  metrics: 'ops:metrics:v4',
-  traffic: 'ops:traffic:v1',
-  spend: 'ops:spend:v1',
+  //
+  // `v5`, AND `v2` FOR THE OTHER TWO, SINCE 2026-09-28, when `cached` began
+  // storing `{ at, value }` around each value so it can tell a fresh entry
+  // from a stale one. `cached` already reads any other shape as a miss, so
+  // this bump is the same discipline rather than the only guard.
+  metrics: 'ops:metrics:v5',
+  traffic: 'ops:traffic:v2',
+  spend: 'ops:spend:v2',
 } as const;
 
 export interface OpsReadsEnv extends AnalyticsEnv {
@@ -117,9 +129,10 @@ export async function readOrNull<T>(
   kv: KVNamespace,
   key: string,
   read: () => Promise<T>,
+  defer?: CachedOptions['defer'],
 ): Promise<T | null> {
   try {
-    return await cached<T | null>(kv, key, CACHE_TTL_SECONDS, read);
+    return await cached<T | null>(kv, key, CACHE_TTL_SECONDS, read, { defer });
   } catch (error) {
     // The operator gets the exception in Workers observability; the reader gets
     // a sentence saying that figure is not available. A stack trace on a public
@@ -129,14 +142,33 @@ export async function readOrNull<T>(
   }
 }
 
-/** The three reads, each cached and degraded on its own. */
-export async function readOpsReads(env: OpsReadsEnv, now: Date): Promise<OpsReads> {
+/**
+ * The three reads, each cached and degraded on its own.
+ *
+ * `defer` is `waitUntil` from `cloudflare:workers`, passed in rather than
+ * imported so this module stays loadable outside workerd. A stale entry's
+ * refresh took under a second measured on 2026-09-28, against the thirty
+ * seconds `waitUntil` allows an HTTP request.
+ */
+export async function readOpsReads(
+  env: OpsReadsEnv,
+  now: Date,
+  defer?: CachedOptions['defer'],
+): Promise<OpsReads> {
   const [metrics, traffic, spend] = await Promise.all([
-    readOrNull(env.KV_CACHE, OPS_CACHE_KEYS.metrics, () =>
-      readOpsMetrics(env.DB, now, WINDOW_DAYS),
+    readOrNull(
+      env.KV_CACHE,
+      OPS_CACHE_KEYS.metrics,
+      () => readOpsMetrics(env.DB, now, WINDOW_DAYS),
+      defer,
     ),
-    readOrNull(env.KV_CACHE, OPS_CACHE_KEYS.traffic, () => readAnalytics(env, now, WINDOW_DAYS)),
-    readOrNull(env.KV_CACHE, OPS_CACHE_KEYS.spend, () => readSpend(env, now, WINDOW_DAYS)),
+    readOrNull(
+      env.KV_CACHE,
+      OPS_CACHE_KEYS.traffic,
+      () => readAnalytics(env, now, WINDOW_DAYS),
+      defer,
+    ),
+    readOrNull(env.KV_CACHE, OPS_CACHE_KEYS.spend, () => readSpend(env, now, WINDOW_DAYS), defer),
   ]);
   return { metrics, traffic, spend };
 }

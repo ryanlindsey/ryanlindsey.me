@@ -28,9 +28,9 @@ const metrics: OpsMetrics = {
 
 test('the cache keys, the TTL and the window are the ones the page has always used', () => {
   expect(OPS_CACHE_KEYS).toEqual({
-    metrics: 'ops:metrics:v4',
-    traffic: 'ops:traffic:v1',
-    spend: 'ops:spend:v1',
+    metrics: 'ops:metrics:v5',
+    traffic: 'ops:traffic:v2',
+    spend: 'ops:spend:v2',
   });
   expect(CACHE_TTL_SECONDS).toBe(60);
   expect(WINDOW_DAYS).toBe(30);

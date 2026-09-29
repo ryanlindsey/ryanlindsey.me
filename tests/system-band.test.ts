@@ -195,7 +195,7 @@ describe('the system band on /', () => {
     expect(tiles).toHaveLength(5);
     tiles.forEach((tile, index) => {
       expect(tile).toContain('band-figure-in');
-      expect(tile).toContain(`--band-delay: ${index * 200}ms`);
+      expect(tile).toContain(`--band-delay: ${index * 100}ms`);
     });
     // The release tile is built with the page and never animates.
     expect(elementWith(home, 'div', 'data-release-tile')).not.toContain('band-figure-in');
@@ -277,13 +277,17 @@ describe('the island', () => {
   test('reads the same cache entry /ops reads', async () => {
     await kv.put(
       OPS_CACHE_KEYS.metrics,
+      // The envelope src/lib/ops/cache.ts stores, stamped now so it is fresh.
       JSON.stringify({
-        windowDays: 30,
-        toolCalls: [{ tool: 'get_resume', calls: 7777 }],
-        chatSessions: 0,
-        chatTurns: 0,
-        fitRuns: { started: 0, reports: 0, failed: 0, inProgress: 0, abandoned: 0 },
-        evalRuns: [],
+        at: Date.now(),
+        value: {
+          windowDays: 30,
+          toolCalls: [{ tool: 'get_resume', calls: 7777 }],
+          chatSessions: 0,
+          chatTurns: 0,
+          fitRuns: { started: 0, reports: 0, failed: 0, inProgress: 0, abandoned: 0 },
+          evalRuns: [],
+        },
       }),
       { expirationTtl: 60 },
     );
