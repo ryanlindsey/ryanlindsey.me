@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.49.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.49.0...ryanlindsey-me-v1.49.1) (2026-09-29)
+
+
+### Performance
+
+* **home:** serve the system band from stale cache and shorten its reveal ([#461](https://github.com/ryanlindsey/ryanlindsey.me/issues/461)) ([c58c119](https://github.com/ryanlindsey/ryanlindsey.me/commit/c58c119801ccac5c832c412b11cebe622e8f5f55))
+
 ## [1.49.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.48.2...ryanlindsey-me-v1.49.0) (2026-09-29)
 
 
