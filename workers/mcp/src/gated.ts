@@ -49,6 +49,11 @@ import { JUDGE_INPUT } from './judge-schema';
 /** The sentence a caller sees when a document has not been deployed yet. */
 const NOT_DEPLOYED = 'That document is not available on this tier yet.';
 
+/** Every `NOT_DEPLOYED` refusal is definitively `not_found`, so the tag is set in one place. */
+function notDeployed(): ToolError {
+  return new ToolError(NOT_DEPLOYED, undefined, { failureReason: 'not_found' });
+}
+
 /**
  * One private-tier tool, declared once and read by both surfaces that need it.
  *
@@ -169,7 +174,7 @@ function defineDocumentTool(
     },
     async (_args, tc) => {
       const text = await readPrivateDoc(tc.env, key);
-      if (text === null) throw new ToolError(NOT_DEPLOYED);
+      if (text === null) throw notDeployed();
       return text;
     },
   );
@@ -449,13 +454,15 @@ export function fitToolError(error: unknown): ToolError {
   // regression the graded failure exposed. Those stay graded, as does the
   // generic branch below, which is not known to mean no answer existed.
   if (error instanceof FitUnavailable) {
-    return new ToolError(error.message, error.noAnswer ? 'unavailable' : undefined);
+    return new ToolError(error.message, error.noAnswer ? 'unavailable' : undefined, {
+      cause: error,
+    });
   }
   console.error(
     'mcp/gated: analyze_fit failed with a cause the engine did not wrap; the caller was told nothing about it',
     error,
   );
-  return new ToolError('Fit analysis failed. The error was logged.');
+  return new ToolError('Fit analysis failed. The error was logged.', undefined, { cause: error });
 }
 
 /**
@@ -560,9 +567,9 @@ const GATED_TOOLS: readonly GatedTool[] = [
           // rather than merely both errors -- the weaker assertion would pass
           // with `safeSegment` deleted, since R2 is a flat keyspace and a
           // traversal-shaped key is simply a key that is not there.
-          if (key === null) throw new ToolError(NOT_DEPLOYED);
+          if (key === null) throw notDeployed();
           const text = await readPrivateDoc(tc.env, key);
-          if (text === null) throw new ToolError(NOT_DEPLOYED);
+          if (text === null) throw notDeployed();
           return text;
         },
       ),
@@ -599,9 +606,9 @@ const GATED_TOOLS: readonly GatedTool[] = [
           // in this closure because the authoring side has to name the same
           // key (ryanlindsey.me#266).
           const { key } = await resolveNarrativeKey(tc.env, grant.audience);
-          if (key === null) throw new ToolError(NOT_DEPLOYED);
+          if (key === null) throw notDeployed();
           const text = await readPrivateDoc(tc.env, key);
-          if (text === null) throw new ToolError(NOT_DEPLOYED);
+          if (text === null) throw notDeployed();
           return text;
         },
       ),
@@ -693,9 +700,17 @@ const GATED_TOOLS: readonly GatedTool[] = [
             // refusing rather than degrading: a judge that answers "fail"
             // because it could not run turns a harness outage into a red suite
             // somebody spends an afternoon on.
-            if (error instanceof JudgeUnavailable) throw new ToolError(error.message);
+            if (error instanceof JudgeUnavailable) {
+              throw new ToolError(error.message, undefined, { cause: error });
+            }
             console.error('judge_answer failed', error);
-            throw new ToolError('The judge could not score that. The error was logged.');
+            throw new ToolError(
+              'The judge could not score that. The error was logged.',
+              undefined,
+              {
+                cause: error,
+              },
+            );
           }
         },
       ),
@@ -752,7 +767,7 @@ const GATED_TOOLS: readonly GatedTool[] = [
             );
           }
           const brief = await readPrivateDoc(tc.env, AUTHORING_KEYS.narrativeBrief);
-          if (brief === null) throw new ToolError(NOT_DEPLOYED);
+          if (brief === null) throw notDeployed();
           return { key, brief };
         },
       ),

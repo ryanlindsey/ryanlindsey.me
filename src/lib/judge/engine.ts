@@ -2,6 +2,7 @@ import JUDGE_PROMPT from '../../../prompts/judge.md?raw';
 import { extractToolInput } from '../fit/engine';
 import { JUDGE_VERDICT_JSON_SCHEMA, JudgeVerdict } from '../../../workers/mcp/src/judge-schema';
 import { fenceFor } from '../fence';
+import type { FailureReason } from '../failure/classify';
 
 // The LLM judge (04 §4). One Sonnet call, forced through a tool schema, scoring
 // a subject against criteria.
@@ -40,8 +41,12 @@ const EMIT_TOOL = 'emit_verdict';
 /** The subject is fenced as data, the same boundary the fit engine and chat use. */
 
 export class JudgeUnavailable extends Error {
-  constructor(message: string) {
-    super(message);
+  /** Set only where the reason is definitive at the throw site; see `FitUnavailable`. */
+  declare readonly failureReason?: FailureReason;
+
+  constructor(message: string, options: { cause?: unknown; failureReason?: FailureReason } = {}) {
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
+    if (options.failureReason !== undefined) this.failureReason = options.failureReason;
     this.name = 'JudgeUnavailable';
   }
 }
@@ -116,7 +121,7 @@ export async function judge(
     )) as Record<string, unknown>;
   } catch (error) {
     console.error('judge: the model call failed', error);
-    throw new JudgeUnavailable('The judge could not be reached right now.');
+    throw new JudgeUnavailable('The judge could not be reached right now.', { cause: error });
   }
 
   // `extractToolInput` is REUSED from the fit engine rather than copied: it
@@ -134,7 +139,9 @@ export async function judge(
     // answer, and reporting it as a `fail` would turn a harness outage into a
     // red suite somebody spends an afternoon on.
     console.error('judge: the model did not return a usable verdict');
-    throw new JudgeUnavailable('The judge returned nothing usable.');
+    throw new JudgeUnavailable('The judge returned nothing usable.', {
+      failureReason: 'bad_output',
+    });
   }
   return parsed.data;
 }

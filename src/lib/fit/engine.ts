@@ -7,6 +7,7 @@
 
 import { buildCorpusContext, type CorpusContext } from './corpus-context';
 import { fenceFor } from '../fence';
+import type { FailureReason } from '../failure/classify';
 // Re-exported: this was `fenceFor`'s home until it was needed in five places.
 export { fenceFor };
 import type { DocumentsEnv } from '../mcp/documents';
@@ -204,8 +205,19 @@ export class FitUnavailable extends Error {
    */
   readonly noAnswer: boolean;
 
-  constructor(message: string, options: { noAnswer?: boolean } = {}) {
-    super(message);
+  /**
+   * Set only where the reason is definitive at the throw site, as an own
+   * property so `classifyFailure` reads it; without a tag the reason comes from
+   * the pattern rules on the `cause` chain.
+   */
+  declare readonly failureReason?: FailureReason;
+
+  constructor(
+    message: string,
+    options: { noAnswer?: boolean; cause?: unknown; failureReason?: FailureReason } = {},
+  ) {
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
+    if (options.failureReason !== undefined) this.failureReason = options.failureReason;
     this.noAnswer = options.noAnswer ?? false;
     // `Error` sets `name` from the prototype, so a subclass serialises as
     // plain "Error" without this. Task 11 hands these across a service
@@ -398,7 +410,9 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
 
   const description = targetDescription.trim();
   if (description.length === 0) {
-    throw new FitUnavailable('Provide the description to compare against.');
+    throw new FitUnavailable('Provide the description to compare against.', {
+      failureReason: 'caller_input',
+    });
   }
 
   // The breaker (04 §5). A KV read, checked before anything is spent -- which
@@ -417,12 +431,13 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
     console.error('fit: the breaker flag could not be read', error);
     throw new FitUnavailable('Fit analysis is unavailable right now. Try again shortly.', {
       noAnswer: true,
+      cause: error,
     });
   }
   if (tripped !== null) {
     throw new FitUnavailable(
       'Fit analysis is paused: the daily inference budget breaker is tripped. It resets automatically.',
-      { noAnswer: true },
+      { noAnswer: true, failureReason: 'local_limit' },
     );
   }
 
@@ -501,6 +516,7 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
     console.error('fit: model call failed', error);
     throw new FitUnavailable('The fit engine could not be reached right now. Try again shortly.', {
       noAnswer: true,
+      cause: error,
     });
   }
 
@@ -532,7 +548,9 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
   // exists to prevent.
   if (raw.stop_reason === 'max_tokens') {
     console.error(`fit: the model hit the ${FIT_MAX_TOKENS}-token cap and the report is truncated`);
-    throw new FitUnavailable('The fit engine returned an incomplete answer. Try again shortly.');
+    throw new FitUnavailable('The fit engine returned an incomplete answer. Try again shortly.', {
+      failureReason: 'bad_output',
+    });
   }
 
   const parsed = FitReport.safeParse(extractStructuredOutput(raw));
@@ -542,7 +560,9 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
     // missing, so a truncated requirement map reads as a short description
     // rather than as a broken report.
     console.error('fit: the model did not return a valid report', parsed.error?.message);
-    throw new FitUnavailable('The fit engine returned an unusable answer. Try again shortly.');
+    throw new FitUnavailable('The fit engine returned an unusable answer. Try again shortly.', {
+      failureReason: 'bad_output',
+    });
   }
 
   const { report, audit } = enforceCitations(parsed.data, corpus.allowedUrls);

@@ -6,6 +6,7 @@ import { citationFor, embedQuery, parseChunkId, UNKNOWN_CHUNK_COUNT } from '../m
 import type { ChatErrorCode } from './errors';
 import { CHAT_TOP_K, numberSources, renderChatContext, type ChatSource } from './context';
 import { fenceFor } from '../fence';
+import type { FailureReason } from '../failure/classify';
 
 // The grounded chat engine (04 §1). Retrieval, the guards, and the model call.
 // It returns a STREAM and the sources that stream was grounded on, and nothing
@@ -78,8 +79,20 @@ export const MAX_QUESTION_CHARS = 1000;
 
 export class ChatUnavailable extends Error {
   readonly code: ChatErrorCode;
-  constructor(code: ChatErrorCode, message: string) {
-    super(message);
+  /**
+   * Set only where the reason is definitive at the throw site, as an own
+   * property so `classifyFailure` reads it and an absent tag falls through to
+   * the pattern rules on the `cause` chain. Declared without an initializer:
+   * a class field would create it as `undefined` on every instance.
+   */
+  declare readonly failureReason?: FailureReason;
+  constructor(
+    code: ChatErrorCode,
+    message: string,
+    options: { cause?: unknown; failureReason?: FailureReason } = {},
+  ) {
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
+    if (options.failureReason !== undefined) this.failureReason = options.failureReason;
     // Same reason as `FitUnavailable`: `Error` takes `name` from the prototype,
     // and a subclass that crosses a service binding is structured-cloned, so
     // the name is what the far side has left to recognise.
@@ -215,7 +228,9 @@ export async function startAnswer(
   }
 
   if (sources.length === 0) {
-    throw new ChatUnavailable('no-answer', 'Nothing in the corpus matched that.');
+    throw new ChatUnavailable('no-answer', 'Nothing in the corpus matched that.', {
+      failureReason: 'no_sources',
+    });
   }
 
   const { text: context, included } = renderChatContext(sources);
@@ -246,7 +261,11 @@ export async function startAnswer(
     // and tell them a rate limit was hit when what happened is that chat is
     // unavailable.
     console.error('chat: the model call failed', error);
-    throw new ChatUnavailable('unreachable', 'The chat service could not be reached.');
+    // The upstream error rides along as `cause` so the failure reason can be read
+    // from it; the sentence above still says nothing about what threw.
+    throw new ChatUnavailable('unreachable', 'The chat service could not be reached.', {
+      cause: error,
+    });
   }
 
   if (!(raw instanceof ReadableStream)) {
@@ -256,7 +275,9 @@ export async function startAnswer(
     // is a stream, and quietly answering with one frame containing everything
     // would hide a routing change nobody chose.
     console.error('chat: the binding returned a non-stream response for a streaming call');
-    throw new ChatUnavailable('no-answer', 'The chat service returned nothing usable.');
+    throw new ChatUnavailable('no-answer', 'The chat service returned nothing usable.', {
+      failureReason: 'bad_output',
+    });
   }
 
   // `included` IS RETURNED, NOT DISCARDED, and this is the half of the citation

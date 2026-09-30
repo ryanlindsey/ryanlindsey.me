@@ -8,6 +8,11 @@ import {
   isRefusal,
   type FailureReason,
 } from '../src/lib/failure/classify';
+import { ChatUnavailable } from '../src/lib/chat/engine';
+import { FitUnavailable } from '../src/lib/fit/engine';
+import { JudgeUnavailable } from '../src/lib/judge/engine';
+import { ToolError } from '../workers/mcp/src/define';
+import { fitToolError } from '../workers/mcp/src/gated';
 
 function tagged(reason: string, message = 'tagged', cause?: unknown): Error {
   const error = new Error(message, cause === undefined ? undefined : { cause });
@@ -175,5 +180,52 @@ describe('isRefusal', () => {
   it('is true for exactly local_limit, caller_input and no_sources', () => {
     const refusals = FAILURE_REASONS.filter((reason) => isRefusal(reason));
     expect(refusals).toEqual(['local_limit', 'no_sources', 'caller_input']);
+  });
+});
+
+describe('throw sites', () => {
+  it('a FitUnavailable keeps the upstream error as its cause', () => {
+    const error = new FitUnavailable('The fit engine could not be reached right now.', {
+      noAnswer: true,
+      cause: new Error('7003: User Input Error'),
+    });
+    expect(classifyFailure(error).reason).toBe('provider_rejected');
+  });
+
+  it('a ToolError carries a definitive tag', () => {
+    const error = new ToolError('That document is not available on this tier yet.', undefined, {
+      failureReason: 'not_found',
+    });
+    expect(classifyFailure(error).reason).toBe('not_found');
+  });
+
+  it('fitToolError keeps the chain across the ToolError wrapper', () => {
+    const wrapped = fitToolError(
+      new FitUnavailable('The fit engine could not be reached right now.', {
+        cause: new Error('2018: x'),
+      }),
+    );
+    expect(classifyFailure(wrapped).reason).toBe('gateway_limit');
+  });
+
+  it('a JudgeUnavailable carries a definitive tag', () => {
+    const error = new JudgeUnavailable('The judge returned nothing usable.', {
+      failureReason: 'bad_output',
+    });
+    expect(classifyFailure(error).reason).toBe('bad_output');
+  });
+
+  it('a ChatUnavailable carries a definitive tag', () => {
+    const error = new ChatUnavailable('no-answer', 'Nothing in the corpus matched that.', {
+      failureReason: 'no_sources',
+    });
+    expect(classifyFailure(error).reason).toBe('no_sources');
+  });
+
+  it('sets failureReason as an own property only when one is given', () => {
+    expect(Object.hasOwn(new ToolError('x'), 'failureReason')).toBe(false);
+    expect(Object.hasOwn(new FitUnavailable('x'), 'failureReason')).toBe(false);
+    expect(Object.hasOwn(new JudgeUnavailable('x'), 'failureReason')).toBe(false);
+    expect(Object.hasOwn(new ChatUnavailable('empty', 'x'), 'failureReason')).toBe(false);
   });
 });

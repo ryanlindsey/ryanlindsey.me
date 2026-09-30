@@ -16,6 +16,7 @@ import { checkLimit, retryHint, type ToolCost } from '../../../src/lib/mcp/limit
 import { TOOL_REASON_META_KEY, type ToolErrorReason } from '../../../src/lib/mcp/tool-reason';
 import { hasScope, type Grant } from '../../../src/lib/tier/grant';
 import type { Scope } from '../../../src/lib/tier/token';
+import type { FailureReason } from '../../../src/lib/failure/classify';
 import type { McpEnv } from './env';
 
 // The registration seam, in its own module so the tool modules and the server
@@ -61,11 +62,16 @@ export interface ToolContext {
  * refusals carry none, and a missing reason means "grade it as usual".
  */
 export class ToolError extends Error {
+  /** Set only where the reason is definitive at the throw site; see `FitUnavailable`. */
+  declare readonly failureReason?: FailureReason;
+
   constructor(
     message: string,
     readonly reason?: ToolErrorReason,
+    options: { cause?: unknown; failureReason?: FailureReason } = {},
   ) {
-    super(message);
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
+    if (options.failureReason !== undefined) this.failureReason = options.failureReason;
   }
 }
 
@@ -478,7 +484,9 @@ export function defineTool<A>(
           // return in `invoke` -- is the mutation those assertions were
           // measured against, and it turns both of them red.
           if (spec.scope !== undefined && !hasScope(tc.grant, spec.scope)) {
-            throw new ToolError(`${spec.name} requires a scoped token.`);
+            throw new ToolError(`${spec.name} requires a scoped token.`, undefined, {
+              failureReason: 'not_permitted',
+            });
           }
           const output = await handler(args, tc);
           return {
