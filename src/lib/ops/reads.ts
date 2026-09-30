@@ -6,6 +6,7 @@ import {
   type GatewaySpend,
 } from './analytics';
 import { cached, type CachedOptions } from './cache';
+import { readFailureMetrics, type FailureMetrics } from './failures';
 import { readOpsMetrics, type OpsMetrics } from './metrics';
 
 /**
@@ -67,6 +68,10 @@ export const OPS_CACHE_KEYS = {
   metrics: 'ops:metrics:v5',
   traffic: 'ops:traffic:v2',
   spend: 'ops:spend:v2',
+  // Its own key and its own read, since issue #466: the statements name
+  // `failure_reason` (migrations/0009), and sharing the metrics entry would
+  // tie the two figures' fates together. First version, so nothing to bump.
+  failures: 'ops:failures:v1',
 } as const;
 
 export interface OpsReadsEnv extends AnalyticsEnv {
@@ -78,6 +83,7 @@ export interface OpsReads {
   metrics: OpsMetrics | null;
   traffic: AgentTraffic | null;
   spend: GatewaySpend | null;
+  failures: FailureMetrics | null;
 }
 
 /**
@@ -143,7 +149,7 @@ export async function readOrNull<T>(
 }
 
 /**
- * The three reads, each cached and degraded on its own.
+ * The four reads, each cached and degraded on its own.
  *
  * `defer` is `waitUntil` from `cloudflare:workers`, passed in rather than
  * imported so this module stays loadable outside workerd. A stale entry's
@@ -155,7 +161,7 @@ export async function readOpsReads(
   now: Date,
   defer?: CachedOptions['defer'],
 ): Promise<OpsReads> {
-  const [metrics, traffic, spend] = await Promise.all([
+  const [metrics, traffic, spend, failures] = await Promise.all([
     readOrNull(
       env.KV_CACHE,
       OPS_CACHE_KEYS.metrics,
@@ -169,8 +175,14 @@ export async function readOpsReads(
       defer,
     ),
     readOrNull(env.KV_CACHE, OPS_CACHE_KEYS.spend, () => readSpend(env, now, WINDOW_DAYS), defer),
+    readOrNull(
+      env.KV_CACHE,
+      OPS_CACHE_KEYS.failures,
+      () => readFailureMetrics(env.DB, now, WINDOW_DAYS),
+      defer,
+    ),
   ]);
-  return { metrics, traffic, spend };
+  return { metrics, traffic, spend, failures };
 }
 
 /** Every public tool call in the window, summed across the tools. */
