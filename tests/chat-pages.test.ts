@@ -209,8 +209,9 @@ describe('GET /chat', () => {
 
   test('the retention figure is the one the cron enforces', async () => {
     // chat_turns is the row this page is making a claim about. Read from the
-    // table-driven constant rather than typed, so the sentence a reader sees
-    // above the box and the job that deletes their transcript are one number.
+    // table-driven constant rather than typed, so the KEPT FOR row in the rail
+    // and the job that deletes their transcript are one number. The sentence
+    // under the box is held to the same constant by the disclosure case above.
     const { RETENTION, formatWindow } = await import('../src/lib/retention');
     const rail = railOf(await html('/chat'));
     const transcripts = RETENTION.find((row) => row.table === 'chat_turns');

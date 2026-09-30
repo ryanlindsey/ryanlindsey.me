@@ -304,6 +304,13 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
           have. `order-first` rather than a DOM move, so the source order the
           wider layout was built on does not change.
 
+          THE ONE PLACE SOURCE ORDER AND SCREEN ORDER DISAGREE on this page.
+          Below `md` the openers are drawn above the box, while keyboard and
+          screen-reader order still reach them after the box, the disclosure
+          and the bot check. Accepted rather than fixed with a DOM move: the
+          openers are optional shortcuts into the field, and reaching the
+          field itself first is the order a keyboard user wants anyway.
+
           Hidden after the first send AT EVERY WIDTH, which is a change at
           desktop too and a deliberate one (epic #479): once a transcript
           exists, three starter questions under it read as a form rather than
@@ -501,6 +508,13 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
     };
     if (form) new ResizeObserver(syncComposerHeight).observe(form);
 
+    // Whether the reader has scrolled by hand since the last send, which the
+    // re-scroll at the end of a turn respects. Reset on every send.
+    let readerScrolled = false;
+    for (const name of ['wheel', 'touchmove']) {
+      addEventListener(name, () => (readerScrolled = true), { passive: true });
+    }
+
     for (const button of document.querySelectorAll<HTMLButtonElement>('[data-opener]')) {
       button.addEventListener('click', () => {
         if (!field) return;
@@ -535,6 +549,7 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
       // the margin it reads is the pinned form's height, not the open one's.
       root?.setAttribute('data-chat-started', '');
       syncComposerHeight();
+      readerScrolled = false;
       // A long transcript would otherwise leave the new turn below the fold,
       // which is the frozen page #403 exists to fix.
       agentTurn.scrollIntoView({ block: 'nearest' });
@@ -670,7 +685,17 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
           // 69px, behind the form. `position` is read rather than the width,
           // so the rule that pins the form is the only rule that decides
           // this, and at `lg` and wider nothing moves.
-          if (form && getComputedStyle(form).position === 'sticky') {
+          //
+          // Skipped when the reader scrolled by hand since sending, to reread
+          // an earlier turn while this one was being written: `nearest` would
+          // pull them back down, and a finished answer is not a reason to
+          // move somebody who chose to look elsewhere (code review on this
+          // change). A hand scroll is read from `wheel` and `touchmove` rather
+          // than from where the turn sits, because `html` scrolls smoothly: a
+          // fast failure finishes while the scroll on append is still under
+          // way, and a position check then read the turn as scrolled away and
+          // left it behind the form (measured 2026-09-30, same setup).
+          if (form && !readerScrolled && getComputedStyle(form).position === 'sticky') {
             agentTurn.scrollIntoView({ block: 'nearest' });
           }
         } finally {
