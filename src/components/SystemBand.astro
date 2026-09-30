@@ -44,8 +44,8 @@ const LABELS = [
   'Public MCP tool calls',
   'Chat sessions',
   'Requests from agents',
-  'Requests through the AI Gateway',
-  'Requests that reached the Worker',
+  'AI Gateway requests',
+  'Edge compute requests',
 ];
 
 /**
@@ -106,7 +106,7 @@ const ABSENT = 'mt-auto font-mono text-small leading-6 text-ink-muted';
         <span>Live · last {formatWindow(WINDOW_DAYS)}</span>
       </p>
       <h2 id="system-band-heading" class="font-display text-subheading text-ink">
-        Agent-native usage figures
+        How humans+agents use this site
       </h2>
       <div data-system-band-links class="mt-auto flex flex-wrap gap-5 pt-1">
         <a href="/ops#live-metrics" class="font-mono text-micro uppercase text-accent">
@@ -154,13 +154,13 @@ const ABSENT = 'mt-auto font-mono text-small leading-6 text-ink-muted';
     <div data-release-tile class="grid bg-bg">
       {release === null ? (
         <div class={CELL}>
-          <p class={LABEL}>Latest release</p>
+          <p class={LABEL}>Latest site release</p>
           <p class={ABSENT}>not available</p>
         </div>
       ) : (
         <a href={release.url} class:list={[CELL, 'no-underline']}>
           <p class={LABEL}>
-            Latest release ·{' '}
+            Latest site release:{' '}
             <time datetime={release.date} class="whitespace-nowrap">
               {release.date}
             </time>

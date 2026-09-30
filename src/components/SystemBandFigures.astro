@@ -38,8 +38,16 @@ import {
  * two surfaces cannot disagree about a figure for longer than one
  * `CACHE_TTL_SECONDS`, and the next cache-key bump in src/lib/ops/reads.ts
  * moves both. Each value expression below is copied from src/pages/ops.astro's
- * tile of the same label, and the labels are verbatim too, so a reader never
- * meets one number under two names.
+ * tile of the same label, and the labels were verbatim too, so a reader never
+ * met one number under two names.
+ *
+ * TWO LABELS DEPART FROM /ops SINCE 2026-09-30, by the owner's decision. "Requests
+ * through the AI Gateway" is "AI Gateway requests" here and "Requests that
+ * reached the Worker" is "Edge compute requests": on `/` the reader is not
+ * assumed to know what a Worker is, and /ops, whose point is naming the system
+ * behind each figure, keeps both names. The cost is the one the earlier rule
+ * avoided, one number under two names, and the tile comments below say which
+ * /ops tile each value is copied from so the pair stays findable.
  *
  * ONE ABSENCE FOR ALL FIVE, and no reason beside it. /ops carries three
  * different reasons because it is the page that has room to say which system
@@ -81,9 +89,11 @@ const FIGURES: { label: string; value: string | null }[] = [
     label: 'Requests from agents',
     value: count(traffic?.agentRequests),
   },
-  { label: 'Requests through the AI Gateway', value: count(spend?.requests) },
+  // /ops: "Requests through the AI Gateway".
+  { label: 'AI Gateway requests', value: count(spend?.requests) },
   {
-    label: 'Requests that reached the Worker',
+    // /ops: "Requests that reached the Worker".
+    label: 'Edge compute requests',
     value: count(traffic?.requests),
   },
 ];
