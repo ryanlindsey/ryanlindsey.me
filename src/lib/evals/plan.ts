@@ -125,7 +125,7 @@ export const BACKOFF_MS = 10_000;
  * and `runChat` each skip the first case of their suite with a flag, and
  * `runLeak` skips the first probe of each case FILE it loads with an
  * `index > 0` test. In the Worker, `runPaced`
- * (workers/mcp/src/evals-workflow.ts) has a single `index > 0` test that serves
+ * (workers/mcp/src/evals-pace.ts) has a single `index > 0` test that serves
  * all three, and `runSuite` restarts it per leak case file so the two runners
  * agree. Per file and per suite are the same thing only because
  * `evals/cases/leak/` holds exactly one file today, which is why both spell it
@@ -140,9 +140,11 @@ export const BACKOFF_MS = 10_000;
  * PACING IS THE REAL FIX and the retry above is the fallback, not the other way
  * round. Fewer requests is the only thing that helps a quota; see `RETRIES`.
  *
- * NOT paced: the judge call that follows each answer. It is the second half of
- * one case, and separating it would double the wall clock to buy back a request
- * the retry already covers.
+ * NOT paced HERE: the judge call that follows each answer. It is the second
+ * half of one case, and separating it would double the wall clock to buy back a
+ * request the retry already covers. That reasoning held for evals/run.mjs and
+ * did not hold for the scheduled run, which paces its judge since issue #448;
+ * see `SCHEDULED_PACE_MS`.
  */
 export const PACE_MS = 25000;
 
@@ -165,13 +167,19 @@ export const PACE_MS = 25000;
  * NINETY SECONDS AND SIXTY ARE HEADROOM, NOT A MEASURED FLOOR. They were
  * chosen to sit well past the one gap that was seen to work, and they fit:
  * `leak`, the longest suite, is seven gaps, about eleven minutes of sleeping
- * plus its cases, inside the hour `EVALS_CRONS` leaves it. The manual runner
+ * plus its cases, inside the hour `EVALS_CRONS` leaves it. That was the count
+ * until issue #448 paced each judge behind its answer: it is fifteen gaps now,
+ * about twenty-three minutes, and still inside the hour. The manual runner
  * keeps the old pair because somebody is waiting on it before a merge, and
  * nobody is waiting on this one.
  *
- * THE BACKOFF ALSO COVERS THE JUDGE, which is not paced (see `PACE_MS`) and
- * which the 2026-09-27 run saw refused one second after the answer it was
- * scoring had succeeded.
+ * THE BACKOFF ALSO COVERS THE JUDGE, and an earlier version of this comment
+ * offered that as enough. It was not. The 2026-09-27 run saw the judge refused
+ * one second after the answer it was scoring had succeeded, and the gateway log
+ * for runs 60 and 61 that evening showed the retry sixty seconds later refused
+ * again five times out of eight. The scheduled judge now waits a full
+ * `SCHEDULED_PACE_MS` in a step of its own (workers/mcp/src/evals-pace.ts,
+ * issue #448), and this backoff is back to being the fallback.
  */
 export const SCHEDULED_PACE_MS = 90_000;
 export const SCHEDULED_BACKOFF_MS = 60_000;
