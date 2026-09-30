@@ -92,8 +92,8 @@ export interface OpsReads {
  *
  * THREE KEYS RATHER THAN ONE, which the plan spelled as a single `ops:v1`, and
  * four since issue #466 added `ops:failures`, which degrades the same way and
- * for the same reasons. The key shape turned out to be load-bearing in two directions the single entry
- * got wrong, and neither is theoretical:
+ * for the same reasons. The key shape turned out to be load-bearing in two
+ * directions the single entry got wrong, and neither is theoretical:
  *
  *   - IT MISLABELLED WHICH SYSTEM WAS BROKEN. One `try` around all three reads
  *     means a D1 rejection nulls `traffic` and `spend` as well, so the three

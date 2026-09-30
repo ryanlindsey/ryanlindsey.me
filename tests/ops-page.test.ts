@@ -12,8 +12,9 @@ import { GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
  * THREE RENDERS ARE CAPTURED HERE, TWO UNTIL ISSUE #466, AND THE ORDER IS THE
  * MECHANISM RATHER THAN AN ACCIDENT OF SETUP. The first fetch happens BEFORE
  * `applyD1Migrations`, so the four tables `readOpsMetrics` reads do not exist
- * and its `db.batch` rejects -- which is the only way this repo can produce a genuine D1 failure without a
- * seam, and it is the exact failure a public page must not answer with a 500.
+ * and its `db.batch` rejects -- which is the only way this repo can produce a
+ * genuine D1 failure without a seam, and it is the exact failure a public page
+ * must not answer with a 500.
  * `readOpsMetrics` returns `Promise<OpsMetrics>` and has no internal try (its
  * signature is not this task's to change), so the degradation has to live at
  * the page, and `degraded` below is what proves it does.
@@ -32,9 +33,9 @@ import { GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
  * OWN KV key, fresh for 60 seconds (`ops:metrics:v5`, `ops:traffic:v2`,
  * `ops:spend:v2`, `ops:failures:v1`), so if the failed metrics read had been
  * stored, the last fetch would still be showing "could not be read" a minute
- * later -- a transient D1 blip pinned as a state. It is not stored because `cached`
- * (src/lib/ops/cache.ts) awaits its `fn` before it writes anything, so a
- * rejection leaves that function before the `put`. An earlier version of this
+ * later -- a transient D1 blip pinned as a state. It is not stored because
+ * `cached` (src/lib/ops/cache.ts) awaits its `fn` before it writes anything, so
+ * a rejection leaves that function before the `put`. An earlier version of this
  * paragraph credited the page's `try` sitting OUTSIDE `cached` for that, which
  * is not a cause: the `put` is skipped wherever the caller's catch sits, and
  * the placement buys the page a labelled absence instead of a 500, which is a
@@ -423,6 +424,16 @@ describe('/ops', () => {
     expect(failed).toBe('no failures');
     expect(reasons).toBe('');
     expect(failureReasons('chat · live')).toEqual([]);
+  });
+
+  test('the Failures intro explains unrecorded and what the fit rows count', () => {
+    // Asserts the terms that tie the paragraph to the table, not its wording.
+    const intro = /<p[^>]*>([\s\S]*?)<\/p>/.exec(failuresSection());
+    expect(intro, 'no intro paragraph').not.toBeNull();
+    const words = text(stripTags(intro![1])).replace(/\s+/g, ' ');
+    expect(words).toContain('unrecorded');
+    expect(words).toContain('fit form');
+    expect(intro![1]).not.toMatch(/[\u2013\u2014]/);
   });
 
   test('no seeded failure detail reaches the page', () => {

@@ -857,9 +857,10 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
   {/*
       Two sections sharing one band, which is the design's three-panel row with
       the breakdowns lifted out of it, and a third, Failures, spanning both
-      columns beneath them (its own comment says why). The panel treatment is the design's; the
-      grouping is this page's, because "By tool" reads from the same D1 query as
-      the tiles above it and belongs in the section that owns that read.
+      columns beneath them (its own comment says why). The panel treatment is
+      the design's; the grouping is this page's, because "By tool" reads from
+      the same D1 query as the tiles above it and belongs in the section that
+      owns that read.
     */}
   <div class:list={[BLEED, 'mt-16']}>
     <div class="hairline-grid grid-cols-1 lg:grid-cols-2">
@@ -1051,7 +1052,10 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
         <p class="mt-5 max-w-[70ch] text-small text-ink-muted">
           Failed calls over the last {formatWindow(WINDOW_DAYS)}, counted by the part of the site
           they reached, by whether a visitor or a scheduled eval run made them, and by the reason
-          recorded for each.
+          recorded for each. The <span class="font-mono text-ink">fit</span> rows count calls made
+          through the MCP server. Runs started from the fit form are counted once, in the fit
+          reports figure above. A failure from before reasons were recorded counts as{' '}
+          <span class="font-mono text-ink">unrecorded</span>.
         </p>
 
         {failures === null ? (
