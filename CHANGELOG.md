@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.50.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.49.1...ryanlindsey-me-v1.50.0) (2026-09-30)
+
+
+### Features
+
+* **mcp:** record a failure reason on every failed tool call, chat turn and fit run ([#467](https://github.com/ryanlindsey/ryanlindsey.me/issues/467)) ([687250a](https://github.com/ryanlindsey/ryanlindsey.me/commit/687250aab11978f8c072d5afa8823f23e376297a))
+* **ops:** show failures by surface and reason ([#469](https://github.com/ryanlindsey/ryanlindsey.me/issues/469)) ([7f9bfd4](https://github.com/ryanlindsey/ryanlindsey.me/commit/7f9bfd4bd3ec9d0bbe30f08ca1db2c85385ac65a))
+
+
+### Bug Fixes
+
+* **evals:** pace the scheduled judge a full gap behind its answer ([#470](https://github.com/ryanlindsey/ryanlindsey.me/issues/470)) ([6309f10](https://github.com/ryanlindsey/ryanlindsey.me/commit/6309f109b677b052a7bdce9112187424fb5637b1))
+
 ## [1.49.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.49.0...ryanlindsey-me-v1.49.1) (2026-09-29)
 
 
