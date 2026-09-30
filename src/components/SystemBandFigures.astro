@@ -1,6 +1,5 @@
 ---
 import { env, waitUntil } from 'cloudflare:workers';
-import OpsMetric from './OpsMetric.astro';
 import {
   CACHE_TTL_SECONDS,
   formatCount as count,
@@ -39,16 +38,30 @@ import {
  * two surfaces cannot disagree about a figure for longer than one
  * `CACHE_TTL_SECONDS`, and the next cache-key bump in src/lib/ops/reads.ts
  * moves both. Each value expression below is copied from src/pages/ops.astro's
- * tile of the same label, and the labels are verbatim too, so a reader never
- * meets one number under two names.
+ * tile of the same label, and the labels were verbatim too, so a reader never
+ * met one number under two names.
+ *
+ * TWO LABELS DEPART FROM /ops SINCE 2026-09-30, by the owner's decision. "Requests
+ * through the AI Gateway" is "AI Gateway requests" here and "Requests that
+ * reached the Worker" is "Edge compute requests": on `/` the reader is not
+ * assumed to know what a Worker is, and /ops, whose point is naming the system
+ * behind each figure, keeps both names. The cost is the one the earlier rule
+ * avoided, one number under two names, and the tile comments below say which
+ * /ops tile each value is copied from so the pair stays findable.
  *
  * ONE ABSENCE FOR ALL FIVE, and no reason beside it. /ops carries three
  * different reasons because it is the page that has room to say which system
- * failed and what that means. The band passes no `source`, so `OpsMetric`
- * renders no provenance line and no reason: the owner's review dropped that
- * line from the band (issue #437), and the first version's "the ops page says
- * why" went with it. The state still says `not available` rather than `0`,
- * which is the rule `OpsMetric` exists to keep.
+ * failed and what that means. The owner's review dropped the provenance line
+ * from the band (issue #437), and the first version's "the ops page says why"
+ * went with it. The state still says `not available` rather than `0`, which is
+ * the rule src/components/OpsMetric.astro exists to keep.
+ *
+ * ITS OWN TILE, NOT `OpsMetric`, SINCE THE COMPACT REVISION. The band's tile
+ * is the case study facts bar's cell, label above value, and `OpsMetric` puts
+ * the figure first. Flipping that with a prop would give the shared component
+ * an arm /ops never takes, so the band renders the two lines itself and keeps
+ * `OpsMetric`'s one contract that tests read: `data-metric-value` on the
+ * figure and on the absence alike.
  */
 
 // The same number the KV entries live for, so an intermediary never holds the
@@ -58,8 +71,6 @@ import {
 Astro.response.headers.set('Cache-Control', `public, max-age=${CACHE_TTL_SECONDS}`);
 
 const { metrics, traffic, spend } = await readOpsReads(env, new Date(), waitUntil);
-
-const ABSENT = { absentState: 'not available' };
 
 /**
  * The gap between one tile's figure rising in and the next, in reading order.
@@ -78,9 +89,11 @@ const FIGURES: { label: string; value: string | null }[] = [
     label: 'Requests from agents',
     value: count(traffic?.agentRequests),
   },
-  { label: 'Requests through the AI Gateway', value: count(spend?.requests) },
+  // /ops: "Requests through the AI Gateway".
+  { label: 'AI Gateway requests', value: count(spend?.requests) },
   {
-    label: 'Requests that reached the Worker',
+    // /ops: "Requests that reached the Worker".
+    label: 'Edge compute requests',
     value: count(traffic?.requests),
   },
 ];
@@ -91,25 +104,33 @@ const FIGURES: { label: string; value: string | null }[] = [
     replaces the fallback in place, between Astro's start comment and its
     script (node_modules/astro/dist/runtime/server/render/server-islands.js,
     `replaceServerIsland`), so these cells become direct children of the band's
-    `hairline-grid` and take its tracks. One wrapping element would be one grid
-    cell holding five tiles.
+    grid and take its tracks. One wrapping element would be one grid cell
+    holding five tiles.
 
-    `data-band-figure` is the band's own test hook, on a wrapper because
-    `OpsMetric` already spends `data-ops-metric` on /ops's tests, and a band
-    test keyed on that would pass against /ops markup just as happily. `grid`
-    lets the tile fill the cell's height, so a short tile never shows the rule
-    ground beneath it.
-
-    `*:max-sm:px-4` narrows the one element `OpsMetric` renders to the band's
-    phone padding (SystemBand.astro's CELL), without giving the shared
-    component a prop /ops would never pass.
+    `data-band-figure` is the band's own test hook. The classes are
+    SystemBand.astro's CELL, LABEL, VALUE and ABSENT, spelled out because
+    Tailwind scans each file as text; that file's note says why each is what it
+    is, and a change to one belongs in both.
   */}
 {FIGURES.map(({ label, value }, index) => (
   <div
     data-band-figure={label}
-    class="band-figure-in grid *:max-sm:px-4"
+    class="band-figure-in flex flex-col gap-2 bg-bg px-5 py-[22px] lg:px-6"
     style={`--band-delay: ${index * REVEAL_STEP_MS}ms`}
   >
-    <OpsMetric label={label} value={value} {...ABSENT} />
+    <p class="font-mono text-micro uppercase text-ink-muted">{label}</p>
+    {value === null ? (
+      <p class="mt-auto font-mono text-small leading-6 text-ink-muted" data-metric-value>
+        not available
+      </p>
+    ) : (
+      <p
+        class="mt-auto font-display text-subheading leading-6 text-ink"
+        data-metric-value
+        data-numeric
+      >
+        {value}
+      </p>
+    )}
   </div>
 ))}

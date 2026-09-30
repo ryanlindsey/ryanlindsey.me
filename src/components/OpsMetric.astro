@@ -44,14 +44,14 @@ interface Props {
    * reach is a small false claim about the page, which is the class of defect
    * /ops exists to avoid.
    *
-   * OPTIONAL SINCE THE HOME PAGE'S SYSTEM BAND (issue #437). /ops passes it on
-   * every tile, because naming the system is the point of that page. The band
-   * omits it, and the owner's review dropped the line there: a visitor reading
-   * five counts on the home page is served by the label, and /ops is one link
-   * away for the provenance. With no `source` the third line is not rendered
-   * at all, so `absentReason` goes with it.
+   * REQUIRED AGAIN SINCE THE BAND'S COMPACT REVISION. The home page's system
+   * band (issue #437) made it optional, because the owner's review dropped the
+   * provenance line there, and /ops passed it on every tile regardless. The
+   * band now renders its own label-first tile and no longer calls this
+   * component, so an optional `source` would be an arm nothing reaches, the
+   * same small false claim `'this build'` was.
    */
-  source?: 'D1' | 'Analytics Engine' | 'AI Gateway';
+  source: 'D1' | 'Analytics Engine' | 'AI Gateway';
   /** The absence, in the two words that go where the figure was. */
   absentState?: string;
   /** Why it is absent, rendered after the source so the two read as one line. */
@@ -133,16 +133,14 @@ const {
       READ-ONLY ANALYTICS TOKEN" shouts an apology across the band. Uppercasing
       is CSS either way, so the text a test reads is the same in both arms.
     */}
-  {source && (
-    <p
-      class:list={[
-        'mt-1 font-mono text-micro text-ink-muted',
-        value === null ? 'normal-case' : 'uppercase',
-      ]}
-    >
-      {source}
-      {value === null ? ` — ${absentReason}` : ''}
-    </p>
-  )}
+  <p
+    class:list={[
+      'mt-1 font-mono text-micro text-ink-muted',
+      value === null ? 'normal-case' : 'uppercase',
+    ]}
+  >
+    {source}
+    {value === null ? ` — ${absentReason}` : ''}
+  </p>
   {note && <p class="mt-4 text-micro text-ink-muted">{note}</p>}
 </div>

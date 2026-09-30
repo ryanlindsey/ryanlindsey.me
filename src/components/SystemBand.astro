@@ -10,17 +10,28 @@ import { formatWindow } from '../lib/retention';
  * The live system band on the home page (issue #437): the one place a visitor
  * who never opens /ops sees that this site is a running system in use.
  *
- * BUILT AT BUILD TIME EXCEPT FOR THE FIVE FIGURES. The frame, the release tile
- * and the fallback are prerendered with `/`; the figures are
+ * BUILT AT BUILD TIME EXCEPT FOR THE FIVE FIGURES. The frame, the lead cell,
+ * the release tile and the fallback are prerendered with `/`; the figures are
  * src/components/SystemBandFigures.astro, deferred as a server island. The
  * release tile is the one tile that is a pure function of the commit, so it
  * has no reason to wait for a request, and building it here keeps it on the
  * page for a visitor without JavaScript.
  *
- * SIX CELLS BECAUSE SIX DIVIDES BY 2 AND 3, the two column counts this grid
- * uses. It was 1, 2 and 3 until the owner's review of #440 asked for two
- * columns on a phone as well. index.astro's COLUMNS note has the rule: an empty track in a
- * `hairline-grid` paints as a block of rule colour rather than as nothing.
+ * A BAR IN THE SHAPE OF THE CASE STUDY FACTS BAR SINCE THE COMPACT REVISION.
+ * The first version was a heading row, a three-sentence paragraph and a grid of
+ * 36px figures, about 470px tall at 1440px, and review found it outweighed the
+ * lead story beneath it at every width. Each tile is now the facts bar's cell
+ * (src/layouts/ArticleLayout.astro, 1j): the label in mono capitals above the
+ * value, `py-[22px]`, full-bleed bottom rule, and the heading moved into a lead
+ * cell of the same grammar rather than sitting above the grid.
+ *
+ * SEVEN CELLS, AND EVERY BREAKPOINT FILLS ITS TRACKS EXACTLY: an empty track in
+ * a gap-over-rule grid paints as a block of rule colour rather than as
+ * nothing. The lead cell spans the whole first row below `lg` (two figure
+ * columns on a phone, three from `md`), spans two rows beside a 3×2 block at
+ * `lg`, and takes one wider track of a single row from `xl`. The single row
+ * waits for `xl` because at 1024px seven tracks leave a figure cell about 80px
+ * of text, and the longest labels break onto four lines there.
  */
 const release = latestRelease(changelog);
 
@@ -33,30 +44,48 @@ const LABELS = [
   'Public MCP tool calls',
   'Chat sessions',
   'Requests from agents',
-  'Requests through the AI Gateway',
-  'Requests that reached the Worker',
+  'AI Gateway requests',
+  'Edge compute requests',
 ];
 
 /**
- * A tile's padding, the same as `OpsMetric`'s from `sm` up, so the fallback and
- * the figure occupy one box. Below `sm` it is `px-4`, and SystemBandFigures
- * narrows `OpsMetric` to match: two columns at 390px leave a tile about 175px
- * wide, and `px-6` would spend 48px of that on padding beside a 36px figure.
+ * A tile, the label and the value line. SystemBandFigures repeats all three
+ * for the island's tiles, so the fallback and the figure occupy one box.
+ *
+ * `px-5` below `lg` is the page gutter, so a figure in the left column lines up
+ * with the text above and below the band; from `lg` the lead cell holds the
+ * left column and the tiles take the facts bar's `px-6`. `mt-auto` sits the
+ * value on the tile's floor, so values line up across a row when one label
+ * wraps and its neighbour does not.
+ *
+ * `leading-6` IS ON EVERY ARM OF THE VALUE LINE: the figure, the absence and
+ * the fallback's empty line. The absence is set smaller than the figure, and
+ * without a shared line height the swap would move a row by the difference.
+ * `auto-rows-fr` on the grid did that job before, when the absence borrowed
+ * `OpsMetric`'s `text-heading` against a `text-figure` value: measured in
+ * Chrome on 2026-09-26, a row of absences was 7px shorter than a row of
+ * fallbacks. With one line height there is no difference left to equalise.
  */
-const CELL = 'bg-surface px-4 pb-7 pt-[26px] sm:px-6';
+const CELL = 'flex flex-col gap-2 bg-bg px-5 py-[22px] lg:px-6';
+const LABEL = 'font-mono text-micro uppercase text-ink-muted';
+const VALUE = 'mt-auto font-display text-subheading leading-6 text-ink';
+const ABSENT = 'mt-auto font-mono text-small leading-6 text-ink-muted';
 ---
 
 <section data-system-band aria-labelledby="system-band-heading" class="border-b border-rule">
-  <div class="group/band mx-auto max-w-[1440px] px-5 py-10 lg:px-10 lg:py-12">
+  <div class="group/band mx-auto grid max-w-[1440px] grid-cols-2 gap-px bg-rule md:grid-cols-3 lg:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))] xl:grid-cols-[minmax(0,1.5fr)_repeat(6,minmax(0,1fr))]">
     {/*
-        The kicker and the link row copy "More writing" further down this
-        page: the same quiet mono heading on the left and the same accent link
-        on the right, so the band reads as a section of this page rather than a
-        panel lifted from /ops. `data-system-band-links` is a container rather
-        than the link itself because the how-it-works issue adds a second link
-        to it.
+        The lead cell: the band's name, the window its figures cover, and the
+        way out to /ops. Its label line and its value line are the tiles' own
+        type, so it reads as the first cell of the bar rather than a caption
+        over it. `lg:pl-10` is the page gutter at that width, which the tiles'
+        `px-6` is not. `data-system-band-links` is a container rather than the
+        link itself because the how-it-works issue adds a second link to it.
       */}
-    <div class="flex flex-wrap items-baseline justify-between gap-4">
+    <div
+      data-band-lead
+      class="col-span-2 flex flex-col gap-2 bg-bg px-5 py-[22px] md:col-span-3 lg:col-span-1 lg:row-span-2 lg:pl-10 lg:pr-6 xl:row-span-1"
+    >
       {/*
           THE DOT IS GREEN ONLY WHILE A LIVE FIGURE IS ON THE PAGE, the rule
           /ops's status square keeps: that square turns amber when the page
@@ -72,86 +101,75 @@ const CELL = 'bg-surface px-4 pb-7 pt-[26px] sm:px-6';
           The dot itself, its colours and its pulse, is
           src/components/LiveDot.astro, shared with /ops's masthead.
         */}
-      <h2
-        id="system-band-heading"
-        class="flex items-center gap-2 font-mono text-micro uppercase text-ink-muted"
-      >
+      <p data-band-live class:list={['flex items-center gap-2', LABEL]}>
         <LiveDot state="until-live" />
         <span>Live · last {formatWindow(WINDOW_DAYS)}</span>
+      </p>
+      <h2 id="system-band-heading" class="font-display text-subheading text-ink">
+        How humans+agents use this site
       </h2>
-      <div data-system-band-links class="flex flex-wrap gap-5">
+      <div data-system-band-links class="mt-auto flex flex-wrap gap-5 pt-1">
         <a href="/ops#live-metrics" class="font-mono text-micro uppercase text-accent">
           All metrics &rarr;
         </a>
       </div>
     </div>
-    <p class="mt-3 max-w-[70ch] text-body text-ink-muted">
-      This site is built for two kinds of visitor, people and AI agents, and both get the same
-      tools. A person reads a page or asks the chat agent. An agent fetches the same page as
-      markdown or runs the same search over MCP. Every answer links its source.
-    </p>
+
+    <SystemBandFigures server:defer>
+      <Fragment slot="fallback">
+        {/*
+            NO FIGURE IN THE FALLBACK, AND THAT IS WHAT MAKES IT HONEST.
+            This is what a visitor without JavaScript, a crawler and the AI
+            Search index read, and a count baked in at build time would be a
+            stale number presented as a live one. Each cell keeps its label
+            and holds the figure's space empty: `h-[1lh]` on an element set
+            in the figure's own type is exactly one line of that type, so
+            the tile arriving does not move the label.
+          */}
+        {LABELS.map((label) => (
+          <div data-band-fallback={label} class={CELL}>
+            <p class={LABEL}>{label}</p>
+            <p aria-hidden="true" class:list={['h-[1lh]', VALUE]} />
+          </div>
+        ))}
+      </Fragment>
+    </SystemBandFigures>
 
     {/*
-        `auto-rows-fr` MAKES EVERY ROW AS TALL AS THE TALLEST, and that is
-        what keeps the swap from moving a row. Measured in Chrome against
-        `wrangler dev` on 2026-09-26, while every tile still carried a third,
-        provenance line: a fallback tile is 144px, and so is the
-        release tile, but a live tile rendering its absence is 137px, because
-        `OpsMetric`'s absent arm sets `text-heading` where the figure sets
-        `text-figure`. Without this, a row of absences shrank by 7px when the
-        island arrived. The release tile is built with the page and sits in
-        the grid in both states, so it sets the floor at every breakpoint.
+        The release tile, in the band's two lines: what it is, and the
+        figure. The date rides on the label line rather than a third line of
+        its own, which would lift this value above its neighbours'. `whitespace-nowrap`
+        on the date because the label wraps in a narrow track, and at 768px and
+        1024px it broke the date at its own hyphens. Its source
+        is the link. A DATE AND NEVER A TIME, which `recentReleases` already
+        enforces (10 §1.4).
+
+        THE ABSENCE HAS NO LINK. `latestRelease` returns `null` when the
+        changelog has no `## ` heading or its first one does not parse,
+        rather than falling through to an older release. A link built from
+        a version that is not there would point at a release that does not
+        exist, so the null arm is the same muted absence the figures render,
+        in the same box.
       */}
-    <div class="hairline-grid mt-6 auto-rows-fr grid-cols-2 lg:grid-cols-3">
-      <SystemBandFigures server:defer>
-        <Fragment slot="fallback">
-          {/*
-              NO FIGURE IN THE FALLBACK, AND THAT IS WHAT MAKES IT HONEST.
-              This is what a visitor without JavaScript, a crawler and the AI
-              Search index read, and a count baked in at build time would be a
-              stale number presented as a live one. Each cell keeps its label
-              and holds the figure's space empty: `h-[1lh]` on an element set
-              in the figure's own type is exactly one line of that type, so
-              the tile arriving does not move the label.
-            */}
-          {LABELS.map((label) => (
-            <div data-band-fallback={label} class={CELL}>
-              <p aria-hidden="true" class="h-[1lh] font-display text-figure" />
-              <p class="mt-3 text-small text-ink-muted">{label}</p>
-            </div>
-          ))}
-        </Fragment>
-      </SystemBandFigures>
-
-      {/*
-          The release tile, in the band's two lines: the figure, and what it
-          is. Its source is the link. A DATE AND NEVER A TIME, which
-          `recentReleases` already enforces (10 §1.4).
-
-          THE ABSENCE HAS NO LINK. `latestRelease` returns `null` when the
-          changelog has no `## ` heading or its first one does not parse,
-          rather than falling through to an older release. A link built from
-          a version that is not there would point at a release that does not
-          exist, so the null arm is the same muted absence `OpsMetric`
-          renders, in the same box.
-        */}
-      <div data-release-tile class="grid bg-surface">
-        {release === null ? (
-          <div class="px-4 pb-7 pt-[26px] sm:px-6">
-            <p class="font-mono text-heading text-ink-muted">not available</p>
-            <p class="mt-3 text-small text-ink-muted">Latest release</p>
-          </div>
-        ) : (
-          <a href={release.url} class="block px-4 pb-7 pt-[26px] no-underline sm:px-6">
-            <p class="font-display text-figure text-ink" data-numeric>
-              {release.version}
-            </p>
-            <p class="mt-3 text-small text-ink-muted">
-              Latest release · <time datetime={release.date}>{release.date}</time>
-            </p>
-          </a>
-        )}
-      </div>
+    <div data-release-tile class="grid bg-bg">
+      {release === null ? (
+        <div class={CELL}>
+          <p class={LABEL}>Latest site release</p>
+          <p class={ABSENT}>not available</p>
+        </div>
+      ) : (
+        <a href={release.url} class:list={[CELL, 'no-underline']}>
+          <p class={LABEL}>
+            Latest site release:{' '}
+            <time datetime={release.date} class="whitespace-nowrap">
+              {release.date}
+            </time>
+          </p>
+          <p class={VALUE} data-numeric>
+            {release.version}
+          </p>
+        </a>
+      )}
     </div>
   </div>
 </section>

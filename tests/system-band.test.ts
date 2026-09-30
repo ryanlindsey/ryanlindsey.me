@@ -31,8 +31,8 @@ const LABELS = [
   'Public MCP tool calls',
   'Chat sessions',
   'Requests from agents',
-  'Requests through the AI Gateway',
-  'Requests that reached the Worker',
+  'AI Gateway requests',
+  'Edge compute requests',
 ];
 
 /** The harness's response type, which is undici's rather than the Workers global. */
@@ -143,6 +143,32 @@ describe('the system band on /', () => {
     }
   });
 
+  test('every tile puts its label above its value, as the case study facts bar does', () => {
+    for (const label of LABELS) {
+      for (const tile of [
+        cell(liveHtml, 'data-band-figure', label),
+        cell(home, 'data-band-fallback', label),
+      ]) {
+        const labelAt = tile.indexOf(`>${label}<`);
+        expect(labelAt, label).toBeGreaterThan(-1);
+        expect(labelAt, label).toBeLessThan(tile.search(/data-metric-value|aria-hidden="true"/));
+      }
+    }
+    const release = elementWith(home, 'div', 'data-release-tile');
+    expect(text(release)).toMatch(/^Latest site release: \d{4}-\d{2}-\d{2}/);
+  });
+
+  test('a figure and its absence occupy one line of the same height', () => {
+    // The swap from fallback to figure, or from figure to absence, must not
+    // move a row, and the three arms are written separately.
+    const lines = [
+      /<p[^>]*data-metric-value[^>]*data-numeric[^>]*>/.exec(liveHtml)?.[0],
+      /<p[^>]*data-metric-value(?![^>]*data-numeric)[^>]*>/.exec(degradedHtml)?.[0],
+      /<p aria-hidden="true"[^>]*>/.exec(cell(home, 'data-band-fallback', LABELS[0]))?.[0],
+    ];
+    for (const line of lines) expect(line).toMatch(/(^|\s)leading-6(\s|")/);
+  });
+
   test('names no source system under any tile, and carries no note under the grid', () => {
     // The owner's review of #440 dropped both: provenance stays on /ops, one
     // link away, and the band carries only the figure and what it counts.
@@ -153,19 +179,27 @@ describe('the system band on /', () => {
     expect(band).not.toContain('data-band-note');
   });
 
-  test('links to every figure on /ops', () => {
-    const links = elementWith(home, 'div', 'data-system-band-links');
+  test('opens with a lead cell that names the band and links to every figure on /ops', () => {
+    const lead = elementWith(home, 'div', 'data-band-lead');
+    const heading = elementWith(lead, 'h2', 'id="system-band-heading"');
+    expect(text(heading)).toBe('How humans+agents use this site');
+    // The lead cell is built with the page, so it holds its track before and
+    // after the island arrives, and it is the grid's first cell.
+    const grid = home.indexOf('data-band-lead');
+    expect(grid).toBeGreaterThan(-1);
+    expect(grid).toBeLessThan(home.indexOf('data-band-fallback'));
+    const links = elementWith(lead, 'div', 'data-system-band-links');
     expect(links).toContain('href="/ops#live-metrics"');
     expect(text(links)).toContain('All metrics');
   });
 
   test('the live dot turns green and pulses only once a live figure is on the page', () => {
-    const heading = elementWith(home, 'h2', 'id="system-band-heading"');
-    const dot = elementWith(heading, 'span', 'data-live-dot');
+    const live = elementWith(home, 'p', 'data-band-live');
+    const dot = elementWith(live, 'span', 'data-live-dot');
     expect(dot).toContain('aria-hidden="true"');
-    // The heading still reads as its words alone.
-    expect(text(heading)).toBe(text(heading).replace(/\s+/g, ' ').trim());
-    expect(text(heading)).toMatch(/^Live · last /);
+    // The lead cell's label still reads as its words alone.
+    expect(text(live)).toBe(text(live).replace(/\s+/g, ' ').trim());
+    expect(text(live)).toMatch(/^Live · last /);
     // Green and the pulse are behind the has-a-live-figure variant only, so
     // the fallback, a no-JS visit and an all-absent island show a still,
     // muted dot. The release tile is `data-numeric` too, which is why the
@@ -234,20 +268,25 @@ describe('the island', () => {
 
   test('counts a public tool call, and says the two unread systems are unavailable', () => {
     expect(figure(liveHtml, 'Public MCP tool calls')).toBe('1');
-    for (const label of [
-      'Requests from agents',
-      'Requests that reached the Worker',
-      'Requests through the AI Gateway',
-    ]) {
+    for (const label of ['Requests from agents', 'Edge compute requests', 'AI Gateway requests']) {
       expect(figure(liveHtml, label), label).toBe('not available');
     }
   });
 
-  test('names the gateway tile the same way /ops does', async () => {
+  test('renames two /ops figures for the home page and leaves /ops its own names', async () => {
+    // The owner's call on 2026-09-30: "the Worker" and "through the AI
+    // Gateway" read as Cloudflare vocabulary to a visitor on `/`, while /ops is
+    // the page whose point is naming the system behind each figure.
     const ops = await (await server.fetch('/ops')).text();
     expect(ops).toContain('data-ops-metric="Requests through the AI Gateway"');
+    expect(ops).toContain('data-ops-metric="Requests that reached the Worker"');
     expect(ops).not.toContain('Requests through the gateway');
-    expect(liveHtml).toContain('data-band-figure="Requests through the AI Gateway"');
+    for (const doc of [home, liveHtml]) {
+      expect(doc).not.toContain('Requests through the AI Gateway');
+      expect(doc).not.toContain('Requests that reached the Worker');
+    }
+    expect(liveHtml).toContain('data-band-figure="AI Gateway requests"');
+    expect(liveHtml).toContain('data-band-figure="Edge compute requests"');
   });
 
   test('does not serve an entry written under the previous cache key', async () => {
