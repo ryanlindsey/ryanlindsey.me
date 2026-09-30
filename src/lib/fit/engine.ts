@@ -429,9 +429,14 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
     tripped = await env.KV_CONFIG.get(BREAKER_KEY);
   } catch (error) {
     console.error('fit: the breaker flag could not be read', error);
+    // Tagged `internal` on top of the cause: a KV error whose text happens to
+    // say "network" would otherwise read as `provider_unavailable`, blaming
+    // the model provider for a fault in our own store. The tripped breaker
+    // below is the limit; a breaker that could not be read is not.
     throw new FitUnavailable('Fit analysis is unavailable right now. Try again shortly.', {
       noAnswer: true,
       cause: error,
+      failureReason: 'internal',
     });
   }
   if (tripped !== null) {
@@ -452,8 +457,11 @@ export async function analyzeFit(env: FitEnv, targetDescription: string): Promis
     corpus = await buildCorpusContext(env);
   } catch (error) {
     console.error('fit: the corpus could not be read', error);
+    // The cause is kept, untagged, so the classifier can read the upstream
+    // wording (the production 522 above reads as `provider_unavailable`).
     throw new FitUnavailable('The published work could not be read right now. Try again shortly.', {
       noAnswer: true,
+      cause: error,
     });
   }
   if (corpus.documents === 0) {

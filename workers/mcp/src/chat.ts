@@ -199,8 +199,9 @@ async function writeTranscript(env: McpEnv, row: TranscriptRow): Promise<void> {
  * THE ACCEPTED TRADE, in the opposite direction from the failed-read
  * fallback below on purpose: a session whose first answer breaks mid-stream
  * (`outcome: 'error'`, set when the model stream dies at any point, or ends
- * without producing any text) does not count as a completed first turn either, so that session can
- * notify a SECOND time on its next turn. Over-notifying on a rare broken
+ * without producing any text) does not count as a completed first turn
+ * either, so that session can notify a SECOND time on its next turn.
+ * Over-notifying on a rare broken
  * stream costs one duplicate email; under-notifying loses the signal for
  * every session that happened to start that way, which is the exact failure
  * this correction exists to close. A D1 read failing is the reverse
@@ -461,9 +462,11 @@ export async function handleChat(
   }
 
   let sources: ChatSource[] = [];
+  let retrievalError: unknown;
   try {
     sources = await retrieve(env as unknown as ChatEnv, question.trim());
   } catch (error) {
+    retrievalError = error;
     // Retrieval failing is not the same as the model failing, and the reader
     // gets the same sentence either way -- but the operator gets the
     // distinction in the log, which is where it is actionable.
@@ -484,7 +487,18 @@ export async function handleChat(
       sources,
     ));
   } catch (error) {
-    if (error instanceof ChatUnavailable) return refuse(error.code, error);
+    if (error instanceof ChatUnavailable) {
+      // `sources` is `[]` both when nothing matched and when retrieval threw,
+      // and `startAnswer` cannot tell the two apart, so it tags the empty case
+      // `no_sources`. When retrieval did throw, that tag would record an outage
+      // (a 2018, a Vectorize fault, a network failure) as "nothing matched" and
+      // store the turn as a refusal. Classify by the retrieval error instead;
+      // the client still gets the same code and the same sentence.
+      if (error.failureReason === 'no_sources' && retrievalError !== undefined) {
+        return refuse(error.code, retrievalError);
+      }
+      return refuse(error.code, error);
+    }
     // A plain Error here is a mis-set seam var (the engine's own contract), and
     // it is an operator's mistake rather than a caller's: the stack goes to
     // observability, the caller gets the generic code.
@@ -598,7 +612,10 @@ export async function handleChat(
         // that happens to trail off.
         console.error('chat: the upstream stream broke mid-answer', error);
         // A stream that broke is the definition of `provider_unavailable`, so
-        // an unclassifiable throw (`internal`) is reported as that instead.
+        // an unclassifiable throw (`internal`) is reported as that instead. That
+        // also relabels a defect thrown inside this loop (`parseModelSse`,
+        // `MarkerGate`) as `provider_unavailable`; the plan chose that over
+        // telling the two apart, since the detail still carries the message.
         const classified = classifyFailure(error);
         streamFailure =
           classified.reason === 'internal'

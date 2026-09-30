@@ -341,12 +341,15 @@ export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
           )
           .run();
       } else {
+        // The fallbacks are there because an instance whose analyze step finished under the code
+        // before #465 replays its cached Attempt without a reason or detail
+        // across a deploy, and `.bind(undefined)` throws.
         await env.DB.prepare(
           `UPDATE fit_reports
               SET status = 'failed', failure_code = ?, failure_reason = ?, failure_detail = ?
             WHERE id = ?`,
         )
-          .bind(attempt.code, attempt.reason, attempt.detail, id)
+          .bind(attempt.code, attempt.reason ?? 'internal', attempt.detail ?? null, id)
           .run();
       }
       return id;

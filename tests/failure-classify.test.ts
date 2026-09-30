@@ -222,6 +222,38 @@ describe('throw sites', () => {
     expect(classifyFailure(error).reason).toBe('no_sources');
   });
 
+  it('a chat breaker-read failure is internal, not a limit', () => {
+    const error = new ChatUnavailable(
+      'paused',
+      'Chat is unavailable right now. Try again shortly.',
+      {
+        cause: new Error('KV GET failed: network connection lost'),
+        failureReason: 'internal',
+      },
+    );
+    expect(classifyFailure(error).reason).toBe('internal');
+  });
+
+  it('a fit breaker-read failure is internal even when the KV error says network', () => {
+    const error = new FitUnavailable('Fit analysis is unavailable right now. Try again shortly.', {
+      noAnswer: true,
+      cause: new Error('KV GET failed: network connection lost'),
+      failureReason: 'internal',
+    });
+    expect(classifyFailure(error).reason).toBe('internal');
+  });
+
+  it('a tripped breaker stays a local_limit', () => {
+    const error = new ChatUnavailable(
+      'paused',
+      'Chat is paused: the daily budget breaker is tripped.',
+      {
+        failureReason: 'local_limit',
+      },
+    );
+    expect(classifyFailure(error).reason).toBe('local_limit');
+  });
+
   it('sets failureReason as an own property only when one is given', () => {
     expect(Object.hasOwn(new ToolError('x'), 'failureReason')).toBe(false);
     expect(Object.hasOwn(new FitUnavailable('x'), 'failureReason')).toBe(false);

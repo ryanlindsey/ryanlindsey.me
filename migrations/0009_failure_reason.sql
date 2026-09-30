@@ -7,6 +7,10 @@
 -- provider_unavailable, bad_output, no_sources, caller_input, not_permitted,
 -- not_found, internal), and `failure_detail` is a short excerpt of the cause,
 -- at most 200 characters, for the owner reading the row and never rendered.
+-- The detail may contain a caller-supplied slug, quoted by a tool's own error
+-- sentence, so it qualifies 0001's note that arguments are stored only as a
+-- hash: the hash is still all that is kept of the arguments as such, and the
+-- slug reaches this column only inside a message, bounded at 200 characters.
 --
 -- NULL MEANS SUCCESS, OR A ROW WRITTEN BEFORE THIS MIGRATION. The two cannot
 -- be told apart from these columns alone, so a reader that must not count an
@@ -19,9 +23,11 @@
 -- an unrecognized value is a reader's problem to render as unrecorded.
 --
 -- ORDER AGAINST THE DEPLOY MATTERS, as with 0005. The writers name these
--- columns in their INSERTs, so code deployed before this is applied to the
--- remote database fails every audit and transcript write, and each of those
--- failures is swallowed: the rows are lost without an error anywhere. Apply
+-- columns, so code deployed before this is applied to the remote database
+-- fails every write that names them. For `mcp_tool_calls` and `chat_turns` the
+-- INSERT failure is swallowed and the rows are lost without an error anywhere.
+-- For `fit_reports` the failed-run UPDATE is not swallowed: it fails the
+-- workflow step and the row is left `running`, stale, rather than lost. Apply
 -- with `npx wrangler d1 migrations apply ryanlindsey-me-db --remote` first.
 
 ALTER TABLE mcp_tool_calls ADD COLUMN failure_reason TEXT;

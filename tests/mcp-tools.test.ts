@@ -284,6 +284,21 @@ test('every registered tool call writes exactly one audit row', async () => {
   ]);
 });
 
+test('a get_post for a missing slug that contains 2018 is recorded as not_found', async () => {
+  const db = await auditDb();
+  await db.prepare('DELETE FROM mcp_tool_calls').run();
+
+  await callTool('get_post', { slug: 'review-2018' });
+  await waitForAuditRows(db, 1);
+
+  // Untagged, this fell to the pattern rules, which read the caller's own slug
+  // and called it a gateway limit.
+  const row = await db
+    .prepare('SELECT outcome, failure_reason FROM mcp_tool_calls')
+    .first<{ outcome: string; failure_reason: string | null }>();
+  expect(row?.failure_reason).toBe('not_found');
+});
+
 test('the audit row records a hash, never the arguments', async () => {
   const db = await auditDb();
   await db.prepare('DELETE FROM mcp_tool_calls').run();

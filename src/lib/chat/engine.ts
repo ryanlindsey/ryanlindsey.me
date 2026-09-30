@@ -221,7 +221,15 @@ export async function startAnswer(
     tripped = await env.KV_CONFIG.get(BREAKER_KEY);
   } catch (error) {
     console.error('chat: the breaker flag could not be read', error);
-    throw new ChatUnavailable('paused', 'Chat is unavailable right now. Try again shortly.');
+    // Tagged `internal`, with the KV error as the cause: failing closed is the
+    // right answer for the visitor, but a store that could not be read is a
+    // fault, not a limit. Untagged, the `paused` code would classify as
+    // `local_limit` and store the turn as a refusal, hiding the outage among
+    // the visitors who really did hit the breaker.
+    throw new ChatUnavailable('paused', 'Chat is unavailable right now. Try again shortly.', {
+      cause: error,
+      failureReason: 'internal',
+    });
   }
   if (tripped !== null) {
     throw new ChatUnavailable('paused', 'Chat is paused: the daily budget breaker is tripped.');
