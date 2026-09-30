@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.51.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.50.1...ryanlindsey-me-v1.51.0) (2026-09-30)
+
+
+### Features
+
+* **home:** compact the system band into a facts-bar row ([#477](https://github.com/ryanlindsey/ryanlindsey.me/issues/477)) ([2c687aa](https://github.com/ryanlindsey/ryanlindsey.me/commit/2c687aa6f2722e028f0ae1581daa5141a1e65ac2))
+
 ## [1.50.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.50.0...ryanlindsey-me-v1.50.1) (2026-09-30)
 
 
