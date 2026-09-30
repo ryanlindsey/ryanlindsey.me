@@ -29,7 +29,7 @@ export const CACHE_TTL_SECONDS = 60;
 export const WINDOW_DAYS = 30;
 
 /**
- * The KV key each of the three reads is cached under. The home page's band
+ * The KV key each of the four reads is cached under. The home page's band
  * reads these same keys, so a bump moves both.
  */
 export const OPS_CACHE_KEYS = {

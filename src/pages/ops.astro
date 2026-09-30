@@ -12,6 +12,7 @@ import { FIT_MODEL } from '../lib/fit/engine';
 import { JUDGE_MODEL } from '../lib/judge/engine';
 import { GLOBAL_LIMITS, LIMITS, type ToolCost } from '../lib/mcp/limits';
 import { recentReleases } from '../lib/ops/changelog';
+import type { FailureRow } from '../lib/ops/failures';
 import type { OpsMetrics } from '../lib/ops/metrics';
 import {
   CACHE_TTL_SECONDS,
@@ -31,20 +32,31 @@ import { OPS_CARD } from '../lib/og/cards';
  * /ops would publish the numbers the build machine happened to see, which is
  * the one thing this page must not do.
  *
- * AGGREGATE AND PUBLIC-TIER ONLY (09 §2). No campaign label, no audience, no
- * gated tool name, no per-token figure and no visitor's question renders here.
- * The filtering is done in SQL, one layer down (src/lib/ops/metrics.ts), and is
- * deliberately NOT repeated in this template: a page that receives only public
- * rows cannot leak one by forgetting a condition, while a page that receives
- * everything and filters on render leaks the first time somebody adds a
- * section. Nothing below reads a field the read layer did not already narrow.
+ * NO GATED TOOL NAME, AUDIENCE OR TOKEN RENDERS HERE (09 §2), and neither
+ * does a campaign label, a per-token figure, a failure's detail or a visitor's
+ * question. Failures render by surface, and tests/ops-page.test.ts enforces the
+ * tool-name half by planting a failed row for every gated tool.
+ *
+ * THIS RULE USED TO SAY "AGGREGATE AND PUBLIC-TIER ONLY", and until issue #466
+ * that was the whole of it. It changed because the page exists to show the
+ * system being measured, and private-tier failures are most of what there is
+ * to measure: a public-only failure count would have published a healthy
+ * number over the surfaces that were actually failing. What the old rule
+ * protected still holds, and by the same mechanism. The narrowing is done one
+ * layer down, in SQL for the metrics (src/lib/ops/metrics.ts) and by folding
+ * tool names into surfaces before the cache for the failures
+ * (src/lib/ops/failures.ts), and it is deliberately NOT repeated in this
+ * template: a page that receives only narrowed rows cannot leak one by
+ * forgetting a condition, while a page that receives everything and filters on
+ * render leaks the first time somebody adds a section. Nothing below reads a
+ * field the read layer did not already narrow.
  */
 export const prerender = false;
 
 Astro.response.headers.set('Cache-Control', `public, max-age=${CACHE_TTL_SECONDS}`);
 
 const now = new Date();
-const { metrics, traffic, spend } = await readOpsReads(env, now, waitUntil);
+const { metrics, traffic, spend, failures } = await readOpsReads(env, now, waitUntil);
 
 /**
  * The absence wording for the uncredentialed half. Different from the default
@@ -85,6 +97,25 @@ const GATEWAY_ABSENT = {
   absentReason:
     'this needs the read-only analytics token, and a gateway response this build can read',
 };
+
+/**
+ * A failure row's reasons in the order the cell renders them: largest count
+ * first, and `unrecorded` last whatever its count, because it is not a reason
+ * but the absence of one, and ranking it among them would read as a cause.
+ * Ties fall back to the reason's name so the order does not depend on the
+ * order D1 happened to group in.
+ */
+function reasonsInOrder(byReason: FailureRow['byReason']): { reason: string; count: number }[] {
+  return Object.entries(byReason)
+    .filter((entry): entry is [string, number] => (entry[1] ?? 0) > 0)
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => {
+      if ((a.reason === 'unrecorded') !== (b.reason === 'unrecorded')) {
+        return a.reason === 'unrecorded' ? 1 : -1;
+      }
+      return b.count - a.count || a.reason.localeCompare(b.reason);
+    });
+}
 
 /** The runs behind the fit figure: how many started, and how many of those produced no report. */
 const fitNote = ({ started, failed, abandoned, inProgress }: OpsMetrics['fitRuns']): string =>
@@ -983,6 +1014,90 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
                       data-numeric
                     >
                       {run.status === 'ran' ? run.unreached : 'not recorded'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/*
+          A THIRD CELL IN THIS BAND, SPANNING BOTH COLUMNS AT lg. A cell of its
+          own width would leave the second track of its row empty, and in a
+          `hairline-grid` that is a block of rule colour rather than
+          whitespace, the same arithmetic `SECTIONS` records.
+
+          NOT IN THE MASTHEAD INDEX, for that same arithmetic: the index is six
+          cells because six divides both of its column counts, and a seventh
+          entry is a breakpoint decision this section does not justify.
+
+          The absence reuses `D1_ABSENT` because the cause is the same system:
+          this read is D1, cached under its own key, and fails on its own.
+        */}
+      <section aria-labelledby="failures" data-failures class:list={[PANEL, 'lg:col-span-2']}>
+        <div class="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+          <h2 id="failures" class={PANEL_HEADING}>
+            Failures
+          </h2>
+          <span class={KICKER}>· By surface and reason · D1</span>
+        </div>
+        <p class="mt-5 max-w-[70ch] text-small text-ink-muted">
+          Failed calls over the last {formatWindow(WINDOW_DAYS)}, counted by the part of the site
+          they reached, by whether a visitor or a scheduled eval run made them, and by the reason
+          recorded for each.
+        </p>
+
+        {failures === null ? (
+          <p class="mt-6 font-mono text-small text-ink-muted">
+            {D1_ABSENT.absentState}: {D1_ABSENT.absentReason}
+          </p>
+        ) : failures.rows.length === 0 ? (
+          <p class="mt-6 text-small text-ink-muted">Nothing recorded in this window.</p>
+        ) : (
+          <div class="mt-6 overflow-x-auto">
+            <table class="w-full min-w-[22rem] border-collapse text-small">
+              <thead>
+                <tr class="border-b border-rule text-left font-mono text-micro uppercase text-ink-muted">
+                  <th scope="col" class="py-2 pr-6 font-normal">
+                    Surface
+                  </th>
+                  <th scope="col" class="py-2 pr-6 font-normal">
+                    Failed
+                  </th>
+                  <th scope="col" class="py-2 font-normal">
+                    Reasons
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {failures.rows.map((row) => (
+                  <tr class="border-b border-rule last:border-b-0">
+                    <td class="py-2.5 pr-6 font-mono text-ink">
+                      {row.surface} · {row.origin}
+                    </td>
+                    <td
+                      class:list={[
+                        'py-2.5 pr-6 font-mono',
+                        row.failed === 0 ? 'text-ink-muted' : 'text-warn',
+                      ]}
+                      data-numeric
+                    >
+                      {row.failed === 0
+                        ? 'no failures'
+                        : `${count(row.failed)} of ${count(row.total)} failed`}
+                    </td>
+                    <td class="py-2.5 font-mono text-ink-muted">
+                      {row.failed > 0 && (
+                        <ul class="flex flex-wrap gap-x-4 gap-y-1">
+                          {reasonsInOrder(row.byReason).map(({ reason, count: n }) => (
+                            <li class="whitespace-nowrap" data-failure-reason>
+                              <span class="text-ink">{reason}</span> {count(n)}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </td>
                   </tr>
                 ))}
