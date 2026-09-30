@@ -343,9 +343,9 @@ test('every step.do in the workflow carries one of the two step configs', async 
   // exponential backoff. On a case step that is five more `analyze_fit` calls
   // per failure, each an Opus call over the whole corpus, each doing its own
   // `RETRIES = 1` client retry, each of those fanning out at the gateway up to
-  // four times. `CASE_STEP` and `RECORD_STEP` in
-  // workers/mcp/src/evals-workflow.ts exist to stop that, and its own comment
-  // explains the composition.
+  // four times. `CASE_STEP` in workers/mcp/src/evals-pace.ts and `RECORD_STEP`
+  // in workers/mcp/src/evals-workflow.ts exist to stop that, and `CASE_STEP`'s
+  // own comment explains the composition.
   //
   // THE HAZARD IS DRIFT, NOT THE CODE AS WRITTEN. The end-to-end `tier` test
   // above proves the two configs this branch wrote are ACCEPTED by workerd; it
@@ -363,7 +363,14 @@ test('every step.do in the workflow carries one of the two step configs', async 
   // number: a count goes stale the first time a step is legitimately added, and
   // a test that has to be edited to add a step is a test that gets edited
   // without being read.
-  const code = codeOf(await readFile('workers/mcp/src/evals-workflow.ts', 'utf8'));
+  //
+  // TWO FILES SINCE ISSUE #448, which moved the case loop into evals-pace.ts.
+  // Every `step.do` that spends inference lives there now, and a scan of the
+  // workflow alone stayed green while guarding only `tier` and the row write.
+  const code = [
+    codeOf(await readFile('workers/mcp/src/evals-workflow.ts', 'utf8')),
+    codeOf(await readFile('workers/mcp/src/evals-pace.ts', 'utf8')),
+  ].join('\n');
 
   const opens: number[] = [];
   for (const match of code.matchAll(/\bstep\.do\(/g)) {
@@ -387,8 +394,8 @@ test('every step.do in the workflow carries one of the two step configs', async 
   }
 
   // If a second Workflow class is ever added to this Worker, widening this
-  // read to every file that defines one is what keeps it honest; today
-  // evals-workflow.ts is the only one.
+  // read to every file that calls `step.do` is what keeps it honest; today
+  // those are evals-workflow.ts and evals-pace.ts.
 });
 
 /** What `instance.status()` answers with, narrowed to the two fields read here. */

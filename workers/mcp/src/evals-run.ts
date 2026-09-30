@@ -4,13 +4,16 @@
 // no comparison of its own.
 //
 // ONE CASE PER CALL, which is the difference from evals/run.mjs's `runTier`,
-// `runFit`, `runChat` and `runLeak`, and for `chat` and `leak` one case is two
-// calls: the answer, then the judge a full pace later (issue #448, see
-// ./evals-pace.ts). Those functions loop and pace; these do neither, because the workflow drives the loop (one `step.do` per case, so a
+// `runFit`, `runChat` and `runLeak`. Those functions loop and pace; these do
+// neither, because the workflow drives the loop (one `step.do` per case, so a
 // resumed instance replays the cases it already finished rather than re-paying
-// for them) and owns the pacing (a real twenty-five-second wait belongs in a
+// for them) and owns the pacing (a real ninety-second wait belongs in a
 // `step.sleep`, which suspends the instance, not in a `setTimeout`, which
-// holds an invocation open). See ./evals-workflow.ts.
+// holds an invocation open). See ./evals-pace.ts.
+//
+// A JUDGED CASE IS TWO CALLS since issue #448: `answerChatCase` or
+// `answerLeakProbe` for the answer, then `judgeCase` in a step of its own a
+// full pace later.
 //
 // THE TOKEN-SKIP BRANCHES ARE GONE, not forgotten: evals/run.mjs skips `fit`,
 // `chat` and `leak` loudly when `RLME_EVAL_TOKEN` is unset in the operator's

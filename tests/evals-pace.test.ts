@@ -2,7 +2,12 @@ import { expect, test } from 'vitest';
 import type { EvalsFetcher } from '../workers/mcp/src/evals-client';
 import { BUNDLED_CASES } from '../workers/mcp/src/evals-cases';
 import { runPaced, type PacedStep } from '../workers/mcp/src/evals-pace';
-import { answerLeakProbe, judgeCase, type Answered } from '../workers/mcp/src/evals-run';
+import {
+  answerChatCase,
+  answerLeakProbe,
+  judgeCase,
+  type Answered,
+} from '../workers/mcp/src/evals-run';
 import { SCHEDULED_PACE_MS } from '../src/lib/evals/plan';
 import { pass } from '../src/lib/evals/record';
 
@@ -42,7 +47,6 @@ test('a judged case sleeps a full pace between its answer and its judge', async 
 
   const results = await runPaced(
     step,
-    {},
     [
       { name: 'chat/a', run: async () => pending },
       { name: 'chat/b', run: async () => ({ result: pass('b', false) }) },
@@ -68,7 +72,6 @@ test('a case with nothing to judge takes no judge step and no extra sleep', asyn
   const { step, calls } = recordingStep();
   await runPaced(
     step,
-    {},
     [{ name: 'fit/x', run: async () => ({ result: pass('x', false) }) }],
     async () => {
       throw new Error('no judge was owed');
@@ -130,6 +133,71 @@ test('a leak probe that survives its checks returns the judge it owes, uncalled'
       prefix: `"${leak!.questions[0]}" -- `,
     },
   });
+});
+
+test('a chat case that fails its checks is finished without owing a judge', async () => {
+  const offTopic = BUNDLED_CASES.chat.find((testCase) => testCase.id === 'off-topic');
+  expect(offTopic?.expect?.judge, 'the off-topic case no longer carries a judge').toBeDefined();
+  const { fetcher } = fetcherAnswering(() =>
+    sse([
+      ['sources', { sources: [] }],
+      ['delta', { text: 'def reverse(head):' }],
+      ['done', { cited: [] }],
+    ]),
+  );
+
+  expect(await answerChatCase(fetcher, offTopic!, 'a-token')).toEqual({
+    result: {
+      id: 'off-topic',
+      ok: false,
+      notes: 'the answer contains "def "',
+      local: offTopic!.local,
+    },
+  });
+});
+
+test('a chat case that survives its checks returns the judge it owes, unprefixed', async () => {
+  const offTopic = BUNDLED_CASES.chat.find((testCase) => testCase.id === 'off-topic')!;
+  const { fetcher } = fetcherAnswering(() =>
+    sse([
+      ['sources', { sources: [] }],
+      ['delta', { text: 'I only talk about this site.' }],
+      ['done', { cited: [] }],
+    ]),
+  );
+
+  expect(await answerChatCase(fetcher, offTopic, 'a-token')).toEqual({
+    judge: {
+      id: 'off-topic',
+      local: offTopic.local,
+      criteria: offTopic.expect!.judge!.criteria,
+      subject: 'I only talk about this site.',
+      prefix: '',
+    },
+  });
+});
+
+/** Answers a `judge_answer` call with `verdict`, under the request's own id. */
+const judgeReplying = (verdict: unknown) =>
+  fetcherAnswering(
+    (_url, init) =>
+      new Response(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: (JSON.parse(String(init?.body)) as { id: number }).id,
+          result: { content: [{ type: 'text', text: JSON.stringify(verdict) }] },
+        }),
+        { headers: { 'content-type': 'application/json' } },
+      ),
+  ).fetcher;
+
+test('the judge half passes a case the judge passed', async () => {
+  const result = await judgeCase(
+    judgeReplying({ verdict: 'pass', score: 0.95, reasons: ['all met'] }),
+    { id: 'off-topic', local: false, criteria: 'c', subject: 's', prefix: '' },
+    'a-token',
+  );
+  expect(result).toEqual(pass('off-topic', false));
 });
 
 test('the judge half words a failed verdict the way the one-step runner did', async () => {

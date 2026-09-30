@@ -39,7 +39,7 @@ import {
   type WorkflowStep,
   type WorkflowStepConfig,
 } from 'cloudflare:workers';
-import { isSuiteName, SCHEDULED_PACE_MS, type SuiteName } from '../../../src/lib/evals/plan';
+import { isSuiteName, type SuiteName } from '../../../src/lib/evals/plan';
 import {
   incompleteRow,
   summarize,
@@ -50,7 +50,7 @@ import { signingKey } from '../../../src/lib/tier/grant';
 import { recordIssue, revokeToken } from '../../../src/lib/tier/registry';
 import { mintToken, newJti, type Scope, type TokenClaims } from '../../../src/lib/tier/token';
 import { BUNDLED_CASES } from './evals-cases';
-import { runPaced } from './evals-pace';
+import { CASE_STEP, runPaced } from './evals-pace';
 import {
   answerChatCase,
   answerLeakProbe,
@@ -65,53 +65,6 @@ import type { McpEnv } from './env';
 export interface EvalsRunParams {
   suites: SuiteName[];
 }
-
-/**
- * NO RETRY ON A CASE, AND THE DEFAULT IS WHAT MAKES THAT A DECISION RATHER
- * THAN AN OMISSION. A `step.do` with no config gets Cloudflare's default
- * policy -- five retries, ten seconds apart, exponential backoff -- and that
- * would be a THIRD retry layer stacked on two this repository has already
- * measured and capped.
- *
- * The layers, so the composition is written down once: AI Gateway retries a
- * call up to four times on its own (recorded in `RETRIES` in
- * src/lib/evals/plan.ts), `ask` and `askJudge` retry once past a transient
- * refusal, and a step would retry on top of both. plan.ts settled on exactly
- * one client attempt for a stated reason -- the gateway already implements
- * this, a failure reaching the client is one it has already given up on, and a
- * second mechanism at a second layer is harder to reason about than either
- * alone. A third is strictly worse than that, and it is not free: a case step
- * that throws is a case that was about to be paid for again, five more times.
- *
- * THE CONCRETE EXPOSURE IS `fit`. `payloadOf` throws when no message in the
- * response answers the request's id -- an event stream carrying only
- * keep-alives or notifications, or a body that is not JSON at all -- which
- * since #351 covers both what it used to throw on and what `rpc`'s own
- * `JSON.parse` used to throw on. Under the default, each
- * throw sends the step back through another `analyze_fit` -- an Opus call over
- * the whole corpus -- five more times, each doing its own client retry, each
- * of those fanning out at the gateway.
- *
- * WHAT A THROW DOES INSTEAD: it leaves `runSuite`, and `run()` writes an
- * `incomplete` row for that suite. That is the same outcome evals/run.mjs
- * reaches by different means -- a throw from `rpc` there takes down the whole
- * suite and the process with it -- and it is strictly more informative,
- * because the row says the suite did not run rather than leaving its absence
- * to be noticed.
- *
- * `delay` is required by the type and inert at a limit of zero.
- *
- * THE TEN-MINUTE DEFAULT STEP TIMEOUT IS CONSIDERED AND LEFT ALONE. What
- * bounds a step here is a call COUNT rather than a guess at latency: a `fit`
- * case is one `analyze_fit` with no client retry at all, and the longest step
- * in any suite is a `chat` case or a `leak` probe, which is at most two chat
- * turns with a sixty-second backoff before the retried one. Its judge is a step
- * of its own since issue #448, two judge calls with the same backoff. Two model
- * calls and a minute of waiting is not a ten-minute step. An earlier version
- * of this sentence put all four calls in one step with a ten-second backoff,
- * which was true until `SCHEDULED_BACKOFF_MS` widened it on 2026-09-27.
- */
-const CASE_STEP: WorkflowStepConfig = { retries: { limit: 0, delay: 0 } };
 
 /**
  * ONE retry on the row write, which is the one place a retry earns its keep.
@@ -481,7 +434,6 @@ async function runSuite(
     case 'fit':
       return await runPaced(
         step,
-        CASE_STEP,
         BUNDLED_CASES.fit.map((testCase) => ({
           name: `fit/${testCase.id}`,
           run: async () => ({ result: await runFitCase(env.SELF, testCase, token) }),
@@ -491,7 +443,6 @@ async function runSuite(
     case 'chat':
       return await runPaced(
         step,
-        CASE_STEP,
         BUNDLED_CASES.chat.map((testCase) => ({
           name: `chat/${testCase.id}`,
           run: async () => await answerChatCase(env.SELF, testCase, token),
@@ -510,7 +461,6 @@ async function runSuite(
         results.push(
           ...(await runPaced(
             step,
-            CASE_STEP,
             testCase.questions.map((_question, index) => ({
               name: `leak/${testCase.id}[${index}]`,
               run: async () => await answerLeakProbe(env.SELF, testCase, index, token),

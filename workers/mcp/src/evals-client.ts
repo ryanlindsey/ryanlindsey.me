@@ -290,12 +290,12 @@ export async function askOnce(
  * deliberate. The wait belongs to one attempt inside one case's `step.do`; the
  * ninety seconds between cases is the workflow's own `step.sleep`, which
  * suspends the instance instead of holding an invocation open. See
- * workers/mcp/src/evals-workflow.ts.
+ * workers/mcp/src/evals-pace.ts.
  *
  * `SCHEDULED_BACKOFF_MS`, sixty seconds, not evals/run.mjs's ten: on
- * 2026-09-27 a retry ten seconds after a 429 was refused every time. A case
- * that retries both its answer and its judge now holds its step for about two
- * minutes, inside the ten-minute default `CASE_STEP` inherits
+ * 2026-09-27 a retry ten seconds after a 429 was refused every time. The
+ * answer and the judge are separate steps since issue #448, so a retry holds
+ * its step for about a minute, inside the ten-minute default `CASE_STEP` inherits
  * (developers.cloudflare.com/workflows/build/sleeping-and-retrying, read
  * 2026-09-27).
  */
