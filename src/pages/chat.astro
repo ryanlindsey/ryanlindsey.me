@@ -45,7 +45,7 @@ const openers = [
  * them rather than typed.
  *
  * `chat_turns` is the row this page is talking about: src/lib/retention.ts is
- * the table the daily cron walks, so the window a reader sees above the box
+ * the table the daily cron walks, so the window a reader sees by the box
  * and the job that deletes their transcript are one number. `conversation` is
  * the per-caller chat bucket workers/mcp/src/chat.ts spends through
  * `checkLimit` before it answers anything.
@@ -119,29 +119,228 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
   ogCard={CHAT_CARD}
 >
   {/*
-    THREE GRID ITEMS RATHER THAN TWO, and the order they are written in is the
-    reason. The rail is rendered between the masthead and the composer so a
-    reader meets what this does with what they type on the way to the box
-    rather than after using it, which is what tests/chat-pages.test.ts asserts
-    by DOM offset. Explicit row and column placement puts it back on the right
-    at `lg`, so the reading order and the layout disagree on purpose.
+    THREE GRID ITEMS RATHER THAN TWO, and since epic #479 the rail is the last
+    of them. Below `lg` the grid stacks in source order, and with the rail
+    written second a phone visitor scrolled past what it reads, the message
+    cap and three protocol links before reaching the box. The rail now follows
+    the conversation in the DOM, and its explicit row and column placement
+    still puts it on the right at `lg`, so the reading order, the screen-reader
+    order and the layout agree at every width.
 
-    It also gives the page a sane phone layout for free: headline, then what it
-    reads and what it keeps, then the transcript and the box.
+    WHAT THIS REPLACED, kept as the record. The rail used to be rendered
+    between the masthead and the composer so a reader met what this does with
+    what they type on the way to the box rather than after using it, which
+    tests/chat-pages.test.ts asserted by DOM offset, and the reading order and
+    the layout disagreed on purpose. It was also said to give the page a sane
+    phone layout for free: headline, then what it reads and what it keeps,
+    then the transcript and the box. On a phone that was three blocks of
+    metadata before the conversation, which is what the epic fixed. The
+    invariant the old order protected is kept by other means: the disclosure
+    moved into the form, under the box (`data-chat-disclosure`), and the test
+    now asserts it sits inside the form.
+
+    `group` and `data-chat-root` carry the conversation state. The client sets
+    `data-chat-started` here on the first send, and the lede, the openers and
+    the pinned composer read it through `group-data-[chat-started]:`. The
+    client also writes `--chat-composer-height` here, which the turns use as a
+    scroll margin while the composer is pinned.
+
+    `max-lg:grid-cols-1` because the openers row does not wrap on a phone.
+    Below `lg` the grid had no column template, so its one implicit column was
+    `auto` and grew to the row's unwrapped width, and the whole page scrolled
+    sideways (measured 2026-09-30 at 390px, before this line). `grid-cols-1`
+    is `minmax(0, 1fr)`, which holds the column to the viewport and leaves the
+    row to scroll inside itself.
   */}
-  <div class="mx-auto grid w-full max-w-[1440px] lg:min-h-[680px] lg:grid-cols-[minmax(0,1fr)_320px]">
+  <div
+    data-chat-root
+    class="group mx-auto grid w-full max-w-[1440px] max-lg:grid-cols-1 lg:min-h-[680px] lg:grid-cols-[minmax(0,1fr)_320px]"
+  >
     <div class="px-5 pt-10 lg:col-start-1 lg:row-start-1 lg:px-10 lg:pt-11">
       <h1 class="font-display text-banner text-ink">Ask my agent</h1>
-      <p class="mt-3 max-w-[64ch] text-ink-muted">
+      <p class="mt-3 max-w-[64ch] text-ink-muted max-lg:group-data-[chat-started]:hidden">
         It answers from the published work only: the writing, the case studies and the résumé. Every
         claim cites the page it came from, and when those pages do not cover something it says so
         rather than filling the gap.
       </p>
     </div>
 
+    <div class="flex flex-col px-5 pb-12 lg:col-start-1 lg:row-start-2 lg:px-10">
+      <div
+        class="mt-8 flex flex-1 flex-col gap-6"
+        data-chat-transcript
+        aria-live="polite"
+        aria-atomic="false"
+      ></div>
+
+      {/*
+        THE TWO TURN SHAPES, AS TEMPLATES THE CLIENT CLONES.
+
+        They are markup rather than class strings built in the <script> below,
+        and the reason is not tidiness. Tailwind scans source text for complete
+        class names, so every class the transcript uses has to appear somewhere
+        a scanner can read it; written here, the design also sits where a
+        person reviewing this page against 1n can see it, and where a test can
+        assert that an agent turn is a rule and not a bubble without rendering
+        a conversation first.
+
+        The asymmetry is the argument. A user turn is a box, right-aligned and
+        narrower. An agent turn has no box at all: an accent rule down its left
+        edge and its citations as chips underneath, because a citation is part
+        of the answer rather than a footnote to it.
+
+        The answer container is a <div> because a rendered answer holds <p>
+        and lists, which a <p> cannot legally contain (#403). `empty:hidden`
+        keeps an unanswered turn to the typing dots alone, and the dots stay
+        under the answer until its last block has been shown.
+      */}
+      <template data-turn-template="user">
+        <div
+          data-turn="user"
+          class="flex justify-end max-lg:scroll-mb-[var(--chat-composer-height)]"
+        >
+          <p
+            class="max-w-[85%] border border-rule bg-surface-raised md:max-w-[56ch] px-[18px] py-[14px] text-body text-ink"
+            data-turn-text
+          ></p>
+        </div>
+      </template>
+
+      <template data-turn-template="agent">
+        <div
+          data-turn="agent"
+          class="max-w-[64ch] border-l-2 border-accent pl-5 max-lg:scroll-mb-[var(--chat-composer-height)]"
+        >
+          <div
+            class="mb-3 flex flex-col gap-4 text-body text-ink empty:hidden"
+            data-turn-text
+          ></div>
+          <p class="flex items-center" data-turn-pending>
+            <span class="sr-only">Thinking</span>
+            <span class="chat-typing-dot" aria-hidden="true"></span>
+            <span class="chat-typing-dot [animation-delay:160ms]" aria-hidden="true"></span>
+            <span class="chat-typing-dot [animation-delay:320ms]" aria-hidden="true"></span>
+          </p>
+          <ul class="mt-4 flex flex-wrap gap-2" data-turn-citations></ul>
+          <p class="mt-3 text-small text-accent" data-turn-error hidden></p>
+        </div>
+      </template>
+
+      <template data-citation-template>
+        <li>
+          <a
+            class="block border border-rule px-[9px] py-[5px] font-mono text-micro uppercase text-ink-muted no-underline"
+            data-citation
+          ></a>
+        </li>
+      </template>
+
+      <form
+        class="flex flex-col pt-6 max-lg:group-data-[chat-started]:chat-composer-pinned"
+        data-chat-form
+      >
+        {/*
+          A LABEL THAT IS THERE AND NOT SHOWN. The design gives the composer a
+          placeholder and no visible label, and a placeholder is not a label:
+          it is gone the moment anybody types and it is not reliably announced.
+          The <textarea> keeps its focus ring for the same reason -- the box
+          around it is a border, not a focus state.
+
+          `rows="2"` rather than the single line 1n draws, which is a
+          deliberate deviation: the field takes a thousand characters, and a
+          one-line window hides most of a question long enough to be worth
+          asking.
+        */}
+        <label class="sr-only" for="question">
+          Your question
+        </label>
+        <div class="flex items-center gap-[14px] border border-rule px-[18px] py-4 max-md:gap-2 max-md:px-3 max-md:py-3">
+          <textarea
+            id="question"
+            name="question"
+            rows="2"
+            required
+            maxlength="1000"
+            class="w-full resize-none border-0 bg-transparent text-body text-ink placeholder:text-ink-muted"
+            placeholder="Ask about the work, the writing, or the résumé"
+          >{handoff}</textarea>
+          <button
+            type="submit"
+            class="shrink-0 bg-accent-ground px-4 py-[10px] max-md:px-3 font-mono text-small uppercase text-accent-on disabled:cursor-wait disabled:opacity-60"
+            data-send
+          >
+            Send
+          </button>
+        </div>
+
+        {/*
+          The disclosure 04 §1 requires, rendered where the typing happens
+          rather than only in the policy. Until epic #479 it was a paragraph in
+          the rail's THIS SESSION block, which came before the form in the
+          DOM. The rail now follows the conversation, so the statement moved
+          under the box, inside the form, to stay ahead of the first send at
+          every width; tests/chat-pages.test.ts asserts the containment.
+
+          It spells the window out again, which the rail's paragraph had
+          stopped doing. That paragraph sat under the KEPT FOR row, which is
+          the number, and /ai-policy made the same call for the same reason
+          when its tables started rendering from `RETENTION` (issue #110): two
+          copies of a figure is one copy that will be wrong. Below `lg` the
+          rail is no longer beside the box, so the sentence carries the figure
+          itself, and it is still read from `RETENTION` through `formatWindow`
+          rather than typed. The half of that rule that matters holds: one
+          number, rendered twice, cannot disagree with itself.
+        */}
+        <p data-chat-disclosure class="mt-3 text-small text-ink-muted">
+          Questions and answers are kept for {formatWindow(transcripts.days)} so the answers can be
+          evaluated, then deleted. <a href="/ai-policy">Read the policy</a>.
+        </p>
+
+        <Turnstile sitekey={env.RLME_TURNSTILE_SITEKEY} />
+
+        {/*
+          The openers lead the form on a phone, as one row that scrolls
+          sideways, and follow the bot check at `md` and wider as they always
+          have. `order-first` rather than a DOM move, so the source order the
+          wider layout was built on does not change.
+
+          Hidden after the first send AT EVERY WIDTH, which is a change at
+          desktop too and a deliberate one (epic #479): once a transcript
+          exists, three starter questions under it read as a form rather than
+          a conversation.
+        */}
+        <ul
+          class="flex flex-wrap gap-2 group-data-[chat-started]:hidden max-md:order-first max-md:-mx-5 max-md:mb-3 max-md:flex-nowrap max-md:overflow-x-auto max-md:px-5 max-md:[scrollbar-width:none]"
+          data-openers
+        >
+          {openers.map((opener) => (
+            <li>
+              <button
+                type="button"
+                class="border border-rule px-[11px] py-[7px] text-left font-mono text-small text-ink-muted max-md:shrink-0 max-md:whitespace-nowrap"
+                data-opener={opener}
+              >
+                {opener}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </form>
+
+      <noscript>
+        <p class="mt-8 max-w-[64ch] border-l-2 border-accent py-3 pl-5 font-mono text-small text-ink">
+          This one needs JavaScript, because the bot check and the streamed answer both do. The
+          writing it reads is plain text and needs nothing at all:
+          <a href="/llms.txt">/llms.txt</a> is the index,
+          <a href="/llms-full.txt">/llms-full.txt</a> is everything, and
+          <a href="/connect">the MCP server</a> answers the same questions over a protocol.
+        </p>
+      </noscript>
+    </div>
+
     <aside
       data-chat-rail
-      class="mt-9 flex flex-col gap-[26px] border-t border-rule px-5 py-9 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0 lg:border-l lg:border-t-0 lg:px-7 lg:py-11"
+      class="flex flex-col gap-[26px] border-t border-rule px-5 py-9 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:border-l lg:border-t-0 lg:px-7 lg:py-11"
     >
       <div>
         <p class={RAIL_HEADING}>What it reads</p>
@@ -178,17 +377,16 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
           </div>
         </div>
         {/*
-          The disclosure 04 §1 requires, rendered where the typing happens
-          rather than only in the policy. It no longer spells the window out
-          loud: the row above it is that number, read from the constant the
-          cron enforces, and /ai-policy made the same call for the same reason
-          when its tables started rendering from `RETENTION` (issue #110). Two
-          copies of a figure is one copy that will be wrong.
+          The disclosure 04 §1 requires used to be this paragraph, and it is
+          now under the composer (`data-chat-disclosure`, in the form above).
+          It moved when the rail moved after the conversation (epic #479),
+          because a rail that follows the box can no longer be where a reader
+          meets the statement before typing. What stays here is the one
+          sentence the disclosure does not carry, and the policy link went
+          with the disclosure.
         */}
         <p class="mt-4 text-small text-ink-muted">
-          Questions and answers are stored so the answers can be evaluated, then deleted. Nothing
-          else about you is recorded: no account, no cookie, no address.{' '}
-          <a href="/ai-policy">Read the policy</a>.
+          Nothing else about you is recorded: no account, no cookie, no address.
         </p>
       </div>
 
@@ -208,133 +406,6 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
         </div>
       </div>
     </aside>
-
-    <div class="flex flex-col px-5 pb-12 lg:col-start-1 lg:row-start-2 lg:px-10">
-      <div
-        class="mt-8 flex flex-1 flex-col gap-6"
-        data-chat-transcript
-        aria-live="polite"
-        aria-atomic="false"
-      ></div>
-
-      {/*
-        THE TWO TURN SHAPES, AS TEMPLATES THE CLIENT CLONES.
-
-        They are markup rather than class strings built in the <script> below,
-        and the reason is not tidiness. Tailwind scans source text for complete
-        class names, so every class the transcript uses has to appear somewhere
-        a scanner can read it; written here, the design also sits where a
-        person reviewing this page against 1n can see it, and where a test can
-        assert that an agent turn is a rule and not a bubble without rendering
-        a conversation first.
-
-        The asymmetry is the argument. A user turn is a box, right-aligned and
-        narrower. An agent turn has no box at all: an accent rule down its left
-        edge and its citations as chips underneath, because a citation is part
-        of the answer rather than a footnote to it.
-
-        The answer container is a <div> because a rendered answer holds <p>
-        and lists, which a <p> cannot legally contain (#403). `empty:hidden`
-        keeps an unanswered turn to the typing dots alone, and the dots stay
-        under the answer until its last block has been shown.
-      */}
-      <template data-turn-template="user">
-        <div data-turn="user" class="flex justify-end">
-          <p
-            class="max-w-[56ch] border border-rule bg-surface-raised px-[18px] py-[14px] text-body text-ink"
-            data-turn-text
-          ></p>
-        </div>
-      </template>
-
-      <template data-turn-template="agent">
-        <div data-turn="agent" class="max-w-[64ch] border-l-2 border-accent pl-5">
-          <div
-            class="mb-3 flex flex-col gap-4 text-body text-ink empty:hidden"
-            data-turn-text
-          ></div>
-          <p class="flex items-center" data-turn-pending>
-            <span class="sr-only">Thinking</span>
-            <span class="chat-typing-dot" aria-hidden="true"></span>
-            <span class="chat-typing-dot [animation-delay:160ms]" aria-hidden="true"></span>
-            <span class="chat-typing-dot [animation-delay:320ms]" aria-hidden="true"></span>
-          </p>
-          <ul class="mt-4 flex flex-wrap gap-2" data-turn-citations></ul>
-          <p class="mt-3 text-small text-accent" data-turn-error hidden></p>
-        </div>
-      </template>
-
-      <template data-citation-template>
-        <li>
-          <a
-            class="block border border-rule px-[9px] py-[5px] font-mono text-micro uppercase text-ink-muted no-underline"
-            data-citation
-          ></a>
-        </li>
-      </template>
-
-      <form class="pt-6" data-chat-form>
-        {/*
-          A LABEL THAT IS THERE AND NOT SHOWN. The design gives the composer a
-          placeholder and no visible label, and a placeholder is not a label:
-          it is gone the moment anybody types and it is not reliably announced.
-          The <textarea> keeps its focus ring for the same reason -- the box
-          around it is a border, not a focus state.
-
-          `rows="2"` rather than the single line 1n draws, which is a
-          deliberate deviation: the field takes a thousand characters, and a
-          one-line window hides most of a question long enough to be worth
-          asking.
-        */}
-        <label class="sr-only" for="question">
-          Your question
-        </label>
-        <div class="flex items-center gap-[14px] border border-rule px-[18px] py-4">
-          <textarea
-            id="question"
-            name="question"
-            rows="2"
-            required
-            maxlength="1000"
-            class="w-full resize-none border-0 bg-transparent text-body text-ink placeholder:text-ink-muted"
-            placeholder="Ask about the work, the writing, or the résumé"
-          >{handoff}</textarea>
-          <button
-            type="submit"
-            class="shrink-0 bg-accent-ground px-4 py-[10px] font-mono text-small uppercase text-accent-on disabled:cursor-wait disabled:opacity-60"
-            data-send
-          >
-            Send
-          </button>
-        </div>
-
-        <Turnstile sitekey={env.RLME_TURNSTILE_SITEKEY} />
-
-        <ul class="flex flex-wrap gap-2" data-openers>
-          {openers.map((opener) => (
-            <li>
-              <button
-                type="button"
-                class="border border-rule px-[11px] py-[7px] text-left font-mono text-small text-ink-muted"
-                data-opener={opener}
-              >
-                {opener}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </form>
-
-      <noscript>
-        <p class="mt-8 max-w-[64ch] border-l-2 border-accent py-3 pl-5 font-mono text-small text-ink">
-          This one needs JavaScript, because the bot check and the streamed answer both do. The
-          writing it reads is plain text and needs nothing at all:
-          <a href="/llms.txt">/llms.txt</a> is the index,
-          <a href="/llms-full.txt">/llms-full.txt</a> is everything, and
-          <a href="/connect">the MCP server</a> answers the same questions over a protocol.
-        </p>
-      </noscript>
-    </div>
   </div>
 
   <script>
@@ -387,6 +458,7 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
     // 'string | Response | ReadableStream'". `appendChild` exists only on the
     // DOM side, so it is unambiguous.
 
+    const root = document.querySelector<HTMLElement>('[data-chat-root]');
     const form = document.querySelector<HTMLFormElement>('[data-chat-form]');
     const transcript = document.querySelector<HTMLDivElement>('[data-chat-transcript]');
     const field = document.querySelector<HTMLTextAreaElement>('#question');
@@ -414,6 +486,20 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
       sendButton.disabled = busy;
       sendButton.textContent = busy ? 'Sending…' : 'Send';
     };
+
+    // THE PINNED COMPOSER COVERS THE BOTTOM OF THE VIEWPORT below `lg` once a
+    // conversation exists (epic #479), so `scrollIntoView({ block: 'nearest' })`
+    // would land a new turn behind it. Both turn templates carry
+    // `max-lg:scroll-mb-[var(--chat-composer-height)]`, and this keeps that
+    // property equal to the form's measured height rather than to a typed
+    // number: the form's height moves with the textarea, the bot check and
+    // whether it is pinned at all. Read synchronously on submit as well,
+    // because a ResizeObserver reports after layout and the scroll below
+    // happens before it would.
+    const syncComposerHeight = () => {
+      if (root && form) root.style.setProperty('--chat-composer-height', `${form.offsetHeight}px`);
+    };
+    if (form) new ResizeObserver(syncComposerHeight).observe(form);
 
     for (const button of document.querySelectorAll<HTMLButtonElement>('[data-opener]')) {
       button.addEventListener('click', () => {
@@ -444,6 +530,11 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
       asked.textContent = question;
       transcript.appendChild(userTurn);
       transcript.appendChild(agentTurn);
+      // The conversation state: the lede collapses and the composer pins below
+      // `lg`, and the openers hide at every width. Set before the scroll so
+      // the margin it reads is the pinned form's height, not the open one's.
+      root?.setAttribute('data-chat-started', '');
+      syncComposerHeight();
       // A long transcript would otherwise leave the new turn below the fold,
       // which is the frozen page #403 exists to fix.
       agentTurn.scrollIntoView({ block: 'nearest' });
@@ -568,6 +659,20 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
           // turn rendered empty. Pre-existing rather than new -- the transcript
           // this replaced had the same hole and the same silence.
           if (!shown && failure.hidden) fail(CHAT_ERROR_COPY['no-answer']);
+
+          // ONCE MORE WHEN THE TURN IS FINISHED, and only while the composer
+          // is pinned. The scroll on append places a turn that is still three
+          // dots tall, and the turn then grows underneath the pinned form.
+          // Measured 2026-09-30 in WebKit at 390x844 under `astro dev`: the
+          // pinned form was 303px tall, the scroll on append put the new
+          // turn's bottom at 541px against the form's top at 541px, clear by
+          // exactly the margin, and the `no-answer` copy then grew the turn by
+          // 69px, behind the form. `position` is read rather than the width,
+          // so the rule that pins the form is the only rule that decides
+          // this, and at `lg` and wider nothing moves.
+          if (form && getComputedStyle(form).position === 'sticky') {
+            agentTurn.scrollIntoView({ block: 'nearest' });
+          }
         } finally {
           // Re-enabled only now, after the last block, so a second question
           // cannot start while the first answer is still appearing.

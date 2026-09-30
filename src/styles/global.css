@@ -1107,6 +1107,22 @@
   }
 }
 
+/*
+ * The /chat composer once a conversation exists, below `lg` only: applied as
+ * `max-lg:group-data-[chat-started]:chat-composer-pinned` (the epic that put
+ * the conversation first on /chat). One utility rather than ten
+ * variant-prefixed classes on the form, which is the only reason it is here.
+ * `-mx-5` and `px-5` undo and restore the column's own gutter, so the rule and
+ * the ground run edge to edge on a phone.
+ *
+ * No `env(safe-area-inset-bottom)`: src/layouts/Base.astro does not set
+ * `viewport-fit=cover`, so Safari keeps the page above its own toolbar and the
+ * inset is zero.
+ */
+@utility chat-composer-pinned {
+  @apply sticky bottom-0 -mx-5 border-t border-rule bg-bg px-5 pt-3 pb-3;
+}
+
 @utility chat-block-in {
   animation: chat-block-in 150ms ease-out;
 

@@ -158,18 +158,53 @@ describe('GET /chat', () => {
     expect(page).toContain('llms.txt');
   });
 
-  test('it says what it does with what you type, before the composer', async () => {
+  test('it says what it does with what you type, where the typing happens', async () => {
+    // The rail used to come before the composer so a reader met the statement
+    // on the way to the box. That put three blocks of metadata between a phone
+    // visitor and the conversation (epic #479), so the statement moved into
+    // the form and the rail moved after it. The invariant is the same one: the
+    // disclosure is read before or beside the box, never only after using it.
     const page = await html('/chat');
-    const composerAt = page.indexOf('data-chat-form');
+    const formAt = page.indexOf('data-chat-form');
+    const disclosureAt = page.indexOf('data-chat-disclosure');
+    const formEnd = page.indexOf('</form>', formAt);
+    expect(formAt).toBeGreaterThan(-1);
+    expect(disclosureAt).toBeGreaterThan(formAt);
+    expect(disclosureAt).toBeLessThan(formEnd);
+  });
+
+  test('the disclosure publishes the window the cron enforces, and links the policy', async () => {
+    const { RETENTION, formatWindow } = await import('../src/lib/retention');
+    const transcripts = RETENTION.find((row) => row.table === 'chat_turns');
+    const page = await html('/chat');
+    const disclosure = /<p[^>]*data-chat-disclosure[\s\S]*?<\/p>/.exec(page)?.[0] ?? '';
+    expect(disclosure, 'no disclosure in the form').not.toBe('');
+    expect(disclosure).toContain(formatWindow(transcripts!.days));
+    expect(disclosure).toContain('href="/ai-policy"');
+  });
+
+  test('the rail follows the conversation in the DOM', async () => {
+    // Source order is reading order for a screen reader, so the rail moved in
+    // the DOM rather than with CSS `order`. Its explicit lg placement keeps it
+    // on the right at desktop width.
+    const page = await html('/chat');
+    const formAt = page.indexOf('data-chat-form');
     const railAt = page.indexOf('data-chat-rail');
-    expect(composerAt).toBeGreaterThan(-1);
-    // Asserted explicitly, because `indexOf` returns -1 for a rail that is not
-    // there at all and -1 is less than every real offset: without this line a
-    // deleted rail passes the ordering check below rather than failing it.
-    expect(railAt).toBeGreaterThan(-1);
-    // Rendered before the composer in the DOM, so a reader meets the statement
-    // on the way to the box rather than after using it.
-    expect(railAt).toBeLessThan(composerAt);
+    expect(railAt).toBeGreaterThan(formAt);
+    expect(railOf(page)).toMatch(/lg:col-start-2/);
+  });
+
+  test('the openers row scrolls inside itself rather than widening the page', async () => {
+    // The openers do not wrap below `md`, and a grid with no column template
+    // below `lg` sized its one implicit column to their unwrapped width: the
+    // whole page scrolled sideways at 390px (measured 2026-09-30, epic #479).
+    // Asserted as the class that prevents it, since this suite does no layout.
+    const page = await html('/chat');
+    const root = /<div[^>]*data-chat-root[^>]*>/.exec(page)?.[0] ?? '';
+    expect(root, 'no chat root on the page').not.toBe('');
+    expect(root).toMatch(/max-lg:grid-cols-1/);
+    const openers = /<ul[^>]*data-openers[^>]*>/.exec(page)?.[0] ?? '';
+    expect(openers).toMatch(/max-md:overflow-x-auto/);
   });
 
   test('the retention figure is the one the cron enforces', async () => {
