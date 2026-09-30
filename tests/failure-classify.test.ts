@@ -91,6 +91,12 @@ describe('classifyFailure precedence', () => {
     expect(classifyFailure(tagged('made_up', 'boom')).reason).toBe('internal');
   });
 
+  it('ignores an inherited failureReason', () => {
+    const error = Object.create({ failureReason: 'not_found' }) as Error;
+    Object.assign(error, { message: 'boom', name: 'Error' });
+    expect(classifyFailure(error).reason).toBe('internal');
+  });
+
   it('tag beats upstream', () => {
     expect(classifyFailure(tagged('bad_output', 'x', '7003: nope')).reason).toBe('bad_output');
   });

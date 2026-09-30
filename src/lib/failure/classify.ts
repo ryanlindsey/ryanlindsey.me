@@ -144,6 +144,8 @@ function describe(link: unknown): string {
   return `${String(link.name)}: ${String(link.message)}`;
 }
 
+// The detail of a tagged or chat-code match comes from the link that matched,
+// not from the outermost link.
 export function classifyFailure(error: unknown): Failure {
   try {
     const links = walk(error);
