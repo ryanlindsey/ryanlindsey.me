@@ -101,9 +101,13 @@ export const BACKOFF_MS = 10_000;
  * per-gateway rate limit in the dashboard -- which is why failures appeared at
  * roughly six requests a minute against a fifty-a-minute setting, and why
  * raising that setting to three hundred did not clear them. Cloudflare does not
- * publish the wholesale number, so this is tuned by observation rather than
- * derived: the failures cluster at the TAIL of a run, which is the shape of a
- * sliding window filling up.
+ * publish the wholesale number when this was written, so it was tuned by
+ * observation rather than derived: the failures cluster at the TAIL of a run,
+ * which is the shape of a sliding window filling up. It is documented as of
+ * 2026-09-24: 200 requests per 60 seconds per gateway, with BYOK requests
+ * exempt (developers.cloudflare.com/ai-gateway/reference/limits/). The tuning
+ * above predates that page and was not re-derived from it, and the page still
+ * does not say whether gateway retries count toward the 200.
  *
  * Twenty-five seconds between cases, on top of the seconds each streamed answer
  * already takes. MEASURED, 2026-09-10: at 5s, three of eight leak probes died to
