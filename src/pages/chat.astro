@@ -296,7 +296,37 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
           evaluated, then deleted. <a href="/ai-policy">Read the policy</a>.
         </p>
 
-        <Turnstile sitekey={env.RLME_TURNSTILE_SITEKEY} />
+        {/*
+          THE BOT CHECK SHOWS ITSELF ONLY WHEN THE VISITOR HAS TO ACT (issue
+          #481). `interaction-only` cannot vary by width, so this holds at
+          every width, and at desktop the visible difference is that the
+          success badge no longer appears. The submit handler below waits for
+          the token the hidden widget writes, because nothing on the page says
+          the check is still running any more.
+
+          `mt-3` rather than the component's `my-6`: a shown challenge sits
+          under the disclosure, and the openers carry their own `md:mt-6`
+          rather than borrowing the widget's bottom margin.
+
+          NO `empty:hidden`, which the issue proposed on the guess that the
+          script leaves the container empty when no challenge is shown. It
+          does not. Measured 2026-09-30 in Playwright WebKit at 390, 820 and
+          1280 under `astro dev`, with Cloudflare's always-pass test sitekey
+          (`1x00000000000000000000AA`) swapped into the page: once the widget
+          has run, the container holds a wrapper `<div>` and the hidden
+          `turnstile_response` input, is 0px tall, and keeps its 12px margin.
+          So the selector matched only before the script arrived, and its one
+          effect would have been a 12px jump when it did. The forced-challenge
+          test key (`3x00000000000000000000FF`) and this site's own sitekey on
+          localhost both drew the 73px widget in the same place, under the
+          disclosure. Production behavior under the real sitekey is the
+          owner's phone check on the pull request, not this measurement.
+        */}
+        <Turnstile
+          sitekey={env.RLME_TURNSTILE_SITEKEY}
+          appearance="interaction-only"
+          class="mt-3"
+        />
 
         {/*
           The openers lead the form on a phone, as one row that scrolls
@@ -317,7 +347,7 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
           a conversation.
         */}
         <ul
-          class="flex flex-wrap gap-2 group-data-[chat-started]:hidden max-md:order-first max-md:-mx-5 max-md:mb-3 max-md:flex-nowrap max-md:overflow-x-auto max-md:px-5 max-md:[scrollbar-width:none]"
+          class="flex flex-wrap gap-2 group-data-[chat-started]:hidden max-md:order-first md:mt-6 max-md:-mx-5 max-md:mb-3 max-md:flex-nowrap max-md:overflow-x-auto max-md:px-5 max-md:[scrollbar-width:none]"
           data-openers
         >
           {openers.map((opener) => (
@@ -494,6 +524,46 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
       sendButton.textContent = busy ? 'Sending…' : 'Send';
     };
 
+    /**
+     * THE TOKEN MAY NOT EXIST YET, and with the widget hidden nothing on the
+     * page says so. Turnstile writes the hidden field once its check finishes,
+     * and `turnstile.reset()` empties it until the next check does (measured
+     * 2026-09-30 in Playwright WebKit with the always-pass test sitekey: the
+     * field was empty for about 1.7s after load and again after each reset).
+     * So a fast first question or a fast second one would otherwise send an
+     * empty token and be told to reload, which the unchanged handler did on
+     * all three sends of the same run. Waits, then sends whatever is there:
+     * the MCP Worker is the only verifier, and an empty token still gets its
+     * `bot-check` answer from there. The field is queried again on every pass
+     * because the Turnstile script creates it, and it may not exist on the
+     * first one.
+     *
+     * A SHOWN CHALLENGE GETS THE LONGER CEILING. The widget has height only
+     * when it needs the visitor, and a visitor who pressed Send in the middle
+     * of one would otherwise be sent `bot-check` after five seconds and then
+     * have `reset()` restart the challenge they were answering (code review
+     * on this change). While it shows, Send keeps saying "Sending…" beside
+     * the challenge, and the question goes as soon as it is answered.
+     *
+     * A blocked Turnstile script costs the short ceiling on every send before
+     * the server's `bot-check` answer, which is accepted.
+     *
+     * Both ceilings are chosen, not measured.
+     */
+    const TOKEN_WAIT_MS = 5000;
+    const CHALLENGE_WAIT_MS = 120_000;
+    const readToken = async (): Promise<string> => {
+      const start = Date.now();
+      for (;;) {
+        const value =
+          form?.querySelector<HTMLInputElement>('[name="turnstile_response"]')?.value ?? '';
+        const showing = (form?.querySelector<HTMLElement>('.cf-turnstile')?.offsetHeight ?? 0) > 0;
+        const waited = Date.now() - start;
+        if (value !== '' || waited >= (showing ? CHALLENGE_WAIT_MS : TOKEN_WAIT_MS)) return value;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    };
+
     // THE PINNED COMPOSER COVERS THE BOTTOM OF THE VIEWPORT below `lg` once a
     // conversation exists (epic #479), so `scrollIntoView({ block: 'nearest' })`
     // would land a new turn behind it. Both turn templates carry
@@ -539,8 +609,6 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
       const pending = agentTurn.querySelector<HTMLElement>('[data-turn-pending]');
       if (!asked || !answer || !citations || !failure || !pending) return;
 
-      const tokenField = form.querySelector<HTMLInputElement>('[name="turnstile_response"]');
-      const token = tokenField?.value ?? '';
       asked.textContent = question;
       transcript.appendChild(userTurn);
       transcript.appendChild(agentTurn);
@@ -554,6 +622,7 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
       // which is the frozen page #403 exists to fix.
       agentTurn.scrollIntoView({ block: 'nearest' });
       field.value = '';
+      // Busy before the wait, so Send says "Sending…" while the token arrives.
       setBusy(true);
 
       // Counted here rather than on a successful answer, because the bucket is
@@ -582,6 +651,8 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
       });
 
       try {
+        // Inside the `try`, so the `finally` below covers the wait as well.
+        const token = await readToken();
         const response = await fetch('/chat/send', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -684,7 +755,10 @@ const RAIL_VALUE = 'ml-auto font-mono text-small text-ink';
           // exactly the margin, and the `no-answer` copy then grew the turn by
           // 69px, behind the form. `position` is read rather than the width,
           // so the rule that pins the form is the only rule that decides
-          // this, and at `lg` and wider nothing moves.
+          // this, and at `lg` and wider nothing moves. Those numbers predate
+          // the hidden bot check (issue #481), which took the pinned form to
+          // 194px; the second scroll still settled the last turn's bottom on
+          // the form's top, at 650px (same setup, same date).
           //
           // Skipped when the reader scrolled by hand since sending, to reread
           // an earlier turn while this one was being written: `nearest` would

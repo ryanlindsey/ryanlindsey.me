@@ -212,6 +212,15 @@ test('/fit with a granted token renders the form', async () => {
   expect(html).toContain('0x4AAAAAAElhnY8ov3OYHN8m');
 });
 
+test('the fit form keeps its bot check visible', async () => {
+  // /fit shares src/components/Turnstile.astro with /chat, which hides its
+  // widget unless a challenge needs the visitor. This form keeps the visible
+  // default, so the attribute must not reach it at all.
+  const html = await (await server.fetch(`/fit?t=${await grant()}`)).text();
+  expect(html).toContain('class="cf-turnstile my-6"');
+  expect(html).not.toContain('data-appearance=');
+});
+
 test('the form preloads the campaign the TOKEN belongs to, not a global one', async () => {
   // THE REGRESSION THIS FILE EXISTS TO HOLD. Two campaigns, both `active`, and
   // each token must see only its own. The `activeCampaign()` this replaced
