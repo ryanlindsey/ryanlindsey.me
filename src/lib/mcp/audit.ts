@@ -4,6 +4,8 @@
 // is a published governance artifact (06 §2) -- read that file's comments
 // before changing the shape of a row.
 
+import type { FailureReason } from '../failure/classify';
+
 /** One row of `mcp_tool_calls`, matching the migration column-for-column. */
 export interface AuditRow {
   calledAt: string;
@@ -33,6 +35,13 @@ export interface AuditRow {
   userAgent: string | null;
   protocolVersion: string | null;
   outcome: 'ok' | 'error' | 'rate_limited';
+  /**
+   * Why the call failed, from migrations/0009_failure_reason.sql. NULL on an
+   * `ok` call and on a row written before that migration.
+   */
+  failureReason: FailureReason | null;
+  /** A short excerpt of the cause, for the owner. Never rendered anywhere. */
+  failureDetail: string | null;
   durationMs: number;
 }
 
@@ -76,8 +85,9 @@ export async function recordToolCall(db: D1Database, row: AuditRow): Promise<voi
       .prepare(
         `INSERT INTO mcp_tool_calls
            (called_at, tool, args_hash, tier, audience, grant_jti, client_name,
-            client_version, user_agent, protocol_version, outcome, duration_ms)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            client_version, user_agent, protocol_version, outcome, duration_ms,
+            failure_reason, failure_detail)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         row.calledAt,
@@ -92,6 +102,8 @@ export async function recordToolCall(db: D1Database, row: AuditRow): Promise<voi
         row.protocolVersion,
         row.outcome,
         row.durationMs,
+        row.failureReason,
+        row.failureDetail,
       )
       .run();
   } catch (err) {

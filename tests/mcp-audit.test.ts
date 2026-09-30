@@ -150,6 +150,8 @@ test('an audit row records the private tier, its audience and the granting token
     userAgent: null,
     protocolVersion: null,
     outcome: 'ok',
+    failureReason: null,
+    failureDetail: null,
     durationMs: 3,
   });
 

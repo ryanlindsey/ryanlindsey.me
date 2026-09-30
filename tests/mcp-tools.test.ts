@@ -268,9 +268,35 @@ test('every registered tool call writes exactly one audit row', async () => {
   await waitForAuditRows(db, 1);
 
   const { results } = await db
-    .prepare('SELECT tool, tier, audience, outcome FROM mcp_tool_calls')
+    .prepare(
+      'SELECT tool, tier, audience, outcome, failure_reason, failure_detail FROM mcp_tool_calls',
+    )
     .all();
-  expect(results).toEqual([{ tool: 'get_contact', tier: 'public', audience: null, outcome: 'ok' }]);
+  expect(results).toEqual([
+    {
+      tool: 'get_contact',
+      tier: 'public',
+      audience: null,
+      outcome: 'ok',
+      failure_reason: null,
+      failure_detail: null,
+    },
+  ]);
+});
+
+test('a get_post for a missing slug that contains 2018 is recorded as not_found', async () => {
+  const db = await auditDb();
+  await db.prepare('DELETE FROM mcp_tool_calls').run();
+
+  await callTool('get_post', { slug: 'review-2018' });
+  await waitForAuditRows(db, 1);
+
+  // Untagged, this fell to the pattern rules, which read the caller's own slug
+  // and called it a gateway limit.
+  const row = await db
+    .prepare('SELECT outcome, failure_reason FROM mcp_tool_calls')
+    .first<{ outcome: string; failure_reason: string | null }>();
+  expect(row?.failure_reason).toBe('not_found');
 });
 
 test('the audit row records a hash, never the arguments', async () => {
@@ -1316,4 +1342,12 @@ test('refuses past the limit and records the refusal', async () => {
     .prepare("SELECT COUNT(*) AS n FROM mcp_tool_calls WHERE outcome = 'rate_limited'")
     .all<{ n: number }>();
   expect(results[0]!.n).toBeGreaterThan(0);
+
+  // Every refusal names the limiter that made it: `local_limit`, never null.
+  const unnamed = await db
+    .prepare(
+      "SELECT COUNT(*) AS n FROM mcp_tool_calls WHERE outcome = 'rate_limited' AND (failure_reason IS NOT 'local_limit' OR failure_detail IS NULL)",
+    )
+    .first<{ n: number }>();
+  expect(unnamed!.n).toBe(0);
 });

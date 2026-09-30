@@ -101,9 +101,13 @@ export const BACKOFF_MS = 10_000;
  * per-gateway rate limit in the dashboard -- which is why failures appeared at
  * roughly six requests a minute against a fifty-a-minute setting, and why
  * raising that setting to three hundred did not clear them. Cloudflare does not
- * publish the wholesale number, so this is tuned by observation rather than
- * derived: the failures cluster at the TAIL of a run, which is the shape of a
- * sliding window filling up.
+ * publish the wholesale number when this was written, so it was tuned by
+ * observation rather than derived: the failures cluster at the TAIL of a run,
+ * which is the shape of a sliding window filling up. It is documented as of
+ * 2026-09-24: 200 requests per 60 seconds per gateway, with BYOK requests
+ * exempt (developers.cloudflare.com/ai-gateway/reference/limits/). The tuning
+ * above predates that page and was not re-derived from it, and the page still
+ * does not say whether gateway retries count toward the 200.
  *
  * Twenty-five seconds between cases, on top of the seconds each streamed answer
  * already takes. MEASURED, 2026-09-10: at 5s, three of eight leak probes died to
@@ -153,7 +157,10 @@ export const PACE_MS = 25000;
  * the one probe that got through mid-run did so after a 34s gap, and a lone
  * visitor's call minutes later succeeded. The manual run on 2026-09-23 had
  * passed at the same 25s, with five 429s its retry absorbed, so the limit
- * moves and nothing here knows its size or window. See `EVALS_CRONS`.
+ * moves, and the size and window were not known here when this was written.
+ * Cloudflare's limits page, last updated 2026-09-24, documents 200 requests per
+ * 60 seconds per gateway, with BYOK exempt; the spacing below was not
+ * re-derived from it. See `EVALS_CRONS`.
  *
  * NINETY SECONDS AND SIXTY ARE HEADROOM, NOT A MEASURED FLOOR. They were
  * chosen to sit well past the one gap that was seen to work, and they fit:
@@ -219,9 +226,12 @@ export const CORPUS_CRON = '32 5 * * *';
  * confirmation instance that ran `chat` and `leak` without `fit` failed the same
  * way, so the order was not the cause, and a lone call from a visitor five
  * minutes later succeeded. What the limit admits is an isolated call; what it
- * refuses is a steady stream. Cloudflare publishes neither the number nor the
- * window, so an hour between suites is room rather than a measurement, and
- * `SCHEDULED_PACE_MS` widens the gaps inside each one for the same reason.
+ * refuses is a steady stream. The number and the window were not known here when
+ * this was written, so an hour between suites is room rather than a
+ * measurement, and `SCHEDULED_PACE_MS` widens the gaps inside each one for the
+ * same reason. Cloudflare's limits page, last updated 2026-09-24, documents 200
+ * requests per 60 seconds per gateway, with BYOK exempt; the spacing was not
+ * re-derived from it.
  *
  * `tier` DAILY, THE OTHER THREE WEEKLY, AND THAT IS A COST DECISION. `tier`
  * makes no model call, so a daily run costs one D1 write. The other three run

@@ -310,14 +310,16 @@ const PUBLIC_TOOLS: readonly PublicTool[] = [
 
           if (format === 'markdown') {
             const markdown = await fetchDocument(documents, RESUME_SOURCE);
-            if (markdown === null) throw new ToolError(RESUME_UNAVAILABLE);
+            if (markdown === null)
+              throw new ToolError(RESUME_UNAVAILABLE, undefined, { failureReason: 'not_found' });
             // Frontmatter is the export format's own envelope, not part of the
             // document a reader was served.
             return parseFrontmatter(markdown).body;
           }
 
           const resume = await fetchResumeJson(documents);
-          if (resume === null) throw new ToolError(RESUME_UNAVAILABLE);
+          if (resume === null)
+            throw new ToolError(RESUME_UNAVAILABLE, undefined, { failureReason: 'not_found' });
           // `json` returns it UNRESHAPED (02 §1). `summary` is derived from the
           // same object rather than from a second fetch of the markdown.
           return format === 'summary' ? summaryOf(resume, env.SITE_ORIGIN) : resume;
@@ -360,6 +362,8 @@ const PUBLIC_TOOLS: readonly PublicTool[] = [
             // Naming what IS available turns a dead end into a next step.
             throw new ToolError(
               `Case study "${slug}" not found. Published slugs: ${published.join(', ') || '(none yet)'}`,
+              undefined,
+              { failureReason: 'not_found' },
             );
           }
           const markdown = await fetchDocument(documents, source);
@@ -415,11 +419,15 @@ const PUBLIC_TOOLS: readonly PublicTool[] = [
             if (asCaseStudy) {
               throw new ToolError(
                 `"${slug}" is a case study — call get_case_study with that slug.`,
+                undefined,
+                { failureReason: 'caller_input' },
               );
             }
             const published = index.filter((s) => s.type === 'post').map((s) => s.slug);
             throw new ToolError(
               `Post "${slug}" not found. Published slugs: ${published.join(', ') || '(none yet)'}`,
+              undefined,
+              { failureReason: 'not_found' },
             );
           }
 

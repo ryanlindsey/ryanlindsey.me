@@ -1,6 +1,12 @@
 import { classifyRequest, signalsFrom } from '../../../src/lib/agent-intel/classify';
 import { highIntentFor, type IntentEvent } from '../../../src/lib/agent-intel/intent';
 import { recordAgentEvent, type AgentEvent } from '../../../src/lib/agent-intel/record';
+import {
+  classifyChatCode,
+  classifyFailure,
+  isRefusal,
+  type Failure,
+} from '../../../src/lib/failure/classify';
 import { citationsIn, type ChatSource } from '../../../src/lib/chat/context';
 import {
   CHAT_MODEL,
@@ -123,6 +129,8 @@ interface TranscriptRow {
   cited: number;
   invalid: number;
   outcome: 'ok' | 'refused' | 'error';
+  /** Why the turn failed, or null when it did not (migrations/0009). */
+  failure: Failure | null;
   durationMs: number;
   /**
    * Which caller this turn came from (migrations/0004). `'evals'` joined
@@ -142,8 +150,9 @@ async function writeTranscript(env: McpEnv, row: TranscriptRow): Promise<void> {
     await env.DB.prepare(
       `INSERT INTO chat_turns
          (id, session_id, created_at, question, answer, model, sources_json,
-          cited, invalid_citations, outcome, duration_ms, surface)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          cited, invalid_citations, outcome, duration_ms, surface,
+          failure_reason, failure_detail)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         crypto.randomUUID(),
@@ -158,6 +167,8 @@ async function writeTranscript(env: McpEnv, row: TranscriptRow): Promise<void> {
         row.outcome,
         row.durationMs,
         row.surface,
+        row.failure?.reason ?? null,
+        row.failure?.detail ?? null,
       )
       .run();
   } catch (error) {
@@ -187,9 +198,10 @@ async function writeTranscript(env: McpEnv, row: TranscriptRow): Promise<void> {
  *
  * THE ACCEPTED TRADE, in the opposite direction from the failed-read
  * fallback below on purpose: a session whose first answer breaks mid-stream
- * (`outcome: 'error'`, set when the model stream dies before producing any
- * text) does not count as a completed first turn either, so that session can
- * notify a SECOND time on its next turn. Over-notifying on a rare broken
+ * (`outcome: 'error'`, set when the model stream dies at any point, or ends
+ * without producing any text) does not count as a completed first turn
+ * either, so that session can notify a SECOND time on its next turn.
+ * Over-notifying on a rare broken
  * stream costs one duplicate email; under-notifying loses the signal for
  * every session that happened to start that way, which is the exact failure
  * this correction exists to close. A D1 read failing is the reverse
@@ -335,7 +347,17 @@ export async function handleChat(
       ? EVALS_SURFACE
       : ('direct' as const);
 
-  const refuse = (code: ChatErrorCode, outcome: 'refused' | 'error' = 'refused') => {
+  // `error` is the cause when there is one (issue #465): a refusal is this
+  // Worker declining a request on its own terms, and an upstream failure is
+  // not one, so the outcome follows the reason rather than being passed in.
+  // The engine being off and a failed `AI.run` were stored as `refused` before
+  // this; the caller-facing frame is unchanged, only the transcript row moves.
+  const refuse = (code: ChatErrorCode, error?: unknown) => {
+    const failure: Failure =
+      error === undefined
+        ? { reason: classifyChatCode(code), detail: code }
+        : classifyFailure(error);
+    const outcome = isRefusal(failure.reason) ? 'refused' : 'error';
     // Hoisted (task-13a-findings-final.md item 9): computed once so the
     // transcript row and the AE row below report the SAME number for the
     // same refusal, rather than two calls a tick apart that could disagree
@@ -350,6 +372,7 @@ export async function handleChat(
         cited: 0,
         invalid: 0,
         outcome,
+        failure,
         durationMs,
         surface,
       }),
@@ -439,9 +462,11 @@ export async function handleChat(
   }
 
   let sources: ChatSource[] = [];
+  let retrievalError: unknown;
   try {
     sources = await retrieve(env as unknown as ChatEnv, question.trim());
   } catch (error) {
+    retrievalError = error;
     // Retrieval failing is not the same as the model failing, and the reader
     // gets the same sentence either way -- but the operator gets the
     // distinction in the log, which is where it is actionable.
@@ -462,12 +487,23 @@ export async function handleChat(
       sources,
     ));
   } catch (error) {
-    if (error instanceof ChatUnavailable) return refuse(error.code);
+    if (error instanceof ChatUnavailable) {
+      // `sources` is `[]` both when nothing matched and when retrieval threw,
+      // and `startAnswer` cannot tell the two apart, so it tags the empty case
+      // `no_sources`. When retrieval did throw, that tag would record an outage
+      // (a 2018, a Vectorize fault, a network failure) as "nothing matched" and
+      // store the turn as a refusal. Classify by the retrieval error instead;
+      // the client still gets the same code and the same sentence.
+      if (error.failureReason === 'no_sources' && retrievalError !== undefined) {
+        return refuse(error.code, retrievalError);
+      }
+      return refuse(error.code, error);
+    }
     // A plain Error here is a mis-set seam var (the engine's own contract), and
     // it is an operator's mistake rather than a caller's: the stack goes to
     // observability, the caller gets the generic code.
     console.error('chat: the engine threw before producing a stream', error);
-    return refuse('unreachable', 'error');
+    return refuse('unreachable', error);
   }
 
   // TASK 13a (2026-09-10) CLOSES THE HIGH-INTENT SEAM HERE: the first turn of
@@ -536,6 +572,7 @@ export async function handleChat(
         controller.enqueue(encoder.encode(sseFrame('delta', { text })));
       };
       let privateTier = false;
+      let streamFailure: Failure | null = null;
       const reader = upstream.getReader();
       try {
         for (;;) {
@@ -574,6 +611,16 @@ export async function handleChat(
         // a replacement -- silently stopping would read as a complete answer
         // that happens to trail off.
         console.error('chat: the upstream stream broke mid-answer', error);
+        // A stream that broke is the definition of `provider_unavailable`, so
+        // an unclassifiable throw (`internal`) is reported as that instead. That
+        // also relabels a defect thrown inside this loop (`parseModelSse`,
+        // `MarkerGate`) as `provider_unavailable`; the plan chose that over
+        // telling the two apart, since the detail still carries the message.
+        const classified = classifyFailure(error);
+        streamFailure =
+          classified.reason === 'internal'
+            ? { ...classified, reason: 'provider_unavailable' }
+            : classified;
         controller.enqueue(encoder.encode(sseFrame('error', { code: 'unreachable' })));
       } finally {
         reader.releaseLock();
@@ -598,7 +645,12 @@ export async function handleChat(
           sources: shown,
           cited: cited.length,
           invalid: invalid.length,
-          outcome: answer === '' ? 'error' : 'ok',
+          // A mid-stream failure wins and keeps the partial answer; an empty
+          // answer with no recorded failure is the model producing nothing.
+          outcome: streamFailure !== null || answer === '' ? 'error' : 'ok',
+          failure:
+            streamFailure ??
+            (answer === '' ? { reason: 'bad_output', detail: 'empty answer' } : null),
           durationMs: Date.now() - started,
           surface,
         }),

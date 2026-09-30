@@ -208,11 +208,25 @@ test('the deferred run is a workflow instance named by the permalink id', async 
   );
 
   const closed = await db
-    .prepare('SELECT status, failure_code, audience FROM fit_reports WHERE id = ?')
+    .prepare(
+      'SELECT status, failure_code, failure_reason, failure_detail, audience FROM fit_reports WHERE id = ?',
+    )
     .bind(id)
-    .first<{ status: string; failure_code: string | null; audience: string }>();
+    .first<{
+      status: string;
+      failure_code: string | null;
+      failure_reason: string | null;
+      failure_detail: string | null;
+      audience: string;
+    }>();
   expect(closed?.status).toBe('failed');
   expect(closed?.failure_code).toBe('refused');
+  // PINNED 2026-09-29: the FIT_ENGINE 'off' seam throws a bare `FitUnavailable`
+  // carrying no cause and no failureReason tag, and matching no upstream
+  // pattern, so classifyFailure falls through to `internal`. `failure_code`
+  // stays `refused` because that closed set is what /fit/r/<id> renders.
+  expect(closed?.failure_reason).toBe('internal');
+  expect(closed?.failure_detail).not.toBeNull();
   // Read back off the ROW rather than carried in the params, which is the
   // decision recorded in workers/mcp/src/fit-workflow.ts.
   expect(closed?.audience).toBe(AUDIENCE);

@@ -16,6 +16,11 @@ import { checkLimit, retryHint, type ToolCost } from '../../../src/lib/mcp/limit
 import { TOOL_REASON_META_KEY, type ToolErrorReason } from '../../../src/lib/mcp/tool-reason';
 import { hasScope, type Grant } from '../../../src/lib/tier/grant';
 import type { Scope } from '../../../src/lib/tier/token';
+import {
+  classifyFailure,
+  type Failure,
+  type FailureReason,
+} from '../../../src/lib/failure/classify';
 import type { McpEnv } from './env';
 
 // The registration seam, in its own module so the tool modules and the server
@@ -61,11 +66,16 @@ export interface ToolContext {
  * refusals carry none, and a missing reason means "grade it as usual".
  */
 export class ToolError extends Error {
+  /** Set only where the reason is definitive at the throw site; see `FitUnavailable`. */
+  declare readonly failureReason?: FailureReason;
+
   constructor(
     message: string,
     readonly reason?: ToolErrorReason,
+    options: { cause?: unknown; failureReason?: FailureReason } = {},
   ) {
-    super(message);
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
+    if (options.failureReason !== undefined) this.failureReason = options.failureReason;
   }
 }
 
@@ -246,7 +256,7 @@ export async function limitAndAudit<C, R>(
   // not be computed is worth more than a call that vanishes.
   let argsHash = ARGS_HASH_UNAVAILABLE;
 
-  const audit = (outcome: AuditRow['outcome']) => {
+  const audit = (outcome: AuditRow['outcome'], failure?: Failure) => {
     // `audit('error')` runs inside the `catch` below, which is the LAST place
     // in this function anything can still catch a throw -- so building the
     // row here must not itself throw, or the failure escapes `limitAndAudit`
@@ -277,6 +287,8 @@ export async function limitAndAudit<C, R>(
         grantJti: tc.grant?.jti ?? null,
         ...identity,
         outcome,
+        failureReason: failure?.reason ?? null,
+        failureDetail: failure?.detail ?? null,
         durationMs: Date.now() - started,
       }),
     );
@@ -311,7 +323,7 @@ export async function limitAndAudit<C, R>(
       return { kind: 'ok', value };
     }
 
-    audit('rate_limited');
+    audit('rate_limited', { reason: 'local_limit', detail: `rate limit: ${spec.cost}` });
     // Hands the refusal BACK rather than answering it, deliberately: a
     // surface's `refuse` may throw rather than return -- one with no error
     // result has no other way to say it -- and a throw raised in here would
@@ -319,7 +331,19 @@ export async function limitAndAudit<C, R>(
     // of this function therefore answers a refusal outside it.
     return { kind: 'rate_limited' };
   } catch (error) {
-    audit('error');
+    // `classifyFailure` never throws (src/lib/failure/classify.ts pins a
+    // throwing getter, a cyclic `cause` and a non-Error throw), so this guard
+    // is belt and braces: it runs in the last catch in this function, and a
+    // classifier defect that escaped here would reopen the gap the outer
+    // comment describes. A failure that cannot be classified is still audited.
+    let failure: Failure;
+    try {
+      failure = classifyFailure(error);
+    } catch (classifyError) {
+      console.error('mcp/audit: failed to classify failure', classifyError);
+      failure = { reason: 'internal', detail: 'unclassifiable failure' };
+    }
+    audit('error', failure);
     // The message is interpolated, and that is not a style choice. MEASURED
     // 2026-09-17 (see `run` in ./fit-workflow.ts): Worker observability
     // renders `console.error(msg, err)` as the message followed by the stack
@@ -478,7 +502,9 @@ export function defineTool<A>(
           // return in `invoke` -- is the mutation those assertions were
           // measured against, and it turns both of them red.
           if (spec.scope !== undefined && !hasScope(tc.grant, spec.scope)) {
-            throw new ToolError(`${spec.name} requires a scoped token.`);
+            throw new ToolError(`${spec.name} requires a scoped token.`, undefined, {
+              failureReason: 'not_permitted',
+            });
           }
           const output = await handler(args, tc);
           return {
