@@ -549,6 +549,21 @@ describe('with a grant', () => {
     // reason as "no answer was produced", so a refusal outside `analyze_fit`
     // gaining one by accident would move graded failures out of the count.
     expect(result.result._meta?.[TOOL_REASON_META_KEY]).toBeUndefined();
+
+    // The audit row names the same refusal the caller was told about only as
+    // a sentence: `not_found`, from `notDeployed()` in gated.ts.
+    let row: { outcome: string; failure_reason: string | null } | null = null;
+    for (let attempt = 0; attempt < 40 && !row; attempt += 1) {
+      row = await env.DB.prepare(
+        'SELECT outcome, failure_reason FROM mcp_tool_calls WHERE grant_jti = ? ORDER BY id DESC LIMIT 1',
+      )
+        .bind(claims.jti)
+        .first<{ outcome: string; failure_reason: string | null }>();
+      if (!row) await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(row, 'a missing document must leave an audit row').not.toBeNull();
+    expect(row!.outcome).toBe('error');
+    expect(row!.failure_reason).toBe('not_found');
   });
 
   test('every gated call is audited as private, with its audience and jti', async () => {
@@ -566,11 +581,22 @@ describe('with a grant', () => {
     // token makes the match exact.
     for (let attempt = 0; attempt < 40; attempt += 1) {
       const row = await env.DB.prepare(
-        "SELECT tier, audience, grant_jti FROM mcp_tool_calls WHERE tool='get_availability' AND grant_jti = ? ORDER BY id DESC LIMIT 1",
+        "SELECT tier, audience, grant_jti, outcome, failure_reason, failure_detail FROM mcp_tool_calls WHERE tool='get_availability' AND grant_jti = ? ORDER BY id DESC LIMIT 1",
       )
         .bind(jti)
-        .first<{ tier: string; audience: string; grant_jti: string }>();
+        .first<{
+          tier: string;
+          audience: string;
+          grant_jti: string;
+          outcome: string;
+          failure_reason: string | null;
+          failure_detail: string | null;
+        }>();
       if (row) {
+        // A success records no failure: both columns are null.
+        expect(row.outcome).toBe('ok');
+        expect(row.failure_reason).toBeNull();
+        expect(row.failure_detail).toBeNull();
         expect(row.tier).toBe('private');
         expect(row.audience).toBe(AUDIENCE);
         expect(row.grant_jti).toBe(jti);
@@ -861,7 +887,7 @@ test("a scope refusal is audited as an error, on the caller's own tier and audie
   expect((result.content?.[0] as { text: string }).text).toBe(`${PROBE} requires a scoped token.`);
 
   const row = await env.DB.prepare(
-    'SELECT tier, audience, grant_jti, outcome, args_hash FROM mcp_tool_calls WHERE tool=? ORDER BY id DESC LIMIT 1',
+    'SELECT tier, audience, grant_jti, outcome, args_hash, failure_reason, failure_detail FROM mcp_tool_calls WHERE tool=? ORDER BY id DESC LIMIT 1',
   )
     .bind(PROBE)
     .first<{
@@ -870,12 +896,16 @@ test("a scope refusal is audited as an error, on the caller's own tier and audie
       grant_jti: string;
       outcome: string;
       args_hash: string;
+      failure_reason: string | null;
+      failure_detail: string | null;
     }>();
 
   // The row is the whole point: a refusal that left no trace would be the one
   // call worth seeing and the only one nobody could see.
   expect(row, 'a scope refusal must leave an audit row').not.toBeNull();
   expect(row!.outcome).toBe('error');
+  expect(row!.failure_reason).toBe('not_permitted');
+  expect(row!.failure_detail).toContain('requires a scoped token');
   expect(row!.tier).toBe('private');
   expect(row!.audience).toBe(AUDIENCE);
   expect(row!.grant_jti).toBe(grant.jti);

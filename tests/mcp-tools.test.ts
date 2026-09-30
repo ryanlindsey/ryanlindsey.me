@@ -268,9 +268,20 @@ test('every registered tool call writes exactly one audit row', async () => {
   await waitForAuditRows(db, 1);
 
   const { results } = await db
-    .prepare('SELECT tool, tier, audience, outcome FROM mcp_tool_calls')
+    .prepare(
+      'SELECT tool, tier, audience, outcome, failure_reason, failure_detail FROM mcp_tool_calls',
+    )
     .all();
-  expect(results).toEqual([{ tool: 'get_contact', tier: 'public', audience: null, outcome: 'ok' }]);
+  expect(results).toEqual([
+    {
+      tool: 'get_contact',
+      tier: 'public',
+      audience: null,
+      outcome: 'ok',
+      failure_reason: null,
+      failure_detail: null,
+    },
+  ]);
 });
 
 test('the audit row records a hash, never the arguments', async () => {
@@ -1316,4 +1327,12 @@ test('refuses past the limit and records the refusal', async () => {
     .prepare("SELECT COUNT(*) AS n FROM mcp_tool_calls WHERE outcome = 'rate_limited'")
     .all<{ n: number }>();
   expect(results[0]!.n).toBeGreaterThan(0);
+
+  // Every refusal names the limiter that made it: `local_limit`, never null.
+  const unnamed = await db
+    .prepare(
+      "SELECT COUNT(*) AS n FROM mcp_tool_calls WHERE outcome = 'rate_limited' AND (failure_reason IS NOT 'local_limit' OR failure_detail IS NULL)",
+    )
+    .first<{ n: number }>();
+  expect(unnamed!.n).toBe(0);
 });
