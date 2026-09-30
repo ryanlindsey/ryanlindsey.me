@@ -50,7 +50,15 @@ import { signingKey } from '../../../src/lib/tier/grant';
 import { recordIssue, revokeToken } from '../../../src/lib/tier/registry';
 import { mintToken, newJti, type Scope, type TokenClaims } from '../../../src/lib/tier/token';
 import { BUNDLED_CASES } from './evals-cases';
-import { runChatCase, runFitCase, runLeakProbe, runTierCase } from './evals-run';
+import { runPaced } from './evals-pace';
+import {
+  answerChatCase,
+  answerLeakProbe,
+  judgeCase,
+  runFitCase,
+  runTierCase,
+  type JudgePending,
+} from './evals-run';
 import type { McpEnv } from './env';
 
 /** What `scheduled()` hands an instance: the suites this cron asked for, in run order. */
@@ -97,8 +105,11 @@ export interface EvalsRunParams {
  * bounds a step here is a call COUNT rather than a guess at latency: a `fit`
  * case is one `analyze_fit` with no client retry at all, and the longest step
  * in any suite is a `chat` case or a `leak` probe, which is at most two chat
- * turns and two judge calls with a ten-second backoff before each retried one.
- * Four model calls and twenty seconds of waiting is not a ten-minute step.
+ * turns with a sixty-second backoff before the retried one. Its judge is a step
+ * of its own since issue #448, two judge calls with the same backoff. Two model
+ * calls and a minute of waiting is not a ten-minute step. An earlier version
+ * of this sentence put all four calls in one step with a ten-second backoff,
+ * which was true until `SCHEDULED_BACKOFF_MS` widened it on 2026-09-27.
  */
 const CASE_STEP: WorkflowStepConfig = { retries: { limit: 0, delay: 0 } };
 
@@ -439,38 +450,6 @@ async function record(env: McpEnv, step: WorkflowStep, row: EvalRunRecord): Prom
   }
 }
 
-/** One unit of work: a step's name and the case it runs. */
-interface Unit {
-  name: string;
-  run: () => Promise<CaseResult>;
-}
-
-/**
- * Runs units in order, one `step.do` each, `SCHEDULED_PACE_MS` apart.
- *
- * NOT BEFORE THE FIRST, which is where the pacing arithmetic in
- * `PACE_MS`'s own comment comes from: the gaps are `cases - 1` summed, two
- * from three fit cases, three from four chat cases and seven from eight leak
- * probes. A sleep before the first case would buy nothing -- there is no
- * preceding request for it to space this one away from.
- *
- * `step.sleep` rather than a `setTimeout`: it suspends the instance instead of
- * holding an invocation open for ninety seconds at a time.
- *
- * `SCHEDULED_PACE_MS`, NOT evals/run.mjs's `PACE_MS`, since 2026-09-27: at the
- * manual runner's twenty-five seconds the gateway refused every scheduled call
- * after the first. The gap arithmetic below still counts in `PACE_MS`'s terms,
- * `cases - 1` summed; only the length of each gap differs.
- */
-async function runPaced(step: WorkflowStep, units: Unit[]): Promise<CaseResult[]> {
-  const results: CaseResult[] = [];
-  for (const [index, unit] of units.entries()) {
-    if (index > 0) await step.sleep(`pace before ${unit.name}`, SCHEDULED_PACE_MS);
-    results.push(await step.do(unit.name, CASE_STEP, unit.run));
-  }
-  return results;
-}
-
 /** One suite's cases, as `CaseResult`s, in the order evals/run.mjs runs them. */
 async function runSuite(
   env: McpEnv,
@@ -478,6 +457,7 @@ async function runSuite(
   suite: SuiteName,
   token: string,
 ): Promise<CaseResult[]> {
+  const judge = async (pending: JudgePending) => await judgeCase(env.SELF, pending, token);
   switch (suite) {
     case 'tier': {
       // NOT PACED, mirroring `runTier` in evals/run.mjs, and it looks like an
@@ -501,18 +481,22 @@ async function runSuite(
     case 'fit':
       return await runPaced(
         step,
+        CASE_STEP,
         BUNDLED_CASES.fit.map((testCase) => ({
           name: `fit/${testCase.id}`,
-          run: async () => await runFitCase(env.SELF, testCase, token),
+          run: async () => ({ result: await runFitCase(env.SELF, testCase, token) }),
         })),
+        judge,
       );
     case 'chat':
       return await runPaced(
         step,
+        CASE_STEP,
         BUNDLED_CASES.chat.map((testCase) => ({
           name: `chat/${testCase.id}`,
-          run: async () => await runChatCase(env.SELF, testCase, token),
+          run: async () => await answerChatCase(env.SELF, testCase, token),
         })),
+        judge,
       );
     case 'leak': {
       // PACED PER CASE FILE, not across the flattened list, because that is
@@ -526,10 +510,12 @@ async function runSuite(
         results.push(
           ...(await runPaced(
             step,
+            CASE_STEP,
             testCase.questions.map((_question, index) => ({
               name: `leak/${testCase.id}[${index}]`,
-              run: async () => await runLeakProbe(env.SELF, testCase, index, token),
+              run: async () => await answerLeakProbe(env.SELF, testCase, index, token),
             })),
+            judge,
           )),
         );
       }
