@@ -3,31 +3,39 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { SITE_HARNESS_WORKERS } from './workers';
 import { BANNED_PATTERNS } from './candidacy-patterns';
 import { stripTags } from './markup';
+import { EVALS_USER_AGENT } from '../src/lib/evals/plan';
+import { GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
 
 /**
  * The public /ops page (06 §1), rendered by the real Worker against a real D1.
  *
- * TWO RENDERS ARE CAPTURED HERE, AND THE ORDER IS THE MECHANISM RATHER THAN AN
- * ACCIDENT OF SETUP. The first fetch happens BEFORE `applyD1Migrations`, so the
- * four tables `readOpsMetrics` reads do not exist and its `db.batch` rejects --
- * which is the only way this repo can produce a genuine D1 failure without a
- * seam, and it is the exact failure a public page must not answer with a 500.
+ * THREE RENDERS ARE CAPTURED HERE, TWO UNTIL ISSUE #466, AND THE ORDER IS THE
+ * MECHANISM RATHER THAN AN ACCIDENT OF SETUP. The first fetch happens BEFORE
+ * `applyD1Migrations`, so the four tables `readOpsMetrics` reads do not exist
+ * and its `db.batch` rejects -- which is the only way this repo can produce a
+ * genuine D1 failure without a seam, and it is the exact failure a public page
+ * must not answer with a 500.
  * `readOpsMetrics` returns `Promise<OpsMetrics>` and has no internal try (its
  * signature is not this task's to change), so the degradation has to live at
  * the page, and `degraded` below is what proves it does.
  *
- * The second fetch, after the migrations and after a PRIVATE-TIER row is
+ * The last fetch, after the migrations and after a PRIVATE-TIER row is
  * planted, is what every other assertion reads. The planted row is what makes
  * the leak assertions mean something: without it they would pass against a page
  * that renders every column of an empty table.
  *
- * THE ORDER ALSO PINS THE CACHE. /ops caches each of its three reads under its
+ * Between the two sits `failuresDegraded`, taken with one column renamed away
+ * so the failure read alone rejects while the metrics read answers. That is the
+ * case the separate read exists for (src/lib/ops/failures.ts), and it needs a
+ * render of its own because neither of the other two can show it.
+ *
+ * THE ORDER ALSO PINS THE CACHE. /ops caches each of its four reads under its
  * OWN KV key, fresh for 60 seconds (`ops:metrics:v5`, `ops:traffic:v2`,
- * `ops:spend:v2`), so if the failed metrics read had been stored, the second
- * fetch would still be showing "could not be read" a minute later -- a
- * transient D1 blip pinned as a state. It is not stored because `cached`
- * (src/lib/ops/cache.ts) awaits its `fn` before it writes anything, so a
- * rejection leaves that function before the `put`. An earlier version of this
+ * `ops:spend:v2`, `ops:failures:v1`), so if the failed metrics read had been
+ * stored, the last fetch would still be showing "could not be read" a minute
+ * later -- a transient D1 blip pinned as a state. It is not stored because
+ * `cached` (src/lib/ops/cache.ts) awaits its `fn` before it writes anything, so
+ * a rejection leaves that function before the `put`. An earlier version of this
  * paragraph credited the page's `try` sitting OUTSIDE `cached` for that, which
  * is not a cause: the `put` is skipped wherever the caller's catch sits, and
  * the placement buys the page a labelled absence instead of a 500, which is a
@@ -38,6 +46,8 @@ const server = createTestHarness({ workers: SITE_HARNESS_WORKERS });
 
 /** The render with no tables behind it. */
 let degraded: string;
+/** The render with the tables in place and only the failure read rejected. */
+let failuresDegraded: string;
 /** The render every other test reads. */
 let html: string;
 /** The page's own cache, so the version test below can plant a stale entry in it. */
@@ -119,6 +129,64 @@ beforeAll(async () => {
       .bind(id, createdAt, status)
       .run();
   }
+  // THE FAILURES FIXTURE (issue #466), the shape of tests/ops-failures.test.ts.
+  // Every seeded `failure_detail` starts `detail-secret-` so one assertion can
+  // say none of them reached the page.
+  const toolCall = (
+    name: string,
+    outcome: string,
+    reason: string | null,
+    detail: string | null,
+    userAgent: string | null = null,
+  ) =>
+    db
+      .prepare(
+        `INSERT INTO mcp_tool_calls (called_at, tool, args_hash, tier, audience, user_agent, outcome, duration_ms, failure_reason, failure_detail)
+         VALUES (?, ?, 'h', 'private', 'label-a', ?, ?, 5, ?, ?)`,
+      )
+      .bind(new Date().toISOString(), name, userAgent, outcome, reason, detail);
+  await db.batch([
+    // TWO FAILED `analyze_fit` CALLS, LIVE, beside the one 'ok' row planted at
+    // the top of this block: `fit · live` is exactly 2 of 3 because of it.
+    toolCall('analyze_fit', 'error', 'provider_rejected', 'detail-secret-fit-one'),
+    toolCall('analyze_fit', 'error', 'provider_rejected', 'detail-secret-fit-two'),
+    // One failed private row per gated tool, derived from the registry rather
+    // than typed, so a tool added there is covered here without an edit. They
+    // are SCHEDULED rows so they do not move the `fit · live` count above, and
+    // `judge_answer`'s is what makes `judge · scheduled` render.
+    ...GATED_TOOL_NAMES.map((name) =>
+      toolCall(name, 'error', 'internal', `detail-secret-${name}`, EVALS_USER_AGENT),
+    ),
+    // A private-tools failure with no reason, as a row written before
+    // migrations/0009 has, beside a smaller count of a known reason, so the
+    // reasons cell has an order to get wrong.
+    toolCall(GATED_TOOL_NAMES[0], 'error', null, null),
+    toolCall(GATED_TOOL_NAMES[0], 'error', null, null),
+    toolCall(GATED_TOOL_NAMES[0], 'error', 'not_found', 'detail-secret-not-found'),
+    // A surface with traffic and no failures: one live chat turn that answered.
+    // Chat rather than a public tool because a public row would fill `By tool`,
+    // whose empty state a test below depends on.
+    db
+      .prepare(
+        `INSERT INTO chat_turns (id, session_id, created_at, question, answer, model,
+                                 sources_json, cited, invalid_citations, outcome, duration_ms, surface)
+         VALUES ('turn-ok', 'session-ok', ?, 'q', 'a', 'm', '[]', 0, 0, 'ok', 10, 'site')`,
+      )
+      .bind(new Date().toISOString()),
+  ]);
+
+  // THE FAILURE READ REJECTED, AND NOTHING ELSE. `readFailureMetrics` names
+  // `failure_reason`; `readOpsMetrics` never does, so hiding the column fails
+  // one read and leaves the other answering. The rejection is never cached, so
+  // the render below reads the restored column fresh.
+  await db
+    .prepare('ALTER TABLE chat_turns RENAME COLUMN failure_reason TO failure_reason_hidden')
+    .run();
+  failuresDegraded = await (await server.fetch('/ops')).text();
+  await db
+    .prepare('ALTER TABLE chat_turns RENAME COLUMN failure_reason_hidden TO failure_reason')
+    .run();
+
   html = await (await server.fetch('/ops')).text();
 });
 
@@ -180,6 +248,36 @@ function evalCells(suite: string): string[] {
 /** A cell's text content, trimmed. */
 function cellText(cell: string): string {
   return text(stripTags(cell)).trim();
+}
+
+/** The Failures section's markup. */
+function failuresSection(doc: string = html): string {
+  const section = /<section aria-labelledby="failures"[\s\S]*?<\/section>/.exec(doc);
+  expect(section, 'no failures section').not.toBeNull();
+  expect(section![0]).toContain('data-failures');
+  return section![0];
+}
+
+/** One failure row's cell texts, looked up by its `surface · origin` cell. */
+function failureCells(label: string): string[] {
+  const section = failuresSection();
+  const body = section.slice(section.indexOf('<tbody'), section.indexOf('</tbody>'));
+  for (const tr of body.match(/<tr[\s\S]*?<\/tr>/g) ?? []) {
+    const cells = (tr.match(/<td[\s\S]*?<\/td>/g) ?? []).map(cellText);
+    if (cells[0] === label) return cells;
+  }
+  throw new Error(`no failure row for ${label}`);
+}
+
+/** One failure row's reasons, one entry per `reason count` item, in page order. */
+function failureReasons(label: string): string[] {
+  const section = failuresSection();
+  const at = section.indexOf(`>${label}<`);
+  expect(at, `no failure row for ${label}`).toBeGreaterThan(-1);
+  const tr = section.slice(section.lastIndexOf('<tr', at), section.indexOf('</tr>', at));
+  return [...tr.matchAll(/<li[^>]*data-failure-reason[^>]*>([\s\S]*?)<\/li>/g)].map((m) =>
+    cellText(m[1]).replace(/\s+/g, ' '),
+  );
 }
 
 /** One `<li>` of a definition list, looked up by the text in it. */
@@ -292,6 +390,81 @@ describe('/ops', () => {
     // the tool name is the separate thing that would say which scoped surface
     // exists (09 §2). The row is the one edit that made naming it tempting.
     expect(html).not.toContain('judge_answer');
+  });
+
+  test('no gated tool name reaches the page, with a failed row planted for every one', () => {
+    // Issue #466 put failures on this page, and private-tier failures are most
+    // of what there is to count. Every gated name has a failed row behind this
+    // render, so each assertion has something it could have leaked.
+    expect(GATED_TOOL_NAMES.length).toBeGreaterThan(0);
+    for (const name of GATED_TOOL_NAMES) expect(html, name).not.toContain(name);
+  });
+
+  test('the failures section counts by surface and origin, and names the reason', () => {
+    const section = failuresSection();
+    expect(section).toContain('fit · live');
+    expect(section).toContain('2 of 3 failed');
+    expect(section).toContain('provider_rejected');
+    expect(section).toContain('judge · scheduled');
+    expect(failureCells('fit · live')).toEqual([
+      'fit · live',
+      '2 of 3 failed',
+      'provider_rejected 2',
+    ]);
+  });
+
+  test('reasons run largest first, with unrecorded last whatever its count', () => {
+    const [, failed] = failureCells('private tools · live');
+    expect(failed).toBe('3 of 3 failed');
+    expect(failureReasons('private tools · live')).toEqual(['not_found 1', 'unrecorded 2']);
+  });
+
+  test('a surface with traffic and no failures says so and lists no reason', () => {
+    const [, failed, reasons] = failureCells('chat · live');
+    expect(failed).toBe('no failures');
+    expect(reasons).toBe('');
+    expect(failureReasons('chat · live')).toEqual([]);
+  });
+
+  test('the Failures intro explains unrecorded and what the fit rows count', () => {
+    // Asserts the terms that tie the paragraph to the table, not its wording.
+    const intro = /<p[^>]*>([\s\S]*?)<\/p>/.exec(failuresSection());
+    expect(intro, 'no intro paragraph').not.toBeNull();
+    const words = text(stripTags(intro![1])).replace(/\s+/g, ' ');
+    expect(words).toContain('unrecorded');
+    expect(words).toContain('fit form');
+    expect(intro![1]).not.toMatch(/[\u2013\u2014]/);
+  });
+
+  test('no seeded failure detail reaches the page', () => {
+    // `failure_detail` is never selected by the read, so this holds by
+    // construction; the assertion is what notices a later read that selects it.
+    expect(html).not.toContain('detail-secret');
+    expect(failuresDegraded).not.toContain('detail-secret');
+  });
+
+  test('a rejected failure read renders its absence and leaves the metrics standing', () => {
+    for (const doc of [degraded, failuresDegraded]) {
+      const section = failuresSection(doc);
+      expect(section).toContain('not available');
+      expect(section).toContain('the metrics store could not be read');
+      expect(section).not.toContain('<tbody');
+    }
+    // The metrics read answered in the same render: its tile has a figure.
+    expect(tile('Chat turns', failuresDegraded)).toContain('data-numeric');
+    // And the masthead counts the failure read among its sources, so it cannot
+    // read green above a section that says it could not be read. RELATIVE TO
+    // THE MAIN RENDER rather than a fixed "1 of 4": the harness stubs both
+    // analytics reads to null, so the main render already reports two sources
+    // unavailable and this one must report exactly one more.
+    const unavailable = (doc: string): number => {
+      const pill = /<p[^>]*data-status-pill[\s\S]*?<\/p>/.exec(doc)?.[0] ?? '';
+      expect(pill).toContain('data-status="degraded"');
+      const match = /(\d+) of 4 sources unavailable/.exec(pill);
+      expect(match, 'the status line must count four sources').not.toBeNull();
+      return Number(match![1]);
+    };
+    expect(unavailable(failuresDegraded)).toBe(unavailable(html) + 1);
   });
 
   test('no copy on the page matches a banned pattern', () => {

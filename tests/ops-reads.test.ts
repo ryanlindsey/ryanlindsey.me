@@ -4,6 +4,7 @@ import {
   formatCount,
   OPS_CACHE_KEYS,
   publicToolCalls,
+  readOpsReads,
   readOrNull,
   WINDOW_DAYS,
 } from '../src/lib/ops/reads';
@@ -31,6 +32,7 @@ test('the cache keys, the TTL and the window are the ones the page has always us
     metrics: 'ops:metrics:v5',
     traffic: 'ops:traffic:v2',
     spend: 'ops:spend:v2',
+    failures: 'ops:failures:v1',
   });
   expect(CACHE_TTL_SECONDS).toBe(60);
   expect(WINDOW_DAYS).toBe(30);
@@ -68,6 +70,42 @@ test('readOrNull degrades a rejected read to null and writes nothing', async () 
     ).resolves.toBeNull();
     expect(put).not.toHaveBeenCalled();
     expect(error).toHaveBeenCalledWith('ops: ops:test could not be read', expect.any(Error));
+  } finally {
+    error.mockRestore();
+  }
+});
+
+test('a rejected failure read leaves failures null and the metrics returned', async () => {
+  // A fake D1 whose only failing statement is the one naming `failure_reason`,
+  // which is what an unmigrated database does. Empty results are enough for
+  // readOpsMetrics, which defaults every figure to zero.
+  const db = {
+    prepare: (sql: string) => {
+      const statement = { sql, bind: () => statement };
+      return statement;
+    },
+    batch: async (statements: { sql: string }[]) => {
+      if (statements.some((s) => s.sql.includes('failure_reason'))) {
+        throw new Error('no such column: failure_reason');
+      }
+      return statements.map(() => ({ results: [] }));
+    },
+  } as unknown as D1Database;
+  const kv = { get: async () => null, put: async () => undefined } as unknown as KVNamespace;
+  const env = {
+    DB: db,
+    KV_CACHE: kv,
+    RLME_ANALYTICS_MODE: 'stub',
+    RLME_ANALYTICS_TOKEN: { get: async () => null },
+    RLME_ACCOUNT_ID: 'a',
+    RLME_AI_GATEWAY_ID: 'g',
+  } as unknown as Parameters<typeof readOpsReads>[0];
+  const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  try {
+    const reads = await readOpsReads(env, new Date('2026-09-09T12:00:00.000Z'));
+    expect(reads.failures).toBeNull();
+    expect(reads.metrics).not.toBeNull();
+    expect(reads.metrics?.chatTurns).toBe(0);
   } finally {
     error.mockRestore();
   }

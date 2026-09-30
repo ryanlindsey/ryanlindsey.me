@@ -6,6 +6,7 @@ import {
   type GatewaySpend,
 } from './analytics';
 import { cached, type CachedOptions } from './cache';
+import { readFailureMetrics, type FailureMetrics } from './failures';
 import { readOpsMetrics, type OpsMetrics } from './metrics';
 
 /**
@@ -28,7 +29,7 @@ export const CACHE_TTL_SECONDS = 60;
 export const WINDOW_DAYS = 30;
 
 /**
- * The KV key each of the three reads is cached under. The home page's band
+ * The KV key each of the four reads is cached under. The home page's band
  * reads these same keys, so a bump moves both.
  */
 export const OPS_CACHE_KEYS = {
@@ -67,6 +68,10 @@ export const OPS_CACHE_KEYS = {
   metrics: 'ops:metrics:v5',
   traffic: 'ops:traffic:v2',
   spend: 'ops:spend:v2',
+  // Its own key and its own read, since issue #466: the statements name
+  // `failure_reason` (migrations/0009), and sharing the metrics entry would
+  // tie the two figures' fates together. First version, so nothing to bump.
+  failures: 'ops:failures:v1',
 } as const;
 
 export interface OpsReadsEnv extends AnalyticsEnv {
@@ -78,15 +83,17 @@ export interface OpsReads {
   metrics: OpsMetrics | null;
   traffic: AgentTraffic | null;
   spend: GatewaySpend | null;
+  failures: FailureMetrics | null;
 }
 
 /**
  * One read, cached under its own key, degrading to `null` on anything that
  * throws.
  *
- * THREE KEYS RATHER THAN ONE, which the plan spelled as a single `ops:v1`. The
- * key shape turned out to be load-bearing in two directions the single entry
- * got wrong, and neither is theoretical:
+ * THREE KEYS RATHER THAN ONE, which the plan spelled as a single `ops:v1`, and
+ * four since issue #466 added `ops:failures`, which degrades the same way and
+ * for the same reasons. The key shape turned out to be load-bearing in two
+ * directions the single entry got wrong, and neither is theoretical:
  *
  *   - IT MISLABELLED WHICH SYSTEM WAS BROKEN. One `try` around all three reads
  *     means a D1 rejection nulls `traffic` and `spend` as well, so the three
@@ -143,7 +150,7 @@ export async function readOrNull<T>(
 }
 
 /**
- * The three reads, each cached and degraded on its own.
+ * The four reads, each cached and degraded on its own.
  *
  * `defer` is `waitUntil` from `cloudflare:workers`, passed in rather than
  * imported so this module stays loadable outside workerd. A stale entry's
@@ -155,7 +162,7 @@ export async function readOpsReads(
   now: Date,
   defer?: CachedOptions['defer'],
 ): Promise<OpsReads> {
-  const [metrics, traffic, spend] = await Promise.all([
+  const [metrics, traffic, spend, failures] = await Promise.all([
     readOrNull(
       env.KV_CACHE,
       OPS_CACHE_KEYS.metrics,
@@ -169,8 +176,14 @@ export async function readOpsReads(
       defer,
     ),
     readOrNull(env.KV_CACHE, OPS_CACHE_KEYS.spend, () => readSpend(env, now, WINDOW_DAYS), defer),
+    readOrNull(
+      env.KV_CACHE,
+      OPS_CACHE_KEYS.failures,
+      () => readFailureMetrics(env.DB, now, WINDOW_DAYS),
+      defer,
+    ),
   ]);
-  return { metrics, traffic, spend };
+  return { metrics, traffic, spend, failures };
 }
 
 /** Every public tool call in the window, summed across the tools. */
