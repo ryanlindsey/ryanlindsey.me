@@ -11,8 +11,8 @@ import { GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
  *
  * THREE RENDERS ARE CAPTURED HERE, TWO UNTIL ISSUE #466, AND THE ORDER IS THE
  * MECHANISM RATHER THAN AN ACCIDENT OF SETUP. The first fetch happens BEFORE
- * `applyD1Migrations`, so the four tables `readOpsMetrics` reads do not exist and its `db.batch` rejects --
- * which is the only way this repo can produce a genuine D1 failure without a
+ * `applyD1Migrations`, so the four tables `readOpsMetrics` reads do not exist
+ * and its `db.batch` rejects -- which is the only way this repo can produce a genuine D1 failure without a
  * seam, and it is the exact failure a public page must not answer with a 500.
  * `readOpsMetrics` returns `Promise<OpsMetrics>` and has no internal try (its
  * signature is not this task's to change), so the degradation has to live at
@@ -31,8 +31,8 @@ import { GATED_TOOL_NAMES } from '../workers/mcp/src/gated';
  * THE ORDER ALSO PINS THE CACHE. /ops caches each of its four reads under its
  * OWN KV key, fresh for 60 seconds (`ops:metrics:v5`, `ops:traffic:v2`,
  * `ops:spend:v2`, `ops:failures:v1`), so if the failed metrics read had been
- * stored, the last fetch would still be showing "could not be read" a minute later -- a
- * transient D1 blip pinned as a state. It is not stored because `cached`
+ * stored, the last fetch would still be showing "could not be read" a minute
+ * later -- a transient D1 blip pinned as a state. It is not stored because `cached`
  * (src/lib/ops/cache.ts) awaits its `fn` before it writes anything, so a
  * rejection leaves that function before the `put`. An earlier version of this
  * paragraph credited the page's `try` sitting OUTSIDE `cached` for that, which
@@ -441,6 +441,19 @@ describe('/ops', () => {
     }
     // The metrics read answered in the same render: its tile has a figure.
     expect(tile('Chat turns', failuresDegraded)).toContain('data-numeric');
+    // And the masthead counts the failure read among its sources, so it cannot
+    // read green above a section that says it could not be read. RELATIVE TO
+    // THE MAIN RENDER rather than a fixed "1 of 4": the harness stubs both
+    // analytics reads to null, so the main render already reports two sources
+    // unavailable and this one must report exactly one more.
+    const unavailable = (doc: string): number => {
+      const pill = /<p[^>]*data-status-pill[\s\S]*?<\/p>/.exec(doc)?.[0] ?? '';
+      expect(pill).toContain('data-status="degraded"');
+      const match = /(\d+) of 4 sources unavailable/.exec(pill);
+      expect(match, 'the status line must count four sources').not.toBeNull();
+      return Number(match![1]);
+    };
+    expect(unavailable(failuresDegraded)).toBe(unavailable(html) + 1);
   });
 
   test('no copy on the page matches a banned pattern', () => {

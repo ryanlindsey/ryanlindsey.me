@@ -305,7 +305,11 @@ const releases = recentReleases(changelog, 5);
  * the nominal arm's vocabulary", which left the vocabulary in place on the arm
  * a reader is least able to check: "all systems nominal" is an uptime claim,
  * and nothing on this page is tied to a monitor. What it performs is exactly
- * three reads, and what it can honestly report is whether those three answered.
+ * four reads, and what it can honestly report is whether those four answered.
+ * It was three until issue #466 added the failure read, and leaving that one
+ * out would have put "3 of 3 sources answered" in green above a Failures
+ * section saying it could not be read, most likely after a deploy that
+ * reached production before migrations/0009 did.
  * Nothing here probes the MCP Worker, the queue or the rate limiter, and a site
  * that was entirely down would not be serving this page to be read. So the
  * nominal arm names its own evidence too, and keeps the colour, because every
@@ -317,7 +321,7 @@ const releases = recentReleases(changelog, 5);
  * difference is already spelled out, per system, in words. This line is five
  * words at the top of a page; it says how many, and the band says which.
  */
-const READS = [metrics, traffic, spend];
+const READS = [metrics, traffic, spend, failures];
 const unreadCount = READS.filter((read) => read === null).length;
 const status = {
   state: unreadCount === 0 ? 'nominal' : 'degraded',
@@ -852,7 +856,8 @@ const SECTIONS: { number: string; id: string; name: string; qualifier: string }[
   {/* ------------------------------------------------------------- 3 & 4 */}
   {/*
       Two sections sharing one band, which is the design's three-panel row with
-      the breakdowns lifted out of it. The panel treatment is the design's; the
+      the breakdowns lifted out of it, and a third, Failures, spanning both
+      columns beneath them (its own comment says why). The panel treatment is the design's; the
       grouping is this page's, because "By tool" reads from the same D1 query as
       the tiles above it and belongs in the section that owns that read.
     */}
