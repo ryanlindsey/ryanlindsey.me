@@ -44,6 +44,7 @@ import {
 } from 'cloudflare:workers';
 import { highIntentFor } from '../../../src/lib/agent-intel/intent';
 import { analyzeFit, FitUnavailable, type FitResult } from '../../../src/lib/fit/engine';
+import { classifyFailure, type FailureReason } from '../../../src/lib/failure/classify';
 import type { FitFailureCode } from '../../../src/lib/fit/report-status';
 import { fitEnv } from './gated';
 import type { McpEnv } from './env';
@@ -201,7 +202,17 @@ const ROW_STEP: WorkflowStepConfig = { retries: { limit: 1, delay: '5 seconds' }
  * duplicate into a second, unswept original.
  */
 type Attempt =
-  { ok: true; result: FitResult } | { ok: false; code: FitFailureCode; message: string };
+  | { ok: true; result: FitResult }
+  | {
+      ok: false;
+      code: FitFailureCode;
+      message: string;
+      // Classified INSIDE the step callback and carried as plain strings: a
+      // step's return value is serialized into durable state, so an Error or
+      // its cause chain would not survive the trip.
+      reason: FailureReason;
+      detail: string;
+    };
 
 export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
   /**
@@ -279,10 +290,13 @@ export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
           // about -- the breaker, an empty corpus, an unusable answer. Anything
           // else is a defect, and the two are worth telling apart on /ops even
           // though the reader is told the same thing.
+          const failure = classifyFailure(error);
           return {
             ok: false,
             code: error instanceof FitUnavailable ? 'refused' : 'errored',
             message: messageOf(error),
+            reason: failure.reason,
+            detail: failure.detail,
           };
         }
       });
@@ -290,10 +304,13 @@ export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
       // `errored` rather than `refused`, and not by default: the engine never
       // got to decline, so the only member of the closed set that fits is the
       // one meaning a defect of this system.
+      const failure = classifyFailure(error);
       attempt = {
         ok: false,
         code: 'errored',
         message: `the analyze step did not finish: ${messageOf(error)}`,
+        reason: failure.reason,
+        detail: failure.detail,
       };
     }
 
@@ -325,9 +342,11 @@ export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
           .run();
       } else {
         await env.DB.prepare(
-          `UPDATE fit_reports SET status = 'failed', failure_code = ? WHERE id = ?`,
+          `UPDATE fit_reports
+              SET status = 'failed', failure_code = ?, failure_reason = ?, failure_detail = ?
+            WHERE id = ?`,
         )
-          .bind(attempt.code, id)
+          .bind(attempt.code, attempt.reason, attempt.detail, id)
           .run();
       }
       return id;
@@ -449,6 +468,10 @@ async function notifyRun(
  * engine was never asked. A run that could not be started is a defect of this
  * system, which is what the closed set's second member means.
  *
+ * THE REASON IS `internal` WITH A FIXED DETAIL, not a classification: this
+ * function receives no error, only the id, so the underlying cause is in the
+ * log line ./fit-start.ts writes rather than in the row.
+ *
  * IT SWALLOWS ITS OWN FAILURE AFTER LOGGING, because it is already the
  * fallback. A throw from here would be raised inside the `ctx.waitUntil` that
  * called it, which logs it and changes nothing else, and the five-minute stale
@@ -458,8 +481,17 @@ async function notifyRun(
  */
 export async function abandonRun(env: McpEnv, id: string, audience: string): Promise<void> {
   try {
-    await env.DB.prepare(`UPDATE fit_reports SET status = 'failed', failure_code = ? WHERE id = ?`)
-      .bind('errored' satisfies FitFailureCode, id)
+    await env.DB.prepare(
+      `UPDATE fit_reports
+          SET status = 'failed', failure_code = ?, failure_reason = ?, failure_detail = ?
+        WHERE id = ?`,
+    )
+      .bind(
+        'errored' satisfies FitFailureCode,
+        'internal' satisfies FailureReason,
+        'abandoned: the run could not be started',
+        id,
+      )
       .run();
     await notifyRun(env, id, audience, 'failed');
   } catch (error) {
