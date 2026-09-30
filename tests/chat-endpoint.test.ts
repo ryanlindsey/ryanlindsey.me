@@ -245,7 +245,54 @@ describe('POST /chat', () => {
     )
       .bind('audited-refusal-probe')
       .all();
-    expect(results[0]?.outcome).toBe('refused');
+    // The engine is off on this path, which is an upstream failure rather than
+    // a refusal (issue #465): it was `refused` before failure reasons landed.
+    expect(results[0]?.outcome).toBe('error');
+  });
+
+  describe('the failure reason on the transcript row', () => {
+    const rowFor = async (question: string) => {
+      const { results } = await env.DB.prepare(
+        `SELECT outcome, failure_reason, failure_detail FROM chat_turns WHERE question = ? LIMIT 1`,
+      )
+        .bind(question)
+        .all();
+      return results[0];
+    };
+
+    test('the engine being off is an error with provider_unavailable', async () => {
+      await post({ question: 'reason-engine-off' }, { 'cf-connecting-ip': '203.0.113.21' });
+      const row = await rowFor('reason-engine-off');
+      expect(row?.outcome).toBe('error');
+      expect(row?.failure_reason).toBe('provider_unavailable');
+    });
+
+    test('the per-caller limit is a refusal with local_limit', async () => {
+      const headers = { 'cf-connecting-ip': '203.0.113.22' };
+      const allowance = LIMITS.conversation.limit;
+      for (let i = 0; i < allowance; i += 1) {
+        await post({ question: `reason-limit-warm-${i}` }, headers);
+      }
+      await post({ question: 'reason-limit-over' }, headers);
+      const row = await rowFor('reason-limit-over');
+      expect(row?.outcome).toBe('refused');
+      expect(row?.failure_reason).toBe('local_limit');
+    });
+
+    test('an empty question is a refusal with caller_input', async () => {
+      await post({ question: '   ' }, { 'cf-connecting-ip': '203.0.113.23' });
+      const row = await rowFor('   ');
+      expect(row?.outcome).toBe('refused');
+      expect(row?.failure_reason).toBe('caller_input');
+    });
+
+    test('a failed bot check is a refusal with caller_input and the code as detail', async () => {
+      await chat({ question: 'reason-bot-check' }, { 'cf-connecting-ip': '203.0.113.24' });
+      const row = await rowFor('reason-bot-check');
+      expect(row?.outcome).toBe('refused');
+      expect(row?.failure_reason).toBe('caller_input');
+      expect(row?.failure_detail).toBe('bot-check');
+    });
   });
 
   test('a malformed session id is replaced rather than stored', async () => {
