@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.50.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.50.0...ryanlindsey-me-v1.50.1) (2026-09-30)
+
+
+### Dependencies
+
+* bump fast-uri from 3.1.7 to 3.1.8 ([#471](https://github.com/ryanlindsey/ryanlindsey.me/issues/471)) ([5284c80](https://github.com/ryanlindsey/ryanlindsey.me/commit/5284c80fbed3e8a61fea3df483f31819a39552e3))
+* bump fast-uri from 3.1.7 to 3.1.8 in /workers/mcp ([#473](https://github.com/ryanlindsey/ryanlindsey.me/issues/473)) ([2bc475e](https://github.com/ryanlindsey/ryanlindsey.me/commit/2bc475ed35963ac084dd25f4c15a0bfd7a888a6d))
+* bump ip-address from 10.7.0 to 10.7.2 ([#475](https://github.com/ryanlindsey/ryanlindsey.me/issues/475)) ([1f55198](https://github.com/ryanlindsey/ryanlindsey.me/commit/1f55198eb9e5cc61831f8e71c91ad5ede9b86928))
+* bump ip-address from 10.7.0 to 10.7.2 in /workers/mcp ([#472](https://github.com/ryanlindsey/ryanlindsey.me/issues/472)) ([7df4f8b](https://github.com/ryanlindsey/ryanlindsey.me/commit/7df4f8b89a151c0c794b70daf4c4dc664d042875))
+* bump undici and wrangler in /workers/mcp ([#474](https://github.com/ryanlindsey/ryanlindsey.me/issues/474)) ([3fa3831](https://github.com/ryanlindsey/ryanlindsey.me/commit/3fa3831f625395ebd455f592b937501b0808af87))
+
 ## [1.50.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.49.1...ryanlindsey-me-v1.50.0) (2026-09-30)
 
 
