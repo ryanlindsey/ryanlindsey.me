@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.52.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.51.0...ryanlindsey-me-v1.52.0) (2026-10-01)
+
+
+### Features
+
+* **chat:** hide the bot check unless it needs the visitor ([#483](https://github.com/ryanlindsey/ryanlindsey.me/issues/483)) ([6384ba8](https://github.com/ryanlindsey/ryanlindsey.me/commit/6384ba85821c6934b95f051942374c43970a104d)), closes [#481](https://github.com/ryanlindsey/ryanlindsey.me/issues/481)
+* **chat:** put the conversation first on small screens ([#482](https://github.com/ryanlindsey/ryanlindsey.me/issues/482)) ([e96ea5e](https://github.com/ryanlindsey/ryanlindsey.me/commit/e96ea5ef2c5a1fa460f84c0d8fc18173c6892652))
+
 ## [1.51.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.50.1...ryanlindsey-me-v1.51.0) (2026-09-30)
 
 
