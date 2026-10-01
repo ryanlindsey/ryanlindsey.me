@@ -1107,6 +1107,33 @@
   }
 }
 
+/*
+ * The /chat composer once a conversation exists, below `lg` only: applied as
+ * `max-lg:group-data-[chat-started]:chat-composer-pinned` (the epic that put
+ * the conversation first on /chat). One utility rather than ten
+ * variant-prefixed classes on the form, which is the only reason it is here.
+ * `-mx-5` and `px-5` undo and restore the column's own gutter, so the rule and
+ * the ground run edge to edge on a phone.
+ *
+ * No `env(safe-area-inset-bottom)`: src/layouts/Base.astro does not set
+ * `viewport-fit=cover`, so Safari keeps the page above its own toolbar and the
+ * inset is zero.
+ *
+ * The bot check's bottom margin is dropped while pinned, because it is the
+ * last thing in the bar once the openers hide and its `my-6` sat on top of the
+ * bar's own `pb-3`: 36px of empty ground under the widget. Measured
+ * 2026-09-30 in WebKit at 390x844, the pinned form was 303px tall with it and
+ * this takes 24px off. Scoped here rather than on the shared component, so
+ * /fit and every unpinned width keep the margin they had.
+ */
+@utility chat-composer-pinned {
+  @apply sticky bottom-0 -mx-5 border-t border-rule bg-bg px-5 pt-3 pb-3;
+
+  & .cf-turnstile {
+    margin-bottom: 0;
+  }
+}
+
 @utility chat-block-in {
   animation: chat-block-in 150ms ease-out;
 
