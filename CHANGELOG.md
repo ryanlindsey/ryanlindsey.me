@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.52.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.52.1...ryanlindsey-me-v1.52.2) (2026-10-01)
+
+
+### Dependencies
+
+* bump devalue from 5.9.2 to 5.9.4 ([#489](https://github.com/ryanlindsey/ryanlindsey.me/issues/489)) ([d619f88](https://github.com/ryanlindsey/ryanlindsey.me/commit/d619f88b54b19a7bf86bf9b86f7844890d3e45f5))
+* bump hono from 4.13.5 to 4.13.12 ([#488](https://github.com/ryanlindsey/ryanlindsey.me/issues/488)) ([ab222ef](https://github.com/ryanlindsey/ryanlindsey.me/commit/ab222efbc1056c4ace57f06f93b884337363878a))
+
 ## [1.52.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.52.0...ryanlindsey-me-v1.52.1) (2026-10-01)
 
 
