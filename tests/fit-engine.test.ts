@@ -2,10 +2,10 @@ import { expect, test } from 'vitest';
 import {
   analyzeFit,
   BREAKER_KEY,
-  extractStructuredOutput,
   extractToolInput,
   fenceFor,
   FIT_MAX_TOKENS,
+  FIT_MODEL,
   FitUnavailable,
   type FitEnv,
 } from '../src/lib/fit/engine';
@@ -32,19 +32,16 @@ const REPORT = {
 };
 
 /**
- * The envelope Opus 5.5 answers with under `output_config.format`, in the shape
- * MEASURED through the gateway on 2026-09-24: a `thinking` block (adaptive
- * thinking cannot be switched off, and its text arrives empty) and then ONE
- * `text` block carrying the report as a JSON string. Not a `tool_use` block --
- * that was the Opus 5 mechanism, and Opus 5.5 answers forced tool use with
- * `7003`.
+ * The envelope Opus 5 answers a forced `emit_fit_report` call with: the report
+ * as the input of a `tool_use` block. A `text` block may sit beside it, which
+ * is why one is here and why `extractToolInput` searches rather than indexing.
  */
 function reply(report: unknown, stopReason = 'end_turn'): Record<string, unknown> {
   return {
     stop_reason: stopReason,
     content: [
-      { type: 'thinking', thinking: '', signature: 'sig' },
-      { type: 'text', text: JSON.stringify(report) },
+      { type: 'text', text: 'Here is the report.' },
+      { type: 'tool_use', name: 'emit_fit_report', input: report },
     ],
   };
 }
@@ -230,29 +227,54 @@ test('the target description and the prompt both reach the model call', async ()
   );
 
   expect(String(seen.system)).toContain('Fit analysis prompt');
-  // The prompt used to tell the model to call a tool that no longer exists.
-  expect(String(seen.system)).not.toContain('emit_fit_report');
+  // The prompt names the tool the request forces; the two must agree.
+  expect(String(seen.system)).toContain('emit_fit_report');
   const messages = seen.messages as { content: string }[];
   expect(messages[0]!.content).toContain('Runs a distributed platform group.');
   expect(messages[0]!.content).toContain('https://site.test/resume');
 
   // Fix round 1, finding 7: the structured-output mechanism and the per-call
-  // cost cap were both unpinned. Structured output is `output_config.format`
-  // carrying the DERIVED schema (never a hand-written second copy), effort is
-  // set explicitly rather than inherited from a default that can move, and
-  // `max_tokens` is the only thing standing between one request and an
-  // unbounded bill. Nothing else in this file would notice any of them being
-  // dropped. Forced tool use is ABSENT: Opus 5.5 rejects it.
-  expect(seen.output_config).toEqual({
-    effort: 'medium',
-    format: { type: 'json_schema', schema: FIT_REPORT_JSON_SCHEMA },
-  });
-  expect((seen.output_config as { format: { schema: unknown } }).format.schema).toBe(
-    FIT_REPORT_JSON_SCHEMA,
-  );
+  // cost cap were both unpinned. Structured output is a forced
+  // `emit_fit_report` call whose input schema is the DERIVED schema (never a
+  // hand-written second copy), and `max_tokens` is the only thing standing
+  // between one request and an unbounded bill. Nothing else in this file
+  // would notice either being dropped. `output_config` is ABSENT: it was the
+  // Opus 5.5 mechanism, and the forced tool is the body Opus 5 ran in
+  // production.
+  expect(seen.tools).toEqual([
+    {
+      name: 'emit_fit_report',
+      description: 'Return the completed fit report.',
+      input_schema: FIT_REPORT_JSON_SCHEMA,
+    },
+  ]);
+  expect((seen.tools as { input_schema: unknown }[])[0]!.input_schema).toBe(FIT_REPORT_JSON_SCHEMA);
+  expect(seen.tool_choice).toEqual({ type: 'tool', name: 'emit_fit_report' });
   expect(seen.max_tokens).toBe(FIT_MAX_TOKENS);
-  expect(seen).not.toHaveProperty('tools');
-  expect(seen).not.toHaveProperty('tool_choice');
+  expect(seen).not.toHaveProperty('output_config');
+});
+
+test('the engine calls a model AI Gateway serves under Unified Billing', async () => {
+  // 2026-10-01: Cloudflare withdrew `anthropic/claude-opus-5.5` from Unified
+  // Billing, every fit run failed with `2047: Invalid User Credentials`, and
+  // the gateway log read "This model is not available via unified billing.
+  // Please use BYOK." Nothing here can see the catalogue, so this pins the id
+  // the catalogue listed with `keySource: "Unified"` that day. Moving it means
+  // checking developers.cloudflare.com/ai/models first.
+  let model: unknown;
+  await analyzeFit(
+    env({
+      AI: {
+        run: async (requested: unknown) => {
+          model = requested;
+          return reply(REPORT);
+        },
+      } as unknown as Ai,
+    }),
+    'A target description.',
+  );
+  expect(FIT_MODEL).toBe('anthropic/claude-opus-5');
+  expect(model).toBe(FIT_MODEL);
 });
 
 test('the fence around the description survives a description containing a fence', async () => {
@@ -309,27 +331,7 @@ test('a fabricated citation is dropped and counted', async () => {
   expect(result.report.requirement_map[0]!.strength).toBe('none');
 });
 
-test('extractStructuredOutput reads the JSON text block past the thinking block', () => {
-  expect(extractStructuredOutput(reply({ a: 1 }))).toEqual({ a: 1 });
-});
-
-test('extractStructuredOutput returns null for every shape that is not a JSON answer', () => {
-  for (const shape of [
-    null,
-    'text',
-    {},
-    { content: 'text' },
-    { content: [] },
-    { content: [{ type: 'thinking', thinking: '' }] },
-    { content: [{ type: 'text', text: 'not json {' }] },
-    { content: [{ type: 'text' }] },
-    { content: [{ type: 'tool_use', input: { a: 1 } }] },
-  ]) {
-    expect(extractStructuredOutput(shape)).toBeNull();
-  }
-});
-
-test('a text answer that is not JSON is a FitUnavailable', async () => {
+test('an answer with no tool call is a FitUnavailable', async () => {
   const result = analyzeFit(
     env({
       AI: {

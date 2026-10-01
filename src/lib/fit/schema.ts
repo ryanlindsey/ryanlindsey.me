@@ -3,8 +3,8 @@
 //
 // ONE schema, two consumers. The zod object below validates whatever the
 // model returns; `FIT_REPORT_JSON_SCHEMA` is DERIVED from it and is what the
-// model is handed as `output_config.format`, less its `format` keywords (see
-// the constant, and #446). Deriving rather than
+// model is handed as the forced tool's input schema, less its `format` keywords
+// (see the constant, and #446). Deriving rather than
 // hand-writing the second copy is the whole reason both can be believed: two
 // maintained copies drift, and the drift is silent -- the model emits exactly
 // what the JSON Schema asked for and zod rejects it, which reads as a model
@@ -90,8 +90,10 @@ export const FitReport = z.object({
 export type FitReport = z.infer<typeof FitReport>;
 
 /**
- * The same shape as JSON Schema, sent as `output_config.format` (#405). It was
- * the input schema of a forced tool until Opus 5.5 refused forced tool use.
+ * The same shape as JSON Schema, sent as the input schema of the forced
+ * `emit_fit_report` tool. It was `output_config.format` from #405 until
+ * 2026-10-01, while the engine ran on Opus 5.5, which refuses forced tool use;
+ * see `FIT_MODEL` in ./engine.ts for why it moved back.
  *
  * `z.toJSONSchema` is zod 4's own converter, so the `.describe()` calls above
  * become field descriptions the model actually reads -- which is why the

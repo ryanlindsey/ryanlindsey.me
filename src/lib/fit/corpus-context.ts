@@ -35,7 +35,8 @@ import { fenceFor } from '../fence';
  * (`CHARS_PER_TOKEN` in src/lib/corpus.ts). Add the largest target description
  * `analyze_fit` accepts (60k characters, about 15k tokens, in
  * workers/mcp/src/gated.ts), `prompts/fit.md` (about 1k) and a
- * `FIT_MAX_TOKENS` report (32k), and the worst case is about 108k tokens,
+ * `FIT_MAX_TOKENS` report (8k since 2026-10-01, 32k before), and the worst
+ * case is about 84k tokens (108k at the old cap),
  * inside a 200k window with room to spare.
  *
  * The first number was 120k, written as a ceiling nobody had approached. The
