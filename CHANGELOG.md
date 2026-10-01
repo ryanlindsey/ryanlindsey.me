@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.52.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.52.0...ryanlindsey-me-v1.52.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* **fit:** run the fit engine on opus 5 while opus 5.5 is byok-only ([#485](https://github.com/ryanlindsey/ryanlindsey.me/issues/485)) ([fa31cc8](https://github.com/ryanlindsey/ryanlindsey.me/commit/fa31cc88adc8d56d8967b6797b0bada9f614fedc))
+
 ## [1.52.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.51.0...ryanlindsey-me-v1.52.0) (2026-10-01)
 
 
