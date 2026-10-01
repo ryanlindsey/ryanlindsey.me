@@ -3,16 +3,27 @@
 // served in this page's HTML by design (10 §2.6) -- and arrives as a prop
 // from the runtime env rather than being hard-coded, so local development can
 // point at a test widget without editing a component.
+//
+// `appearance` and `class` exist for /chat, which hides its widget unless a
+// challenge needs the visitor (issue #481). Both default to what every caller
+// rendered before: an omitted `appearance` leaves the attribute off, because
+// Astro drops an attribute whose value is `undefined`, and the widget then
+// uses Turnstile's own default, `always`. /fit passes neither and renders
+// what it always has; tests/fit-pages.test.ts holds that.
 interface Props {
   sitekey: string;
+  /** Turnstile's own values. Omitted, the widget uses its default, `always`. */
+  appearance?: 'always' | 'execute' | 'interaction-only';
+  class?: string;
 }
-const { sitekey } = Astro.props;
+const { sitekey, appearance, class: className = 'my-6' } = Astro.props;
 ---
 
 <div
-  class="cf-turnstile my-6"
+  class:list={['cf-turnstile', className]}
   data-sitekey={sitekey}
   data-theme="auto"
+  data-appearance={appearance}
   data-response-field-name="turnstile_response"
 ></div>
 <noscript>

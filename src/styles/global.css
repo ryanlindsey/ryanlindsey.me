@@ -1119,19 +1119,19 @@
  * `viewport-fit=cover`, so Safari keeps the page above its own toolbar and the
  * inset is zero.
  *
- * The bot check's bottom margin is dropped while pinned, because it is the
- * last thing in the bar once the openers hide and its `my-6` sat on top of the
- * bar's own `pb-3`: 36px of empty ground under the widget. Measured
+ * The bot check's bottom margin was dropped here while pinned, because it is
+ * the last thing in the bar once the openers hide and its `my-6` sat on top of
+ * the bar's own `pb-3`: 36px of empty ground under the widget. Measured
  * 2026-09-30 in WebKit at 390x844, the pinned form was 303px tall with it and
- * this takes 24px off. Scoped here rather than on the shared component, so
- * /fit and every unpinned width keep the margin they had.
+ * that rule took 24px off, to 279px. Issue 481, which hid the bot check,
+ * removed the rule: /chat now passes the widget `class="mt-3"`, so there is no
+ * bottom margin left to drop, and /fit never pinned. With the widget hidden
+ * under `interaction-only`, the pinned form measured 194px (same setup,
+ * 2026-09-30, with Cloudflare's always-pass test sitekey swapped into the
+ * page); a shown challenge adds the widget's 73px back.
  */
 @utility chat-composer-pinned {
   @apply sticky bottom-0 -mx-5 border-t border-rule bg-bg px-5 pt-3 pb-3;
-
-  & .cf-turnstile {
-    margin-bottom: 0;
-  }
 }
 
 @utility chat-block-in {

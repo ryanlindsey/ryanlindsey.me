@@ -263,6 +263,14 @@ describe('GET /chat', () => {
     expect(form, 'no chat form on the page').not.toBeNull();
     expect(form![0]).toContain('cf-turnstile');
   });
+
+  test('the bot check shows itself only when the visitor has to act', async () => {
+    const page = await html('/chat');
+    expect(page).toMatch(/class="cf-turnstile[^"]*"[^>]*data-appearance="interaction-only"/);
+    // The spacing src/styles/global.css now relies on: no bottom margin to
+    // drop while the composer is pinned.
+    expect(page).toContain('class="cf-turnstile mt-3"');
+  });
 });
 
 describe('POST /chat/send', () => {
