@@ -12,7 +12,11 @@
 // model call to learn nothing.
 
 import type { FitReport } from '../fit/schema';
-import { TOOL_REASON_META_KEY } from '../mcp/tool-reason';
+// A runtime import here carries its `.ts` because evals/run.mjs loads this file
+// through Node's type stripping, which resolves no extensionless specifier
+// (#495). Type-only imports are erased and need none.
+// tests/evals-runner-node-load.test.ts fails if one is dropped.
+import { TOOL_REASON_META_KEY } from '../mcp/tool-reason.ts';
 import type { ChatCase, FitCase, LeakCase, TierCase } from './cases';
 
 /**
