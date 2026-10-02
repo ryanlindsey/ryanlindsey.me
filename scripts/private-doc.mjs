@@ -75,10 +75,17 @@ const BUCKET = 'ryanlindsey-me-private';
 // process's own environment below, so the caller's shell need not export it.
 const ACCOUNT_ID = '1b764d090899bf1ee61a8d1e87c10710';
 
+// WRANGLER_VERSION pins every child to one wrangler, so a session that also
+// runs `npx wrangler@<v>` by hand doesn't mix versions over one OAuth login.
+// Unset keeps the old behavior: whatever `npx wrangler` resolves from the cwd.
+const WRANGLER = process.env.WRANGLER_VERSION
+  ? ['--yes', `wrangler@${process.env.WRANGLER_VERSION}`]
+  : ['wrangler'];
+
 const KEY_PATTERN = /^(profile|case-study|narrative|authoring)\/[A-Za-z0-9][A-Za-z0-9._-]*\.md$/;
 
 function wrangler(args) {
-  return execFileSync('npx', ['wrangler', ...args], {
+  return execFileSync('npx', [...WRANGLER, ...args], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'inherit'],
     env: { ...process.env, CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID },
