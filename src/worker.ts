@@ -285,8 +285,10 @@ const REFUSAL_STATUSES = new Set([403, 404, 500]);
  * and the event moved to the Worker that closes the row, which is the only one
  * that can name the audience without becoming a second grant verifier. It
  * landed in `completeRun` (workers/mcp/src/fit-start.ts) and now lives in
- * `notifyRun` in workers/mcp/src/fit-workflow.ts, which #349 moved it to along
- * with the run itself.
+ * `notifyRun`, which #349 moved into workers/mcp/src/fit-workflow.ts along
+ * with the run itself and #490 moved again, unchanged, into
+ * workers/mcp/src/fit-run.ts so it no longer sits behind `cloudflare:workers`.
+ * The Workflow still calls it.
  *
  * THE ONE PLACE THE SITE WORKER READS CAMPAIGN DOMAINS ON A REQUEST. The hot
  * path deliberately does not (see `CAMPAIGN_DOMAINS_OFF`): a KV read per

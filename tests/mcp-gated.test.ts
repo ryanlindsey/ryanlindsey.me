@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { createTestHarness } from 'wrangler';
 import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
+import { DEFAULT_REQUEST_TIMEOUT_MSEC } from '@modelcontextprotocol/server';
 import { MCP_WORKER, SITE_HARNESS_WORKERS } from './workers';
 import { mintToken, newJti, SCOPES, type Scope, type TokenClaims } from '../src/lib/tier/token';
 import { recordIssue } from '../src/lib/tier/registry';
@@ -9,12 +10,17 @@ import { AUTHORING_KEYS, PROFILE_KEYS } from '../src/lib/tier/private-docs';
 import { CAMPAIGN_PREFIX } from '../src/lib/tier/campaigns';
 import { defineTool, ToolError, type ToolContext } from '../workers/mcp/src/define';
 import {
+  FIT_REPORT_REREAD_MS,
+  FIT_REPORT_WAIT_MS,
   fitEnvelope,
-  fitToolError,
+  fitReportAnswer,
   GATED_TOOL_NAMES,
+  pollFitReport,
   resolveNarrativeKey,
+  type StoredFitReport,
 } from '../workers/mcp/src/gated';
-import { FitUnavailable, type FitResult } from '../src/lib/fit/engine';
+import { newReportId, REPORT_ID_PATTERN } from '../src/lib/fit/report-id';
+import { STALE_AFTER_MS } from '../src/lib/fit/report-status';
 import type { McpEnv } from '../workers/mcp/src/env';
 import { LIMITS, limitKeyFor, type ToolCost } from '../src/lib/mcp/limits';
 import { BANNED_PATTERNS } from './candidacy-patterns';
@@ -1110,7 +1116,8 @@ test('every granted line is pinned verbatim, for the scopes this block covers', 
       'get_compensation_expectations: compensation range and structure preferences.',
       'get_case_study_details: the unredacted layer of one case study, by slug.',
       "get_application_narrative: the narrative written for this token's audience.",
-      'analyze_fit: compare a description you supply against the corpus; returns an evidence map with citation URLs, honest gaps, and questions to ask.',
+      'analyze_fit: compare a description you supply against the corpus; starts an evidence map with citation URLs, honest gaps, and questions to ask, and returns its report_id.',
+      'get_fit_report: wait for a report analyze_fit started, by report_id, and return it.',
     ].join('\n'),
   );
 });
@@ -1388,28 +1395,41 @@ describe('analyze_fit', () => {
       /does not accept URLs/i,
     );
     expect(tool!.description, 'and told what to do instead').toMatch(/fetch it yourself/i);
+
+    // #490: the tool no longer answers with the report, so an agent that is
+    // not told where the report went has nothing to do with a report_id.
+    expect(tool!.description, 'the agent must be told to collect the report').toMatch(
+      /get_fit_report/,
+    );
+    expect(tool!.description).toMatch(/report_id/);
   });
 
-  test('it refuses cleanly when the engine is off, and says so in a sentence', async () => {
-    // The harness sets FIT_ENGINE: 'off' (tests/workers.ts) because there is
-    // no usable `Ai` here -- the binding is overridden to a service Worker, so
-    // `env.AI.run()` is a TypeError by design. What this test proves is
-    // everything AROUND the model call: the scope gate, the argument schema,
-    // the limiter, the audit row and the error shape. The model call itself is
-    // covered in tests/fit-engine.test.ts with a stub `Ai`, and end to end by
-    // hand against the deployed Worker (Task 17).
+  test('it answers at once with a pending report id, and opens the row the run closes', async () => {
+    // THE WHOLE OF #490 FROM THE CALLER'S SIDE. On Opus 5 a run takes 59 to
+    // 104 seconds, and MCP clients gave up holding the call open. The tool now
+    // opens the run through the same function `/fit/start` uses and answers
+    // with the id, so what a caller waits for here is one D1 insert.
     const result = await callTool(
       'analyze_fit',
       { target_description: FIT_DESCRIPTION },
       await tokenFor(['fit']),
     );
-    expect(result.result.isError).toBe(true);
-    const text = result.result.content[0].text as string;
-    expect(text).toMatch(/not available/i);
-    expect(text, 'a refusal must not leak internals').not.toMatch(/TypeError|\.ts:|Fetcher/);
-    // The same refusal, readable by a machine: `FIT_ENGINE: 'off'` throws a
-    // `FitUnavailable` marked `noAnswer`, because no model answer exists.
-    expect(result.result._meta?.[TOOL_REASON_META_KEY]).toBe('unavailable');
+    expect(result.result.isError, JSON.stringify(result)).toBeFalsy();
+    const envelope = JSON.parse(result.result.content[0].text as string);
+    expect(envelope.status).toBe('pending');
+    expect(envelope.report_id).toMatch(REPORT_ID_PATTERN);
+    expect(envelope.permalink).toBe(`${env.SITE_ORIGIN}/fit/r/${envelope.report_id}`);
+    expect(typeof envelope.poll_after_seconds).toBe('number');
+    expect(envelope.next).toContain('get_fit_report');
+    expect(envelope.next).toContain(envelope.report_id);
+
+    // The row is the run's, written from the GRANT's audience exactly as the
+    // form's is, and closed by the Workflow: under `FIT_ENGINE: 'off'` that is
+    // the engine's refusal, which is what `get_fit_report` reports below.
+    const row = await env.DB.prepare('SELECT audience FROM fit_reports WHERE id = ?')
+      .bind(envelope.report_id)
+      .first<{ audience: string }>();
+    expect(row?.audience).toBe(AUDIENCE);
   });
 
   test('a description too short to analyse is refused by the schema, before the tool', async () => {
@@ -1432,7 +1452,7 @@ describe('analyze_fit', () => {
 
     const result = await callTool('analyze_fit', { target_description: 'Too short.' }, token);
     expect(result.error ?? result.result?.isError).toBeTruthy();
-    expect(JSON.stringify(result)).not.toMatch(/not available/i);
+    expect(JSON.stringify(result)).not.toMatch(/not available|pending/i);
   });
 
   test('it draws from the expensive bucket: the seventh rapid call is refused', async () => {
@@ -1444,7 +1464,9 @@ describe('analyze_fit', () => {
      *
      * Exhausting the bucket is affordable here precisely because the engine is
      * off: `analyzeFit` refuses on the seam before it reads KV, the corpus or
-     * the model, so each call is a round trip and nothing else. The whole loop
+     * the model, so each call is a round trip and nothing else. Since #490 the
+     * call does not wait for the engine at all -- it opens a row and starts an
+     * instance that refuses on that seam -- which is cheaper still. The whole loop
      * runs in well under the ~50 seconds a single token would take to refill
      * at 0.02/s, so the seventh call meets an empty bucket rather than a
      * replenished one.
@@ -1463,9 +1485,14 @@ describe('analyze_fit', () => {
       answers.push(result.result.content[0].text as string);
     }
 
-    // The first `limit` calls got through to the engine, which is what makes
-    // the last one's refusal a LIMIT rather than any other failure.
-    for (const answer of answers.slice(0, limit)) expect(answer).toMatch(/not available/i);
+    // The first `limit` calls were accepted and opened a run, which is what
+    // makes the last one's refusal a LIMIT rather than any other failure. They
+    // matched /not available/ until #490, when the engine's answer moved to
+    // `get_fit_report`.
+    for (const answer of answers.slice(0, limit)) {
+      expect(answer).toMatch(/^\{/);
+      expect(JSON.parse(answer).status).toBe('pending');
+    }
     // The WHOLE sentence, because the retry interval is derived per cost class
     // (`retryHint`, src/lib/mcp/limits.ts) and 50 seconds is the `expensive`
     // bucket's own arithmetic: 6 tokens per 300s is one token back every 50s,
@@ -1504,173 +1531,465 @@ describe('analyze_fit', () => {
     throw new Error('no rate_limited audit row for this run of analyze_fit');
   });
 
-  /**
-   * THE DANGEROUS BRANCH, tested where it is reachable -- which is here and
-   * nowhere else in this file.
-   *
-   * Every `analyze_fit` call the harness can make is a `FitUnavailable`,
-   * because `FIT_ENGINE: 'off'` refuses on the seam. So the safe branch has
-   * cover (delete the mapping and `/not available/i` stops matching above) and
-   * the generic one has none: MEASURED, mutating `fitToolError` to
-   * `return new ToolError((error as Error).message)` unconditionally left the
-   * entire suite green. The `not.toMatch(/TypeError|\.ts:/)` assertion above
-   * cannot catch it either, since it runs on a path whose message is the
-   * engine's own safe sentence.
-   *
-   * These two call the mapping DIRECTLY -- no harness, no Worker, no seam --
-   * so the branch that only a real gateway failure would reach in production
-   * is exercised by an ordinary function call.
-   */
-  test('the envelope carries the grant audience, so a stored report cannot claim one', () => {
-    /**
-     * `fit_reports.audience` is defined by migrations/0002_private_tier.sql as
-     * the audience of the GRANT that produced the report, with a comment
-     * saying a NULL there would be evidence the tier check was bypassed.
-     * `/fit`'s form cannot supply it -- that route treats the token as opaque
-     * by design and never verifies it -- so before this field existed it wrote
-     * the literal `'web'`, and every browser-produced report claimed an
-     * audience named after a channel. This tool is the only place that knows
-     * the answer.
-     *
-     * Called DIRECTLY, like `fitToolError` below and for the same reason: the
-     * whole success path of `analyze_fit` is unreachable under this harness
-     * (`FIT_ENGINE: 'off'` refuses on the seam), so a field silently dropped
-     * from the envelope would otherwise be caught by nothing at all.
-     */
-    const result: FitResult = {
-      report: {
-        overall_read: 'A generic read, for a fixture.',
-        requirement_map: [{ requirement: 'A requirement.', strength: 'strong', evidence: [] }],
-        gaps: [],
-        questions_to_ask: ['A question.'],
-      },
-      citations: { checked: 3, dropped: 1 },
-      model: 'a-fixture-model',
-      generatedAt: '2026-09-09T00:00:00.000Z',
-      corpusDocuments: 7,
-      corpusTruncated: false,
-    };
-
-    const envelope = fitEnvelope(result, AUDIENCE);
-    expect(envelope.audience).toBe(AUDIENCE);
-    // The rest of the envelope, asserted alongside it: this function is the
-    // one description of what a caller and `/fit/r/<id>` are handed, and a
-    // field quietly renamed here breaks the stored row rather than the call.
-    expect(envelope).toEqual({
-      report: result.report,
-      audience: AUDIENCE,
-      model: 'a-fixture-model',
-      generated_at: '2026-09-09T00:00:00.000Z',
-      corpus_documents: 7,
-      corpus_truncated: false,
-      citations_checked: 3,
-      citations_dropped: 1,
-    });
-
-    // Asserted as a VALUE, not just a key. `toEqual` treats an `undefined`
-    // property as equal to an absent one, so before `corpusTruncated` was a
-    // required member of `FitResult` this whole assertion passed with the
-    // field missing from both sides -- which is the shape of the gap
-    // final-review Important 6 named: computed, returned, and read by
-    // nothing. Flipping it here proves the envelope carries the value rather
-    // than a hole where it should be.
-    expect(fitEnvelope({ ...result, corpusTruncated: true }, AUDIENCE).corpus_truncated).toBe(true);
-  });
-
-  test('fitToolError shows a FitUnavailable message and quarantines anything else', () => {
-    const safe = fitToolError(
-      new FitUnavailable('The corpus is empty right now.', { noAnswer: true }),
-    );
-    expect(safe).toBeInstanceOf(ToolError);
-    expect(safe.message).toBe('The corpus is empty right now.');
-    expect(safe.reason).toBe('unavailable');
-
-    // The exact failure the mapping exists for: AI Gateway answers an
-    // exceeded cap with `2018: Invalid User Credentials` (10 §5), which READS
-    // AS AN AUTH FAILURE AND IS NOT -- so copying it to a caller would both
-    // publish an internal and mislead them about what happened.
-    const generic = fitToolError(new Error('AiError: 2018: Invalid User Credentials'));
-    expect(generic).toBeInstanceOf(ToolError);
-    expect(generic.message).toBe('Fit analysis failed. The error was logged.');
-    expect(generic.message).not.toMatch(/2018|AiError/);
-    // No reason on the quarantined branch: an unwrapped throw is not known to
-    // have produced nothing, so it stays a graded failure rather than an
-    // unreached case.
-    expect(generic.reason).toBeUndefined();
-  });
-
-  test('fitToolError gives no reason to a model answer that came back unusable', () => {
-    // The model DID answer on both of these, so they stay graded failures
-    // rather than couldn't-run. The 2026-09-10 run's `fit/strong` and
-    // `fit/partial` hit the token cap, and that regression is visible only
-    // because it was graded. Each is constructed exactly as the engine throws
-    // it, with no `noAnswer`; tests/fit-engine.test.ts pins that the engine's
-    // own truncation and schema paths leave the field false.
-    const truncated = fitToolError(
-      new FitUnavailable('The fit engine returned an incomplete answer. Try again shortly.'),
-    );
-    expect(truncated).toBeInstanceOf(ToolError);
-    expect(truncated.message).toMatch(/incomplete answer/);
-    expect(truncated.reason).toBeUndefined();
-
-    const unusable = fitToolError(
-      new FitUnavailable('The fit engine returned an unusable answer. Try again shortly.'),
-    );
-    expect(unusable).toBeInstanceOf(ToolError);
-    expect(unusable.message).toMatch(/unusable answer/);
-    expect(unusable.reason).toBeUndefined();
-
-    // And an explicit `false` is the same as leaving it out.
-    const explicit = fitToolError(
-      new FitUnavailable('The fit engine returned an unusable answer. Try again shortly.', {
-        noAnswer: false,
-      }),
-    );
-    expect(explicit.reason).toBeUndefined();
-  });
-
-  test('fitToolError logs the cause it refuses to show, so its sentence is true', () => {
-    // "The error was logged." is a CLAIM, and this is the test that keeps it
-    // true. `limitAndAudit` (workers/mcp/src/define.ts, reached from
-    // `guarded`) logs what is THROWN, which on this path is the replacement
-    // ToolError -- so if the mapping does not log the original itself,
-    // nothing does, and the branch is strictly worse than not catching at
-    // all. The case that matters most is the one the engine deliberately does
-    // NOT wrap: a mis-set `FIT_ENGINE` throws a plain Error precisely so an
-    // operator's typo is loud.
-    const logged: unknown[] = [];
-    const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
-      logged.push(...args);
-    });
-    try {
-      fitToolError(new Error('unrecognised FIT_ENGINE: yes'));
-    } finally {
-      spy.mockRestore();
-    }
-    expect(
-      logged.some(
-        (entry) => entry instanceof Error && /unrecognised FIT_ENGINE/.test(entry.message),
-      ),
-      'the original cause must reach the log',
-    ).toBe(true);
-  });
-
-  test('a refused run is still audited, as private and as an error', async () => {
+  test('an accepted run is audited once, as private and as ok', async () => {
+    // THIS READ `outcome: 'error'` UNTIL #490, because the tool awaited the
+    // engine and the engine's refusal was the call's. The call now ACCEPTS a
+    // run, and its row means what `/fit/start`'s has meant since #349: the
+    // metered call succeeded, and what the run came to is on `fit_reports` and
+    // in what `get_fit_report` answers. One accepted call is still one row,
+    // which is why the whole set for this `jti` is asserted rather than the
+    // first row found.
     const { token, jti } = await grantFor(['fit']);
-    await callTool('analyze_fit', { target_description: FIT_DESCRIPTION }, token);
+    const result = await callTool('analyze_fit', { target_description: FIT_DESCRIPTION }, token);
+    const { report_id } = JSON.parse(result.result.content[0].text as string);
+    await closedRow(report_id);
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      const row = await env.DB.prepare(
-        "SELECT tier, outcome FROM mcp_tool_calls WHERE tool='analyze_fit' AND grant_jti = ? ORDER BY id DESC LIMIT 1",
+      const rows = await env.DB.prepare(
+        "SELECT tier, outcome FROM mcp_tool_calls WHERE tool='analyze_fit' AND grant_jti = ?",
       )
         .bind(jti)
-        .first<{ tier: string; outcome: string }>();
-      if (row) {
-        expect(row.tier).toBe('private');
-        expect(row.outcome).toBe('error');
+        .all<{ tier: string; outcome: string }>();
+      if (rows.results.length > 0) {
+        expect(rows.results).toEqual([{ tier: 'private', outcome: 'ok' }]);
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     throw new Error('no audit row for analyze_fit');
+  });
+});
+
+/**
+ * Waits for the Workflow to close the row a call opened.
+ *
+ * Under `FIT_ENGINE: 'off'` the instance refuses on the seam, so this is well
+ * under a second; the 20-second deadline is tests/fit-workflow.test.ts's own.
+ * Reading the row rather than the instance keeps this suite off
+ * `FIT_WORKFLOW.get`, whose race with `ctx.waitUntil` that file records.
+ */
+async function closedRow(reportId: string): Promise<void> {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const row = await env.DB.prepare('SELECT status FROM fit_reports WHERE id = ?')
+      .bind(reportId)
+      .first<{ status: string }>();
+    if (row !== null && row.status !== 'pending') return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`the run for ${reportId} never closed its row`);
+}
+
+/** A report the stored-row schema accepts. Generic, like every fixture here. */
+const FIXTURE_REPORT = {
+  overall_read: 'A generic read, for a fixture.',
+  requirement_map: [{ requirement: 'A requirement.', strength: 'strong', evidence: [] }],
+  gaps: [],
+  questions_to_ask: ['A question.'],
+};
+
+/**
+ * What a seeded row's `target_description` says. Distinctive so an answer
+ * that carried it would be caught by a substring check, and long enough to be
+ * the kind of text the column really holds.
+ */
+const SEEDED_DESCRIPTION = 'SEEDED-DESCRIPTION-MARKER '.repeat(10);
+
+/** A stored row, every column the tool reads, with an `ok` run's values. */
+function storedRow(over: Partial<StoredFitReport> = {}): StoredFitReport {
+  return {
+    created_at: new Date().toISOString(),
+    status: 'ok',
+    audience: AUDIENCE,
+    model: 'a-fixture-model',
+    report_json: JSON.stringify(FIXTURE_REPORT),
+    citations_checked: 3,
+    citations_dropped: 1,
+    generated_at: '2026-10-01T00:00:00.000Z',
+    corpus_documents: 7,
+    corpus_truncated: 0,
+    failure_reason: null,
+    no_answer: null,
+    failure_message: null,
+    ...over,
+  };
+}
+
+/** Writes a row directly, the way tests/fit-pages.test.ts seeds the permalink. */
+async function seedReport(over: Partial<StoredFitReport> = {}): Promise<string> {
+  const id = newReportId();
+  const row = storedRow(over);
+  await env.DB.prepare(
+    `INSERT INTO fit_reports (id, created_at, status, audience, target_description, model,
+       report_json, citations_checked, citations_dropped, generated_at, corpus_documents,
+       corpus_truncated, failure_reason, no_answer, failure_message)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      id,
+      row.created_at,
+      row.status,
+      row.audience,
+      SEEDED_DESCRIPTION,
+      row.model,
+      row.report_json,
+      row.citations_checked,
+      row.citations_dropped,
+      row.generated_at,
+      row.corpus_documents,
+      row.corpus_truncated,
+      row.failure_reason,
+      row.no_answer,
+      row.failure_message,
+    )
+    .run();
+  return id;
+}
+
+describe('get_fit_report', () => {
+  test('it is absent without the fit scope and present with it', async () => {
+    expect((await listTools(await tokenFor(['profile']))).map((t) => t.name)).not.toContain(
+      'get_fit_report',
+    );
+    expect((await listTools(await tokenFor(['fit']))).map((t) => t.name)).toContain(
+      'get_fit_report',
+    );
+  });
+
+  test('its description names no target and tells an agent to call again while pending', async () => {
+    const [tool] = (await listTools(await tokenFor(['fit']))).filter(
+      (t) => t.name === 'get_fit_report',
+    );
+    for (const pattern of BANNED_PATTERNS) expect(tool!.description).not.toMatch(pattern);
+    expect(tool!.description).toMatch(/report_id/);
+    expect(tool!.description).toMatch(/pending/i);
+    expect(tool!.description).toMatch(/again/i);
+  });
+
+  test('a finished report answers with the envelope, read from the row alone', async () => {
+    const reportId = await seedReport({ corpus_truncated: 1 });
+    const result = await callTool(
+      'get_fit_report',
+      { report_id: reportId },
+      await tokenFor(['fit']),
+    );
+    expect(result.result.isError, JSON.stringify(result)).toBeFalsy();
+    const text = result.result.content[0].text as string;
+    expect(JSON.parse(text)).toEqual({
+      status: 'ok',
+      report_id: reportId,
+      permalink: `${env.SITE_ORIGIN}/fit/r/${reportId}`,
+      report: FIXTURE_REPORT,
+      audience: AUDIENCE,
+      model: 'a-fixture-model',
+      generated_at: '2026-10-01T00:00:00.000Z',
+      corpus_documents: 7,
+      corpus_truncated: true,
+      citations_checked: 3,
+      citations_dropped: 1,
+    });
+    // `target_description` is the column src/pages/fit/r/[id].astro refuses
+    // to select, for a reason that applies here unchanged: it is whatever the
+    // caller pasted, and this answer is read by whoever holds the id.
+    expect(text).not.toContain('SEEDED-DESCRIPTION-MARKER');
+  });
+
+  test('a row written before the envelope columns reports null for them', async () => {
+    const reportId = await seedReport({
+      generated_at: null,
+      corpus_documents: null,
+      corpus_truncated: null,
+    });
+    const result = await callTool(
+      'get_fit_report',
+      { report_id: reportId },
+      await tokenFor(['fit']),
+    );
+    const envelope = JSON.parse(result.result.content[0].text as string);
+    expect(envelope.generated_at).toBeNull();
+    expect(envelope.corpus_documents).toBeNull();
+    expect(envelope.corpus_truncated).toBeNull();
+    expect(envelope.report).toEqual(FIXTURE_REPORT);
+  });
+
+  test("a run the engine refused answers the engine's own sentence, marked unavailable", async () => {
+    // A REAL RUN, end to end: `analyze_fit` opens it, the Workflow closes it
+    // as the engine's refusal under `FIT_ENGINE: 'off'`, and this tool reads
+    // it back. Waiting for the row first keeps the call on its immediate
+    // branch; the long poll is pinned directly against `pollFitReport` below.
+    const token = await tokenFor(['fit']);
+    const opened = await callTool('analyze_fit', { target_description: FIT_DESCRIPTION }, token);
+    const { report_id } = JSON.parse(opened.result.content[0].text as string);
+    await closedRow(report_id);
+
+    const result = await callTool('get_fit_report', { report_id }, token);
+    expect(result.result.isError).toBe(true);
+    const text = result.result.content[0].text as string;
+    // The engine's own sentence, then the instruction that keeps an agent from
+    // polling a dead id: every failed-run refusal ends by saying to start over.
+    expect(text).toBe(
+      'Fit analysis is not available in this environment. Call analyze_fit again to start a new run.',
+    );
+    expect(text, 'a refusal must not leak internals').not.toMatch(/TypeError|\.ts:|Fetcher/);
+    // Readable by a machine as well: the seam throws a `FitUnavailable` marked
+    // `noAnswer`, the run stored `no_answer = 1`, and that is what the eval
+    // runners read as a case that could not run.
+    expect(result.result._meta?.[TOOL_REASON_META_KEY]).toBe('unavailable');
+  });
+
+  test('a pending row past the stale budget is refused at once rather than waited on', async () => {
+    const reportId = await seedReport({
+      status: 'pending',
+      created_at: new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString(),
+      model: null,
+      report_json: null,
+      citations_checked: null,
+      citations_dropped: null,
+      generated_at: null,
+      corpus_documents: null,
+      corpus_truncated: null,
+    });
+    const started = Date.now();
+    const result = await callTool(
+      'get_fit_report',
+      { report_id: reportId },
+      await tokenFor(['fit']),
+    );
+    // Under one re-read interval, so the handler cannot have slept even once:
+    // a stale row is nothing anyone will finish, and holding a caller for
+    // forty seconds on it would be waiting for nothing.
+    expect(Date.now() - started).toBeLessThan(FIT_REPORT_REREAD_MS);
+    expect(result.result.isError).toBe(true);
+    expect(result.result.content[0].text).toMatch(/analyze_fit again/);
+    expect(result.result._meta?.[TOOL_REASON_META_KEY]).toBeUndefined();
+  });
+
+  test('an id with no report says only that, and nothing about why', async () => {
+    const result = await callTool(
+      'get_fit_report',
+      { report_id: newReportId() },
+      await tokenFor(['fit']),
+    );
+    expect(result.result.isError).toBe(true);
+    expect(result.result.content[0].text).toBe('No fit report exists under that report_id.');
+  });
+
+  test('an id that is not a report id is refused by the schema, before the tool', async () => {
+    const result = await callTool(
+      'get_fit_report',
+      { report_id: '../fit/r/x' },
+      await tokenFor(['fit']),
+    );
+    expect(result.error ?? result.result?.isError).toBeTruthy();
+    expect(JSON.stringify(result)).toMatch(/Invalid arguments|Input validation error/i);
+  });
+
+  test('it answers any fit grant, but echoes the audience label only to its own', async () => {
+    // THE DECISION, PINNED, in both halves. The id is the capability --
+    // `/fit/r/<id>` serves the same report to anyone holding it -- so an
+    // audience check on READING would guard nothing the permalink does not
+    // already hand out, and it would refuse the owner, whose clients hold
+    // tokens under different audiences. The LABEL is another matter: the
+    // permalink never renders it, so a grant holding someone else's id must
+    // not learn which campaign opened the run (final review, #490).
+    const reportId = await seedReport({ audience: 'another-audience' });
+    const other = await callTool(
+      'get_fit_report',
+      { report_id: reportId },
+      await tokenFor(['fit']),
+    );
+    expect(other.result.isError, JSON.stringify(other)).toBeFalsy();
+    const otherText = other.result.content[0].text as string;
+    expect(JSON.parse(otherText).audience).toBeNull();
+    expect(JSON.parse(otherText).report).toEqual(FIXTURE_REPORT);
+    expect(otherText).not.toContain('another-audience');
+
+    const own = await callTool(
+      'get_fit_report',
+      { report_id: reportId },
+      await tokenFor(['fit'], { aud: 'another-audience' }),
+    );
+    expect(JSON.parse(own.result.content[0].text as string).audience).toBe('another-audience');
+  });
+
+  test('a young pending row answers the same pending envelope analyze_fit does', () => {
+    const reportId = newReportId();
+    const answer = fitReportAnswer(
+      storedRow({ status: 'pending', report_json: null }),
+      reportId,
+      'https://site.test',
+      Date.now(),
+      AUDIENCE,
+    );
+    expect(answer).toEqual({
+      status: 'pending',
+      report_id: reportId,
+      permalink: `https://site.test/fit/r/${reportId}`,
+      poll_after_seconds: expect.any(Number),
+      next: expect.stringContaining(reportId),
+    });
+  });
+
+  test('a failed run with no stored sentence answers a fixed one, with no reason', () => {
+    // `failure_message` is null for every failure that is not a
+    // `FitUnavailable`, because the only text such a failure has is upstream
+    // error text -- an AI Gateway `2018: Invalid User Credentials` reads as an
+    // auth failure and is a rate limit (10 §5). The fixed sentence is what a
+    // caller is told instead, and it is written for an agent rather than
+    // copied from the page's "Ask for a fresh link".
+    let thrown: unknown;
+    try {
+      fitReportAnswer(
+        storedRow({ status: 'failed', report_json: null, no_answer: 0 }),
+        newReportId(),
+        'https://site.test',
+        Date.now(),
+        AUDIENCE,
+      );
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(ToolError);
+    expect((thrown as ToolError).message).toMatch(/analyze_fit again/);
+    expect((thrown as ToolError).message).not.toMatch(/fresh link/i);
+    // The model DID answer, or nothing says it did not, so this stays graded
+    // -- the parity `fitToolError` kept for a truncated or unusable answer.
+    expect((thrown as ToolError).reason).toBeUndefined();
+  });
+
+  test('a refusal carries the reason the run stored, and drops one it does not know', () => {
+    const refusal = (over: Partial<StoredFitReport>) => {
+      try {
+        fitReportAnswer(
+          storedRow({ status: 'failed', report_json: null, ...over }),
+          newReportId(),
+          'https://site.test',
+          Date.now(),
+          AUDIENCE,
+        );
+      } catch (error) {
+        return error as ToolError;
+      }
+      throw new Error('fitReportAnswer did not refuse a failed row');
+    };
+    expect(refusal({ failure_reason: 'gateway_limit' }).failureReason).toBe('gateway_limit');
+    expect(refusal({ failure_reason: 'something_new' }).failureReason).toBeUndefined();
+    expect(refusal({ no_answer: 1, failure_message: 'The corpus is empty right now.' })).toEqual(
+      expect.objectContaining({
+        message: 'The corpus is empty right now. Call analyze_fit again to start a new run.',
+        reason: 'unavailable',
+      }),
+    );
+  });
+
+  test('a stored report that no longer parses is refused rather than passed through', () => {
+    expect(() =>
+      fitReportAnswer(
+        storedRow({ report_json: '{"overall_read":' }),
+        newReportId(),
+        'https://site.test',
+        Date.now(),
+        AUDIENCE,
+      ),
+    ).toThrow(ToolError);
+    expect(() =>
+      fitReportAnswer(
+        storedRow({ report_json: JSON.stringify({ overall_read: 'x' }) }),
+        newReportId(),
+        'https://site.test',
+        Date.now(),
+        AUDIENCE,
+      ),
+    ).toThrow(ToolError);
+  });
+
+  test('the envelope carries the stored audience and every field, as values', () => {
+    /**
+     * `audience` is the GRANT's, written onto the row when the run was opened
+     * (migrations/0002_private_tier.sql defines the column that way, with a
+     * comment saying a NULL there would be evidence the tier check was
+     * bypassed). Before #490 the tool read it off the grant at answer time;
+     * the run now outlives the call, so it is read back from where it was
+     * written.
+     *
+     * Called DIRECTLY for the reason the old `FitResult` version of this test
+     * gave: the `ok` branch is unreachable through a real run under this
+     * harness, so a field dropped from the envelope would otherwise be caught
+     * only by the seeded-row test above.
+     */
+    const reportId = newReportId();
+    expect(fitEnvelope(storedRow(), reportId, 'https://site.test', AUDIENCE)).toEqual({
+      status: 'ok',
+      report_id: reportId,
+      permalink: `https://site.test/fit/r/${reportId}`,
+      report: FIXTURE_REPORT,
+      audience: AUDIENCE,
+      model: 'a-fixture-model',
+      generated_at: '2026-10-01T00:00:00.000Z',
+      corpus_documents: 7,
+      corpus_truncated: false,
+      citations_checked: 3,
+      citations_dropped: 1,
+    });
+    // Asserted as VALUES, for the reason final-review Important 6 named: the
+    // column is 0/1 and the envelope says false/true, and `toEqual` treats an
+    // undefined property as equal to an absent one.
+    expect(
+      fitEnvelope(storedRow({ corpus_truncated: 1 }), reportId, 'x', AUDIENCE).corpus_truncated,
+    ).toBe(true);
+    expect(
+      fitEnvelope(storedRow({ corpus_truncated: null }), reportId, 'x', AUDIENCE).corpus_truncated,
+    ).toBeNull();
+  });
+});
+
+describe('pollFitReport', () => {
+  /** A reader that answers each row in turn, then repeats the last. */
+  function reader(rows: (StoredFitReport | null)[]) {
+    let reads = 0;
+    return {
+      read: async () => rows[Math.min(reads++, rows.length - 1)] ?? null,
+      reads: () => reads,
+    };
+  }
+  const pending = () => storedRow({ status: 'pending', report_json: null });
+
+  test('the wait sits under the SDK client timeout, with room for one more read', () => {
+    // 60 s is the one client limit known: the MCP TypeScript SDK's default
+    // request timeout. claude.ai's own is unmeasured.
+    expect(FIT_REPORT_WAIT_MS).toBe(40_000);
+    expect(FIT_REPORT_WAIT_MS + FIT_REPORT_REREAD_MS).toBeLessThan(DEFAULT_REQUEST_TIMEOUT_MSEC);
+  });
+
+  test('it answers at once for a missing, finished, failed or stale row', async () => {
+    const stale = storedRow({
+      status: 'pending',
+      created_at: new Date(Date.now() - STALE_AFTER_MS - 1).toISOString(),
+    });
+    for (const row of [null, storedRow(), storedRow({ status: 'failed' }), stale]) {
+      const source = reader([row]);
+      expect(await pollFitReport(source.read, { waitMs: 1_000, rereadMs: 10 })).toBe(row);
+      expect(source.reads(), `re-read a ${row?.status ?? 'missing'} row`).toBe(1);
+    }
+  });
+
+  test('it re-reads a pending row until the run closes it', async () => {
+    const done = storedRow();
+    const source = reader([pending(), pending(), done]);
+    expect(await pollFitReport(source.read, { waitMs: 1_000, rereadMs: 10 })).toBe(done);
+    expect(source.reads()).toBe(3);
+  });
+
+  test('it gives up inside the wait and hands back the row still pending', async () => {
+    const source = reader([pending()]);
+    const started = Date.now();
+    const row = await pollFitReport(source.read, { waitMs: 100, rereadMs: 10 });
+    const elapsed = Date.now() - started;
+    expect(row?.status).toBe('pending');
+    // Never past the wait: the last sleep is skipped when it would end beyond
+    // the deadline, which is what keeps a 40-second wait under a 60-second
+    // client limit rather than at the mercy of the interval.
+    expect(elapsed).toBeLessThanOrEqual(100 + 50);
+    expect(source.reads()).toBeGreaterThan(1);
+    expect(source.reads()).toBeLessThanOrEqual(100 / 10 + 1);
   });
 });

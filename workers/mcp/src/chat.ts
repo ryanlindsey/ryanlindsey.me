@@ -518,7 +518,8 @@ export async function handleChat(
   // src/worker.ts. It mirrored `queueFitRunIntent` there until #277, which
   // deleted that function and moved the `fit-run` event onto this Worker; #349
   // moved it again, with the run, into `notifyRun` in
-  // workers/mcp/src/fit-workflow.ts -- so the one on this Worker that is worth
+  // workers/mcp/src/fit-workflow.ts, and #490 moved that function into
+  // workers/mcp/src/fit-run.ts -- so the one on this Worker that is worth
   // comparing this call against now sits two files away and is AWAITED, for
   // the reason its own comment gives rather than in disagreement with this one.
   //

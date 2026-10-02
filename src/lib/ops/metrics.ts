@@ -27,22 +27,34 @@
 // over the public internet, and its turns are traffic this site really served.
 // An unattended schedule is a different thing -- nobody asked for it, it runs
 // whether or not anyone is looking, and its volume is a property of a cron
-// expression rather than of interest in this site. The two filters below name
-// the scheduled runner's own marker (`EVALS_USER_AGENT`, `EVALS_SURFACE` in
-// src/lib/evals/plan.ts) and nothing broader, which is what keeps the manual
+// expression rather than of interest in this site. The filters below name
+// the scheduled runner's own markers (`EVALS_USER_AGENT`, `EVALS_SURFACE` and,
+// since #490, `EVALS_AUDIENCE` in src/lib/evals/plan.ts) and nothing broader, which is what keeps the manual
 // runner counted: it sets no user agent of ours and files as `'direct'`.
 //
-// TWO FILTERS AND NOT THREE, checked rather than assumed. `fit_reports` is
-// written by the `/fit/start` path and by nothing else: `handleFitStart` in
-// workers/mcp/src/fit-start.ts inserts the row, and `FitWorkflow` and
-// `abandonRun` in workers/mcp/src/fit-workflow.ts close it. `analyze_fit` over
-// `/mcp` returns a report and stores none, so a run that reaches the tool that
-// way -- which is what both eval runners do -- produces no row in that table
-// at all. This premise used to name src/pages/fit/run.ts as the writer, which
-// stopped being true in #275; the conclusion survived the move, rechecked for
-// #352 against every `fit_reports` write in src and workers. The
-// gated tool calls the weekly run makes are `tier = 'private'` besides, so the
-// allowlist above has already excluded them.
+// THREE FILTERS SINCE #490, AND THIS PARAGRAPH SAID "TWO AND NOT THREE"
+// UNTIL THEN, checked rather than assumed at the time. Its premise was that
+// `fit_reports` was written by the `/fit/start` path and by nothing else --
+// `handleFitStart` inserted the row, `FitWorkflow` and `abandonRun` closed it
+// -- and that `analyze_fit` over `/mcp` returned a report and stored none, so
+// a run that reached the tool that way, which is what both eval runners do,
+// produced no row in that table at all. That premise had already moved once:
+// it named src/pages/fit/run.ts as the writer until #275, and the conclusion
+// survived the move, rechecked for #352 against every `fit_reports` write in
+// src and workers.
+//
+// #490 is what broke it. `analyze_fit` now opens its run through `openFitRun`
+// in workers/mcp/src/fit-run.ts, the same function `/fit/start` calls, so a run
+// over `/mcp` writes a `fit_reports` row like any other, and the weekly
+// scheduled `fit` suite's runs would publish in the fit-runs figures. A fit row
+// stores no user agent, so the third filter keys on the one mark it does carry:
+// the audience the scheduled run mints under, `EVALS_AUDIENCE` in
+// src/lib/evals/plan.ts. The manual runner mints under an audience of the
+// owner's choosing and stays counted, as the ruling above requires. Filtering
+// on an audience in SQL renders none; the result still names no audience.
+//
+// The gated tool calls the weekly run makes are `tier = 'private'` besides, so
+// the allowlist above has already excluded them from the tool figures.
 //
 // Deliberately NOT imported here: `GATED_TOOL_NAMES`. Excluding gated tools by
 // NAME would be a denylist -- correct today, wrong the first time a tool is
@@ -50,7 +62,7 @@
 // renders a public page. `tier = 'public'` is an allowlist on the property that
 // actually matters, and `migrations/0001` guarantees the column is never NULL.
 
-import { EVALS_AGENT, EVALS_SURFACE } from '../evals/plan';
+import { EVALS_AGENT, EVALS_AUDIENCE, EVALS_SURFACE } from '../evals/plan';
 import { STALE_AFTER_MS } from '../fit/report-status';
 
 export interface EvalRunRow {
@@ -179,9 +191,10 @@ export async function readOpsMetrics(
                 TOTAL(status = 'failed') AS failed,
                 TOTAL(status = 'pending' AND created_at > ?) AS in_progress,
                 TOTAL(status = 'pending' AND created_at <= ?) AS abandoned
-           FROM fit_reports WHERE created_at >= ? AND created_at <= ?`,
+           FROM fit_reports WHERE created_at >= ? AND created_at <= ?
+            AND audience <> ?`,
       )
-      .bind(staleBefore, staleBefore, since, until),
+      .bind(staleBefore, staleBefore, since, until, EVALS_AUDIENCE),
     // The latest row per suite. A correlated subquery rather than a window
     // function: D1 is SQLite and supports both, and this shape reads the same to
     // whoever checks it against the table by hand.

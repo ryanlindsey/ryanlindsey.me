@@ -12,7 +12,6 @@ import { ChatUnavailable } from '../src/lib/chat/engine';
 import { FitUnavailable } from '../src/lib/fit/engine';
 import { JudgeUnavailable } from '../src/lib/judge/engine';
 import { ToolError } from '../workers/mcp/src/define';
-import { fitToolError } from '../workers/mcp/src/gated';
 
 function tagged(reason: string, message = 'tagged', cause?: unknown): Error {
   const error = new Error(message, cause === undefined ? undefined : { cause });
@@ -197,15 +196,6 @@ describe('throw sites', () => {
       failureReason: 'not_found',
     });
     expect(classifyFailure(error).reason).toBe('not_found');
-  });
-
-  it('fitToolError keeps the chain across the ToolError wrapper', () => {
-    const wrapped = fitToolError(
-      new FitUnavailable('The fit engine could not be reached right now.', {
-        cause: new Error('2018: x'),
-      }),
-    );
-    expect(classifyFailure(wrapped).reason).toBe('gateway_limit');
   });
 
   it('a JudgeUnavailable carries a definitive tag', () => {

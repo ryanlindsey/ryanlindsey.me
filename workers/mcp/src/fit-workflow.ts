@@ -42,20 +42,23 @@ import {
   type WorkflowStep,
   type WorkflowStepConfig,
 } from 'cloudflare:workers';
-import { highIntentFor } from '../../../src/lib/agent-intel/intent';
 import { analyzeFit, FitUnavailable, type FitResult } from '../../../src/lib/fit/engine';
 import { classifyFailure, type FailureReason } from '../../../src/lib/failure/classify';
 import type { FitFailureCode } from '../../../src/lib/fit/report-status';
 import { fitEnv } from './gated';
+import { messageOf, notifyRun } from './fit-run';
 import type { McpEnv } from './env';
 
 /**
  * What `/fit/start` hands an instance: the permalink id, and nothing else.
+ * Since #490 `analyze_fit` hands over the same shape, through the same
+ * `openFitRun` in ./fit-run.ts.
  *
  * THE TOKEN IS NOT HERE, AND THAT IS THE EPIC'S CONSTRAINT RATHER THAN A
- * PREFERENCE. It is consumed at `/fit/start`, where `resolveGrant` is the one
- * authorization check, and it is never needed again -- this run is finishing
- * work that was already authorized rather than authorizing anything itself.
+ * PREFERENCE. It is consumed at `/fit/start` or at the tool call, where
+ * `resolveGrant` was the one authorization check, and it is never needed
+ * again -- this run is finishing work that was already authorized rather than
+ * authorizing anything itself.
  *
  * `target_description` IS NOT HERE EITHER, AND THAT ONE TOOK ARGUING. It is
  * already in hand at the route, so passing it would save a read. What it would
@@ -69,7 +72,7 @@ import type { McpEnv } from './env';
  * 365-day window /ai-policy states out loud. So the run reads it back from the
  * row it is named after.
  *
- * The third thing the id-only shape buys is that the run is ANCHORED to the
+ * The third thing the id-first shape buys is that the run is ANCHORED to the
  * row. A run whose row is gone has nothing to write to, and `run()` below
  * refuses before it reaches the one `expensive` tool in this server rather than
  * spending seventy-eight seconds on an `UPDATE` that would match no rows.
@@ -94,7 +97,8 @@ export interface FitRunParams {
  * retries, ten seconds apart, exponential backoff, read from `defaultConfig`
  * at workflows/build/sleeping-and-retrying. `analyze_fit` is the only
  * `expensive` tool in this server, one frontier-model call over the whole
- * corpus, and the limiter metered this run EXACTLY ONCE at `/fit/start`. Five
+ * corpus, and the limiter metered this run EXACTLY ONCE, at `/fit/start` or in
+ * `analyze_fit`'s own guard, whichever opened it (#490). Five
  * unmetered repeats of a 78-second Opus call is the most expensive thing an
  * omitted argument could buy anywhere in this repository.
  *
@@ -212,6 +216,17 @@ type Attempt =
       // its cause chain would not survive the trip.
       reason: FailureReason;
       detail: string;
+      // Two more plain values for `get_fit_report` (#490). `noAnswer` is
+      // `FitUnavailable.noAnswer`, read inside the step for the same
+      // `instanceof` reason as `code`. `publicMessage` is the engine's own
+      // sentence for a `FitUnavailable` and null for every other error, so
+      // upstream text never reaches a column a caller can read. It is public
+      // copy the engine wrote to be shown, not a caller's prose, so it adds
+      // nothing to what the bound above argues about. Both are optional on the
+      // type because an instance whose analyze step finished under older code
+      // replays an Attempt without them.
+      noAnswer?: boolean;
+      publicMessage?: string | null;
     };
 
 export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
@@ -297,6 +312,8 @@ export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
             message: messageOf(error),
             reason: failure.reason,
             detail: failure.detail,
+            noAnswer: error instanceof FitUnavailable && error.noAnswer,
+            publicMessage: error instanceof FitUnavailable ? error.message : null,
           };
         }
       });
@@ -311,6 +328,8 @@ export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
         message: `the analyze step did not finish: ${messageOf(error)}`,
         reason: failure.reason,
         detail: failure.detail,
+        noAnswer: false,
+        publicMessage: null,
       };
     }
 
@@ -329,7 +348,8 @@ export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
         await env.DB.prepare(
           `UPDATE fit_reports
               SET status = 'ok', model = ?, report_json = ?,
-                  citations_checked = ?, citations_dropped = ?
+                  citations_checked = ?, citations_dropped = ?,
+                  generated_at = ?, corpus_documents = ?, corpus_truncated = ?
             WHERE id = ?`,
         )
           .bind(
@@ -337,19 +357,31 @@ export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
             JSON.stringify(attempt.result.report),
             attempt.result.citations.checked,
             attempt.result.citations.dropped,
+            attempt.result.generatedAt,
+            attempt.result.corpusDocuments,
+            attempt.result.corpusTruncated ? 1 : 0,
             id,
           )
           .run();
       } else {
         // The fallbacks are there because an instance whose analyze step finished under the code
         // before #465 replays its cached Attempt without a reason or detail
-        // across a deploy, and `.bind(undefined)` throws.
+        // across a deploy, and `.bind(undefined)` throws. The same goes for
+        // `noAnswer` and `publicMessage`, which arrived with #490.
         await env.DB.prepare(
           `UPDATE fit_reports
-              SET status = 'failed', failure_code = ?, failure_reason = ?, failure_detail = ?
+              SET status = 'failed', failure_code = ?, failure_reason = ?, failure_detail = ?,
+                  no_answer = ?, failure_message = ?
             WHERE id = ?`,
         )
-          .bind(attempt.code, attempt.reason ?? 'internal', attempt.detail ?? null, id)
+          .bind(
+            attempt.code,
+            attempt.reason ?? 'internal',
+            attempt.detail ?? null,
+            attempt.noAnswer ? 1 : 0,
+            attempt.publicMessage ?? null,
+            id,
+          )
           .run();
       }
       return id;
@@ -363,7 +395,8 @@ export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
  * The report id a payload asks for, or a thrown error naming what arrived.
  *
  * `FitRunParams` IS A PROMISE THE CALLER MAKES AND NOTHING ENFORCES, exactly as
- * `EvalsRunParams` is. ./fit-start.ts always passes a freshly minted id and is
+ * `EvalsRunParams` is. `openFitRun` (./fit-run.ts) always passes a freshly
+ * minted id, for `/fit/start` and for `analyze_fit` alike, and is
  * fine; the caller this exists for is a person at
  * `wrangler workflows trigger rlme-fit`, which takes its params as an optional
  * positional JSON string, so omitting them is both easy and valid at the CLI.
@@ -392,112 +425,4 @@ function reportIdOf(payload: FitRunParams | undefined): string {
 function refuse(reason: string): Error {
   console.error(`fit: ${reason}`);
   return new Error(`fit: ${reason}`);
-}
-
-/** An error's own message. See the `console.error` note in `run` for why it is interpolated. */
-export function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/**
- * Puts the finished run on the events queue.
- *
- * THE NOTIFICATION IS QUEUED FROM HERE BECAUSE THIS IS WHERE THE RUN ENDS
- * (#277). It used to be queued by the site Worker, off the 303 to
- * `/fit/r/<id>`, which was an unambiguous "a report exists" until #269 made
- * that redirect mean "a run started" instead -- so the operator was told at the
- * moment nothing had been generated, and was never told when something was.
- * This Worker resolved the grant, so it is also the only one that can name the
- * audience without a second verifier. The audience reaches this function off
- * the ROW now rather than out of a closure, which is the same value by a
- * shorter route: it was written there from the grant before the run started.
- *
- * A FAILED RUN NOTIFIES TOO. It means a reader holding a live link got nothing,
- * which is exactly the case nobody would otherwise hear about, and it is why
- * the event carries `outcome` rather than standing for success by existing.
- *
- * The three fields are the whole message: the audience the grant named, the
- * permalink id and which way the run went. Not the description, not the report,
- * not the token -- src/lib/agent-intel/intent.ts is where that rule is written,
- * and a queue message is the one thing here that gets copied into an email and
- * leaves Cloudflare.
- *
- * THE SEND SITS OUTSIDE EVERY STEP, AND OUTSIDE THE WRITE THAT CLOSES THE ROW.
- * Inside the `close` step its own failure would fail that step, and `ROW_STEP`
- * would then repeat the `UPDATE` to fix a queue -- so a refused message would
- * be answered by rewriting a row that was already correct.
- *
- * WHAT A REFUSED SEND DOES INSTEAD, since the placement chooses it: the
- * rejection leaves `run()` and the instance is `errored`, which is strictly
- * more than the old shape managed. Under `ctx.waitUntil` the same rejection was
- * a line in the log and nothing else; now it is a terminal status with a
- * message that `wrangler workflows instances describe` prints. The row is
- * already closed by then, so the reader's permalink is correct either way.
- *
- * ONE CONSEQUENCE OF BEING OUTSIDE A STEP, named rather than discovered: a
- * resumed instance replays both steps from durable state and then reaches this
- * line again, so a resume can send a second `fit-run` event for one run. That
- * is the right way round. The event is three labels and the operator reads it
- * beside a permalink that says the same thing; a duplicate is noise, and the
- * alternative -- persisting the send as a step so it cannot repeat -- buys
- * silence at the price of a run nobody hears about.
- */
-async function notifyRun(
-  env: McpEnv,
-  id: string,
-  audience: string,
-  outcome: 'ok' | 'failed',
-): Promise<void> {
-  const event = highIntentFor({
-    kind: 'fit-run',
-    at: new Date().toISOString(),
-    audience,
-    reportId: id,
-    outcome,
-  });
-  if (event !== null) await env.EVENTS.send(event);
-}
-
-/**
- * Closes a row the run never reached, and tells the operator.
- *
- * ONE CALLER, in ./fit-start.ts: a `create` that rejects. The row is open by
- * then, and a row nothing will ever write to is the exact state this whole
- * issue exists to end -- `/fit/r/<id>` would refresh for five minutes and then
- * render the stale copy, telling a reader a report was coming that nothing was
- * going to produce.
- *
- * `errored` rather than `refused`: the engine never declined, because the
- * engine was never asked. A run that could not be started is a defect of this
- * system, which is what the closed set's second member means.
- *
- * THE REASON IS `internal` WITH A FIXED DETAIL, not a classification: this
- * function receives no error, only the id, so the underlying cause is in the
- * log line ./fit-start.ts writes rather than in the row.
- *
- * IT SWALLOWS ITS OWN FAILURE AFTER LOGGING, because it is already the
- * fallback. A throw from here would be raised inside the `ctx.waitUntil` that
- * called it, which logs it and changes nothing else, and the five-minute stale
- * branch in src/lib/fit/report-status.ts is the insurance under it -- computed
- * at read time from `created_at`, so nothing has to run for the page to tell
- * the truth.
- */
-export async function abandonRun(env: McpEnv, id: string, audience: string): Promise<void> {
-  try {
-    await env.DB.prepare(
-      `UPDATE fit_reports
-          SET status = 'failed', failure_code = ?, failure_reason = ?, failure_detail = ?
-        WHERE id = ?`,
-    )
-      .bind(
-        'errored' satisfies FitFailureCode,
-        'internal' satisfies FailureReason,
-        'abandoned: the run could not be started',
-        id,
-      )
-      .run();
-    await notifyRun(env, id, audience, 'failed');
-  } catch (error) {
-    console.error(`fit: the run for ${id} could not be abandoned cleanly: ${messageOf(error)}`);
-  }
 }

@@ -50,6 +50,25 @@ export const EVALS_USER_AGENT = `${EVALS_AGENT}/1`;
 export const EVALS_SURFACE = 'evals';
 
 /**
+ * The audience the scheduled run mints its token under, and so the
+ * `fit_reports.audience` its fit runs are stored under.
+ *
+ * GENERIC ON PURPOSE (09 §2): an audience label is an opaque string to
+ * everything that reads it, and this repository is public, so the label says
+ * what the caller IS and never who it is for.
+ *
+ * HOISTED HERE FROM workers/mcp/src/evals-workflow.ts in #490, for the reason
+ * the two strings above live here. Until then only that Workflow named it.
+ * `analyze_fit` now opens a `fit_reports` row like the form does, so the
+ * scheduled `fit` suite's runs land in a table /ops publishes, and
+ * src/lib/ops/metrics.ts excludes them by this value. A fit run stores no user
+ * agent, so the audience is the only mark it carries. Importing it from the
+ * Workflow's module would pull `cloudflare:workers` into a module the site
+ * renders.
+ */
+export const EVALS_AUDIENCE = 'scheduled-evals';
+
+/**
  * ONE client retry, and the number is small because it is not the first one.
  *
  * WHAT IS BEING RETRIED, measured 2026-09-10: the AI Gateway answers `2018:

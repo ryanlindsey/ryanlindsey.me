@@ -127,7 +127,7 @@ export interface McpEnv {
    * defect confirmed in production on 2026-09-22 and invisible to every test
    * here until an instance became the thing doing the waiting.
    * ./fit-workflow.ts holds the class and the reasoning, including why
-   * `FitRunParams` is the permalink id and nothing else.
+   * `FitRunParams` is the permalink id alone.
    *
    * The second `workflows` binding on this Worker, so the pair are worth one
    * sentence together: `EVALS_WORKFLOW` exists because a weekly eval run is
@@ -192,8 +192,9 @@ export interface McpEnv {
    * `MCP_SEARCH_EMBEDDER` is `'stub'` there: the harness overrides `AI` to a
    * service Worker, so `env.AI.run()` is a TypeError here by design. Under the
    * seam, `analyze_fit` exercises everything AROUND the model call -- the
-   * scope gate, the argument schema, the limiter, the audit row and the error
-   * shape -- and the call itself is covered with a stub `Ai` in
+   * scope gate, the argument schema, the limiter, the audit row, and since
+   * #490 the run it opens -- and `get_fit_report` reads back the error shape
+   * the run stored. The call itself is covered with a stub `Ai` in
    * tests/fit-engine.test.ts.
    */
   FIT_ENGINE?: string;

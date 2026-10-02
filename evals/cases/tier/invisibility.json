@@ -3,6 +3,7 @@
   "name": "The private tier is invisible without a grant",
   "hidden_tools": [
     "analyze_fit",
+    "get_fit_report",
     "get_availability",
     "get_references",
     "get_compensation_expectations",

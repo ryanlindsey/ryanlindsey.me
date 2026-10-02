@@ -44,7 +44,7 @@ export { EvalsWorkflow } from './evals-workflow';
 // every `POST /fit/start` opens a row whose run cannot be started -- which is
 // the state this issue exists to end, reached by a different route. The route's
 // `create` failure path closes such a row rather than leaving it pending (see
-// `startRun` in ./fit-start.ts), so the failure is loud in the log and visible
+// `startRun` in ./fit-run.ts, there since #490), so the failure is loud in the log and visible
 // at the permalink rather than silent.
 export { FitWorkflow } from './fit-workflow';
 

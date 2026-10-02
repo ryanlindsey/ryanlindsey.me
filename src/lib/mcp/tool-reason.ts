@@ -15,8 +15,10 @@ export const TOOL_REASON_META_KEY = 'me.ryanlindsey/reason';
 
 /**
  * `unavailable`: no model answer exists. Only a `FitUnavailable` marked
- * `noAnswer` carries it (src/lib/fit/engine.ts, mapped by `fitToolError` in
- * workers/mcp/src/gated.ts). A model answer that came back truncated or
+ * `noAnswer` carries it (src/lib/fit/engine.ts), stored on the run's row and
+ * mapped by `fitReportAnswer` in workers/mcp/src/gated.ts, so since #490 it
+ * arrives on `get_fit_report`'s refusal rather than on `analyze_fit`'s, which
+ * no longer waits for the engine. A model answer that came back truncated or
  * unparseable carries none, and neither does a rate-limit refusal, an
  * input-schema refusal or an unwrapped throw: all of those stay graded.
  */

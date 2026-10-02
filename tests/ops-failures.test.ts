@@ -73,6 +73,10 @@ afterAll(async () => {
 describe('surfaceOf', () => {
   test('folds a tool into the surface a reader would name', () => {
     expect(surfaceOf('analyze_fit', 'private')).toBe('fit');
+    // Since #490 a run's failure is answered by the tool that reads it back,
+    // so that tool is the fit surface too, or every failed run would be filed
+    // under `private tools`.
+    expect(surfaceOf('get_fit_report', 'private')).toBe('fit');
     expect(surfaceOf('judge_answer', 'private')).toBe('judge');
     expect(surfaceOf('search_writing', 'public')).toBe('search');
     expect(surfaceOf('get_resume', 'public')).toBe('public tools');

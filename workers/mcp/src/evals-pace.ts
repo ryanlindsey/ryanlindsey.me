@@ -31,10 +31,11 @@ import type { Answered, JudgePending } from './evals-run';
  * response answers the request's id -- an event stream carrying only
  * keep-alives or notifications, or a body that is not JSON at all -- which
  * since #351 covers both what it used to throw on and what `rpc`'s own
- * `JSON.parse` used to throw on. Under the default, each
- * throw sends the step back through another `analyze_fit` -- an Opus call over
+ * `JSON.parse` used to throw on. Under the default, each throw sends the step
+ * back to `analyze_fit` -- which since #490 opens a NEW run, an Opus call over
  * the whole corpus -- five more times, each doing its own client retry, each
- * of those fanning out at the gateway.
+ * of those fanning out at the gateway. The run the failed attempt opened is not
+ * cancelled either, so a retry would be paid for on top of it.
  *
  * WHAT A THROW DOES INSTEAD: it leaves `runSuite`, and `run()` writes an
  * `incomplete` row for that suite. That is the same outcome evals/run.mjs
@@ -45,15 +46,24 @@ import type { Answered, JudgePending } from './evals-run';
  *
  * `delay` is required by the type and inert at a limit of zero.
  *
- * THE TEN-MINUTE DEFAULT STEP TIMEOUT IS CONSIDERED AND LEFT ALONE. What
- * bounds a step here is a call COUNT rather than a guess at latency: a `fit`
- * case is one `analyze_fit` with no client retry at all, and the longest step
- * in any suite is a `chat` case or a `leak` probe, which is at most two chat
- * turns with a sixty-second backoff before the retried one. Its judge is a step
- * of its own since issue #448, two judge calls with the same backoff. Two model
- * calls and a minute of waiting is not a ten-minute step. An earlier version
- * of this sentence put all four calls in one step with a ten-second backoff,
- * which was true until `SCHEDULED_BACKOFF_MS` widened it on 2026-09-27.
+ * THE TEN-MINUTE DEFAULT STEP TIMEOUT IS CONSIDERED AND LEFT ALONE. A `fit`
+ * case is no longer one call: since #490 it is `analyze_fit` plus however many
+ * `get_fit_report` calls it takes, each holding up to 40 seconds. What bounds
+ * it is `FIT_CASE_DEADLINE_MS` (src/lib/evals/fit-poll.ts), five minutes,
+ * checked between calls, so the worst case is that plus one more 40-second
+ * wait. That is inside ten minutes with room to spare, and the deadline sits
+ * under the step timeout on purpose: a case that never closes is recorded as
+ * a failed case by the runner rather than as a timed-out step, which would
+ * throw out of `runSuite` and turn one slow case into an `incomplete` suite.
+ * Retries stay at zero for the reason above, and a timeout is not retried
+ * either. The longest step in any other suite is a `chat` case or a `leak`
+ * probe, which is at most two chat turns with a sixty-second backoff before
+ * the retried one. Its judge is a step of its own since issue #448, two judge
+ * calls with the same backoff. Two model calls and a minute of waiting is not
+ * a ten-minute step. An earlier version of this sentence put all four calls in
+ * one step with a ten-second backoff, which was true until
+ * `SCHEDULED_BACKOFF_MS` widened it on 2026-09-27, and said a `fit` case was
+ * one `analyze_fit` call, which was true until #490.
  */
 export const CASE_STEP: WorkflowStepConfig = { retries: { limit: 0, delay: 0 } };
 

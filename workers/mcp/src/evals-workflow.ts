@@ -39,7 +39,7 @@ import {
   type WorkflowStep,
   type WorkflowStepConfig,
 } from 'cloudflare:workers';
-import { isSuiteName, type SuiteName } from '../../../src/lib/evals/plan';
+import { EVALS_AUDIENCE, isSuiteName, type SuiteName } from '../../../src/lib/evals/plan';
 import {
   incompleteRow,
   summarize,
@@ -86,12 +86,15 @@ const RECORD_STEP: WorkflowStepConfig = { retries: { limit: 1, delay: '5 seconds
  * The audience the run mints under. GENERIC ON PURPOSE (09 §2): an audience
  * label is an opaque string to everything that reads it, and this repository
  * is public, so the label says what the caller IS and never who it is for.
+ *
+ * The literal lives in src/lib/evals/plan.ts since #490, because /ops now
+ * excludes this run's fit reports by it and that module cannot import this one.
  */
-const AUDIENCE = 'scheduled-evals';
+const AUDIENCE = EVALS_AUDIENCE;
 
 /**
  * `evals` admits the run to `POST /chat` and to `judge_answer`; `fit` opens
- * `analyze_fit`. Nothing else: the `tier` suite calls anonymously by design,
+ * `analyze_fit` and `get_fit_report`. Nothing else: the `tier` suite calls anonymously by design,
  * and no suite reads a private document.
  */
 const SCOPES: Scope[] = ['evals', 'fit'];
