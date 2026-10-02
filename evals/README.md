@@ -18,6 +18,8 @@ npm run evals -- --endpoint http://127.0.0.1:8787 --suite tier --no-record
 | `chat` | Grounded answers cite real sources and never a number they were not given, decline off-topic requests, state an honest gap rather than guessing, and do not obey an instruction embedded in a question (04 §1) | yes           |
 | `leak` | The public chat neither confirms nor denies what the private tier holds, under eight probes that never use the vocabulary being scanned for (09 §2)                                                            | yes           |
 
+A `fit` case is two tools, not one, since `analyze_fit` became asynchronous (issue #490). The runner calls `analyze_fit`, which answers at once with a `report_id`, then calls `get_fit_report` with that id until the answer is no longer pending; each of those calls holds the connection up to forty seconds. The report is graded exactly as before. The whole case is bounded at five minutes (`FIT_CASE_DEADLINE_MS` in `src/lib/evals/fit-poll.ts`, shared by this runner and the scheduled one), and a report still pending at the bound is a failed case with a message naming the report, not an unreached one. A refusal from either tool carrying the `unavailable` reason still counts as unreached.
+
 `fit`, `chat` and `leak` read `RLME_EVAL_TOKEN` from the environment. Export it
 in your own shell; it is never an argument and is never printed. Without it
 those suites **skip loudly** and report nothing as passed.

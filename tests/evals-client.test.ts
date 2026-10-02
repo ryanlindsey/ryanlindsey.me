@@ -284,3 +284,62 @@ test('runFitCase: a refusal without the reason stays a graded failure', async ()
   expect(result.unreached).toBeUndefined();
   expect(result.notes).toBe('tool refused: The fit engine could not be reached right now.');
 });
+
+// --- runFitCase follows the asynchronous protocol (issue #490) ---------------
+//
+// The loop itself is tested in tests/evals-fit-poll.test.ts; these pin that
+// the runner calls get_fit_report after a pending analyze_fit and maps the
+// outcomes onto the same results as before.
+
+/** analyze_fit answers pending; get_fit_report answers whatever `second` builds. */
+function pollingFetcher(second: (id: number) => unknown): {
+  fetcher: EvalsFetcher;
+  tools: string[];
+} {
+  const tools: string[] = [];
+  const { fetcher } = stubFetcher((_url, init) => {
+    const { id, params } = JSON.parse(String(init?.body)) as {
+      id: number;
+      params: { name: string };
+    };
+    tools.push(params.name);
+    if (params.name === 'analyze_fit') {
+      return jsonResponse({
+        jsonrpc: '2.0',
+        id,
+        result: {
+          content: [{ type: 'text', text: JSON.stringify({ status: 'pending', report_id: 'r1' }) }],
+        },
+      });
+    }
+    return jsonResponse(second(id));
+  });
+  return { fetcher, tools };
+}
+
+test('runFitCase: a get_fit_report refusal carrying the unavailable reason is unreached', async () => {
+  const { fetcher, tools } = pollingFetcher((id) => ({
+    jsonrpc: '2.0',
+    id,
+    result: {
+      isError: true,
+      content: [{ type: 'text', text: 'The fit engine could not be reached right now.' }],
+      _meta: { [TOOL_REASON_META_KEY]: 'unavailable' },
+    },
+  }));
+  const result = await runFitCase(fetcher, FIT_CASE, 'token');
+  expect(tools).toEqual(['analyze_fit', 'get_fit_report']);
+  expect(result).toMatchObject({ ok: false, unreached: true });
+});
+
+test('runFitCase: a finished report that fails the schema is a graded failure', async () => {
+  const { fetcher } = pollingFetcher((id) => ({
+    jsonrpc: '2.0',
+    id,
+    result: { content: [{ type: 'text', text: JSON.stringify({ status: 'ok', report: {} }) }] },
+  }));
+  const result = await runFitCase(fetcher, FIT_CASE, 'token');
+  expect(result.ok).toBe(false);
+  expect(result.unreached).toBeUndefined();
+  expect(result.notes).toMatch(/^report failed the schema/);
+});

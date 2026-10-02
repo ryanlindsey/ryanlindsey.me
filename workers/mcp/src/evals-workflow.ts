@@ -94,7 +94,7 @@ const AUDIENCE = EVALS_AUDIENCE;
 
 /**
  * `evals` admits the run to `POST /chat` and to `judge_answer`; `fit` opens
- * `analyze_fit`. Nothing else: the `tier` suite calls anonymously by design,
+ * `analyze_fit` and `get_fit_report`. Nothing else: the `tier` suite calls anonymously by design,
  * and no suite reads a private document.
  */
 const SCOPES: Scope[] = ['evals', 'fit'];

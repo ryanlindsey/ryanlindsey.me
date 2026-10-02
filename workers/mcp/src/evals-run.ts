@@ -28,7 +28,6 @@ import {
   leakProblems,
   reachedNoModel,
   tierProblems,
-  toolUnavailable,
 } from '../../../src/lib/evals/checks';
 import type {
   ChatCase,
@@ -37,6 +36,7 @@ import type {
   LoadedCase,
   TierCase,
 } from '../../../src/lib/evals/cases';
+import { FIT_CASE_DEADLINE_MS, collectFitReport } from '../../../src/lib/evals/fit-poll';
 import { fail, pass, unreached, type CaseResult } from '../../../src/lib/evals/record';
 import { FitReport } from '../../../src/lib/fit/schema';
 import { ask, askJudge, rpc, type EvalsFetcher } from './evals-client';
@@ -84,9 +84,17 @@ export async function runTierCase(
 }
 
 /**
- * `fit`: one `analyze_fit` call, judged by `fitProblems`.
+ * `fit`: `analyze_fit` to open a run, then `get_fit_report` until it closes,
+ * judged by `fitProblems`.
  *
- * THE THREE BRANCHES BEFORE THE CHECKS ARE ABOUT WHAT CAME BACK OVER THE
+ * THE CALL SEQUENCE IS `collectFitReport`'S (src/lib/evals/fit-poll.ts), shared
+ * with evals/run.mjs since issue #490 made `analyze_fit` answer with a pending
+ * envelope instead of the report. This function is the transport -- every call
+ * goes over `rpc` and `SELF` -- and the mapping from an outcome onto a result.
+ * A case is now several requests and is bounded by `FIT_CASE_DEADLINE_MS`
+ * rather than by one call; see `CASE_STEP` in ./evals-pace.ts.
+ *
+ * THE BRANCHES BEFORE THE CHECKS ARE ABOUT WHAT CAME BACK OVER THE
  * WIRE, and they stay here rather than moving into src/lib/evals/checks.ts
  * with the rest: a refused tool, a payload that is not JSON and a report that
  * fails the schema are all facts about the response, and `fitProblems` is a
@@ -96,8 +104,12 @@ export async function runTierCase(
  * a refused tool is not always one. A refusal carrying the `unavailable`
  * reason (`toolUnavailable`) means no model answer exists, and it is recorded
  * as `unreached` so `summarize` keeps it out of the graded counts (issue
- * #427). Every other refusal, a truncated or unparseable answer among them, is
- * a graded failure, because those are what this suite exists to catch.
+ * #427). That holds for a refusal from either tool: `get_fit_report` answers
+ * it when the run it was polling closed without a model answer. Every other
+ * refusal, a truncated or unparseable answer among them, is a graded failure,
+ * because those are what this suite exists to catch. So is a run still
+ * pending at the deadline, which is not unreached: the server said it was
+ * working and never finished.
  *
  * The wording of each is evals/run.mjs's, unchanged, because the two runners
  * write into one `eval_runs` table and a reader should not have to know which
@@ -108,28 +120,30 @@ export async function runFitCase(
   testCase: LoadedCase<FitCase>,
   token: string,
 ): Promise<CaseResult> {
-  const answer = await rpc(
-    fetcher,
-    'tools/call',
-    { name: 'analyze_fit', arguments: { target_description: testCase.target_description } },
-    token,
+  const outcome = await collectFitReport(
+    async (name, args) => await rpc(fetcher, 'tools/call', { name, arguments: args }, token),
+    testCase.target_description,
   );
-  if (answer.result?.isError) {
-    const outcome = toolUnavailable(answer) ? unreached : fail;
-    return outcome(
-      testCase.id,
-      `tool refused: ${answer.result.content?.[0]?.text ?? ''}`,
-      testCase.local,
-    );
+  switch (outcome.kind) {
+    case 'refused':
+      return (outcome.unavailable ? unreached : fail)(
+        testCase.id,
+        `tool refused: ${outcome.text}`,
+        testCase.local,
+      );
+    case 'malformed':
+      return fail(testCase.id, outcome.text, testCase.local);
+    case 'timeout':
+      return fail(
+        testCase.id,
+        `report ${outcome.reportId} was still pending after ${FIT_CASE_DEADLINE_MS / 60_000} minutes`,
+        testCase.local,
+      );
+    case 'ok':
+      break;
   }
 
-  let payload: { report?: unknown; citations_dropped?: number };
-  try {
-    payload = JSON.parse(answer.result?.content?.[0]?.text ?? '') as typeof payload;
-  } catch {
-    return fail(testCase.id, 'the tool did not return JSON', testCase.local);
-  }
-
+  const payload = outcome.payload;
   const parsed = FitReport.safeParse(payload.report);
   if (!parsed.success) {
     return fail(

@@ -179,8 +179,13 @@ export async function rpc(
  * nothing but the call.
  *
  * PORTED WITH ITS COMMENT because the bug it records is the kind that comes
- * back: the scheduled `fit` suite meets a slow `analyze_fit` on exactly this
+ * back: the scheduled `fit` suite met a slow `analyze_fit` on exactly this
  * path, and it has no operator watching a terminal when it does.
+ *
+ * SINCE #490 THE SLOW CALL IS `get_fit_report`, not `analyze_fit`. The latter
+ * answers at once; the former holds the connection up to `FIT_REPORT_WAIT_MS`
+ * (40 s), which is past the 15 s keep-alive interval above, so a `fit` case
+ * still meets comment frames on every poll that waits.
  */
 export function payloadOf(response: Response, text: string, id: number): RpcResponse {
   const sse = (response.headers.get('content-type') ?? '').includes('text/event-stream');

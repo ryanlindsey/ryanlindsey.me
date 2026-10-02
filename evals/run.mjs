@@ -35,8 +35,8 @@ import {
   leakProblems,
   reachedNoModel,
   tierProblems,
-  toolUnavailable,
 } from '../src/lib/evals/checks.ts';
+import { FIT_CASE_DEADLINE_MS, collectFitReport } from '../src/lib/evals/fit-poll.ts';
 import { BACKOFF_MS, PACE_MS, RETRIES } from '../src/lib/evals/plan.ts';
 import { fail, localCount, pass, summarize, unreached } from '../src/lib/evals/record.ts';
 
@@ -180,34 +180,38 @@ async function runFit() {
     // a rule with an exception nobody remembers the reason for.
     if (!firstFit) await sleep(PACE_MS);
     firstFit = false;
-    const answer = await rpc(
-      'tools/call',
-      { name: 'analyze_fit', arguments: { target_description: testCase.target_description } },
-      token,
+    // `analyze_fit` opens a run and `get_fit_report` collects it (issue #490);
+    // the sequence and its deadline are `collectFitReport`'s, shared with the
+    // scheduled runner so the two cannot read a response differently.
+    const outcome = await collectFitReport(
+      (name, args) => rpc('tools/call', { name, arguments: args }, token),
+      testCase.target_description,
     );
-    if (answer.result?.isError) {
+    if (outcome.kind === 'refused') {
       // `unreached` rather than `fail` when the refusal says no model answer
       // exists, the same split `runFitCase` in workers/mcp/src/evals-run.ts
-      // makes, so an outage is not published as a graded failure (#427).
-      const outcome = toolUnavailable(answer) ? unreached : fail;
+      // makes, so an outage is not published as a graded failure (#427). Either
+      // tool can say so: `get_fit_report` does when the run closed unanswered.
+      const outcomeFor = outcome.unavailable ? unreached : fail;
+      results.push(outcomeFor(testCase.id, `tool refused: ${outcome.text}`, testCase.local));
+      continue;
+    }
+    if (outcome.kind === 'malformed') {
+      results.push(fail(testCase.id, outcome.text, testCase.local));
+      continue;
+    }
+    if (outcome.kind === 'timeout') {
       results.push(
-        outcome(
+        fail(
           testCase.id,
-          `tool refused: ${answer.result.content?.[0]?.text ?? ''}`,
+          `report ${outcome.reportId} was still pending after ${FIT_CASE_DEADLINE_MS / 60_000} minutes`,
           testCase.local,
         ),
       );
       continue;
     }
 
-    let payload;
-    try {
-      payload = JSON.parse(answer.result.content[0].text);
-    } catch {
-      results.push(fail(testCase.id, 'the tool did not return JSON', testCase.local));
-      continue;
-    }
-
+    const payload = outcome.payload;
     const parsed = FitReport.safeParse(payload.report);
     if (!parsed.success) {
       results.push(
