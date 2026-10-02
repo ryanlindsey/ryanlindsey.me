@@ -117,7 +117,14 @@ function upstreamReason(text: string, status: number | null): FailureReason | nu
   if (/\b2018\b/.test(text) || /wholesale rate limit/i.test(text) || status === 429) {
     return 'gateway_limit';
   }
-  if (/insufficient balance/i.test(text) || /\b2021\b/.test(text)) return 'gateway_billing';
+  // `2047` is the gateway refusing a model under the current billing mode.
+  // Measured 2026-10-01 (#485): the call failed as `2047: Invalid User
+  // Credentials` while the gateway's own log read "This model is not available
+  // via unified billing. Please use BYOK." As with `2018`, the code is the
+  // signal and the credential wording is not.
+  if (/insufficient balance/i.test(text) || /\b(2021|2047)\b/.test(text)) {
+    return 'gateway_billing';
+  }
   if (/\b7003\b/.test(text) || (status !== null && status >= 400 && status <= 499)) {
     return 'provider_rejected';
   }
@@ -145,7 +152,10 @@ function describe(link: unknown): string {
 }
 
 // The detail of a tagged or chat-code match comes from the link that matched,
-// not from the outermost link.
+// not from the outermost link. With no match the detail is the innermost link
+// read, because the outermost is usually a wrapper such as `FitUnavailable`
+// whose fixed sentence says nothing: on 2026-10-01 (#485) every failed fit run
+// stored that sentence while the gateway's `2047` sat one `cause` below it.
 export function classifyFailure(error: unknown): Failure {
   try {
     const links = walk(error);
@@ -186,7 +196,7 @@ export function classifyFailure(error: unknown): Failure {
 
     return {
       reason: 'internal',
-      detail: bound(links.length > 0 ? describe(links[0]) : String(error)),
+      detail: bound(links.length > 0 ? describe(links[links.length - 1]) : String(error)),
     };
   } catch {
     return { reason: 'internal', detail: 'unclassifiable' };
