@@ -47,6 +47,8 @@ describe('classifyFailure upstream patterns', () => {
       'gateway_billing',
     ],
     ['2021', new Error('2021: no funds'), 'gateway_billing'],
+    ['2047 string', 'AiGatewayError: 2047: Invalid User Credentials', 'gateway_billing'],
+    ['2047 error', new Error('AiGatewayError: 2047: Invalid User Credentials'), 'gateway_billing'],
     ['7003 string', '7003: User Input Error', 'provider_rejected'],
     ['7003 error', new Error('7003: User Input Error'), 'provider_rejected'],
     ['status 400', { status: 400 }, 'provider_rejected'],
@@ -149,6 +151,24 @@ describe('classifyFailure fallbacks and bounds', () => {
     });
   });
 
+  it('describes the innermost link of an unclassified chain', () => {
+    const error = new FitUnavailable('The fit engine could not be reached right now.', {
+      noAnswer: true,
+      cause: new RangeError('index out of bounds', { cause: new SyntaxError('bad token') }),
+    });
+    expect(classifyFailure(error)).toEqual({
+      reason: 'internal',
+      detail: 'SyntaxError: bad token',
+    });
+  });
+
+  it('describes a primitive innermost link as itself', () => {
+    expect(classifyFailure(new Error('wrapper', { cause: 'plain words' }))).toEqual({
+      reason: 'internal',
+      detail: 'plain words',
+    });
+  });
+
   it('does not throw on hostile input', () => {
     const cyclic = new Error('loop');
     Object.assign(cyclic, { cause: cyclic });
@@ -189,6 +209,16 @@ describe('throw sites', () => {
       cause: new Error('7003: User Input Error'),
     });
     expect(classifyFailure(error).reason).toBe('provider_rejected');
+  });
+
+  it('a FitUnavailable over a gateway 2047 is a billing failure', () => {
+    const error = new FitUnavailable('The fit engine could not be reached right now.', {
+      cause: new Error('AiGatewayError: 2047: Invalid User Credentials'),
+    });
+    expect(classifyFailure(error)).toEqual({
+      reason: 'gateway_billing',
+      detail: 'AiGatewayError: 2047: Invalid User Credentials',
+    });
   });
 
   it('a ToolError carries a definitive tag', () => {
