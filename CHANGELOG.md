@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.53.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.53.0...ryanlindsey-me-v1.53.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **failure:** classify gateway 2047 and keep the innermost cause ([#498](https://github.com/ryanlindsey/ryanlindsey.me/issues/498)) ([d1df40a](https://github.com/ryanlindsey/ryanlindsey.me/commit/d1df40a0a0ebf237a4c6d48aab1dc2a09e75fc1d)), closes [#487](https://github.com/ryanlindsey/ryanlindsey.me/issues/487)
+
 ## [1.53.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.52.3...ryanlindsey-me-v1.53.0) (2026-10-02)
 
 
