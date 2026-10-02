@@ -51,11 +51,14 @@ import type { McpEnv } from './env';
 
 /**
  * What `/fit/start` hands an instance: the permalink id, and nothing else.
+ * `analyze_fit` hands over the same, through the same `openFitRun` in
+ * ./fit-start.ts, since #490.
  *
  * THE TOKEN IS NOT HERE, AND THAT IS THE EPIC'S CONSTRAINT RATHER THAN A
- * PREFERENCE. It is consumed at `/fit/start`, where `resolveGrant` is the one
- * authorization check, and it is never needed again -- this run is finishing
- * work that was already authorized rather than authorizing anything itself.
+ * PREFERENCE. It is consumed at `/fit/start` or at the tool call, where
+ * `resolveGrant` was the one authorization check, and it is never needed
+ * again -- this run is finishing work that was already authorized rather than
+ * authorizing anything itself.
  *
  * `target_description` IS NOT HERE EITHER, AND THAT ONE TOOK ARGUING. It is
  * already in hand at the route, so passing it would save a read. What it would
@@ -94,7 +97,8 @@ export interface FitRunParams {
  * retries, ten seconds apart, exponential backoff, read from `defaultConfig`
  * at workflows/build/sleeping-and-retrying. `analyze_fit` is the only
  * `expensive` tool in this server, one frontier-model call over the whole
- * corpus, and the limiter metered this run EXACTLY ONCE at `/fit/start`. Five
+ * corpus, and the limiter metered this run EXACTLY ONCE, at `/fit/start` or in
+ * `analyze_fit`'s own guard, whichever opened it (#490). Five
  * unmetered repeats of a 78-second Opus call is the most expensive thing an
  * omitted argument could buy anywhere in this repository.
  *

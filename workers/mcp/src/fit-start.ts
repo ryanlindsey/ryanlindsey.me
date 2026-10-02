@@ -44,7 +44,9 @@ import type { McpEnv } from './env';
  * LIMITED AND AUDITED THROUGH `limitAndAudit`, which is the same implementation
  * `defineTool` uses. `analyze_fit` is the only `expensive` tool in the server,
  * and a route that reached the engine around the limiter would be an unmetered
- * path to it.
+ * path to it. Since #490 the tool opens its runs through `openFitRun` below as
+ * well, so this route and the tool differ in how they are guarded and answer,
+ * and in nothing about what a run is.
  *
  * `resolveGrant` IS ASKED HERE AND NOWHERE ELSE ON THIS PATH. The site holds
  * the token as an opaque string and cannot verify it (src/lib/fit/client.ts);
@@ -90,7 +92,6 @@ export async function handleFitStart(
   // short" would tell anyone holding a link that the route is real.
   if (!FIT_INPUT.safeParse({ target_description: description }).success) return null;
 
-  const id = newReportId();
   const tc = { env, ctx, request, grant };
 
   // THE LIMITER IS ASKED FIRST, AND THE ROW IS OPENED INSIDE THE GUARDED BODY.
@@ -122,6 +123,10 @@ export async function handleFitStart(
   // record. A second row under the same name would double every one of those
   // for the one tool whose spend matters most. tests/fit-workflow.test.ts pins
   // the count so the repair cannot be made later without meeting this comment.
+  //
+  // THE TOOL'S ROW MEANS ACCEPTED TOO, SINCE #490. `analyze_fit` opens its run
+  // through `openFitRun` below, inside `defineTool`'s guard, so the row it
+  // leaves says the same thing this one does, and for the same reason.
   const outcome = await limitAndAudit(
     tc,
     {
@@ -131,21 +136,7 @@ export async function handleFitStart(
       read: () => ({ target_description: description }),
       hashable: (call) => call,
     },
-    async (call) => {
-      await env.DB.prepare(
-        `INSERT INTO fit_reports (id, created_at, status, audience, target_description)
-         VALUES (?, ?, 'pending', ?, ?)`,
-      )
-        .bind(id, new Date().toISOString(), grant.audience, call.target_description)
-        .run();
-
-      // The eighty seconds, off the response AND off this request's lifetime.
-      // `waitUntil` rather than an await: creating an instance is a round trip
-      // to the Workflows API, and the whole point of this route is that the
-      // caller does not wait for anything it does not have to.
-      ctx.waitUntil(startRun(env, id, grant.audience));
-      return id;
-    },
+    (call) => openFitRun(env, ctx, grant.audience, call.target_description),
   );
 
   if (outcome.kind === 'ok') return Response.json({ id: outcome.value });
@@ -157,6 +148,52 @@ export async function handleFitStart(
   // the correction workers/mcp/src/grant-context.ts records from 2026-09-15,
   // and it applies here for the same reason.
   return null;
+}
+
+/**
+ * Opens a run: writes its `pending` row and hands it to the Workflow, then
+ * answers with the permalink id.
+ *
+ * ONE IMPLEMENTATION FOR BOTH CALLERS (#490). `handleFitStart` above calls it
+ * inside `limitAndAudit`, and `analyze_fit` (./gated.ts) inside `defineTool`'s
+ * guard, which is the same function reached by another adapter. Each caller
+ * meters and audits exactly once and this function does neither, so a run
+ * cannot be metered twice by reaching it from both, and cannot reach the
+ * engine around the limiter by reaching it from somewhere new: it has no
+ * caller outside a guarded body, and must not gain one.
+ *
+ * `analyze_fit` used to await the engine itself, and on Opus 5 a run took 59
+ * to 104 seconds (tail 135 s), which MCP clients did not wait for. The form
+ * had stopped holding the browser open for the same run in #269, and the tool
+ * now takes the same way out rather than a second one.
+ *
+ * Called INSIDE the guard on both paths, which is the ordering argued above
+ * `limitAndAudit` in `handleFitStart`: the limiter is asked first, so a
+ * refused call leaves no row for a permalink nothing will finish.
+ *
+ * `audience` is the grant's. Each caller passes it from the grant its own
+ * request resolved, and the row is the only place the run reads it back from.
+ */
+export async function openFitRun(
+  env: McpEnv,
+  ctx: ExecutionContext,
+  audience: string,
+  description: string,
+): Promise<string> {
+  const id = newReportId();
+  await env.DB.prepare(
+    `INSERT INTO fit_reports (id, created_at, status, audience, target_description)
+     VALUES (?, ?, 'pending', ?, ?)`,
+  )
+    .bind(id, new Date().toISOString(), audience, description)
+    .run();
+
+  // The eighty seconds, off the response AND off this request's lifetime.
+  // `waitUntil` rather than an await: creating an instance is a round trip
+  // to the Workflows API, and the whole point of this route is that the
+  // caller does not wait for anything it does not have to.
+  ctx.waitUntil(startRun(env, id, audience));
+  return id;
 }
 
 /**
@@ -176,7 +213,8 @@ export async function handleFitStart(
  * defect survived seven merged children of epic #270.
  *
  * It also makes a second instance for one report impossible from this route,
- * which is what lets ./fit-workflow.ts's row read skip a `status` guard.
+ * or from `analyze_fit`, which mints its id in the same `openFitRun` -- and
+ * that is what lets ./fit-workflow.ts's row read skip a `status` guard.
  *
  * A `create` THAT REJECTS MUST NOT LEAVE THE ROW OPEN. The row is already
  * inserted by the time this runs, and a `pending` row with no instance behind

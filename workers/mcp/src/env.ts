@@ -192,8 +192,9 @@ export interface McpEnv {
    * `MCP_SEARCH_EMBEDDER` is `'stub'` there: the harness overrides `AI` to a
    * service Worker, so `env.AI.run()` is a TypeError here by design. Under the
    * seam, `analyze_fit` exercises everything AROUND the model call -- the
-   * scope gate, the argument schema, the limiter, the audit row and the error
-   * shape -- and the call itself is covered with a stub `Ai` in
+   * scope gate, the argument schema, the limiter, the audit row, and since
+   * #490 the run it opens -- and `get_fit_report` reads back the error shape
+   * the run stored. The call itself is covered with a stub `Ai` in
    * tests/fit-engine.test.ts.
    */
   FIT_ENGINE?: string;

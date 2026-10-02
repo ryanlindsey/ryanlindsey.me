@@ -24,8 +24,12 @@
 //
 // `fit_reports` IS NOT COUNTED HERE. The fit-runs figures in `readOpsMetrics`
 // already publish it by status, and counting it again would count /fit twice.
-// The `fit` surface below is the `analyze_fit` tool over /mcp, which is a
-// different path that stores no report row.
+// The `fit` surface below is the `analyze_fit` tool over /mcp, which stored no
+// report row until #490. It does now: the tool opens its run the way the form
+// does, and a failed run is answered by `get_fit_report`, which is why that
+// tool is on this surface too. So this surface counts calls and the fit-runs
+// figures count runs, and a run reached over /mcp appears in both, once as
+// what was called and once as what the run came to.
 //
 // ORIGIN FOLLOWS THE RULE `readOpsMetrics` USES, inverted. The scheduled eval
 // run is marked by `EVALS_AGENT` on a tool call and `EVALS_SURFACE` on a chat
@@ -60,7 +64,7 @@ export interface FailureMetrics {
 
 /** The surface a tool call belongs to. The name itself goes no further. */
 export function surfaceOf(tool: string, tier: 'public' | 'private'): FailureSurface {
-  if (tool === 'analyze_fit') return 'fit';
+  if (tool === 'analyze_fit' || tool === 'get_fit_report') return 'fit';
   if (tool === 'judge_answer') return 'judge';
   if (tool === 'search_writing') return 'search';
   return tier === 'private' ? 'private tools' : 'public tools';

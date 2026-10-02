@@ -193,9 +193,12 @@ export class FitUnavailable extends Error {
   /**
    * True only where NO MODEL ANSWER EXISTS: the engine is off, the breaker is
    * tripped or unreadable, the corpus is unreadable or empty, or the model
-   * call itself threw. `fitToolError` (workers/mcp/src/gated.ts) turns it into
-   * the `unavailable` reason, which the eval runners count as a case that
-   * could not run rather than a graded failure (#424).
+   * call itself threw. `FitWorkflow` (workers/mcp/src/fit-workflow.ts) stores
+   * it as `fit_reports.no_answer`, and `fitReportAnswer`
+   * (workers/mcp/src/gated.ts) turns that into the `unavailable` reason, which
+   * the eval runners count as a case that could not run rather than a graded
+   * failure (#424). Until #490 `fitToolError` read it straight off the throw,
+   * because `analyze_fit` awaited the engine itself.
    *
    * False, and deliberately, where the model DID answer and the answer was
    * unusable: truncated at the token cap, or failing the parse or the schema.

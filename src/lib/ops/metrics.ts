@@ -44,6 +44,15 @@
 // gated tool calls the weekly run makes are `tier = 'private'` besides, so the
 // allowlist above has already excluded them.
 //
+// #490 BROKE THE PREMISE OF THAT PARAGRAPH, and the conclusion has not yet
+// followed it. `analyze_fit` now opens its run through `openFitRun` in
+// workers/mcp/src/fit-start.ts, the same function `/fit/start` calls, so a run
+// over `/mcp` writes a `fit_reports` row like any other, and the weekly
+// scheduled `fit` suite's runs are counted in the fit-runs figures below.
+// They carry the audience `scheduled-evals` (workers/mcp/src/evals-workflow.ts),
+// which is what a third filter would key on; until one is added, those
+// figures include a handful of scheduled runs a week.
+//
 // Deliberately NOT imported here: `GATED_TOOL_NAMES`. Excluding gated tools by
 // NAME would be a denylist -- correct today, wrong the first time a tool is
 // added -- and it would put the list of gated tool names into the module that

@@ -30,3 +30,17 @@ export function newReportId(): string {
     if (!id.startsWith('-')) return id;
   }
 }
+
+/**
+ * Every id `newReportId` can mint, and nothing else: 22 base64url characters,
+ * the first of them not `-`.
+ *
+ * For `get_fit_report` (workers/mcp/src/gated.ts), the first surface that
+ * takes a report id from a caller as an argument rather than in a path
+ * (#490). A strict schema there answers a pasted URL or a truncated id with a
+ * schema error the calling agent can act on, rather than with "no report
+ * exists", which would read as a run that vanished. Beside the minting code so
+ * the two cannot drift: change the alphabet or the length here and the
+ * pattern is the line below.
+ */
+export const REPORT_ID_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9_-]{21}$/;
