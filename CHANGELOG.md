@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.53.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.52.3...ryanlindsey-me-v1.53.0) (2026-10-02)
+
+
+### Features
+
+* **mcp:** answer analyze_fit with a report id and add get_fit_report ([#494](https://github.com/ryanlindsey/ryanlindsey.me/issues/494)) ([26f362b](https://github.com/ryanlindsey/ryanlindsey.me/commit/26f362b50641b03fc02f21bb0583173667aab3e0))
+
+
+### Bug Fixes
+
+* **evals:** load the owner-run runner under node's type stripping ([#497](https://github.com/ryanlindsey/ryanlindsey.me/issues/497)) ([e2e8daa](https://github.com/ryanlindsey/ryanlindsey.me/commit/e2e8daa0baadafce49aa32517db8812c3b44be09)), closes [#495](https://github.com/ryanlindsey/ryanlindsey.me/issues/495)
+
 ## [1.52.3](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.52.2...ryanlindsey-me-v1.52.3) (2026-10-02)
 
 
