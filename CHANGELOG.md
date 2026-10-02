@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.52.3](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.52.2...ryanlindsey-me-v1.52.3) (2026-10-02)
+
+
+### Bug Fixes
+
+* **scripts:** honor WRANGLER_VERSION for wrangler subprocesses ([#492](https://github.com/ryanlindsey/ryanlindsey.me/issues/492)) ([4c19fc0](https://github.com/ryanlindsey/ryanlindsey.me/commit/4c19fc023c63554498627b77ed65db3bf8551326))
+
 ## [1.52.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.52.1...ryanlindsey-me-v1.52.2) (2026-10-01)
 
 
