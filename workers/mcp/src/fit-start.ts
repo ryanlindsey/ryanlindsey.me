@@ -36,8 +36,8 @@ import type { McpEnv } from './env';
  *
  * THE TOKEN NEVER LEAVES THIS REQUEST. It is not written to the row, not put
  * into the workflow's params, not persisted in any step's durable state and not
- * logged. The instance is handed the permalink id (and, since #490, a flag
- * saying whether to notify) and reads the rest back off the row -- the reasoning, including why the pasted description stays out
+ * logged. The instance is handed the permalink id alone and reads the rest back
+ * off the row -- the reasoning, including why the pasted description stays out
  * of the params too, is beside `FitRunParams` in ./fit-workflow.ts.
  *
  * LIMITED AND AUDITED THROUGH `limitAndAudit`, which is the same implementation
@@ -135,9 +135,7 @@ export async function handleFitStart(
       read: () => ({ target_description: description }),
       hashable: (call) => call,
     },
-    // `true`: the form's runs notify the operator when they end. See the
-    // `notify` paragraph on `openFitRun`.
-    (call) => openFitRun(env, ctx, grant.audience, call.target_description, true),
+    (call) => openFitRun(env, ctx, grant.audience, call.target_description),
   );
 
   if (outcome.kind === 'ok') return Response.json({ id: outcome.value });

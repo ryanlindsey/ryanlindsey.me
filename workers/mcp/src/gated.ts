@@ -874,11 +874,7 @@ const GATED_TOOLS: readonly GatedTool[] = [
           // before the server is built (see `ToolContext`). Reading it from the
           // parameter rather than from `tc` is what makes it non-null here
           // without a check that could only ever be dead code.
-          //
-          // `false`: a run this tool opens sends no `fit-run` notification,
-          // which is what the tool did before #490 when it awaited the engine
-          // itself. See `notify` on `openFitRun` (./fit-run.ts).
-          const id = await openFitRun(tc.env, tc.ctx, grant.audience, target_description, false);
+          const id = await openFitRun(tc.env, tc.ctx, grant.audience, target_description);
           return pendingFitEnvelope(id, tc.env.SITE_ORIGIN);
         },
       ),

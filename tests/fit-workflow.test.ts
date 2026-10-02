@@ -304,24 +304,19 @@ test('an abandoned run records that the engine gave no answer of its own', async
   // which can. Its only caller is a `create` that rejects, which the harness
   // still cannot provoke, so a direct call is the only way to run it.
   const { env, statements } = abandonEnv();
-  await abandonRun(env, 'an-abandoned-run', AUDIENCE, true);
+  await abandonRun(env, 'an-abandoned-run', AUDIENCE);
   expect(statements.join('\n')).toContain('no_answer = 0');
 });
 
-test('an abandoned run notifies only when the run asked to', async () => {
-  // The run's `notify` flag reaches `abandonRun` from `openFitRun`, so a run
-  // that could not be started is reported exactly when one that finished
-  // would be: a `/fit/start` run tells the operator, an `analyze_fit` run does
-  // not (#490).
+test('an abandoned run tells the operator', async () => {
+  // Every run notifies when it ends, whichever surface opened it (#490, the
+  // owner's ruling of 2026-10-02), so a run that could not be started is
+  // reported exactly as one that finished would be.
   const told = abandonEnv();
-  await abandonRun(told.env, 'a-form-run', AUDIENCE, true);
+  await abandonRun(told.env, 'a-run', AUDIENCE);
+  expect(told.statements.join('\n'), 'the row is closed').toContain("status = 'failed'");
   expect(told.sent).toHaveLength(1);
-  expect(JSON.stringify(told.sent[0])).toContain('a-form-run');
-
-  const quiet = abandonEnv();
-  await abandonRun(quiet.env, 'a-tool-run', AUDIENCE, false);
-  expect(quiet.statements.join('\n'), 'the row is still closed').toContain("status = 'failed'");
-  expect(quiet.sent).toEqual([]);
+  expect(JSON.stringify(told.sent[0])).toContain('a-run');
 });
 
 test('a run whose row is gone refuses before it spends anything', async () => {
@@ -417,9 +412,7 @@ test('the route hands the run to the workflow and nothing else', async () => {
   expect(route, 'the route calls the fit engine again').not.toContain('analyzeFit');
   expect(open, 'opening a run calls the fit engine').not.toContain('analyzeFit');
 
-  // AND THE PARAMS CARRY THE REPORT ID AND ONE FLAG. They carried the id
-  // alone until #490 added `notify`, a boolean this Worker sets from which of
-  // its own surfaces opened the run. A workflow instance's payload is
+  // AND THE PARAMS CARRY THE REPORT ID ALONE. A workflow instance's payload is
   // durable state that Cloudflare retains for up to 30 days, and
   // src/lib/retention.ts -- the table-driven job that makes the published
   // policy true -- cannot trim it. `target_description` is prose a caller
@@ -428,7 +421,7 @@ test('the route hands the run to the workflow and nothing else', async () => {
   // src/lib/agent-intel/intent.ts's rule exists to prevent. The token is not
   // there for the stronger reason that it is consumed at this route and never
   // needed again.
-  expect(open).toContain('params: { id, notify }');
+  expect(open).toContain('params: { id }');
 });
 
 test('every step.do in the fit workflow carries a named step config', async () => {
@@ -494,8 +487,7 @@ test('the pasted description never enters the workflow payload', async () => {
   // THE STRUCTURAL HALF OF THE TOKEN AND DESCRIPTION RULE. What a workflow
   // instance persists is its params and every `step.do` return value, and
   // neither is readable from this harness -- so what can be asserted is the
-  // shape of what goes in. `FitRunParams` has exactly two fields: the id, and
-  // since #490 a boolean, which no caller types and so carries no prose.
+  // shape of what goes in. `FitRunParams` has exactly one field: the id.
   //
   // The other half, that the ROW READ sits outside every step so the
   // description is never a persisted return value either, is enforced by the
@@ -505,6 +497,5 @@ test('the pasted description never enters the workflow payload', async () => {
   const declaration = /export interface FitRunParams \{([^}]*)\}/.exec(workflow);
   expect(declaration, 'FitRunParams is not declared where the scan expects it').not.toBeNull();
   const fields = [...declaration![1]!.matchAll(/(\w+)\??\s*:/g)].map((match) => match[1]!);
-  expect(fields).toEqual(['id', 'notify']);
-  expect(declaration![1]).toMatch(/notify\?:\s*boolean;/);
+  expect(fields).toEqual(['id']);
 });

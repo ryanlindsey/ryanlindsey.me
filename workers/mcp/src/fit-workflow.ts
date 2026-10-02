@@ -50,20 +50,9 @@ import { messageOf, notifyRun } from './fit-run';
 import type { McpEnv } from './env';
 
 /**
- * What `/fit/start` hands an instance: the permalink id, and nothing else --
- * which was the whole of it until #490, and is now the id and one boolean.
- * `analyze_fit` hands over the same shape, through the same `openFitRun` in
- * ./fit-run.ts.
- *
- * `notify` IS THE ONE ADDITION, AND IT IS NOT A CALLER'S PROSE. It says
- * whether the run ends with a `fit-run` event: true from `/fit/start`, false
- * from `analyze_fit`, for the reason given on `openFitRun`. Everything this
- * comment argues below is about keeping what a caller TYPED, and the token, out
- * of durable state; a flag this Worker sets from which of its own routes
- * opened the run carries neither, and is the one fact the run cannot read back
- * off the row. OPTIONAL ON PURPOSE: an instance created before #490 has no such
- * field, and `notifyOf` reads its absence as true, which is what every run did
- * then.
+ * What `/fit/start` hands an instance: the permalink id, and nothing else.
+ * Since #490 `analyze_fit` hands over the same shape, through the same
+ * `openFitRun` in ./fit-run.ts.
  *
  * THE TOKEN IS NOT HERE, AND THAT IS THE EPIC'S CONSTRAINT RATHER THAN A
  * PREFERENCE. It is consumed at `/fit/start` or at the tool call, where
@@ -99,7 +88,6 @@ import type { McpEnv } from './env';
  */
 export interface FitRunParams {
   id: string;
-  notify?: boolean;
 }
 
 /**
@@ -399,10 +387,7 @@ export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
       return id;
     });
 
-    // Only a run that asked for it: see `notify` on `FitRunParams`.
-    if (notifyOf(event.payload)) {
-      await notifyRun(env, id, row.audience, attempt.ok ? 'ok' : 'failed');
-    }
+    await notifyRun(env, id, row.audience, attempt.ok ? 'ok' : 'failed');
   }
 }
 
@@ -426,15 +411,6 @@ function reportIdOf(payload: FitRunParams | undefined): string {
     throw refuse(`the deferred run was given no report id (payload.id was ${typeof requested})`);
   }
   return requested.slice(0, 64);
-}
-
-/**
- * Whether the run ends with a `fit-run` event. Anything but an explicit
- * `false` is true, so an instance created before #490, whose params carry no
- * `notify`, notifies exactly as it would have then.
- */
-function notifyOf(payload: FitRunParams | undefined): boolean {
-  return payload?.notify !== false;
 }
 
 /**

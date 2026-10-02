@@ -47,22 +47,18 @@ import type { McpEnv } from './env';
  * `audience` is the grant's. Each caller passes it from the grant its own
  * request resolved, and the row is the only place the run reads it back from.
  *
- * `notify` IS WHETHER THE OPERATOR HEARS ABOUT THE RUN WHEN IT ENDS, and the
- * two callers pass opposite values on purpose. `/fit/start` passes true: the
- * `fit-run` event exists for the form, whose reader holds a forwarded link and
- * may get nothing (#277). `analyze_fit` passes false, which keeps what it did
- * before #490, when it awaited the engine itself and queued nothing. Its
- * callers are the owner's own clients and the scheduled `fit` suite, whose
- * runs would otherwise reach the operator's inbox every week. Passing it
- * through rather than deciding it here keeps this function ignorant of who
- * called it.
+ * EVERY RUN NOTIFIES THE OPERATOR WHEN IT ENDS, whichever caller opened it.
+ * `analyze_fit` queued nothing before #490, when it awaited the engine itself,
+ * and the first draft of #490 kept it that way with a per-run flag. The owner
+ * ruled against the flag on 2026-10-02: the tool's runs, the owner's own
+ * clients and the weekly scheduled `fit` cases included, notify like the
+ * form's, because a run that fails should fail loudly whoever asked for it.
  */
 export async function openFitRun(
   env: McpEnv,
   ctx: ExecutionContext,
   audience: string,
   description: string,
-  notify: boolean,
 ): Promise<string> {
   const id = newReportId();
   await env.DB.prepare(
@@ -78,7 +74,7 @@ export async function openFitRun(
   // caller does not wait for anything it does not have to. ("This route" is
   // `/fit/start`, where these lines were written; since #490 it is equally
   // true of `analyze_fit`, whose caller is exactly who could not wait.)
-  ctx.waitUntil(startRun(env, id, audience, notify));
+  ctx.waitUntil(startRun(env, id, audience));
   return id;
 }
 
@@ -114,12 +110,12 @@ export async function openFitRun(
  * which is the distinction the doc comment on `handleFitStart` in
  * ./fit-start.ts draws.
  */
-async function startRun(env: McpEnv, id: string, audience: string, notify: boolean): Promise<void> {
+async function startRun(env: McpEnv, id: string, audience: string): Promise<void> {
   try {
-    await env.FIT_WORKFLOW.create({ id, params: { id, notify } });
+    await env.FIT_WORKFLOW.create({ id, params: { id } });
   } catch (error) {
     console.error(`fit: the run for ${id} could not be started: ${messageOf(error)}`);
-    await abandonRun(env, id, audience, notify);
+    await abandonRun(env, id, audience);
   }
 }
 
@@ -170,10 +166,8 @@ export function messageOf(error: unknown): string {
  * message that `wrangler workflows instances describe` prints. The row is
  * already closed by then, so the reader's permalink is correct either way.
  *
- * NOT EVERY RUN NOTIFIES SINCE #490. The caller checks the run's `notify`
- * flag before calling this, in `FitWorkflow.run` and in `abandonRun` below:
- * runs `/fit/start` opens notify, and runs `analyze_fit` opens do not, which
- * is what the tool did before it opened runs at all. See `openFitRun`.
+ * EVERY RUN REACHES THIS, `analyze_fit`'s included since #490, by the owner's
+ * decision on 2026-10-02 recorded on `openFitRun`.
  *
  * ONE CONSEQUENCE OF BEING OUTSIDE A STEP, named rather than discovered: a
  * resumed instance replays both steps from durable state and then reaches this
@@ -216,9 +210,6 @@ export async function notifyRun(
  * function receives no error, only the id, so the underlying cause is in the
  * log line `startRun` writes rather than in the row.
  *
- * `notify` is the run's own flag, handed down from `openFitRun`, so a run that
- * could not be started is reported exactly when one that finished would be.
- *
  * IT SWALLOWS ITS OWN FAILURE AFTER LOGGING, because it is already the
  * fallback. A throw from here would be raised inside the `ctx.waitUntil` that
  * called it, which logs it and changes nothing else, and the five-minute stale
@@ -226,12 +217,7 @@ export async function notifyRun(
  * at read time from `created_at`, so nothing has to run for the page to tell
  * the truth.
  */
-export async function abandonRun(
-  env: McpEnv,
-  id: string,
-  audience: string,
-  notify: boolean,
-): Promise<void> {
+export async function abandonRun(env: McpEnv, id: string, audience: string): Promise<void> {
   try {
     await env.DB.prepare(
       `UPDATE fit_reports
@@ -246,7 +232,7 @@ export async function abandonRun(
         id,
       )
       .run();
-    if (notify) await notifyRun(env, id, audience, 'failed');
+    await notifyRun(env, id, audience, 'failed');
   } catch (error) {
     console.error(`fit: the run for ${id} could not be abandoned cleanly: ${messageOf(error)}`);
   }

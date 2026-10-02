@@ -366,16 +366,15 @@ async function messagesFor(id: string): Promise<unknown[]> {
   return messages.filter((message) => message.detail?.report === id);
 }
 
-test('a run analyze_fit opens is finished without telling the operator', async () => {
+test('a run analyze_fit opens tells the operator too', async () => {
   // #490: the tool opens its run through the same `openFitRun` as this route,
-  // and passes `notify: false`, which keeps what the tool did before -- it
-  // awaited the engine and queued nothing. Its callers are the owner's own
-  // clients and the weekly scheduled suite, and the event exists for the
-  // form's reader.
+  // and the run notifies like the form's. The tool queued nothing before #490,
+  // when it awaited the engine itself; the owner ruled on 2026-10-02 that its
+  // runs, the scheduled suite's included, should fail loudly like any other.
   //
   // Waited on to the instance's TERMINAL status, not to the row: the send sits
-  // after the close step, so a row reading `failed` is not yet proof that no
-  // message follows it.
+  // after the close step, so a row reading `failed` is not yet proof that the
+  // message has been queued.
   const { token } = await grant(db, 'fixture-tool-run');
   const response = await fetch(`${origin}/mcp`, {
     method: 'POST',
@@ -405,28 +404,9 @@ test('a run analyze_fit opens is finished without telling the operator', async (
   expect(id, `no report_id in ${text}`).toBeDefined();
 
   expect(await completed(id!)).toBe('complete');
-  expect(await messagesFor(id!)).toEqual([]);
-});
-
-test('an instance created before the notify flag still notifies', async () => {
-  // `FitRunParams.notify` is optional because an instance already queued or
-  // mid-run when #490 deploys carries `{ id }` alone, and every run notified
-  // then. Created here exactly as the pre-#490 `startRun` created one, against
-  // a row opened the way it opened one.
-  const id = 'a-pre-flag-instance-' + newJti().slice(0, 8);
-  await db
-    .prepare(
-      `INSERT INTO fit_reports (id, created_at, status, audience, target_description)
-       VALUES (?, ?, 'pending', 'fixture-pre-flag', ?)`,
-    )
-    .bind(id, new Date().toISOString(), A_ROLE)
-    .run();
-  await fitWorkflow.create({ id, params: { id } });
-
-  expect(await completed(id)).toBe('complete');
-  const sent = (await messagesFor(id)) as { detail: Record<string, string> }[];
+  const sent = (await messagesFor(id!)) as { detail: Record<string, string> }[];
   expect(sent).toHaveLength(1);
-  expect(sent[0]!.detail).toEqual({ audience: 'fixture-pre-flag', report: id, outcome: 'failed' });
+  expect(sent[0]!.detail).toEqual({ audience: 'fixture-tool-run', report: id, outcome: 'failed' });
 });
 
 /**
