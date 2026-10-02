@@ -11,7 +11,8 @@
 // Judging is not here: the caller still grades the ok payload with
 // `fitProblems`.
 
-import { toolUnavailable } from './checks';
+// `.ts` for the same reason as the runtime import in checks.ts (#495).
+import { toolUnavailable } from './checks.ts';
 
 /**
  * How long one case may take from the `analyze_fit` call to a finished report.
