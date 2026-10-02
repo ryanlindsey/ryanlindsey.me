@@ -119,6 +119,13 @@ const MCP_ORIGIN = 'https://mcp.ryanlindsey.me';
 // Public (already committed in both wrangler.jsonc files); hardcoded because this login resolves two accounts and wrangler cannot pick one non-interactively.
 const ACCOUNT_ID = '1b764d090899bf1ee61a8d1e87c10710';
 
+// WRANGLER_VERSION pins every child to one wrangler, so a session that also
+// runs `npx wrangler@<v>` by hand doesn't mix versions over one OAuth login.
+// Unset keeps the old behavior: whatever `npx wrangler` resolves from the cwd.
+const WRANGLER = process.env.WRANGLER_VERSION
+  ? ['--yes', `wrangler@${process.env.WRANGLER_VERSION}`]
+  : ['wrangler'];
+
 function wrangler(args) {
   // THE SIGNING KEY IS WITHHELD FROM THE CHILD, and that is not decoration:
   // this spread otherwise hands RLME_TOKEN_SIGNING_KEY to `npx`, to `wrangler`,
@@ -128,7 +135,7 @@ function wrangler(args) {
   // makes that sentence true rather than aspirational. Nothing under `npx`
   // has any use for it: wrangler authenticates with its own OAuth login.
   const { RLME_TOKEN_SIGNING_KEY: _withheld, ...childEnv } = process.env;
-  return execFileSync('npx', ['wrangler', ...args], {
+  return execFileSync('npx', [...WRANGLER, ...args], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'inherit'],
     env: { ...childEnv, CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID },
