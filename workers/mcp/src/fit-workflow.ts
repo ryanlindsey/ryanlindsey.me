@@ -212,6 +212,17 @@ type Attempt =
       // its cause chain would not survive the trip.
       reason: FailureReason;
       detail: string;
+      // Two more plain values for `get_fit_report` (#490). `noAnswer` is
+      // `FitUnavailable.noAnswer`, read inside the step for the same
+      // `instanceof` reason as `code`. `publicMessage` is the engine's own
+      // sentence for a `FitUnavailable` and null for every other error, so
+      // upstream text never reaches a column a caller can read. It is public
+      // copy the engine wrote to be shown, not a caller's prose, so it adds
+      // nothing to what the bound above argues about. Both are optional on the
+      // type because an instance whose analyze step finished under older code
+      // replays an Attempt without them.
+      noAnswer?: boolean;
+      publicMessage?: string | null;
     };
 
 export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
@@ -297,6 +308,8 @@ export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
             message: messageOf(error),
             reason: failure.reason,
             detail: failure.detail,
+            noAnswer: error instanceof FitUnavailable && error.noAnswer,
+            publicMessage: error instanceof FitUnavailable ? error.message : null,
           };
         }
       });
@@ -311,6 +324,8 @@ export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
         message: `the analyze step did not finish: ${messageOf(error)}`,
         reason: failure.reason,
         detail: failure.detail,
+        noAnswer: false,
+        publicMessage: null,
       };
     }
 
@@ -329,7 +344,8 @@ export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
         await env.DB.prepare(
           `UPDATE fit_reports
               SET status = 'ok', model = ?, report_json = ?,
-                  citations_checked = ?, citations_dropped = ?
+                  citations_checked = ?, citations_dropped = ?,
+                  generated_at = ?, corpus_documents = ?, corpus_truncated = ?
             WHERE id = ?`,
         )
           .bind(
@@ -337,19 +353,31 @@ export class FitWorkflow extends WorkflowEntrypoint<McpEnv, FitRunParams> {
             JSON.stringify(attempt.result.report),
             attempt.result.citations.checked,
             attempt.result.citations.dropped,
+            attempt.result.generatedAt,
+            attempt.result.corpusDocuments,
+            attempt.result.corpusTruncated ? 1 : 0,
             id,
           )
           .run();
       } else {
         // The fallbacks are there because an instance whose analyze step finished under the code
         // before #465 replays its cached Attempt without a reason or detail
-        // across a deploy, and `.bind(undefined)` throws.
+        // across a deploy, and `.bind(undefined)` throws. The same goes for
+        // `noAnswer` and `publicMessage`, which arrived with #490.
         await env.DB.prepare(
           `UPDATE fit_reports
-              SET status = 'failed', failure_code = ?, failure_reason = ?, failure_detail = ?
+              SET status = 'failed', failure_code = ?, failure_reason = ?, failure_detail = ?,
+                  no_answer = ?, failure_message = ?
             WHERE id = ?`,
         )
-          .bind(attempt.code, attempt.reason ?? 'internal', attempt.detail ?? null, id)
+          .bind(
+            attempt.code,
+            attempt.reason ?? 'internal',
+            attempt.detail ?? null,
+            attempt.noAnswer ? 1 : 0,
+            attempt.publicMessage ?? null,
+            id,
+          )
           .run();
       }
       return id;
@@ -486,7 +514,8 @@ export async function abandonRun(env: McpEnv, id: string, audience: string): Pro
   try {
     await env.DB.prepare(
       `UPDATE fit_reports
-          SET status = 'failed', failure_code = ?, failure_reason = ?, failure_detail = ?
+          SET status = 'failed', failure_code = ?, failure_reason = ?, failure_detail = ?,
+              no_answer = 0
         WHERE id = ?`,
     )
       .bind(

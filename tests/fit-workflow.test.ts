@@ -232,6 +232,57 @@ test('the deferred run is a workflow instance named by the permalink id', async 
   expect(closed?.audience).toBe(AUDIENCE);
 });
 
+test('a refused run records the envelope columns the report tool reads', async () => {
+  // THE CONTRACT WITH `get_fit_report` (#490). A caller that polls for a report
+  // is served from the row alone, so what the engine said when it declined has
+  // to be ON the row: `no_answer` is what the tool's refusal reason is chosen
+  // from, and `failure_message` is the engine's own sentence, written to be
+  // shown. The `FIT_ENGINE` seam throws `new FitUnavailable(<that sentence>,
+  // { noAnswer: true })`, so this is the real branch rather than a stand-in.
+  //
+  // WHAT THIS CANNOT REACH, said plainly: the `ok` branch. Every harness mode
+  // refuses, and no test here may spend inference, so `generated_at`,
+  // `corpus_documents` and `corpus_truncated` are written by a path nothing in
+  // this suite drives. They are asserted null on the failed row, which pins
+  // that a refusal does not invent them.
+  const { token } = await grant('fixture-envelope');
+  const id = await start(token);
+  await settled(await instanceOf(id));
+
+  const closed = await db
+    .prepare(
+      `SELECT status, no_answer, failure_message, generated_at, corpus_documents, corpus_truncated
+         FROM fit_reports WHERE id = ?`,
+    )
+    .bind(id)
+    .first<{
+      status: string;
+      no_answer: number | null;
+      failure_message: string | null;
+      generated_at: string | null;
+      corpus_documents: number | null;
+      corpus_truncated: number | null;
+    }>();
+  expect(closed?.status).toBe('failed');
+  expect(closed?.no_answer).toBe(1);
+  expect(closed?.failure_message).toBe('Fit analysis is not available in this environment.');
+  expect(closed?.generated_at).toBeNull();
+  expect(closed?.corpus_documents).toBeNull();
+  expect(closed?.corpus_truncated).toBeNull();
+});
+
+test('an abandoned run records that the engine gave no answer of its own', async () => {
+  // `abandonRun` closes a row the engine was never asked about, so it is not a
+  // `no_answer` run: that flag means the engine looked and declined. It is
+  // written as 0 rather than left null so a reader can tell it from a row that
+  // predates 0010. A scan rather than a run, because the module imports
+  // `cloudflare:workers` and cannot load in the test's Node process, and its
+  // only caller is a `create` that rejects, which the harness cannot provoke.
+  const code = codeOf(await readFile('workers/mcp/src/fit-workflow.ts', 'utf8'));
+  const abandon = code.slice(code.indexOf('export async function abandonRun'));
+  expect(abandon).toContain('no_answer = 0');
+});
+
 test('a run whose row is gone refuses before it spends anything', async () => {
   // THE CASE THE OLD SHAPE HAD NO ANSWER FOR. `fit_reports` is swept at 365
   // days (src/lib/retention.ts), and `wrangler workflows trigger rlme-fit` can
