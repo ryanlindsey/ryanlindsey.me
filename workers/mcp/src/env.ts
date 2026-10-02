@@ -127,7 +127,7 @@ export interface McpEnv {
    * defect confirmed in production on 2026-09-22 and invisible to every test
    * here until an instance became the thing doing the waiting.
    * ./fit-workflow.ts holds the class and the reasoning, including why
-   * `FitRunParams` is the permalink id and, since #490, one notify flag.
+   * `FitRunParams` is the permalink id alone.
    *
    * The second `workflows` binding on this Worker, so the pair are worth one
    * sentence together: `EVALS_WORKFLOW` exists because a weekly eval run is

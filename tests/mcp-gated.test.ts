@@ -1724,7 +1724,11 @@ describe('get_fit_report', () => {
     const result = await callTool('get_fit_report', { report_id }, token);
     expect(result.result.isError).toBe(true);
     const text = result.result.content[0].text as string;
-    expect(text).toBe('Fit analysis is not available in this environment.');
+    // The engine's own sentence, then the instruction that keeps an agent from
+    // polling a dead id: every failed-run refusal ends by saying to start over.
+    expect(text).toBe(
+      'Fit analysis is not available in this environment. Call analyze_fit again to start a new run.',
+    );
     expect(text, 'a refusal must not leak internals').not.toMatch(/TypeError|\.ts:|Fetcher/);
     // Readable by a machine as well: the seam throws a `FitUnavailable` marked
     // `noAnswer`, the run stored `no_answer = 1`, and that is what the eval
@@ -1779,19 +1783,32 @@ describe('get_fit_report', () => {
     expect(JSON.stringify(result)).toMatch(/Invalid arguments|Input validation error/i);
   });
 
-  test('it answers any fit grant, whatever audience opened the run', async () => {
-    // THE DECISION, PINNED. The id is the capability -- `/fit/r/<id>` serves
-    // the same report to anyone holding it -- so an audience check here would
-    // guard nothing the permalink does not already hand out, and it would
-    // refuse the owner, whose clients hold tokens under different audiences.
+  test('it answers any fit grant, but echoes the audience label only to its own', async () => {
+    // THE DECISION, PINNED, in both halves. The id is the capability --
+    // `/fit/r/<id>` serves the same report to anyone holding it -- so an
+    // audience check on READING would guard nothing the permalink does not
+    // already hand out, and it would refuse the owner, whose clients hold
+    // tokens under different audiences. The LABEL is another matter: the
+    // permalink never renders it, so a grant holding someone else's id must
+    // not learn which campaign opened the run (final review, #490).
     const reportId = await seedReport({ audience: 'another-audience' });
-    const result = await callTool(
+    const other = await callTool(
       'get_fit_report',
       { report_id: reportId },
       await tokenFor(['fit']),
     );
-    expect(result.result.isError, JSON.stringify(result)).toBeFalsy();
-    expect(JSON.parse(result.result.content[0].text as string).audience).toBe('another-audience');
+    expect(other.result.isError, JSON.stringify(other)).toBeFalsy();
+    const otherText = other.result.content[0].text as string;
+    expect(JSON.parse(otherText).audience).toBeNull();
+    expect(JSON.parse(otherText).report).toEqual(FIXTURE_REPORT);
+    expect(otherText).not.toContain('another-audience');
+
+    const own = await callTool(
+      'get_fit_report',
+      { report_id: reportId },
+      await tokenFor(['fit'], { aud: 'another-audience' }),
+    );
+    expect(JSON.parse(own.result.content[0].text as string).audience).toBe('another-audience');
   });
 
   test('a young pending row answers the same pending envelope analyze_fit does', () => {
@@ -1801,6 +1818,7 @@ describe('get_fit_report', () => {
       reportId,
       'https://site.test',
       Date.now(),
+      AUDIENCE,
     );
     expect(answer).toEqual({
       status: 'pending',
@@ -1825,6 +1843,7 @@ describe('get_fit_report', () => {
         newReportId(),
         'https://site.test',
         Date.now(),
+        AUDIENCE,
       );
     } catch (error) {
       thrown = error;
@@ -1845,6 +1864,7 @@ describe('get_fit_report', () => {
           newReportId(),
           'https://site.test',
           Date.now(),
+          AUDIENCE,
         );
       } catch (error) {
         return error as ToolError;
@@ -1854,7 +1874,10 @@ describe('get_fit_report', () => {
     expect(refusal({ failure_reason: 'gateway_limit' }).failureReason).toBe('gateway_limit');
     expect(refusal({ failure_reason: 'something_new' }).failureReason).toBeUndefined();
     expect(refusal({ no_answer: 1, failure_message: 'The corpus is empty right now.' })).toEqual(
-      expect.objectContaining({ message: 'The corpus is empty right now.', reason: 'unavailable' }),
+      expect.objectContaining({
+        message: 'The corpus is empty right now. Call analyze_fit again to start a new run.',
+        reason: 'unavailable',
+      }),
     );
   });
 
@@ -1865,6 +1888,7 @@ describe('get_fit_report', () => {
         newReportId(),
         'https://site.test',
         Date.now(),
+        AUDIENCE,
       ),
     ).toThrow(ToolError);
     expect(() =>
@@ -1873,6 +1897,7 @@ describe('get_fit_report', () => {
         newReportId(),
         'https://site.test',
         Date.now(),
+        AUDIENCE,
       ),
     ).toThrow(ToolError);
   });
@@ -1892,7 +1917,7 @@ describe('get_fit_report', () => {
      * only by the seeded-row test above.
      */
     const reportId = newReportId();
-    expect(fitEnvelope(storedRow(), reportId, 'https://site.test')).toEqual({
+    expect(fitEnvelope(storedRow(), reportId, 'https://site.test', AUDIENCE)).toEqual({
       status: 'ok',
       report_id: reportId,
       permalink: `https://site.test/fit/r/${reportId}`,
@@ -1908,11 +1933,11 @@ describe('get_fit_report', () => {
     // Asserted as VALUES, for the reason final-review Important 6 named: the
     // column is 0/1 and the envelope says false/true, and `toEqual` treats an
     // undefined property as equal to an absent one.
-    expect(fitEnvelope(storedRow({ corpus_truncated: 1 }), reportId, 'x').corpus_truncated).toBe(
-      true,
-    );
     expect(
-      fitEnvelope(storedRow({ corpus_truncated: null }), reportId, 'x').corpus_truncated,
+      fitEnvelope(storedRow({ corpus_truncated: 1 }), reportId, 'x', AUDIENCE).corpus_truncated,
+    ).toBe(true);
+    expect(
+      fitEnvelope(storedRow({ corpus_truncated: null }), reportId, 'x', AUDIENCE).corpus_truncated,
     ).toBeNull();
   });
 });

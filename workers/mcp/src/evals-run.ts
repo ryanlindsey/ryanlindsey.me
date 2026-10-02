@@ -111,9 +111,12 @@ export async function runTierCase(
  * pending at the deadline, which is not unreached: the server said it was
  * working and never finished.
  *
- * The wording of each is evals/run.mjs's, unchanged, because the two runners
- * write into one `eval_runs` table and a reader should not have to know which
- * one produced a row.
+ * The wording of each is evals/run.mjs's, because the two runners write into
+ * one `eval_runs` table and a reader should not have to know which one
+ * produced a row. The two runners still agree, but one string changed in #490
+ * on both sides at once: a JSON-RPC error with no result used to read "the
+ * tool did not return JSON", and now reads "tool refused: <message>", since
+ * `collectFitReport` (src/lib/evals/fit-poll.ts) treats it as a refusal.
  */
 export async function runFitCase(
   fetcher: EvalsFetcher,

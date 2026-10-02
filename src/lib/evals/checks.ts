@@ -158,7 +158,9 @@ export function reachedNoModel(answer: { answer: string; error: string | null })
 }
 
 /**
- * Whether an `analyze_fit` call refused because no model answer exists: the
+ * Whether an `analyze_fit` or `get_fit_report` call refused because no model
+ * answer exists (since #490 it is `get_fit_report` that carries it, when the
+ * run it reads back closed with `no_answer = 1`): the
  * fit-side equivalent of `reachedNoModel`, read from the refusal's `_meta`
  * reason rather than its text, which is written for people and free to
  * change (src/lib/mcp/tool-reason.ts).

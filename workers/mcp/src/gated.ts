@@ -458,9 +458,14 @@ export const FIT_REPORT_WAIT_MS = 40_000;
  */
 export const FIT_REPORT_REREAD_MS = 2_000;
 
+/**
+ * What every refusal of a failed or stale run ends with, so an agent holding a
+ * dead id is told to start over rather than left to keep polling it.
+ */
+const FIT_REPORT_RESTART = 'Call analyze_fit again to start a new run.';
+
 /** A fixed sentence for a run that closed without a sentence of its own to show. */
-const FIT_REPORT_FAILED =
-  'This fit analysis ended without a report. Call analyze_fit again to start a new one.';
+const FIT_REPORT_FAILED = `This fit analysis ended without a report. ${FIT_REPORT_RESTART}`;
 
 /** One sentence for an id with no row, whatever the reason there is none. */
 const FIT_REPORT_MISSING = 'No fit report exists under that report_id.';
@@ -568,9 +573,17 @@ export function pendingFitEnvelope(id: string, siteOrigin: string): Record<strin
  * envelope always carried, and all three envelope columns answer null for a
  * row written before migration 0010.
  *
- * Not a disclosure: the audience is a claim inside the signed token that
- * opened the run, and the id that reaches this is the capability the
- * permalink already hands out.
+ * THE LABEL IS ECHOED ONLY TO THE GRANT THAT OPENED THE RUN. Holding the id is
+ * enough to read the REPORT, for the reason argued in `get_fit_report`'s
+ * handler, but the audience label is a different matter: it is a campaign
+ * label, and the permalink page never renders it (src/pages/fit/r/[id].astro
+ * selects it only to look up a hero line). The first version of this comment
+ * said the permalink already handed it out, and that was wrong: a `fit` grant
+ * holding someone else's id would have learned which campaign opened the run.
+ * So `audience` is the row's label when it equals `callerAudience`, and null
+ * otherwise. The owner collecting a run from a second client under another
+ * audience gets the report with `audience: null`, which costs nothing they do
+ * not already know.
  *
  * The stored report is re-validated against `FitReport`, as the permalink
  * page does in `parseStoredReport`, and a row that fails is refused rather
@@ -581,6 +594,7 @@ export function fitEnvelope(
   row: StoredFitReport,
   id: string,
   siteOrigin: string,
+  callerAudience: string,
 ): Record<string, unknown> {
   let report: FitReport | null = null;
   try {
@@ -596,7 +610,7 @@ export function fitEnvelope(
     report_id: id,
     permalink: fitPermalink(siteOrigin, id),
     report,
-    audience: row.audience,
+    audience: row.audience === callerAudience ? row.audience : null,
     model: row.model,
     generated_at: row.generated_at,
     corpus_documents: row.corpus_documents,
@@ -630,6 +644,9 @@ export function fitEnvelope(
  * both a disclosure and a lie. The fixed sentence is written for a calling
  * agent, which can start a new run, rather than copied from the permalink
  * page's "Ask for a fresh link", which is written for a person holding one.
+ * Either way the refusal ends with `FIT_REPORT_RESTART`, because the engine's
+ * own sentence is written for the run and says nothing about what to do with
+ * the id: without it an agent can read "try again shortly" as "poll again".
  *
  * The `unavailable` reason tells an eval runner that no model answer exists,
  * and only a run stored with `no_answer = 1` carries it -- a `FitUnavailable`
@@ -661,14 +678,17 @@ export function fitReportAnswer(
   id: string,
   siteOrigin: string,
   now: number,
+  callerAudience: string,
 ): Record<string, unknown> {
   if (row === null) {
     throw new ToolError(FIT_REPORT_MISSING, undefined, { failureReason: 'not_found' });
   }
-  if (row.status === 'ok') return fitEnvelope(row, id, siteOrigin);
+  if (row.status === 'ok') return fitEnvelope(row, id, siteOrigin, callerAudience);
   if (stillRunning(row, now)) return pendingFitEnvelope(id, siteOrigin);
   throw new ToolError(
-    row.failure_message ?? FIT_REPORT_FAILED,
+    row.failure_message === null
+      ? FIT_REPORT_FAILED
+      : `${row.failure_message} ${FIT_REPORT_RESTART}`,
     row.no_answer === 1 ? 'unavailable' : undefined,
     { failureReason: storedFailureReason(row.failure_reason) },
   );
@@ -889,7 +909,7 @@ const GATED_TOOLS: readonly GatedTool[] = [
     description:
       'Collects a fit report that analyze_fit started. Pass the report_id analyze_fit returned. Waits up to 40 seconds for the report; if it is still being written this answers with status pending, and you should call it again with the same report_id. A finished report carries the evidence map with citation URLs, the gaps, the questions worth asking, and a permalink a person can open.',
     summary: 'wait for a report analyze_fit started, by report_id, and return it.',
-    register: (server, tc, tool) =>
+    register: (server, tc, tool, grant) =>
       defineTool<z.infer<typeof FIT_REPORT_INPUT>>(
         server,
         tc,
@@ -910,8 +930,12 @@ const GATED_TOOLS: readonly GatedTool[] = [
           // It would also refuse the owner, whose clients hold tokens under
           // different audiences and who may well collect a run from a second
           // one. tests/mcp-gated.test.ts pins this.
+          //
+          // WHAT IS NOT SHARED ACROSS GRANTS is the audience LABEL: the report
+          // is readable by id, the label of the grant that opened it is echoed
+          // only to that same audience. `fitEnvelope` carries the reasoning.
           const row = await pollFitReport(() => readFitReport(tc.env.DB, report_id));
-          return fitReportAnswer(row, report_id, tc.env.SITE_ORIGIN, Date.now());
+          return fitReportAnswer(row, report_id, tc.env.SITE_ORIGIN, Date.now(), grant.audience);
         },
       ),
   },
