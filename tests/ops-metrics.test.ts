@@ -2,7 +2,7 @@ import { createTestHarness } from 'wrangler';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { SITE_HARNESS_WORKERS } from './workers';
 import { readOpsMetrics } from '../src/lib/ops/metrics';
-import { EVALS_SURFACE, EVALS_USER_AGENT } from '../src/lib/evals/plan';
+import { EVALS_AUDIENCE, EVALS_SURFACE, EVALS_USER_AGENT } from '../src/lib/evals/plan';
 
 /**
  * The D1 half of /ops (06 §1), against a REAL D1 rather than a stub.
@@ -137,6 +137,16 @@ beforeAll(async () => {
         )
         .bind(id, createdAt, status, failureCode),
     ),
+    // ONE FINISHED RUN THE SCHEDULED SUITE OPENED, inside the window. Since
+    // #490 `analyze_fit` writes a row like the form does, so the weekly `fit`
+    // suite's runs reach this table under `EVALS_AUDIENCE`, and the fit-runs
+    // figures below must not count it.
+    db
+      .prepare(
+        `INSERT INTO fit_reports (id, created_at, status, audience, target_description)
+         VALUES ('fit-scheduled', '2026-09-09T08:20:00.000Z', 'ok', ?, 'a-golden-case')`,
+      )
+      .bind(EVALS_AUDIENCE),
     // Two runs of one suite and one of another, so "latest per suite" has
     // something to be wrong about.
     db.prepare(
@@ -291,6 +301,10 @@ describe('readOpsMetrics', () => {
     const metrics = await readOpsMetrics(db, new Date('2026-09-09T12:00:00.000Z'), 30);
     expect(metrics.toolCalls.map((row) => row.tool)).not.toContain('request_private_access');
     expect(JSON.stringify(metrics)).not.toContain('eval-session');
+    // The scheduled `fit` suite's run (#490): seeded `ok` in the window, so
+    // counting it would make `reports` 3 and `started` 7.
+    expect(metrics.fitRuns.reports).toBe(2);
+    expect(metrics.fitRuns.started).toBe(6);
   });
 
   test('the MANUAL harness is still counted, deliberately', async () => {

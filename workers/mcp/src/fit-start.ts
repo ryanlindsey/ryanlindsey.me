@@ -1,7 +1,6 @@
-import { newReportId } from '../../../src/lib/fit/report-id';
 import { hasScope, resolveGrant } from '../../../src/lib/tier/grant';
 import { limitAndAudit } from './define';
-import { abandonRun, messageOf } from './fit-workflow';
+import { openFitRun } from './fit-run';
 import { FIT_INPUT } from './gated';
 import type { McpEnv } from './env';
 
@@ -37,14 +36,14 @@ import type { McpEnv } from './env';
  *
  * THE TOKEN NEVER LEAVES THIS REQUEST. It is not written to the row, not put
  * into the workflow's params, not persisted in any step's durable state and not
- * logged. The instance is handed the permalink id alone and reads the rest back
- * off the row -- the reasoning, including why the pasted description stays out
+ * logged. The instance is handed the permalink id (and, since #490, a flag
+ * saying whether to notify) and reads the rest back off the row -- the reasoning, including why the pasted description stays out
  * of the params too, is beside `FitRunParams` in ./fit-workflow.ts.
  *
  * LIMITED AND AUDITED THROUGH `limitAndAudit`, which is the same implementation
  * `defineTool` uses. `analyze_fit` is the only `expensive` tool in the server,
  * and a route that reached the engine around the limiter would be an unmetered
- * path to it. Since #490 the tool opens its runs through `openFitRun` below as
+ * path to it. Since #490 the tool opens its runs through `openFitRun` (./fit-run.ts) as
  * well, so this route and the tool differ in how they are guarded and answer,
  * and in nothing about what a run is.
  *
@@ -125,7 +124,7 @@ export async function handleFitStart(
   // the count so the repair cannot be made later without meeting this comment.
   //
   // THE TOOL'S ROW MEANS ACCEPTED TOO, SINCE #490. `analyze_fit` opens its run
-  // through `openFitRun` below, inside `defineTool`'s guard, so the row it
+  // through `openFitRun` (./fit-run.ts), inside `defineTool`'s guard, so the row it
   // leaves says the same thing this one does, and for the same reason.
   const outcome = await limitAndAudit(
     tc,
@@ -136,7 +135,9 @@ export async function handleFitStart(
       read: () => ({ target_description: description }),
       hashable: (call) => call,
     },
-    (call) => openFitRun(env, ctx, grant.audience, call.target_description),
+    // `true`: the form's runs notify the operator when they end. See the
+    // `notify` paragraph on `openFitRun`.
+    (call) => openFitRun(env, ctx, grant.audience, call.target_description, true),
   );
 
   if (outcome.kind === 'ok') return Response.json({ id: outcome.value });
@@ -148,90 +149,4 @@ export async function handleFitStart(
   // the correction workers/mcp/src/grant-context.ts records from 2026-09-15,
   // and it applies here for the same reason.
   return null;
-}
-
-/**
- * Opens a run: writes its `pending` row and hands it to the Workflow, then
- * answers with the permalink id.
- *
- * ONE IMPLEMENTATION FOR BOTH CALLERS (#490). `handleFitStart` above calls it
- * inside `limitAndAudit`, and `analyze_fit` (./gated.ts) inside `defineTool`'s
- * guard, which is the same function reached by another adapter. Each caller
- * meters and audits exactly once and this function does neither, so a run
- * cannot be metered twice by reaching it from both, and cannot reach the
- * engine around the limiter by reaching it from somewhere new: it has no
- * caller outside a guarded body, and must not gain one.
- *
- * `analyze_fit` used to await the engine itself, and on Opus 5 a run took 59
- * to 104 seconds (tail 135 s), which MCP clients did not wait for. The form
- * had stopped holding the browser open for the same run in #269, and the tool
- * now takes the same way out rather than a second one.
- *
- * Called INSIDE the guard on both paths, which is the ordering argued above
- * `limitAndAudit` in `handleFitStart`: the limiter is asked first, so a
- * refused call leaves no row for a permalink nothing will finish.
- *
- * `audience` is the grant's. Each caller passes it from the grant its own
- * request resolved, and the row is the only place the run reads it back from.
- */
-export async function openFitRun(
-  env: McpEnv,
-  ctx: ExecutionContext,
-  audience: string,
-  description: string,
-): Promise<string> {
-  const id = newReportId();
-  await env.DB.prepare(
-    `INSERT INTO fit_reports (id, created_at, status, audience, target_description)
-     VALUES (?, ?, 'pending', ?, ?)`,
-  )
-    .bind(id, new Date().toISOString(), audience, description)
-    .run();
-
-  // The eighty seconds, off the response AND off this request's lifetime.
-  // `waitUntil` rather than an await: creating an instance is a round trip
-  // to the Workflows API, and the whole point of this route is that the
-  // caller does not wait for anything it does not have to.
-  ctx.waitUntil(startRun(env, id, audience));
-  return id;
-}
-
-/**
- * Starts the instance that finishes the run, and closes the row if it cannot.
- *
- * THE INSTANCE ID IS THE REPORT ID, which is a deliberate join rather than a
- * convenience. Workflows instance ids are unique per workflow and accept up to
- * 100 characters (workflows/reference/limits); a report id is 22 base64url
- * characters from `newReportId`, so the mapping is total and collision-free.
- * The limits page does not state the other rule: an instance id may not START
- * with `-`. This comment used to cite the length alone, and one report id in
- * sixty-four was refused until `newReportId` stopped minting them (2026-09-24).
- * What it buys is that an operator holding a permalink can run
- * `wrangler workflows instances describe rlme-fit <id>` and read what became of
- * that run, and that a test can address the instance a request started --
- * which is the thing `ctx.waitUntil` could never offer, and the reason this
- * defect survived seven merged children of epic #270.
- *
- * It also makes a second instance for one report impossible from this route,
- * or from `analyze_fit`, which mints its id in the same `openFitRun` -- and
- * that is what lets ./fit-workflow.ts's row read skip a `status` guard.
- *
- * A `create` THAT REJECTS MUST NOT LEAVE THE ROW OPEN. The row is already
- * inserted by the time this runs, and a `pending` row with no instance behind
- * it is exactly the state #349 is about: `/fit/r/<id>` refreshes every five
- * seconds and then renders the stale copy, having promised a report nothing
- * will write. `abandonRun` closes it as `errored` and notifies, which is the
- * same treatment the run itself gives a failure it cannot recover from.
- *
- * Both branches here are milliseconds: a create, or two D1 writes and a queue
- * send. Nothing on this path is anywhere near the 30-second `waitUntil` budget,
- * which is the distinction the doc comment above draws.
- */
-async function startRun(env: McpEnv, id: string, audience: string): Promise<void> {
-  try {
-    await env.FIT_WORKFLOW.create({ id, params: { id } });
-  } catch (error) {
-    console.error(`fit: the run for ${id} could not be started: ${messageOf(error)}`);
-    await abandonRun(env, id, audience);
-  }
 }

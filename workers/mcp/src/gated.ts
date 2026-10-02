@@ -17,6 +17,7 @@ import {
 import type { Scope } from '../../../src/lib/tier/token';
 import { judge, JudgeUnavailable, type JudgeEnv } from '../../../src/lib/judge/engine';
 import { defineTool, ToolError, type ToolContext } from './define';
+import { openFitRun } from './fit-run';
 import type { McpEnv } from './env';
 import { JUDGE_INPUT } from './judge-schema';
 
@@ -868,22 +869,16 @@ const GATED_TOOLS: readonly GatedTool[] = [
           inputSchema: FIT_INPUT,
         },
         async ({ target_description }, tc) => {
-          // A DYNAMIC IMPORT, and the reason is this module's other readers
-          // rather than this call. ./fit-start.ts reaches ./fit-workflow.ts,
-          // which imports `cloudflare:workers`, and a dozen suites import this
-          // module into vitest's Node process for `GATED_TOOL_NAMES` and the
-          // pure functions above, where that specifier does not resolve. A
-          // static import would make every one of them fail to load. Wrangler's
-          // bundler inlines a literal relative `import()`, so in the Worker
-          // this is an ordinary module reference that is evaluated on first
-          // use.
-          const { openFitRun } = await import('./fit-start');
           // `grant` is the registration-time grant, and it is the SAME object
           // `tc.grant` holds: ./index.ts resolves it once per HTTP request,
           // before the server is built (see `ToolContext`). Reading it from the
           // parameter rather than from `tc` is what makes it non-null here
           // without a check that could only ever be dead code.
-          const id = await openFitRun(tc.env, tc.ctx, grant.audience, target_description);
+          //
+          // `false`: a run this tool opens sends no `fit-run` notification,
+          // which is what the tool did before #490 when it awaited the engine
+          // itself. See `notify` on `openFitRun` (./fit-run.ts).
+          const id = await openFitRun(tc.env, tc.ctx, grant.audience, target_description, false);
           return pendingFitEnvelope(id, tc.env.SITE_ORIGIN);
         },
       ),

@@ -71,10 +71,12 @@ const { id } = Astro.params;
  *
  * `status` and `failure_code` join them for #276, and they clear the same bar
  * `audience` did rather than a lower one. Both are written by this build
- * alone -- `handleFitStart` in workers/mcp/src/fit-start.ts opens the row
- * `pending`, and `FitWorkflow` in workers/mcp/src/fit-workflow.ts closes it
- * `ok` or `failed`, with `abandonRun` in the same file setting `failed` for
- * a run whose instance never started. An earlier version of this sentence
+ * alone -- `openFitRun` in workers/mcp/src/fit-run.ts opens the row
+ * `pending` (for `/fit/start` and, since #490, `analyze_fit`; it was inline in
+ * `handleFitStart` before that), and `FitWorkflow` in
+ * workers/mcp/src/fit-workflow.ts closes it `ok` or `failed`, with
+ * `abandonRun` in workers/mcp/src/fit-run.ts setting `failed` for a run whose
+ * instance never started. An earlier version of this sentence
  * named a `writeFitReport`, which has never existed (#352). Neither column is
  * ever rendered verbatim: `status` selects a branch, and `failure_code` is
  * looked up in the closed map in src/lib/fit/report-status.ts, which answers
@@ -384,10 +386,10 @@ const heroLine = campaign?.status === 'active' ? campaign.heroLine : '';
         fail in -- a page showing no heading tells a reader less than a page
         showing the wrong one. 0006 declared `status TEXT NOT NULL` with no
         CHECK constraint, so until #355 the only thing keeping a fourth value
-        out was that the writer set is closed (`handleFitStart` in
-        workers/mcp/src/fit-start.ts writes `pending`, and `FitWorkflow` and
-        `abandonRun` in workers/mcp/src/fit-workflow.ts write `ok` and
-        `failed`; nothing else sets this column, and this once named a
+        out was that the writer set is closed (`openFitRun` in
+        workers/mcp/src/fit-run.ts writes `pending`, and `FitWorkflow` in
+        workers/mcp/src/fit-workflow.ts and `abandonRun` in fit-run.ts write
+        `ok` and `failed`; nothing else sets this column, and this once named a
         `writeFitReport` that never existed).
         migrations/0007_fit_report_status_check.sql now refuses any other
         value at the write, and tests/fit-report-schema.test.ts pins that. So

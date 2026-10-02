@@ -101,6 +101,7 @@ const misconfigured = createTestHarness({
 });
 
 let db: D1Database;
+let fitWorkflow: Workflow;
 let misconfiguredDb: D1Database;
 let mockQueue: Awaited<
   ReturnType<ReturnType<typeof server.getWorker<unknown, MockQueueModule>>['getExport']>
@@ -112,9 +113,11 @@ const AUDIENCE = 'fixture-audience';
 
 beforeAll(async () => {
   origin = (await server.listen()).url.origin;
-  const mcp = server.getWorker<{ DB: D1Database }>('ryanlindsey-me-mcp');
+  const mcp = server.getWorker<{ DB: D1Database; FIT_WORKFLOW: Workflow }>('ryanlindsey-me-mcp');
   await mcp.applyD1Migrations('DB');
-  db = (await mcp.getEnv()).DB;
+  const mcpEnv = await mcp.getEnv();
+  db = mcpEnv.DB;
+  fitWorkflow = mcpEnv.FIT_WORKFLOW;
   mockQueue = await server.getWorker<unknown, MockQueueModule>('mock-queue').getExport();
 
   // Listened here rather than inside the one test that uses it: a harness
@@ -280,7 +283,8 @@ test('opens the row as pending, answers with its id, and closes it behind the re
  * redirect an unambiguous "a report exists". #269 turned it into "a run
  * started", so the operator was told at the moment nothing had been generated
  * and was never told when something was. This Worker queues it now -- from
- * `notifyRun` in workers/mcp/src/fit-workflow.ts as of #349, and from
+ * `notifyRun` (workers/mcp/src/fit-run.ts since #490, called from
+ * `FitWorkflow` in workers/mcp/src/fit-workflow.ts as of #349), and from
  * `completeRun` in workers/mcp/src/fit-start.ts before that -- which is why
  * the assertion lives in this suite rather than in a site one.
  *
@@ -335,6 +339,94 @@ test('a completed run notifies with the audience the grant named', async () => {
   const wire = JSON.stringify(event);
   expect(wire).not.toContain(A_ROLE);
   expect(wire).not.toContain(token);
+});
+
+/**
+ * The instance's terminal status, polled to the same 20-second deadline
+ * tests/fit-workflow.test.ts uses, tolerating the `instance.not_found` race
+ * that file records: the create runs inside `ctx.waitUntil`.
+ */
+async function completed(id: string): Promise<string> {
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    try {
+      const status = (await (await fitWorkflow.get(id)).status()) as { status: string };
+      if (status.status === 'complete' || status.status === 'errored') return status.status;
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes('instance.not_found')) throw error;
+    }
+    if (Date.now() > deadline) throw new Error(`the instance for ${id} never finished`);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+/** Every queued message naming this report. */
+async function messagesFor(id: string): Promise<unknown[]> {
+  const messages = (await mockQueue.messages()) as { detail?: Record<string, string> }[];
+  return messages.filter((message) => message.detail?.report === id);
+}
+
+test('a run analyze_fit opens is finished without telling the operator', async () => {
+  // #490: the tool opens its run through the same `openFitRun` as this route,
+  // and passes `notify: false`, which keeps what the tool did before -- it
+  // awaited the engine and queued nothing. Its callers are the owner's own
+  // clients and the weekly scheduled suite, and the event exists for the
+  // form's reader.
+  //
+  // Waited on to the instance's TERMINAL status, not to the row: the send sits
+  // after the close step, so a row reading `failed` is not yet proof that no
+  // message follows it.
+  const { token } = await grant(db, 'fixture-tool-run');
+  const response = await fetch(`${origin}/mcp`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      accept: 'application/json, text/event-stream',
+      authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'analyze_fit', arguments: { target_description: A_ROLE } },
+    }),
+  });
+  // Streamable HTTP answers as JSON or as one SSE frame.
+  const text = await response.text();
+  const frame =
+    text.startsWith('event:') || text.startsWith('data:')
+      ? text
+          .split('\n')
+          .find((line) => line.startsWith('data:'))!
+          .slice(5)
+      : text;
+  const result = JSON.parse(frame).result as { content: { text: string }[] };
+  const id = (JSON.parse(result.content[0]!.text) as { report_id?: string }).report_id;
+  expect(id, `no report_id in ${text}`).toBeDefined();
+
+  expect(await completed(id!)).toBe('complete');
+  expect(await messagesFor(id!)).toEqual([]);
+});
+
+test('an instance created before the notify flag still notifies', async () => {
+  // `FitRunParams.notify` is optional because an instance already queued or
+  // mid-run when #490 deploys carries `{ id }` alone, and every run notified
+  // then. Created here exactly as the pre-#490 `startRun` created one, against
+  // a row opened the way it opened one.
+  const id = 'a-pre-flag-instance-' + newJti().slice(0, 8);
+  await db
+    .prepare(
+      `INSERT INTO fit_reports (id, created_at, status, audience, target_description)
+       VALUES (?, ?, 'pending', 'fixture-pre-flag', ?)`,
+    )
+    .bind(id, new Date().toISOString(), A_ROLE)
+    .run();
+  await fitWorkflow.create({ id, params: { id } });
+
+  expect(await completed(id)).toBe('complete');
+  const sent = (await messagesFor(id)) as { detail: Record<string, string> }[];
+  expect(sent).toHaveLength(1);
+  expect(sent[0]!.detail).toEqual({ audience: 'fixture-pre-flag', report: id, outcome: 'failed' });
 });
 
 /**

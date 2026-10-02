@@ -6,6 +6,7 @@ import { mintToken, newJti, type Scope } from '../src/lib/tier/token';
 import { recordIssue } from '../src/lib/tier/registry';
 import { TEST_SIGNING_KEY } from '../src/lib/tier/grant';
 import type { McpEnv } from '../workers/mcp/src/env';
+import { abandonRun } from '../workers/mcp/src/fit-run';
 
 /**
  * The deferred fit run, as a Workflow instance (#349).
@@ -132,17 +133,17 @@ async function settled(instance: {
  * A handle to the instance for `id`, tolerating the race `POST /fit/start`
  * leaves behind rather than closing it (#384).
  *
- * `workers/mcp/src/fit-start.ts` creates the instance inside
- * `ctx.waitUntil(startRun(...))`, so the response this suite's `start()`
+ * `workers/mcp/src/fit-run.ts` (fit-start.ts until #490) creates the instance
+ * inside `ctx.waitUntil(startRun(...))`, so the response this suite's `start()`
  * awaits can land before `FIT_WORKFLOW.create` has actually run --
  * MEASURED IN CI 2026-09-23 (run 35883324048, release PR #381):
  * `env.FIT_WORKFLOW.get(id)` threw `instance.not_found` immediately after
  * `start()` returned. The create stays inside `waitUntil` for caller
- * latency, not for budget room: fit-start.ts says, beside that same
+ * latency, not for budget room: fit-run.ts says, beside that same
  * `ctx.waitUntil`, that creating an instance is "a round trip to the
  * Workflows API, and the whole point of this route is that the caller does
- * not wait for anything it does not have to" (workers/mcp/src/fit-start.ts,
- * ~142-145). So the fix belongs here, as patience on the same 20-second
+ * not wait for anything it does not have to" (in `openFitRun`,
+ * workers/mcp/src/fit-run.ts; it was fit-start.ts ~142-145 when written). So the fix belongs here, as patience on the same 20-second
  * deadline `settled` already polls above, rather than as a change to that
  * route.
  *
@@ -151,7 +152,7 @@ async function settled(instance: {
  * one run different is not yet known, which is why the error thrown at the
  * deadline carries the row rather than the bare `instance.not_found` text.
  * `fit_reports.status`/`failure_code`, checked here against `abandonRun`
- * (workers/mcp/src/fit-workflow.ts:453-457), distinguish three shapes a
+ * (workers/mcp/src/fit-run.ts since #490; fit-workflow.ts:453-457 when written), distinguish three shapes a
  * stuck `get` can mean: `failed`/`errored` is `create` itself rejecting and
  * `startRun` abandoning the row; `pending`/`null` is `startRun` never having
  * run, or never having settled; `failed`/`refused` is the instance having run
@@ -271,16 +272,56 @@ test('a refused run records the envelope columns the report tool reads', async (
   expect(closed?.corpus_truncated).toBeNull();
 });
 
+/**
+ * An `McpEnv` holding only what `abandonRun` touches, recording what it was
+ * asked to do. The real D1 is NOT used: the point is which statements and
+ * which queue sends the function issues, and a recorder says so directly.
+ */
+function abandonEnv() {
+  const statements: string[] = [];
+  const sent: unknown[] = [];
+  const env = {
+    DB: {
+      prepare: (sql: string) => {
+        statements.push(sql);
+        return { bind: () => ({ run: async () => ({}) }) };
+      },
+    },
+    EVENTS: { send: async (message: unknown) => void sent.push(message) },
+  } as unknown as McpEnv;
+  return { env, statements, sent };
+}
+
 test('an abandoned run records that the engine gave no answer of its own', async () => {
   // `abandonRun` closes a row the engine was never asked about, so it is not a
   // `no_answer` run: that flag means the engine looked and declined. It is
   // written as 0 rather than left null so a reader can tell it from a row that
-  // predates 0010. A scan rather than a run, because the module imports
-  // `cloudflare:workers` and cannot load in the test's Node process, and its
-  // only caller is a `create` that rejects, which the harness cannot provoke.
-  const code = codeOf(await readFile('workers/mcp/src/fit-workflow.ts', 'utf8'));
-  const abandon = code.slice(code.indexOf('export async function abandonRun'));
-  expect(abandon).toContain('no_answer = 0');
+  // predates 0010.
+  //
+  // CALLED DIRECTLY SINCE #490, where it was a source scan. It lived in
+  // workers/mcp/src/fit-workflow.ts, which imports `cloudflare:workers` and
+  // cannot load in this Node process; it is in workers/mcp/src/fit-run.ts now,
+  // which can. Its only caller is a `create` that rejects, which the harness
+  // still cannot provoke, so a direct call is the only way to run it.
+  const { env, statements } = abandonEnv();
+  await abandonRun(env, 'an-abandoned-run', AUDIENCE, true);
+  expect(statements.join('\n')).toContain('no_answer = 0');
+});
+
+test('an abandoned run notifies only when the run asked to', async () => {
+  // The run's `notify` flag reaches `abandonRun` from `openFitRun`, so a run
+  // that could not be started is reported exactly when one that finished
+  // would be: a `/fit/start` run tells the operator, an `analyze_fit` run does
+  // not (#490).
+  const told = abandonEnv();
+  await abandonRun(told.env, 'a-form-run', AUDIENCE, true);
+  expect(told.sent).toHaveLength(1);
+  expect(JSON.stringify(told.sent[0])).toContain('a-form-run');
+
+  const quiet = abandonEnv();
+  await abandonRun(quiet.env, 'a-tool-run', AUDIENCE, false);
+  expect(quiet.statements.join('\n'), 'the row is still closed').toContain("status = 'failed'");
+  expect(quiet.sent).toEqual([]);
 });
 
 test('a run whose row is gone refuses before it spends anything', async () => {
@@ -367,10 +408,18 @@ test('the route hands the run to the workflow and nothing else', async () => {
   // `ctx.waitUntil` IS STILL USED ON THIS PATH and must be: creating an
   // instance settles in milliseconds, which is three orders of magnitude
   // inside the budget. What may not be there is the ENGINE.
+  //
+  // TWO FILES SINCE #490. The route is still ./fit-start.ts, and the code it
+  // opens a run with is `openFitRun` in ./fit-run.ts, shared with
+  // `analyze_fit`; the engine may be in neither.
   const route = codeOf(await readFile('workers/mcp/src/fit-start.ts', 'utf8'));
+  const open = codeOf(await readFile('workers/mcp/src/fit-run.ts', 'utf8'));
   expect(route, 'the route calls the fit engine again').not.toContain('analyzeFit');
+  expect(open, 'opening a run calls the fit engine').not.toContain('analyzeFit');
 
-  // AND THE PARAMS CARRY THE REPORT ID ALONE. A workflow instance's payload is
+  // AND THE PARAMS CARRY THE REPORT ID AND ONE FLAG. They carried the id
+  // alone until #490 added `notify`, a boolean this Worker sets from which of
+  // its own surfaces opened the run. A workflow instance's payload is
   // durable state that Cloudflare retains for up to 30 days, and
   // src/lib/retention.ts -- the table-driven job that makes the published
   // policy true -- cannot trim it. `target_description` is prose a caller
@@ -379,7 +428,7 @@ test('the route hands the run to the workflow and nothing else', async () => {
   // src/lib/agent-intel/intent.ts's rule exists to prevent. The token is not
   // there for the stronger reason that it is consumed at this route and never
   // needed again.
-  expect(route).toContain('params: { id }');
+  expect(open).toContain('params: { id, notify }');
 });
 
 test('every step.do in the fit workflow carries a named step config', async () => {
@@ -445,7 +494,8 @@ test('the pasted description never enters the workflow payload', async () => {
   // THE STRUCTURAL HALF OF THE TOKEN AND DESCRIPTION RULE. What a workflow
   // instance persists is its params and every `step.do` return value, and
   // neither is readable from this harness -- so what can be asserted is the
-  // shape of what goes in. `FitRunParams` has exactly one field.
+  // shape of what goes in. `FitRunParams` has exactly two fields: the id, and
+  // since #490 a boolean, which no caller types and so carries no prose.
   //
   // The other half, that the ROW READ sits outside every step so the
   // description is never a persisted return value either, is enforced by the
@@ -454,6 +504,7 @@ test('the pasted description never enters the workflow payload', async () => {
   const workflow = codeOf(await readFile('workers/mcp/src/fit-workflow.ts', 'utf8'));
   const declaration = /export interface FitRunParams \{([^}]*)\}/.exec(workflow);
   expect(declaration, 'FitRunParams is not declared where the scan expects it').not.toBeNull();
-  const fields = [...declaration![1]!.matchAll(/(\w+)\s*:/g)].map((match) => match[1]!);
-  expect(fields).toEqual(['id']);
+  const fields = [...declaration![1]!.matchAll(/(\w+)\??\s*:/g)].map((match) => match[1]!);
+  expect(fields).toEqual(['id', 'notify']);
+  expect(declaration![1]).toMatch(/notify\?:\s*boolean;/);
 });

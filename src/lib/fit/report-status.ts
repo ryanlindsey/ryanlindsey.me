@@ -22,8 +22,10 @@
  * service binding. Classifying inside the step is what keeps `refused` from
  * quietly collapsing into `errored` for every declined run.
  *
- * THE SECOND WRITER IS `abandonRun` in the same file, which sets `errored` for
- * a run whose instance could not be started at all. The set is still closed.
+ * THE SECOND WRITER IS `abandonRun`, which sets `errored` for a run whose
+ * instance could not be started at all. It was in the same file as
+ * `FitWorkflow` until #490 moved it to workers/mcp/src/fit-run.ts. The set is
+ * still closed.
  */
 export type FitFailureCode = 'refused' | 'errored';
 

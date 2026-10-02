@@ -14,7 +14,8 @@
  * module to reach one function would assert a dependency that does not exist.
  *
  * NEVER A LEADING `-`, because the id is also the Workflows instance id
- * (workers/mcp/src/fit-start.ts) and Workflows refuses one that starts with
+ * (workers/mcp/src/fit-run.ts, in workers/mcp/src/fit-start.ts until #490)
+ * and Workflows refuses one that starts with
  * `-`. One draw in sixty-four does, and until 2026-09-24 that draw opened a
  * row, failed `FIT_WORKFLOW.create`, and was abandoned as `errored` -- the CI
  * flake behind #384. Drawing again rather than rewriting the character keeps
