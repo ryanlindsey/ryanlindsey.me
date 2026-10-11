@@ -1,0 +1,53 @@
+---
+title: Agents that repair the plan as they work
+description: 'Armature v0.9.0 lets an agent fix the tickets it works from: broken text, a missing blocker, a dependency nobody wrote down. Why a plan needs that, how dependency links and the prose that states them stay in step, and the limits that make it safe to allow without approval.'
+standfirst: 'A good plan can still meet something it did not anticipate, and the agent working through it is often the first to notice.'
+publishedAt: 2026-10-11
+pillar: agentic-engineering
+draft: false
+---
+
+**TL;DR.** A good plan can still meet something it did not anticipate, and the agent working through it is often the first to notice. [armature](https://github.com/ryanlindsey/armature), a Claude Code plugin that works a GitHub Projects board, could file a plan but not change one, so every flaw an agent found became a note for a person to fix by hand. [Version 0.9.0](https://github.com/ryanlindsey/armature/releases/tag/armature-v0.9.0) lets the agent repair any open ticket it finds a defect in, keeps dependency links and the prose that states them in step, and stops work as soon as it finds an unmet dependency. Every repair is guarded against overwriting a person's edit, read back to confirm it landed, and listed in the pull request. The result is less drift between the plan and the work, and fewer agents building on something that is not there yet.
+
+## Plans change once work starts
+
+[Agents that deliver across repositories](/writing/armature) introduced armature, and [Chaining skills across plugins](/writing/chaining-skills-across-plugins) showed a design conversation becoming a spec, an epic and its tasks on a board, then a stack of pull requests. That pipeline works. A plan goes onto the board as one linked set of tickets, and agents pick up its tasks in order.
+
+Most tasks go as planned. Now and then the work turns up something the plan did not anticipate: a task missing its prerequisite, a step that cannot run as written, or text that came out garbled. Some of that surfaces while the plan is filed and reviewed, and some only once an agent is inside the code.
+
+Until this release, armature could create a ticket but not change one. When an agent found a flaw, all it could do was report it, and the fix waited for a person.
+
+## A missing dependency is the costly kind
+
+Say an agent files a plan for a new feature as an epic with a dozen tasks. One task, "build the settings screen", needs "add the settings store" done first, and nothing in its ticket says so.
+
+That gap matters more than it looks. Before an agent claims a task, it reads the ticket for a line such as ``Depends on `owner/repo#12` `` and checks whether that item is done. GitHub also has native blocker links, but the tool that picks the next task orders by epic and issue number and does not read them. The prose line is the check. Without it, another agent can claim the settings screen early and build against a store that does not exist yet, and the mistake shows up in a pull request, which is the most expensive place to find it.
+
+## The agent repairs the plan, then reports it
+
+Two new tools change what an agent can do with a ticket that already exists. `item_update` edits a title or body. `item_link` adds or removes blockers and sets or clears a parent. The skills that file plans and work the board now use both on any open ticket the agent finds a defect in: the one it is working on, a sibling, the epic, or a blocker.
+
+**The link and the line move together.** `item_link` writes the native blocker link and the `Depends on` line in the same call, and fixes any other line on the ticket that disagrees with its links. `item_update` refuses a body whose `Depends on` lines disagree with the links, so an edit to the text cannot drift away from the dependencies. In the settings example, the agent adds the store as a blocker of the screen, and the ticket now says so in both places.
+
+**A dependency found mid-work stops the work.** If an agent is partway through a task and finds it needs something unfinished, it adds the blocker, commits its work in progress on the branch without pushing, moves the task back to to-do, and stops without opening a pull request. When the task is picked up again, the agent finds that branch and rebases it onto the blocker's work rather than starting over.
+
+This is shift left applied to the plan: a flaw fixed where it is found, before more work is built on top of it. The broader version, checking a whole plan before it is filed, is still ahead.
+
+## It edits without asking, within limits
+
+I decided the agent should fix first and report after, with no approval per edit. Asking for each one would leave a person in the loop for every fix, which is the gap this release closes. What makes that safe is a short list of limits.
+
+- **It does not overwrite a person's edit.** Each edit carries the version of the ticket the agent last read. If the ticket has changed since, the edit is refused, and the agent reads it again and reapplies its change to what is there now.
+- **It confirms every write.** After each change it reads the ticket back and compares. When the outcome is uncertain, it stops and reports rather than trying again.
+- **It leaves finished work and designs alone.** A closed or done ticket is reported, not edited, because changing it rewrites history. A spec's body is not edited either.
+- **Every repair is reported.** The pull request carries a Board repairs section next to its acceptance criteria, one line per ticket changed. A repair a person never hears about counts as a failure.
+
+## Letting your agent repair its own plan
+
+If you run coding agents against a plan held in a tracker, these are the decisions this release came down to:
+
+1. **Let the agent edit the plan, not only report on it.** A flaw that waits in a report keeps causing drift while it waits.
+2. **Keep the dependency your agent reads in step with the one your tracker stores.** Change both in one write, and refuse an edit that would make them disagree.
+3. **Guard every edit with the version the agent read, and read it back.** That is what makes edits without approval safe beside people editing the same tickets.
+4. **Stop and hand back on a newly found dependency.** Commit the work in progress, return the task to to-do, and resume from the branch later.
+5. **Put every repair in the pull request.** Review is where a person sees what the agent changed in the plan, next to what it changed in the code.
