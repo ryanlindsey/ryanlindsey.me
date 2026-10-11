@@ -28,6 +28,8 @@ The corrections Ryan makes most often to a drafted post, in the order they cost 
 
 **Absolutes that do not hold.** Look for "never", "impossible", "cannot", "forever", "the only place", "no path anywhere". Check each against the facts and narrow it to what holds: a one-year cache is not "forever".
 
+**Universal claims about the work itself.** Look for a premise stated as true of every plan, team or project: "even the best plan has flaws", "every codebase drifts". Narrow it to what happens sometimes and what the piece shows. "Even the best plan has flaws" became "A good plan can still meet something it did not anticipate."
+
 **Trailing clauses.** Look for a ", because…" or ", which…" tail at the end of a sentence. Cut it when it restates the sentence or generalizes past the evidence. Keep it when it carries the mechanism a reader would ask about.
 
 **Defensive framing.** Look for a concession nobody asked for about the project being small, personal, or having few users. Delete it, or state the scope as a plain fact. "This section sounds like we're making excuses."
