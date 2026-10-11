@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.53.1...ryanlindsey-me-v1.54.0) (2026-10-11)
+
+
+### Features
+
+* **writing:** publish the plan repair post ([#505](https://github.com/ryanlindsey/ryanlindsey.me/issues/505)) ([5652673](https://github.com/ryanlindsey/ryanlindsey.me/commit/56526737086266ebb560cfe109e641e8e3550980)), closes [#504](https://github.com/ryanlindsey/ryanlindsey.me/issues/504)
+
 ## [1.53.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.53.0...ryanlindsey-me-v1.53.1) (2026-10-02)
 
 
