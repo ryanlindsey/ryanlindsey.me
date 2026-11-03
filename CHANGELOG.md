@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.54.0...ryanlindsey-me-v1.55.0) (2026-11-03)
+
+
+### Features
+
+* **writing:** publish the design system bridge post ([#539](https://github.com/ryanlindsey/ryanlindsey.me/issues/539)) ([c00c1ac](https://github.com/ryanlindsey/ryanlindsey.me/commit/c00c1ac37c6cef7ecd7f364a02b1f2b7608a9d14))
+
 ## [1.54.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.53.1...ryanlindsey-me-v1.54.0) (2026-10-11)
 
 
