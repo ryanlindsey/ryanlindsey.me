@@ -1,0 +1,120 @@
+---
+title: Designing in Claude Design with the components you already ship
+description: 'Claude Design builds in React, but a design system written in another framework does not have to be ported to use it. Wrap the compiled components, give each one a contract and realistic data, guard the bundle with tests, and every design comes back as something the code can assemble.'
+standfirst: 'A design drawn from the real components comes back as a list of parts the code already has.'
+publishedAt: 2026-11-02
+pillar: agentic-engineering
+draft: false
+---
+
+**TL;DR.** [Claude Design](https://claude.com/product/design) builds in React, and it can import a design system so that it draws with your real components. If your components are written in another framework, the obvious move is to port them to React first. You do not need to. Wrap each compiled component in a thin React component that mounts the real one, ship a props contract, usage notes and realistic sample data with it, and guard the bundle with tests so it cannot fall behind the code. The design agent then draws with the parts the app ships, and the coding agent rebuilds the approved design from those same parts. For me that meant shipping sooner and approving designs after fewer rounds of revision.
+
+## Claude Design draws with the components you give it
+
+Claude Design can import a design system from a repository, from design files, or from a local codebase through `/design-sync` in Claude Code, and then build with your components instead of approximations of them. Anthropic's product page says Claude Code "works best for organizations with existing React design systems", and that matches what the sync asked of me: one React component for each component in the system, which Claude Design can render on its canvas.
+
+I found this workflow by accident. My first attempt shipped the parts that seemed to matter: static HTML previews of each component, the stylesheet, the tokens and the fonts. The sync refused it, because there was nothing it could render. At that point there were two ways forward: rewrite the components in React, or find a way to put the existing ones inside React.
+
+## A port gives you two design systems
+
+A React port looks like the straightforward answer, and for a small library it would work for a while. The cost arrives later. Every change to a component now has to land twice, and the two copies start to differ in small ways: a variant one side has and the other does not, a spacing value that moved in one place. Designs drawn from the port describe an app that is close to the real one but not the same, and the difference is exactly what the handoff, the point where an approved design goes to Claude Code to be built, has to sort out.
+
+The alternative is to wrap the compiled components. Most component frameworks can mount a compiled component into a DOM element, pass it props, update them and tear it down. Svelte, Vue and Web Components all do this in their own way. A React component that does those four things around the real component is a wrapper, not a copy, and there is nothing to keep in step because there is only one implementation.
+
+## An invented design system, through the loop
+
+To show the loop without tying it to one project, take an invented design system called Harbor. It is written in a framework that is not React, and it has a `Button`, a `Card`, a compound `Table` made of `Table.Header`, `Table.Body`, `Table.Row` and `Table.Cell`, and an `OrdersTable` built from those parts for the app's orders screen. `OrdersTable` takes its rows and an `onOpen` callback, which it calls when a person opens an order.
+
+### The wrapper mounts the real component
+
+Each Harbor component gets a React component made by one function. The framework supplies three operations through a small adapter, and the wrapper does the rest:
+
+```jsx
+import { useLayoutEffect, useRef } from 'react';
+import { adapter } from './adapter.js'; // mount, update, destroy for Harbor's framework
+
+export function wrap(component, { defaults = {}, rename = {} } = {}) {
+  function Wrapped(props) {
+    const host = useRef(null);
+    const instance = useRef(null);
+    const native = toNative(withDefaults(props, defaults), rename);
+
+    useLayoutEffect(() => {
+      instance.current = adapter.mount(component, host.current, native);
+      return () => adapter.destroy(instance.current);
+    }, []);
+
+    useLayoutEffect(() => {
+      adapter.update(instance.current, native);
+    });
+
+    return <span data-ds-host ref={host} />;
+  }
+  return Wrapped;
+}
+```
+
+The host span gets `display: contents` in the stylesheet, so it takes no part in layout and the component renders as if React were not there. `withDefaults` fills in what a design leaves out, covered below, and `toNative` handles the props whose names differ between React and the framework, such as `className` becoming `class` and `onClick` becoming the native event handler. Nothing in Harbor is rewritten, and a fix to `Button` reaches the canvas the next time the bundle is built and synced.
+
+### Three problems every wrapper meets
+
+The sketch above handles a component with plain props. Real components need three more things, and they are where most of the work goes.
+
+**Children have to arrive as the framework's own content.** React passes children as one value, and handing that to Harbor as an opaque blob breaks compound components. The outermost wrapper walks its children instead. Text becomes native text. Another wrapped component, such as a `Table.Row` inside `Table.Body`, becomes a native child of its parent, so the table renders the same `table > tbody > tr > td` markup the app renders, with no extra elements in between. Anything else, an icon or a plain `div`, becomes a placeholder element inside the Harbor markup that React portals the node into.
+
+**Required callbacks need defaults.** `OrdersTable` expects `onOpen`, and a design never supplies one, because a design is about what the screen shows. The wrapper fills each missing callback with a function that does nothing, so a design passes only data. A callback whose absence means something, such as a button that hides itself when it has no handler, keeps that meaning instead of being filled.
+
+**Some props take markup, not values.** A `Card` with a `footer` slot expects content of its own. The wrapper names those props and routes each one through the same placeholder mechanism as children, so a design can put any React node there.
+
+### Every component ships with its contract and its data
+
+A component alone does not tell the design agent how to use it. Alongside each wrapper, Harbor's bundle carries a props contract, usage notes, and a preview card that shows the component in its main states. The contract is a TypeScript declaration the design agent reads before drawing:
+
+```ts
+export interface OrdersTableProps {
+  /** Rows as the orders model produces them. Use fixtures.orders() in designs. */
+  rows: OrderRow[];
+  /** Called with the order id when a row is opened. Defaults to a no-op in designs. */
+  onOpen?: (id: string) => void;
+  /** Shows skeleton rows while the first page loads. */
+  loading?: boolean;
+}
+```
+
+The sample data matters as much as the contract. Harbor's fixtures are synthetic, but they run through the app's own view models, so a design passes `OrdersTable` the same shape of data the app would. A design built on those fixtures cannot depend on a field the app never produces.
+
+### Tests keep the bundle honest
+
+The bundle is generated from the source and committed, and three tests stand behind it.
+
+- **Freshness.** The committed bundle must match a fresh build byte for byte. A change to a component, a token or a dependency that alters the output fails the build until the bundle is rebuilt, so the design agent does not draw with an older copy of the components.
+- **Isolation.** Nothing from the bundle or the wrappers reaches the app's build, and app code never imports React. The wrappers exist for the canvas and only for the canvas.
+- **Completeness.** Every component in the system has a wrapper, a contract, notes and a preview, and every wrapper points at a component that exists. A component added without its contract does not merge.
+
+### The handoff comes back as parts the code already has
+
+When a design is approved, it names Harbor components, passes them data in the shapes the contracts describe, and arranges them in a layout. The coding agent rebuilds it from the components the app already ships, so the work is assembly: the right parts, in the right order, with the right data. When a design needs something Harbor does not have, the new part is added to Harbor first, given its wrapper, contract and notes, and synced. The screen is never hand-written around the gap.
+
+## Both agents read the same specification
+
+The bundle works as a specification that the design agent and the coding agent both read. The design agent learns from the contracts and notes which props exist and what they mean. The coding agent builds against the same contracts in the source. Each has its own work to do, and neither has to guess what the other meant, because the handoff is written in the names the code uses.
+
+This fits the way I already plan work for coding agents. [Agents that deliver across repositories](/writing/armature) and [Agents that repair the plan as they work](/writing/agents-that-repair-the-plan) describe a plan that lives in one place every agent can read. A design system bundle is that idea applied to the interface: one source the design agent and the coding agents share, with tests that stop either from working off a stale copy.
+
+## What it changed
+
+The difference showed up quickly. After the first design came back through this loop, the rounds of feedback and revision dropped, and screens reached the app sooner. I am judging that from my own approvals rather than from a measurement, and it has held for the designs that followed.
+
+The gain comes from the app's own components being in the bundle, not from the wrapper alone. A design drawn only from basic parts, buttons, cards and tables, still leaves the coding agent to work out how those parts combine into the app's real screens, and that is where revisions come from. Once the composite components the app is built from were in the bundle, there was little left to work out.
+
+## Bringing your own design system into Claude Design
+
+If your design system is not written in React, these are the decisions this workflow came down to:
+
+1. **Wrap the compiled components instead of porting them.** One implementation means nothing drifts, and a fix reaches the canvas on the next build.
+2. **Walk children into native content.** Text as text, wrapped components as native children so compound components render their real markup, and anything else through a portal.
+3. **Default every required callback to a no-op.** A design should pass data, not behavior, unless an absent callback carries meaning.
+4. **Ship a contract, notes and fixtures with every component.** Run the fixtures through the app's own models so designs use the data the app produces.
+5. **Commit the bundle and test it.** Freshness, isolation and completeness, so the canvas never falls behind the code and React never reaches the app.
+6. **Bridge the app's composite components, not only the primitives.** That is where the revision rounds go away.
+7. **Add a missing part to the design system before the screen that needs it.** The handoff should only ever name components that exist.
