@@ -45,7 +45,7 @@
     "astro-expressive-code": "0.44.2",
     "github-slugger": "2.0.0",
     "reading-time": "1.5.0",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.10",
