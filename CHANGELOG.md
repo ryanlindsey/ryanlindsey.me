@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.55.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.55.0...ryanlindsey-me-v1.55.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **og:** keep the share card layout under satori 0.47.1 ([#553](https://github.com/ryanlindsey/ryanlindsey.me/issues/553)) ([ba75ec6](https://github.com/ryanlindsey/ryanlindsey.me/commit/ba75ec6b1afe717e1bb2d70254c2bdf96f3d6439))
+
+
+### Dependencies
+
+* bump agents and the mcp sdk across both workers ([#552](https://github.com/ryanlindsey/ryanlindsey.me/issues/552)) ([05be12b](https://github.com/ryanlindsey/ryanlindsey.me/commit/05be12b94a6d9e5993e23fceb342862dd1a82905))
+* bump the minor-and-patch group with 10 updates ([#551](https://github.com/ryanlindsey/ryanlindsey.me/issues/551)) ([94ef05c](https://github.com/ryanlindsey/ryanlindsey.me/commit/94ef05cb311c58d61decc6a03c0f0881a75feef0))
+* bump transitive and patch dependencies across both workers ([#550](https://github.com/ryanlindsey/ryanlindsey.me/issues/550)) ([5b61900](https://github.com/ryanlindsey/ryanlindsey.me/commit/5b619007ebed916b28b92c2e697b5f733e68cdd4))
+
 ## [1.55.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.54.0...ryanlindsey-me-v1.55.0) (2026-11-03)
 
 
