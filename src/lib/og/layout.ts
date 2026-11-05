@@ -213,6 +213,12 @@ export function cardTree(card: OgCard, c: Palette): Node {
       width: CARD_WIDTH,
       height: CARD_HEIGHT,
       padding: 64,
+      // satori defaulted to border-box until #855 (vercel/satori, first in a
+      // release after 0.33.5) moved it to CSS's content-box. Without this the
+      // root grows to 758px inside a 630px canvas: space-between pushes the
+      // footer below the edge, overflow clips it, and the title drops 64px.
+      // Measured on all 17 cards under 0.47.1, 2026-11-05.
+      boxSizing: 'border-box',
       overflow: 'hidden',
       background: c['--rl-bg'],
     },
