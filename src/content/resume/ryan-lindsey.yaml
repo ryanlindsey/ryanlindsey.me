@@ -371,5 +371,5 @@ skills:
       - '*nix shell'
 
 meta:
-  version: 0.7.1
-  lastModified: '2026-09-28'
+  version: 0.7.2
+  lastModified: '2026-11-09'

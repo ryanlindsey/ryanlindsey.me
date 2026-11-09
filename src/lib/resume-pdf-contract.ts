@@ -101,7 +101,10 @@
 //
 // 9 since 2026-09-28: the summary's closing clause was reworded and the record
 // moved to 0.7.1. Content only, bumped because the golden moved.
-export const RESUME_PDF_CONTRACT_VERSION = 9;
+//
+// 10 since 2026-11-09: the current role's team size was corrected and the
+// record moved to 0.7.2. Content only, bumped because the golden moved.
+export const RESUME_PDF_CONTRACT_VERSION = 10;
 
 const encoder = new TextEncoder();
 
