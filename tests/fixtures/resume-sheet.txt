@@ -38,7 +38,7 @@ EXPERIENCE
 Weedmaps IRVINE, CA MAR 2016 — PRESENT
 Senior Engineering Manager FEB 2021 — PRESENT
 Own incident management for the entire engineering organization since 2024 and coach fellow engineering managers,
-while leading 8 engineers across 2 teams whose work spans the whole platform, the web applications and the native iOS
+while leading 10 engineers across 2 teams whose work spans the whole platform, the web applications and the native iOS
 and Android applications alike. Platform: AWS, Ruby on Rails, Node.js, GraphQL, React, Next.js, Swift, Kotlin, React Native,
 Terraform, Kubernetes, Docker, Fastly, Snowflake.
 • Lead cross-functional teams of polyglot engineers shipping features across Android, iOS, and web, partnering with
