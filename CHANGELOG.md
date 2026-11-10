@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.55.1...ryanlindsey-me-v1.55.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* **resume:** correct current team size ([#560](https://github.com/ryanlindsey/ryanlindsey.me/issues/560)) ([04f922e](https://github.com/ryanlindsey/ryanlindsey.me/commit/04f922e4ea7e71cff4cbf5db0a547ad0887f17b5))
+
 ## [1.55.1](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.55.0...ryanlindsey-me-v1.55.1) (2026-11-05)
 
 
