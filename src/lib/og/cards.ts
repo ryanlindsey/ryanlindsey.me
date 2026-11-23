@@ -31,8 +31,14 @@ import { readingTimeFor } from '../reading-time';
  * border-box on the root to restore the old layout; the 17 cards then differ
  * from 0.33.5's by at most 47 antialiased pixels each, so this bump is
  * again the rule rather than a visible change.
+ *
+ * 4 SINCE satori 0.47.1 -> 0.63.2, held out of the grouped bump in #571. The
+ * layout is unchanged, but text sets a few pixels tighter: measured on
+ * 2026-11-23, between 0.26% and 4.91% of each card's pixels moved, all
+ * inside the 64px content margin, and the home card's label pill widened by
+ * five pixels. A visible change, so the bump is required rather than the rule.
  */
-export const OG_CARD_CONTRACT_VERSION = 3;
+export const OG_CARD_CONTRACT_VERSION = 4;
 
 /**
  * A fingerprint of every input OG_CARD_CONTRACT_VERSION's own comment names as
@@ -59,7 +65,7 @@ export const OG_CARD_CONTRACT_VERSION = 3;
  * fingerprint.
  */
 export const OG_CARD_RENDER_FINGERPRINT =
-  '47b43b2fd4d98c3e8a5b2cfb70ee0fd2a807f8951f8c3479d0e297f178f5cf30';
+  '281c065741951127c88596fb449ff11285d4cb9d7a54d2caef7adcba1078e3db';
 
 export const CARD_WIDTH = 1200;
 export const CARD_HEIGHT = 630;
