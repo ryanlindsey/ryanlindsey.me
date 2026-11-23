@@ -3,6 +3,7 @@ dist
 .astro
 .wrangler
 .claude/worktrees
+.claude/launch.json
 .dev.vars*
 .env*
 !.env.example

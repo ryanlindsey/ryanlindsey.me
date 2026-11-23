@@ -19,6 +19,10 @@ import type { OgCard } from '../lib/og/cards';
 interface Props {
   title: string;
   description: string;
+  // The entry's one-line standfirst (140 characters at most, see
+  // src/lib/og/standfirst.ts). A post's masthead shows it in place of
+  // `description`, which the TL;DR directly beneath restated; see `lede` below.
+  standfirst?: string;
   publishedAt: Date;
   updatedAt?: Date;
   kicker: string;
@@ -89,6 +93,7 @@ interface Props {
 const {
   title,
   description,
+  standfirst,
   publishedAt,
   updatedAt,
   kicker,
@@ -109,6 +114,15 @@ const readingTime = readingTimeFor(body);
 // the rail offers a reader to share is the one the page already declares
 // itself to be. Not a second convention.
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site).href;
+
+// The paragraph under the masthead title. A post's `description` runs to
+// several sentences and its TL;DR repeats most of it a few lines lower, so a
+// post shows its standfirst here and keeps `description` for search results
+// and link previews, which still read it through Shell. A post without a
+// standfirst falls back to its description rather than showing nothing. Case
+// studies are unchanged: their masthead was not part of this change, and their
+// descriptions are already short.
+const lede = variant === 'article' ? (standfirst ?? description) : description;
 
 /*
  * The masthead, per variant, as whole class strings (design 1j, issue #107).
@@ -157,7 +171,10 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site).href;
  */
 const MASTHEAD = {
   article: {
-    shell: 'border-b border-rule',
+    // `bg-surface` lifts the post masthead off the page and `masthead-grid`
+    // (global.css) draws the faint grid behind it. Both were added because a
+    // post's masthead and body sat on one ground and read as one surface.
+    shell: 'border-b border-rule bg-surface masthead-grid',
     inner: 'mx-auto max-w-[1440px] px-10 pb-5 pt-[52px]',
     kicker: 'font-mono text-micro uppercase text-accent',
     title: 'mt-5 max-w-[22ch] font-display text-headline text-ink',
@@ -232,7 +249,7 @@ const FACT_COLUMNS: Record<number, string> = {
           {kicker}
         </p>
         <h1 class={masthead.title}>{title}</h1>
-        <p class={masthead.standfirst}>{description}</p>
+        <p class={masthead.standfirst}>{lede}</p>
         {/* data-masthead-meta is a styling hook, not a test hook: the two
              rules in global.css that have to reach past `[&_p]:text-bg` (the
              no-JS dark path and the print pin) need a selector for this

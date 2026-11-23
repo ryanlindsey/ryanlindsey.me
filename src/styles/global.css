@@ -487,6 +487,41 @@
 }
 
 /*
+ * The faint square grid behind a post's masthead, fading out from the top
+ * right. Added because a post's masthead and its body sat on one ground and
+ * read as one surface in both themes; the masthead now sits on --rl-surface
+ * and this grid marks it as a distinct block without a second colour.
+ *
+ * The lines are --rl-ink mixed into transparency rather than a new token, so
+ * they follow the theme on every path tokens.css covers, the no-JS dark one
+ * included, with nothing to keep in step. The grid is a ::before at
+ * z-index -1 inside an isolated stacking context, which keeps it above the
+ * masthead's own background and beneath its text without the text needing a
+ * z-index of its own. Hidden in print, where it has nothing to separate.
+ */
+@utility masthead-grid {
+  position: relative;
+  isolation: isolate;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    --masthead-grid-line: color-mix(in srgb, var(--rl-ink) 10%, transparent);
+    background-image:
+      linear-gradient(var(--masthead-grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--masthead-grid-line) 1px, transparent 1px);
+    background-size: 32px 32px;
+    background-position: right -1px top -1px;
+    /* A mask reads only alpha, so `black` here is opacity, not a colour, and
+       it is a keyword because this file carries no hex literal (tokens.test.ts). */
+    mask-image: radial-gradient(ellipse 90% 160% at 100% 0%, black 20%, transparent 80%);
+  }
+}
+
+/*
  * The home page's Now strip, no-JS path only (2026-09 redesign, the home
  * page issue -- cited by name, per the note on the footer link rule above).
  *
@@ -944,6 +979,12 @@
 
   [data-masthead='case-study'] [data-masthead-meta] p {
     color: var(--rl-bg);
+  }
+
+  /* The post masthead's grid (`masthead-grid` above) is a screen treatment:
+     on paper the masthead's bottom rule already closes it. */
+  .masthead-grid::before {
+    display: none;
   }
 
   /*

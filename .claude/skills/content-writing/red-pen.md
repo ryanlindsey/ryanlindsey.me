@@ -30,6 +30,10 @@ The corrections Ryan makes most often to a drafted post, in the order they cost 
 
 **Universal claims about the work itself.** Look for a premise stated as true of every plan, team or project: "even the best plan has flaws", "every codebase drifts". Narrow it to what happens sometimes and what the piece shows. "Even the best plan has flaws" became "A good plan can still meet something it did not anticipate."
 
+**Diagnoses stated as settled.** Look for a cause named as fact where the signal only suggests one: "it is X rather than Y", "the speed is being held up by…". Make it a likely explanation and say where to confirm it, or name the plausible causes and say the reason needs a closer look. "it is a staffing question rather than a performance one" became "the reason needs a closer look before anyone acts on it", followed by three possible causes. "Can that be stated so definitively or should that be more open ended requiring a deeper look?"
+
+**A source paraphrased past what it says.** Look for an outside framework's names, lists or positions restated in the draft's own words. Use the source's names exactly and attribute only what it says. "collaboration and flow" became "communication and collaboration, and efficiency and flow"; "part of the framework rather than an extra" became "belongs in this view"; "DORA's own research has moved in this direction" became "combines the two in a similar way".
+
 **Trailing clauses.** Look for a ", because…" or ", which…" tail at the end of a sentence. Cut it when it restates the sentence or generalizes past the evidence. Keep it when it carries the mechanism a reader would ask about.
 
 **Defensive framing.** Look for a concession nobody asked for about the project being small, personal, or having few users. Delete it, or state the scope as a plain fact. "This section sounds like we're making excuses."

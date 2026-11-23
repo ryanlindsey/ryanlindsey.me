@@ -74,6 +74,7 @@ const related = selectRelated(
 <ArticleLayout
   title={post.data.title}
   description={post.data.description}
+  standfirst={post.data.standfirst}
   publishedAt={post.data.publishedAt}
   updatedAt={post.data.updatedAt}
   kicker={PILLAR_LABELS[post.data.pillar] ?? post.data.pillar}

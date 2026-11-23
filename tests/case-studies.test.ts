@@ -183,6 +183,29 @@ test('a case study masthead is inverted and an article masthead is not', async (
   expect(article).toContain('data-masthead="article"');
 });
 
+test('a post masthead leads with its standfirst, and a case study keeps its description', async () => {
+  // The post header showed the full `description`, which the TL;DR directly
+  // beneath it restates, so a post now shows its one-line standfirst there and
+  // keeps the description for search and link previews. A post without a
+  // standfirst falls back to its description rather than to nothing. Case
+  // studies are left as they were, and the last assertion is the half that
+  // catches the change landing on the wrong variant.
+  const masthead = (page: string, variant: string) =>
+    new RegExp(`<header data-masthead="${variant}"[\\s\\S]*?</header>`).exec(page)?.[0] ?? '';
+
+  const post = masthead(await html('/writing/agent-native-site'), 'article');
+  expect(post).toContain('Every page as markdown, the résumé and case studies as MCP tools');
+  expect(post).not.toContain('An agent can read every page of this site as markdown');
+  expect(post).toContain('masthead-grid');
+
+  const fallback = masthead(await html('/writing/type-specimen'), 'article');
+  expect(fallback).toContain('Every block the article template supports, on one page.');
+
+  const study = masthead(await html('/work/silent-failure'), 'case-study');
+  expect(study).toContain('Every control in it exists');
+  expect(study).not.toContain('masthead-grid');
+});
+
 test.each(slugs)('/work/%s renders a facts bar exactly when it declares facts', async (slug) => {
   const page = await html(`/work/${slug}`);
   // A <dl>, so this slice is the WHOLE bar rather than its first cell. The
