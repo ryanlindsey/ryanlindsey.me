@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.56.0](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.55.2...ryanlindsey-me-v1.56.0) (2026-11-23)
+
+
+### Features
+
+* **writing:** publish the dora and space team health post ([#573](https://github.com/ryanlindsey/ryanlindsey.me/issues/573)) ([6e46984](https://github.com/ryanlindsey/ryanlindsey.me/commit/6e46984639fcb414399b2253c9f37f4f4452c293))
+
+
+### Dependencies
+
+* bump astro from 7.3.8 to 7.4.13 ([#568](https://github.com/ryanlindsey/ryanlindsey.me/issues/568)) ([b85cde9](https://github.com/ryanlindsey/ryanlindsey.me/commit/b85cde99a061783b7e191409e773c21fa53cc40f))
+* bump fast-xml-parser from 5.11.1 to 5.12.1 ([#563](https://github.com/ryanlindsey/ryanlindsey.me/issues/563)) ([7f263ec](https://github.com/ryanlindsey/ryanlindsey.me/commit/7f263ec57e4bb876126483c620c7638eb0c365db))
+* bump hono from 4.13.12 to 4.13.21 ([#569](https://github.com/ryanlindsey/ryanlindsey.me/issues/569)) ([d247d33](https://github.com/ryanlindsey/ryanlindsey.me/commit/d247d33d7b66a8a600b28660510496b04c210dc9))
+* bump the minor-and-patch group across 1 directory with 14 updates ([#571](https://github.com/ryanlindsey/ryanlindsey.me/issues/571)) ([a3cd449](https://github.com/ryanlindsey/ryanlindsey.me/commit/a3cd44994dec6f3b83c1f8e1f3d0927e950b1a71))
+* **og:** upgrade satori to 0.63.2 and move every share card ([#572](https://github.com/ryanlindsey/ryanlindsey.me/issues/572)) ([81f54f7](https://github.com/ryanlindsey/ryanlindsey.me/commit/81f54f7a46d33168d1127ce783cf9f2c139b981c))
+
 ## [1.55.2](https://github.com/ryanlindsey/ryanlindsey.me/compare/ryanlindsey-me-v1.55.1...ryanlindsey-me-v1.55.2) (2026-11-09)
 
 
