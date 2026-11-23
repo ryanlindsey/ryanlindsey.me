@@ -1,0 +1,71 @@
+---
+title: Reading team health with DORA and SPACE together
+description: 'DORA shows how changes move from commit to production. SPACE shows whether the people making them can keep it up. Read alone, each can make an unhealthy team look fine. This post covers the signals worth watching in each, three patterns that only appear when the two are read together, and four steps for getting started with one service and one short survey.'
+standfirst: 'Delivery metrics show how fast and how reliably a team ships, not what that costs the people doing it. That is where SPACE comes in.'
+publishedAt: 2026-11-23
+pillar: engineering-leadership
+draft: true
+---
+
+**TL;DR.** DORA's five metrics describe how changes reach production: how often, how fast, how often they fail, how quickly the team recovers, and how many deployments are unplanned fixes for production incidents. The SPACE framework looks at developer productivity across five dimensions: satisfaction and well-being, performance, activity, communication and collaboration, and efficiency and flow. Each is useful alone, and each can make an unhealthy team look fine. A team with excellent delivery numbers may be sustaining them on evenings and weekends, and a team that collaborates well may be stuck behind a slow pipeline. Read together, the two can reveal patterns that neither shows on its own. This post covers the signals I look for in each, three patterns that only appear when you read both, and a short list for starting with one service and one survey.
+
+## A fast team is not always a healthy one
+
+Picture a team that deploys several times a day, takes less than a day to get a change from commit to production, and rarely breaks anything. By any delivery dashboard, that team is doing well, and it may well be.
+
+The same dashboard looks identical when the team is getting there by working nights, when two senior engineers are reviewing almost every change, or when everyone has stopped raising problems because nobody acts on them. Delivery metrics measure the system that moves code. They do not measure whether the people feeding that system can keep feeding it.
+
+So I read two frameworks side by side. [DORA](https://dora.dev/guides/dora-metrics/) covers the delivery system. [SPACE](https://github.blog/news-insights/research/measuring-enterprise-developer-productivity/), from Nicole Forsgren and colleagues, covers the experience of the engineers inside it. Neither replaces the other.
+
+## Measure the team and the system, not the individual
+
+Before any numbers, the scope. This view is for understanding how a team and its systems are doing. It is not a way to rank engineers, and it stops being useful once it is used as one.
+
+DORA is explicit that its metrics are "meant to be applied at the application or service level." Its own list of pitfalls includes turning the metrics into goals, which invites gaming, and comparing teams whose applications have little in common. SPACE makes the matching point about people: activity counts such as commits and pull requests are the most common productivity measure and often the most misused. Once a person's review count shows up in a performance conversation, people learn to produce reviews, and the number tells you less.
+
+## DORA shows how changes reach production
+
+DORA now tracks five metrics in two groups. Throughput is change lead time, deployment frequency and failed deployment recovery time. Instability is change fail rate and deployment rework rate, the newest of the five, which counts deployments that were unplanned and happened because of an incident in production.
+
+These are the signals I treat as healthy and the ones I treat as a warning. They are my working thresholds for a team shipping a web service, not DORA's published benchmarks, and the direction a metric is moving usually matters more than where it sits today.
+
+| Metric                          | Healthy                                                                                           | Warning                                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Deployment frequency            | On demand, often several times a day, in small increments                                         | Monthly or less, with large release days that need coordinating                                     |
+| Change lead time                | Under a day from commit to production, with small pull requests reviewed quickly                  | Over a week, with changes waiting in a manual QA queue, a long review cycle or a slow CI build      |
+| Change fail rate                | Up to about 15%, and deployments rarely degrade the service                                       | Above about 40%, with frequent incidents and rollbacks, or customers finding bugs before monitoring |
+| Failed deployment recovery time | Under an hour, usually with observability, automated rollback and feature flags making it routine | Over a day, often because runbooks are missing, rebuilds are slow or rolling forward is complicated |
+| Deployment rework rate          | Low single digits, with planned work making up most deployments                                   | High or climbing, with a growing share of deployments being hotfixes and emergency patches          |
+
+## SPACE shows whether the team can keep it up
+
+SPACE names five dimensions: satisfaction and well-being, performance, activity, communication and collaboration, and efficiency and flow. The guidance that comes with it is that no single measure supports a conclusion on its own, and that a team should draw on at least three dimensions. Several of them are best measured by asking people, so a short, regular survey belongs in this view.
+
+| Dimension                       | Healthy                                                                                              | Warning                                                                                                               |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Satisfaction and well-being     | Strong developer experience survey results, with stress and work-life balance reported as manageable | Burnout showing up in surveys, rising attrition, and cynicism about tools or leadership                               |
+| Performance                     | Commitments are met predictably, and shipped features are used by customers                          | Goals are missed, or what ships needs heavy operational support or goes unused                                        |
+| Activity                        | Pull requests and review load are spread evenly across the team                                      | One or two senior engineers handle most critical commits and reviews                                                  |
+| Communication and collaboration | Pull requests are reviewed within a day, review comments are constructive, and people raise problems | Pull requests wait days, approvals arrive without real review, comments turn pedantic, knowledge sits with one person |
+| Efficiency and flow             | Long uninterrupted blocks for focused work, fast local builds and tests people trust                 | A calendar full of meetings, constant chat and on-call interruptions, and hours waiting on CI                         |
+
+## Three patterns appear only when you read both
+
+Each of these looks acceptable, or even good, through one framework. The problem shows up in the gap between the two.
+
+**Fast delivery, falling morale.** DORA looks excellent: lead times are short and deployments are frequent. SPACE says focus time is fragmented and satisfaction is dropping. One likely explanation is that the speed rests on evening and weekend work, or on a few people carrying more than their share, and if so, those people are a retention risk. The survey and the review-load view are where to confirm it.
+
+**Strong collaboration, slow pipeline.** SPACE looks healthy: people communicate well, raise problems openly and help each other. DORA says lead time runs to several days and the team deploys weekly. The constraint is more likely in the path to production than in the team. Start by looking for an unreliable staging environment, slow CI runners, or a manual change approval step that every deployment has to wait for.
+
+**High activity, rising rework.** Commit counts and pull request volume are high, which reads as a productive team. At the same time, change fail rate and rework rate are climbing. One possibility is that code is being produced faster than it can be reviewed, whether from deadline pressure or from AI assistants generating changes without the architectural context or tests to support them. When that happens, review turns into approval and defects reach production.
+
+DORA's own research combines the two in a similar way. Its [2025 report](https://cloud.google.com/blog/products/ai-machine-learning/announcing-the-2025-dora-report) describes seven team profiles, each defined by how performance, stability and well-being combine, rather than by delivery numbers alone.
+
+## How to start
+
+You do not need a platform to begin, and a spreadsheet you look at with the team is worth more than a dashboard nobody discusses.
+
+1. **Pick one service and collect its five DORA metrics.** Deployment frequency, lead time, change fail rate and recovery time come from your deployment pipeline and incident log. For rework rate, label each deployment as planned or unplanned.
+2. **Run a short survey covering at least three SPACE dimensions.** Include satisfaction and well-being, collaboration, and efficiency and flow, keep it anonymous, and ask the same questions each time so the trend means something.
+3. **Check review load by person, and keep that view inside the team.** An uneven spread is an early sign that a few people are carrying the work, and the reason needs a closer look before anyone acts on it: the team may be short of people, knowledge may sit with one or two engineers, or the review process may route every change to the same reviewers.
+4. **Review both tables together on a regular cadence, and check for the three patterns.** Compare the team with its own previous readings, not with other teams.

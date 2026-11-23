@@ -8,4 +8,5 @@
 export const PILLAR_LABELS: Record<string, string> = {
   'agentic-engineering': 'Agentic engineering',
   'building-in-the-open': 'Building in the open',
+  'engineering-leadership': 'Engineering leadership',
 };
